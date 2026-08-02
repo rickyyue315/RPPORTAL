@@ -4,6 +4,7 @@ import {
   publicSubmitLimiter,
   publicLookupLimiter,
   excelImportLimiter,
+  excelExportLimiter,
 } from '../middleware/rateLimits.js';
 import { asyncHandler, getClientIp } from '../middleware/helpers.js';
 import { getStore, normalizeSiteCode } from '../services/stores.js';
@@ -18,6 +19,7 @@ import {
 import { writeAuditEvent } from '../lib/audit.js';
 import { toHKString } from '../lib/time.js';
 import { parseImportWorkbook } from '../lib/excelImport.js';
+import { generateTemplateWorkbook } from '../lib/excelExport.js';
 import { query, withTransaction } from '../db/pool.js';
 import { config } from '../config.js';
 import { generateApplicationNo } from '../lib/applicationNo.js';
@@ -33,7 +35,6 @@ const businessFieldSchema = z.object({
   safety_stock: z.string().max(100).optional().default(''),
   nd_code: z.string().max(300).optional().default(''),
   rp_parameters_change_request: z.string().max(300).optional().default(''),
-  rp_type_completed_at: z.string().max(20).optional().default(''),
   remark: z.string().max(2000).optional().default(''),
 });
 
@@ -61,7 +62,6 @@ function serializeSubmission(row: SubmissionRow) {
     safety_stock: row.safety_stock,
     nd_code: row.nd_code,
     rp_parameters_change_request: row.rp_parameters_change_request,
-    rp_type_completed_at: row.rp_type_completed_at,
     remark: row.remark,
   };
 }
@@ -136,7 +136,6 @@ publicRouter.post(
         safety_stock: data.safety_stock,
         nd_code: data.nd_code,
         rp_parameters_change_request: data.rp_parameters_change_request,
-        rp_type_completed_at: data.rp_type_completed_at,
         remark: data.remark,
       },
       ip,
@@ -153,6 +152,18 @@ publicRouter.post(
     });
 
     res.status(201).json({ submission: serializeSubmission(row), store: { shop: store.shop } });
+  }),
+);
+
+/** GET /api/public/template — download import template. */
+publicRouter.get(
+  '/template',
+  excelExportLimiter,
+  asyncHandler(async (_req: Request, res: Response) => {
+    const buffer = await generateTemplateWorkbook();
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition', `attachment; filename="00.RP Team_NDRF Request.xlsx"`);
+    res.send(buffer);
   }),
 );
 
@@ -208,9 +219,9 @@ publicRouter.post(
           `INSERT INTO submissions (
              application_no, source, site_code, requested_by_email, application_date,
              brand, sku, rp_type, supply_source, safety_stock, nd_code,
-             rp_parameters_change_request, rp_type_completed_at, remark, created_ip, created_ip_expires_at
+             rp_parameters_change_request, remark, created_ip, created_ip_expires_at
            ) VALUES ($1,'excel',$2,$3,to_char(now() AT TIME ZONE 'Asia/Hong_Kong','YYYY-MM-DD')::date,
-             $4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
+             $4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
            RETURNING *`,
           [
             appNo,
@@ -223,7 +234,6 @@ publicRouter.post(
             r.fields.safety_stock,
             r.fields.nd_code,
             r.fields.rp_parameters_change_request,
-            r.fields.rp_type_completed_at,
             r.fields.remark,
             ip,
             ip ? ipExpiryIso() : null,
@@ -372,7 +382,6 @@ publicRouter.post(
           safety_stock: data.safety_stock,
           nd_code: data.nd_code,
           rp_parameters_change_request: data.rp_parameters_change_request,
-          rp_type_completed_at: data.rp_type_completed_at,
           remark: data.remark,
         },
         ip,

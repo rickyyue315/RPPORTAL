@@ -9,7 +9,6 @@ export const SAP_COLUMNS = [
   'Safety stock',
   'ND Code',
   'RP Parameters Change Request',
-  'RP Type 回覆完成日期',
   'Remark',
 ] as const;
 
@@ -24,7 +23,6 @@ export interface SubmissionBusinessFields {
   safety_stock: string;
   nd_code: string;
   rp_parameters_change_request: string;
-  rp_type_completed_at: string;
   remark: string;
 }
 
@@ -36,7 +34,6 @@ export const BUSINESS_FIELD_LABELS: Record<keyof SubmissionBusinessFields, strin
   safety_stock: 'Safety stock',
   nd_code: 'ND Code',
   rp_parameters_change_request: 'RP Parameters Change Request',
-  rp_type_completed_at: 'RP Type 回覆完成日期',
   remark: 'Remark',
 };
 
@@ -49,8 +46,7 @@ export const FIELD_TO_SAP_INDEX: Record<keyof SubmissionBusinessFields, number> 
   safety_stock: 7,
   nd_code: 8,
   rp_parameters_change_request: 9,
-  rp_type_completed_at: 10,
-  remark: 11,
+  remark: 10,
 };
 
 /** Map SAP column name -> internal field. */
@@ -62,8 +58,7 @@ export const SAP_INDEX_TO_FIELD: Record<number, keyof SubmissionBusinessFields> 
   7: 'safety_stock',
   8: 'nd_code',
   9: 'rp_parameters_change_request',
-  10: 'rp_type_completed_at',
-  11: 'remark',
+  10: 'remark',
 };
 
 export const RP_TYPE_OPTIONS = ['ND', 'RF'];

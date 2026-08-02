@@ -85,7 +85,6 @@ const businessFieldsSchema = z.object({
   safety_stock: z.string().max(100).optional().default(''),
   nd_code: z.string().max(300).optional().default(''),
   rp_parameters_change_request: z.string().max(300).optional().default(''),
-  rp_type_completed_at: z.string().max(20).optional().default(''),
   remark: z.string().max(2000).optional().default(''),
 });
 
@@ -109,7 +108,6 @@ function serializeAdminSubmission(row: SubmissionRow) {
     safety_stock: row.safety_stock,
     nd_code: row.nd_code,
     rp_parameters_change_request: row.rp_parameters_change_request,
-    rp_type_completed_at: row.rp_type_completed_at,
     remark: row.remark,
   };
 }
@@ -324,9 +322,9 @@ adminRouter.post(
           `INSERT INTO submissions (
              application_no, source, site_code, requested_by_email, application_date,
              brand, sku, rp_type, supply_source, safety_stock, nd_code,
-             rp_parameters_change_request, rp_type_completed_at, remark, created_ip, created_ip_expires_at
+             rp_parameters_change_request, remark, created_ip, created_ip_expires_at
            ) VALUES ($1,'excel',$2,$3,to_char(now() AT TIME ZONE 'Asia/Hong_Kong','YYYY-MM-DD')::date,
-             $4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
+             $4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
            RETURNING *`,
           [
             appNo,
@@ -339,7 +337,6 @@ adminRouter.post(
             r.fields.safety_stock,
             r.fields.nd_code,
             r.fields.rp_parameters_change_request,
-            r.fields.rp_type_completed_at,
             r.fields.remark,
             ip,
             ip ? ipExpiryIso() : null,

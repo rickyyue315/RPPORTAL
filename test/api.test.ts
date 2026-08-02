@@ -107,6 +107,13 @@ describe('public API', () => {
     expect(res.status).toBe(404);
     expect(res.body.error).toContain('找不到相符申報');
   });
+
+  it('downloads the template workbook without login', async () => {
+    const res = await request(app).get('/api/public/template');
+    expect(res.status).toBe(200);
+    expect(res.headers['content-type']).toContain('spreadsheetml');
+    expect(Number(res.headers['content-length'])).toBeGreaterThan(1000);
+  });
 });
 
 describe('admin API', () => {

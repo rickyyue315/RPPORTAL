@@ -147,7 +147,6 @@ export async function parseImportWorkbook(
       safety_stock: '',
       nd_code: '',
       rp_parameters_change_request: '',
-      rp_type_completed_at: '',
       remark: '',
     };
 

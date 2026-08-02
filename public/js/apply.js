@@ -14,7 +14,6 @@
       safety_stock: $('safety_stock').value.trim(),
       nd_code: $('nd_code').value.trim(),
       rp_parameters_change_request: $('rp_parameters_change_request').value,
-      rp_type_completed_at: $('rp_type_completed_at').value,
       remark: $('remark').value.trim(),
     };
   }
@@ -28,7 +27,6 @@
     safety_stock: 'Safety stock',
     nd_code: 'ND Code',
     rp_parameters_change_request: 'RP Parameters Change Request',
-    rp_type_completed_at: 'RP Type 回覆完成日期',
     remark: 'Remark',
   };
 

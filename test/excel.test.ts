@@ -111,12 +111,12 @@ describe('generateTemplateWorkbook', () => {
     expect(wb.getWorksheet(RP_TEAM_SHEET)).toBeDefined();
     const ws = wb.getWorksheet(RP_TEAM_SHEET)!;
     expect(ws.getCell(1, 1).value).toBe('Application Date');
-    expect(ws.getCell(1, 11).value).toBe('RP Type 回覆完成日期');
+    expect(ws.getCell(1, 11).value).toBe('Remark');
   });
 });
 
 describe('buildSapExportBuffer', () => {
-  it('writes all 12 columns in order', async () => {
+  it('writes all columns in order', async () => {
     const rows = [
       {
         id: '1',
@@ -133,7 +133,6 @@ describe('buildSapExportBuffer', () => {
         safety_stock: null,
         nd_code: null,
         rp_parameters_change_request: null,
-        rp_type_completed_at: null,
         remark: null,
         status: 'received',
         exported_at: null,

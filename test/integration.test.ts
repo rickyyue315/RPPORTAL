@@ -49,7 +49,6 @@ const baseFields = {
   safety_stock: '5',
   nd_code: 'ND01-Under ND Classification',
   rp_parameters_change_request: '',
-  rp_type_completed_at: '',
   remark: '',
 };
 

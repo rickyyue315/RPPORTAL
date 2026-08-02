@@ -86,7 +86,7 @@ export async function generateTemplateWorkbook(): Promise<Buffer> {
     formulae: ['"Cora Lai ,Ice Lin,Bridget Wong ,Ricky Yue,Ting Chan,Laurent Wong,Winnie Lin"'],
   });
 
-  const widths = [18, 22, 14, 16, 18, 10, 40, 14, 45, 28, 20, 30];
+  const widths = [18, 22, 14, 16, 18, 10, 40, 14, 45, 28, 30];
   widths.forEach((w, i) => {
     sheet.getColumn(i + 1).width = w;
   });
@@ -129,12 +129,11 @@ export function buildSapExportBuffer(rows: SubmissionRow[]): Promise<Buffer> {
         row.safety_stock,
         row.nd_code,
         row.rp_parameters_change_request,
-        row.rp_type_completed_at ? toHKDateString(row.rp_type_completed_at) : null,
         row.remark,
       ]);
     }
 
-    const widths = [18, 22, 14, 16, 18, 10, 40, 14, 45, 28, 20, 30];
+    const widths = [18, 22, 14, 16, 18, 10, 40, 14, 45, 28, 30];
     widths.forEach((w, i) => {
       sheet.getColumn(i + 1).width = w;
     });

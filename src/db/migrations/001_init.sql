@@ -32,7 +32,6 @@ CREATE TABLE IF NOT EXISTS submissions (
   safety_stock TEXT,
   nd_code TEXT,
   rp_parameters_change_request TEXT,
-  rp_type_completed_at TEXT,
   remark TEXT,
   status TEXT NOT NULL DEFAULT 'received' CHECK (status = 'received'),
   exported_at TIMESTAMPTZ,

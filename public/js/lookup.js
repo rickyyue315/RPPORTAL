@@ -56,7 +56,6 @@
     $('f_safety_stock').value = s.safety_stock || '';
     $('f_nd_code').value = s.nd_code || '';
     $('f_rp_parameters_change_request').value = s.rp_parameters_change_request || '';
-    $('f_rp_type_completed_at').value = s.rp_type_completed_at || '';
     $('f_remark').value = s.remark || '';
 
     const tbody = $('versions_table').querySelector('tbody');
@@ -88,7 +87,6 @@
       safety_stock: $('f_safety_stock').value.trim(),
       nd_code: $('f_nd_code').value.trim(),
       rp_parameters_change_request: $('f_rp_parameters_change_request').value,
-      rp_type_completed_at: $('f_rp_type_completed_at').value,
       remark: $('f_remark').value.trim(),
     };
     const btn = $('btn_save');

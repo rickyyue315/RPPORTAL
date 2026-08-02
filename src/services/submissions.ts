@@ -1,14 +1,22 @@
 import { query, withTransaction } from '../db/pool.js';
 import { generateApplicationNo } from '../lib/applicationNo.js';
 import { ipExpiryIso } from '../lib/ip.js';
-import { normalizeText, type SubmissionBusinessFields } from '../lib/fields.js';
+import {
+  normalizeText,
+  type SubmissionBusinessFields,
+  URGENT_QTY_MIN,
+  URGENT_QTY_MAX,
+} from '../lib/fields.js';
 import { toHKDateString, hkTodayForDateColumn } from '../lib/time.js';
 import { normalizeSiteCode } from './stores.js';
+
+export type SubmissionType = 'normal' | 'urgent';
 
 export interface SubmissionRow {
   id: string;
   application_no: string;
   source: 'web' | 'excel';
+  submission_type: SubmissionType;
   site_code: string;
   requested_by_email: string;
   application_date: string;
@@ -21,6 +29,7 @@ export interface SubmissionRow {
   nd_code: string | null;
   rp_parameters_change_request: string | null;
   remark: string | null;
+  qty: number | null;
   status: string;
   exported_at: string | null;
   export_batch_id: string | null;
@@ -37,7 +46,9 @@ export interface CreateSubmissionInput {
   siteCode: string;
   shopName?: string;
   source: 'web' | 'excel';
+  submissionType?: SubmissionType;
   fields: SubmissionBusinessFields;
+  qty?: number | null;
   ip: string;
   changeSource: string;
   actor?: string;
@@ -67,6 +78,14 @@ export function businessFieldsFromRow(row: SubmissionRow): SubmissionBusinessFie
   };
 }
 
+export function urgentFieldsFromRow(row: SubmissionRow): { site_code: string; sku: string; qty: number | null } {
+  return {
+    site_code: row.site_code,
+    sku: normalizeText(row.sku),
+    qty: row.qty,
+  };
+}
+
 function toBusinessParams(fields: SubmissionBusinessFields): unknown[] {
   return [
     normalizeText(fields.brand) || null,
@@ -80,9 +99,9 @@ function toBusinessParams(fields: SubmissionBusinessFields): unknown[] {
   ];
 }
 
-async function nextApplicationNo(): Promise<string> {
+async function nextApplicationNo(prefix: string): Promise<string> {
   for (let attempt = 0; attempt < 10; attempt++) {
-    const no = generateApplicationNo();
+    const no = generateApplicationNo(prefix);
     const existing = await query('SELECT 1 FROM submissions WHERE application_no = $1', [no]);
     if (!existing.rowCount) return no;
   }
@@ -94,33 +113,48 @@ export async function createSubmission(
 ): Promise<SubmissionRow> {
   const siteCode = normalizeSiteCode(input.siteCode);
   const fields = input.fields;
+  const submissionType: SubmissionType = input.submissionType ?? 'normal';
+  const isUrgent = submissionType === 'urgent';
+  const qty = isUrgent ? (input.qty ?? null) : null;
+  if (isUrgent) {
+    if (!(typeof qty === 'number' && Number.isInteger(qty) && qty >= URGENT_QTY_MIN && qty <= URGENT_QTY_MAX)) {
+      throw new Error(`QTY 必須為 ${URGENT_QTY_MIN} 至 ${URGENT_QTY_MAX} 的整數`);
+    }
+  }
   const requestedByEmail = `${siteCode.toLowerCase()}@sasa.com`;
   const applicationDate = input.applicationDateOverride ?? hkTodayForDateColumn();
+  const appNoPrefix = isUrgent ? 'URGENT' : 'NDRF';
 
   return withTransaction(async (client) => {
-    const applicationNo = await nextApplicationNo();
+    const applicationNo = await nextApplicationNo(appNoPrefix);
     const values = [
       applicationNo,
       input.source,
+      submissionType,
       siteCode,
       requestedByEmail,
       applicationDate,
       ...toBusinessParams(fields),
+      qty,
       input.ip,
       input.ip ? ipExpiryIso() : null,
     ];
     const result = await client.query<SubmissionRow>(
       `INSERT INTO submissions (
-         application_no, source, site_code, requested_by_email, application_date,
+         application_no, source, submission_type, site_code, requested_by_email, application_date,
          brand, sku, rp_type, supply_source, safety_stock, nd_code,
          rp_parameters_change_request, remark,
-         created_ip, created_ip_expires_at
+         qty, created_ip, created_ip_expires_at
        )
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
        RETURNING *`,
       values,
     );
     const row = result.rows[0]!;
+
+    const snapshot = isUrgent
+      ? { site_code: siteCode, sku: normalizeText(fields.sku), qty }
+      : fields;
 
     await client.query(
       `INSERT INTO submission_versions
@@ -128,7 +162,7 @@ export async function createSubmission(
        VALUES ($1, 1, NULL, $2, $3, $4, $5, $6)`,
       [
         row.id,
-        JSON.stringify(fields),
+        JSON.stringify(snapshot),
         input.source === 'web' ? 'applicant' : 'applicant',
         input.actor ?? null,
         input.ip,
@@ -188,6 +222,13 @@ export class LockedError extends Error {
   }
 }
 
+export class NotSupportedError extends Error {
+  constructor(message = '此申報不支援此操作') {
+    super(message);
+    this.name = 'NotSupportedError';
+  }
+}
+
 export async function modifySubmission(
   input: ModifySubmissionInput,
 ): Promise<SubmissionRow> {
@@ -201,6 +242,9 @@ export async function modifySubmission(
     const row = rowResult.rows[0];
     if (!row) {
       throw new Error('找不到申報');
+    }
+    if (row.submission_type !== 'normal') {
+      throw new NotSupportedError('此申報不支援網頁查詢／修改');
     }
     if (row.locked_at || row.exported_at) {
       throw new LockedError(row.locked_at ? new Date(row.locked_at) : null);
@@ -281,6 +325,53 @@ export async function adminUpdateSubmission(
          (submission_id, version, data_before, data_after, actor_role, actor, ip, change_source)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
       [row.id, nextVersion, JSON.stringify(before), JSON.stringify(fields), 'admin', username, ip, 'admin_edit'],
+    );
+
+    return newRow;
+  });
+}
+
+export async function adminUpdateUrgentSubmission(
+  id: string,
+  sku: string,
+  qty: number,
+  ip: string,
+  username: string,
+): Promise<SubmissionRow> {
+  if (!Number.isInteger(qty) || qty < URGENT_QTY_MIN || qty > URGENT_QTY_MAX) {
+    throw new Error(`QTY 必須為 ${URGENT_QTY_MIN} 至 ${URGENT_QTY_MAX} 的整數`);
+  }
+  return withTransaction(async (client) => {
+    const rowResult = await client.query<SubmissionRow>(
+      'SELECT * FROM submissions WHERE id = $1',
+      [id],
+    );
+    const row = rowResult.rows[0];
+    if (!row) throw new Error('找不到申報');
+    if (row.submission_type !== 'urgent') throw new Error('此申報不是 Urgent Order');
+
+    const before = urgentFieldsFromRow(row);
+    const updated = await client.query<SubmissionRow>(
+      `UPDATE submissions SET
+         sku = $1, qty = $2, updated_at = now()
+       WHERE id = $3
+       RETURNING *`,
+      [normalizeText(sku), qty, row.id],
+    );
+    const newRow = updated.rows[0]!;
+
+    const versionResult = await client.query<{ max: number | null }>(
+      'SELECT max(version) AS max FROM submission_versions WHERE submission_id = $1',
+      [row.id],
+    );
+    const nextVersion = (versionResult.rows[0]?.max ?? 0) + 1;
+    const after = urgentFieldsFromRow(newRow);
+
+    await client.query(
+      `INSERT INTO submission_versions
+         (submission_id, version, data_before, data_after, actor_role, actor, ip, change_source)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+      [row.id, nextVersion, JSON.stringify(before), JSON.stringify(after), 'admin', username, ip, 'admin_edit'],
     );
 
     return newRow;

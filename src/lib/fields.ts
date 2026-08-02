@@ -113,6 +113,25 @@ export const SHOP_CODE_HEADER = 'Shop Code';
 export const APPLICATION_DATE_HEADER = 'Application Date';
 export const RP_TEAM_SHEET = 'RP Team';
 
+export const URGENT_COLUMNS = ['Site Code', 'SKU', 'QTY'] as const;
+export type UrgentColumn = (typeof URGENT_COLUMNS)[number];
+
+export const URGENT_SHEET = 'Urgent Order';
+
+export const URGENT_QTY_MIN = 1;
+export const URGENT_QTY_MAX = 1000;
+
+/** Business data of an Urgent Order submission (snapshot + API payload). */
+export interface UrgentFields {
+  site_code: string;
+  sku: string;
+  qty: number;
+}
+
+export function isValidUrgentQty(value: unknown): value is number {
+  return typeof value === 'number' && Number.isInteger(value) && value >= URGENT_QTY_MIN && value <= URGENT_QTY_MAX;
+}
+
 export function normalizeText(value: string | number | null | undefined): string {
   if (value === null || value === undefined) return '';
   const s = String(value).trim();

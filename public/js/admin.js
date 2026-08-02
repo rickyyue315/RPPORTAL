@@ -5,6 +5,7 @@
   let currentDetail = null;
   let pendingImportFile = null;
   let pendingStoreFile = null;
+  let pendingUrgentImportFile = null;
   let csrfToken = null;
 
   async function ensureAuth() {
@@ -43,8 +44,9 @@
 
   function buildQuery() {
     const params = new URLSearchParams();
-    ['from', 'to', 'site_code', 'source', 'exported', 'sku', 'application_no'].forEach((k) => {
-      const v = $(`f_${k === 'application_no' ? 'appno' : k}`).value.trim();
+    const idMap = { application_no: 'appno', submission_type: 'type' };
+    ['from', 'to', 'site_code', 'source', 'submission_type', 'exported', 'sku', 'application_no'].forEach((k) => {
+      const v = $(`f_${idMap[k] || k}`).value.trim();
       if (v) params.set(k, v);
     });
     params.set('page', String(currentPage));
@@ -67,7 +69,7 @@
     const tbody = $('list_body');
     tbody.innerHTML = '';
     if (!data.submissions.length) {
-      tbody.innerHTML = '<tr><td colspan="8" class="empty">沒有符合條件的申報</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="9" class="empty">沒有符合條件的申報</td></tr>';
       $('page_info').textContent = '0 筆';
       $('btn_prev').disabled = true;
       $('btn_next').disabled = true;
@@ -81,7 +83,8 @@
       tr.innerHTML = `
         <td>${escapeHtml(s.application_no)}</td>
         <td>${escapeHtml(s.site_code)}</td>
-        <td>${escapeHtml(s.sku)}</td>
+        <td>${escapeHtml(s.sku)}${s.submission_type === 'urgent' ? `<div class="hint">QTY: ${escapeHtml(s.qty)}</div>` : ''}</td>
+        <td>${s.submission_type === 'urgent' ? '<span class="status-badge received">Urgent</span>' : '一般'}</td>
         <td>${s.source === 'web' ? '網頁' : 'Excel'}</td>
         <td>${escapeHtml(s.submitted_at)}</td>
         <td>${escapeHtml(s.updated_at || '—')}</td>
@@ -107,7 +110,7 @@
   });
   $('btn_reset').addEventListener('click', () => {
     ['from', 'to', 'site', 'sku', 'appno'].forEach((id) => ($(`f_${id}`).value = ''));
-    ['source', 'exported'].forEach((id) => ($(`f_${id}`).value = ''));
+    ['source', 'type', 'exported'].forEach((id) => ($(`f_${id}`).value = ''));
     currentPage = 1;
     loadList();
   });
@@ -139,26 +142,35 @@
 
   function renderDetail(data) {
     const s = data.submission;
+    const isUrgent = s.submission_type === 'urgent';
     $('detail_title').textContent = `申報詳情 — ${s.application_no}`;
     let header = `
       <dt>狀態</dt><dd>${s.locked ? '<span class="status-badge locked">已鎖定</span>' : '<span class="status-badge received">已收件</span>'}</dd>
+      <dt>類型</dt><dd>${isUrgent ? 'Urgent Order' : '一般 NDRF'}</dd>
       <dt>Site Code</dt><dd>${escapeHtml(s.site_code)}（${escapeHtml(data.store?.shop || '')}）</dd>
       <dt>申請電郵</dt><dd>${escapeHtml(s.requested_by_email)}</dd>
       <dt>來源</dt><dd>${s.source === 'web' ? '網頁' : 'Excel'}</dd>
       <dt>申請日期</dt><dd>${escapeHtml(s.application_date)}</dd>
       <dt>申請時間</dt><dd>${escapeHtml(s.submitted_at)}</dd>`;
+    if (isUrgent) header += `<dt>QTY</dt><dd>${escapeHtml(s.qty)}</dd>`;
     if (s.locked_at) header += `<dt>鎖定時間</dt><dd>${escapeHtml(s.locked_at)}</dd>`;
     if (s.exported_at) header += `<dt>匯出時間</dt><dd>${escapeHtml(s.exported_at)}</dd>`;
     $('detail_header').innerHTML = header;
 
+    $('normal_fields').style.display = isUrgent ? 'none' : '';
+    $('urgent_fields').style.display = isUrgent ? '' : 'none';
+    $('urgent_note').style.display = isUrgent ? '' : 'none';
+
     $('a_brand').value = s.brand || '';
-    $('a_sku').value = s.sku || '';
+    $('a_sku_normal').value = s.sku || '';
     $('a_rp_type').value = s.rp_type || '';
     $('a_supply_source').value = s.supply_source || '';
     $('a_safety_stock').value = s.safety_stock || '';
     $('a_nd_code').value = s.nd_code || '';
     $('a_rp_parameters_change_request').value = s.rp_parameters_change_request || '';
     $('a_remark').value = s.remark || '';
+    $('a_sku_urgent').value = s.sku || '';
+    $('a_qty').value = s.qty || '';
 
     $('btn_save_edit').disabled = s.locked;
     $('btn_save_edit').textContent = s.locked ? '已鎖定，不能修改' : '儲存修改';
@@ -181,16 +193,19 @@
 
   $('btn_save_edit').addEventListener('click', async () => {
     if (!currentDetail) return;
-    const body = {
-      brand: $('a_brand').value.trim(),
-      sku: $('a_sku').value.trim(),
-      rp_type: $('a_rp_type').value,
-      supply_source: $('a_supply_source').value.trim(),
-      safety_stock: $('a_safety_stock').value.trim(),
-      nd_code: $('a_nd_code').value.trim(),
-      rp_parameters_change_request: $('a_rp_parameters_change_request').value.trim(),
-      remark: $('a_remark').value.trim(),
-    };
+    const isUrgent = currentDetail.submission.submission_type === 'urgent';
+    const body = isUrgent
+      ? { sku: $('a_sku_urgent').value.trim(), qty: $('a_qty').value === '' ? null : Number($('a_qty').value) }
+      : {
+          brand: $('a_brand').value.trim(),
+          sku: $('a_sku_normal').value.trim(),
+          rp_type: $('a_rp_type').value,
+          supply_source: $('a_supply_source').value.trim(),
+          safety_stock: $('a_safety_stock').value.trim(),
+          nd_code: $('a_nd_code').value.trim(),
+          rp_parameters_change_request: $('a_rp_parameters_change_request').value.trim(),
+          remark: $('a_remark').value.trim(),
+        };
     const btn = $('btn_save_edit');
     btn.disabled = true;
     showAlert($('save_edit_error'), '', '');
@@ -244,6 +259,9 @@
   });
   setupDrop('store_drop', 'store_input', 'store_label', (f) => {
     pendingStoreFile = f;
+  });
+  setupDrop('urgent_import_drop', 'urgent_import_input', 'urgent_import_label', (f) => {
+    pendingUrgentImportFile = f;
   });
 
   $('btn_import').addEventListener('click', async () => {
@@ -321,6 +339,87 @@
       loadList();
     } catch (err) {
       showAlert($('export_info'), 'error', escapeHtml(err.message));
+    } finally {
+      btn.disabled = false;
+      btn.textContent = '匯出並鎖定';
+    }
+  });
+
+  $('btn_urgent_import').addEventListener('click', async () => {
+    if (!pendingUrgentImportFile) {
+      showAlert($('urgent_import_result'), 'error', '請先選擇 .xlsx 檔案');
+      return;
+    }
+    const btn = $('btn_urgent_import');
+    btn.disabled = true;
+    btn.textContent = '匯入中…';
+    const fd = new FormData();
+    fd.append('file', pendingUrgentImportFile);
+    try {
+      const data = await adminFetch('/api/admin/urgent/import', { method: 'POST', body: fd });
+      let html = `<div class="alert success"><b>${escapeHtml(data.message)}</b>（總行數：${data.totalRows}）</div>`;
+      html += '<table><thead><tr><th>Excel 行</th><th>申請編號</th><th>Site Code</th><th>SKU</th><th>QTY</th><th>已收件時間</th></tr></thead><tbody>';
+      data.rows.forEach((r) => {
+        html += `<tr><td>${r.row}</td><td>${escapeHtml(r.application_no)}</td><td>${escapeHtml(r.site_code)}</td><td>${escapeHtml(r.sku)}</td><td>${escapeHtml(r.qty)}</td><td>${escapeHtml(r.submitted_at)}</td></tr>`;
+      });
+      html += '</tbody></table>';
+      $('urgent_import_result').innerHTML = html;
+      $('urgent_import_label').textContent = '拖曳 .xlsx 檔案到此處，或按一下選擇檔案';
+      pendingUrgentImportFile = null;
+      loadList();
+    } catch (err) {
+      let html = `<div class="alert error"><b>${escapeHtml(err.message)}</b></div>`;
+      if (err.data?.errors?.length) {
+        html += '<table><thead><tr><th>行</th><th>欄位</th><th>原因</th></tr></thead><tbody>';
+        err.data.errors.forEach((e) => {
+          html += `<tr><td>${e.row || '—'}</td><td>${escapeHtml(e.field)}</td><td>${escapeHtml(e.reason)}</td></tr>`;
+        });
+        html += '</tbody></table>';
+      }
+      $('urgent_import_result').innerHTML = html;
+    } finally {
+      btn.disabled = false;
+      btn.textContent = '匯入';
+    }
+  });
+
+  $('btn_urgent_export').addEventListener('click', async () => {
+    const btn = $('btn_urgent_export');
+    btn.disabled = true;
+    btn.textContent = '匯出中…';
+    showAlert($('urgent_export_info'), '', '');
+    const body = {
+      from: $('ue_from').value,
+      to: $('ue_to').value,
+      site_code: $('ue_site').value.trim(),
+      include_exported: $('ue_include').value === 'true',
+    };
+    try {
+      const token = await getCsrf();
+      const res = await fetch('/api/admin/urgent/export', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-csrf-token': token },
+        body: JSON.stringify(body),
+      });
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({ error: '匯出失敗' }));
+        throw new Error(errData.error || '匯出失敗');
+      }
+      const blob = await res.blob();
+      const disp = res.headers.get('Content-Disposition') || '';
+      const match = disp.match(/filename="([^"]+)"/);
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = match ? match[1] : 'Urgent_Order_Export.xlsx';
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+      showAlert($('urgent_export_info'), 'success', '匯出成功，相關 Urgent Order 已鎖定。');
+      loadList();
+    } catch (err) {
+      showAlert($('urgent_export_info'), 'error', escapeHtml(err.message));
     } finally {
       btn.disabled = false;
       btn.textContent = '匯出並鎖定';

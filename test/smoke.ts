@@ -31,11 +31,13 @@ const originalMigrate = await import('../src/db/migrate.js');
 console.log('[smoke] PGlite ready');
 
 // Apply migrations manually without the pgcrypto extension line.
-const sql = (await readFile(path.join(root, 'src', 'db', 'migrations', '001_init.sql'), 'utf8')).replace(
-  /CREATE EXTENSION IF NOT EXISTS pgcrypto;\s*/g,
-  '',
-);
-await db.exec(sql);
+for (const file of ['001_init.sql', '002_drop_rp_type_completed_at.sql', '003_add_submission_type_qty.sql']) {
+  const sql = (await readFile(path.join(root, 'src', 'db', 'migrations', file), 'utf8')).replace(
+    /CREATE EXTENSION IF NOT EXISTS pgcrypto;\s*/g,
+    '',
+  );
+  await db.exec(sql);
+}
 console.log('[smoke] migrations applied');
 
 // Seed stores from the CSV.
@@ -92,6 +94,14 @@ const server = app.listen(0, async () => {
     const query = await fetch(`${base}/api/public/query?application_no=${appNo}&site_code=HA02`);
     check('query by app no', query.status === 200);
 
+    const urgent = await fetch(`${base}/api/public/urgent/submit`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ site_code: 'HA06', sku: 'SMOKE-URGENT', qty: 8 }),
+    });
+    const urgentJson = await urgent.json();
+    check('urgent web submit', urgent.status === 201 && /^URGENT-/.test(urgentJson.submission.application_no) && urgentJson.submission.qty === 8);
+
     const csrf = await fetch(`${base}/api/csrf`);
     const csrfJson = await csrf.json();
     collectCookie(csrf);
@@ -125,6 +135,17 @@ const server = app.listen(0, async () => {
       body: JSON.stringify({ include_exported: false }),
     });
     check('admin SAP export + lock', exportRes.status === 200 && Number(exportRes.headers.get('content-length')) > 1000);
+
+    const urgentExportRes = await fetch(`${base}/api/admin/urgent/export`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        cookie: cookieJar,
+        'x-csrf-token': csrfJson.token,
+      },
+      body: JSON.stringify({ include_exported: false }),
+    });
+    check('admin urgent export + lock', urgentExportRes.status === 200 && Number(urgentExportRes.headers.get('content-length')) > 1000);
 
     const locked = await fetch(`${base}/api/public/modify`, {
       method: 'POST',

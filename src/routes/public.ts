@@ -1,5 +1,6 @@
 import { Router, type Request, type Response } from 'express';
 import { z } from 'zod';
+import multer from 'multer';
 import {
   publicSubmitLimiter,
   publicLookupLimiter,
@@ -14,18 +15,22 @@ import {
   listVersions,
   modifySubmission,
   LockedError,
+  NotSupportedError,
   type SubmissionRow,
 } from '../services/submissions.js';
 import { writeAuditEvent } from '../lib/audit.js';
 import { toHKString } from '../lib/time.js';
-import { parseImportWorkbook } from '../lib/excelImport.js';
-import { generateTemplateWorkbook } from '../lib/excelExport.js';
+import { parseImportWorkbook, parseUrgentImportWorkbook } from '../lib/excelImport.js';
+import { generateTemplateWorkbook, generateUrgentTemplateWorkbook } from '../lib/excelExport.js';
+import { URGENT_QTY_MIN, URGENT_QTY_MAX } from '../lib/fields.js';
 import { query, withTransaction } from '../db/pool.js';
 import { config } from '../config.js';
 import { generateApplicationNo } from '../lib/applicationNo.js';
 import { ipExpiryIso } from '../lib/ip.js';
 
 export const publicRouter = Router();
+
+const upload = multer({ storage: multer.memoryStorage() });
 
 const businessFieldSchema = z.object({
   brand: z.string().max(500).optional().default(''),
@@ -51,6 +56,7 @@ function serializeSubmission(row: SubmissionRow) {
     application_date: row.application_date,
     submitted_at: toHKString(row.submitted_at),
     source: row.source,
+    submission_type: row.submission_type,
     status: row.status,
     locked: Boolean(row.locked_at || row.exported_at),
     locked_at: row.locked_at ? toHKString(row.locked_at) : null,
@@ -63,6 +69,21 @@ function serializeSubmission(row: SubmissionRow) {
     nd_code: row.nd_code,
     rp_parameters_change_request: row.rp_parameters_change_request,
     remark: row.remark,
+    qty: row.qty,
+  };
+}
+
+function serializeUrgentSubmission(row: SubmissionRow) {
+  return {
+    application_no: row.application_no,
+    site_code: row.site_code,
+    sku: row.sku,
+    qty: row.qty,
+    submitted_at: toHKString(row.submitted_at),
+    source: row.source,
+    submission_type: row.submission_type,
+    status: row.status,
+    locked: Boolean(row.locked_at || row.exported_at),
   };
 }
 
@@ -155,6 +176,188 @@ publicRouter.post(
   }),
 );
 
+const urgentSubmitSchema = z.object({
+  site_code: z.string().trim().min(1, 'Site Code 為必填').max(20),
+  sku: z.string().trim().min(1, 'SKU 為必填').max(100),
+  qty: z
+    .number({ invalid_type_error: 'QTY 必須為整數' })
+    .int('QTY 必須為整數')
+    .min(URGENT_QTY_MIN, `QTY 最少為 ${URGENT_QTY_MIN}`)
+    .max(URGENT_QTY_MAX, `QTY 最多為 ${URGENT_QTY_MAX}`),
+});
+
+/** POST /api/public/urgent/submit — single Urgent Order web submission. */
+publicRouter.post(
+  '/urgent/submit',
+  publicSubmitLimiter,
+  asyncHandler(async (req: Request, res: Response) => {
+    const parsed = urgentSubmitSchema.safeParse(req.body);
+    if (!parsed.success) {
+      const first = parsed.error.issues[0];
+      res.status(400).json({
+        error: first?.message ?? '輸入資料無效',
+        field: first?.path[0] ?? null,
+      });
+      return;
+    }
+    const data = parsed.data;
+    const siteCode = normalizeSiteCode(data.site_code);
+    const store = await getStore(siteCode);
+    if (!store) {
+      res.status(400).json({ error: `Site Code「${siteCode}」不存在於門店主檔`, field: 'site_code' });
+      return;
+    }
+
+    const ip = getClientIp(req);
+    const row = await createSubmission({
+      siteCode,
+      source: 'web',
+      submissionType: 'urgent',
+      fields: { brand: '', sku: data.sku, rp_type: '', supply_source: '', safety_stock: '', nd_code: '', rp_parameters_change_request: '', remark: '' },
+      qty: data.qty,
+      ip,
+      changeSource: 'web_submit',
+    });
+
+    await writeAuditEvent({
+      eventType: 'submission_created',
+      actorRole: 'applicant',
+      submissionId: row.id,
+      applicationNo: row.application_no,
+      ip,
+      metadata: { source: 'web', submission_type: 'urgent', shop: store.shop },
+    });
+
+    res.status(201).json({ submission: serializeUrgentSubmission(row), store: { shop: store.shop } });
+  }),
+);
+
+/** GET /api/public/urgent/template — download Urgent import template. */
+publicRouter.get(
+  '/urgent/template',
+  excelExportLimiter,
+  asyncHandler(async (_req: Request, res: Response) => {
+    const buffer = await generateUrgentTemplateWorkbook();
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition', `attachment; filename="Urgent Order Template.xlsx"`);
+    res.send(buffer);
+  }),
+);
+
+/** POST /api/public/urgent/import — Excel batch upload for Urgent Orders. */
+publicRouter.post(
+  '/urgent/import',
+  excelImportLimiter,
+  upload.single('file'),
+  asyncHandler(async (req: Request, res: Response) => {
+    const file = (req as Request & { file?: Express.Multer.File }).file;
+    if (!file) {
+      res.status(400).json({ error: '請上載 Excel 檔案' });
+      return;
+    }
+    if (!/\.xlsx$/i.test(file.originalname)) {
+      res.status(400).json({ error: '只接受 .xlsx 檔案' });
+      return;
+    }
+    if (file.size > config.maxUploadBytes) {
+      res.status(400).json({ error: `檔案超過 ${config.maxUploadBytes / 1024 / 1024}MB 限制` });
+      return;
+    }
+
+    const stores = await query<{ site_code: string }>('SELECT site_code FROM stores');
+    const storeCodes = new Set(stores.rows.map((s) => s.site_code));
+
+    const parsed = await parseUrgentImportWorkbook(file.buffer, storeCodes, config.maxImportRows);
+    if (!parsed.ok || !parsed.rows) {
+      await writeAuditEvent({
+        eventType: 'excel_import_error',
+        actorRole: 'applicant',
+        ip: getClientIp(req),
+        metadata: {
+          filename: file.originalname,
+          submission_type: 'urgent',
+          errors: parsed.errors ?? [],
+        },
+      });
+      res.status(400).json({
+        error: '匯入失敗',
+        totalRows: parsed.totalRows,
+        errors: parsed.errors ?? [],
+      });
+      return;
+    }
+
+    const ip = getClientIp(req);
+    const results = await withTransaction(async (client) => {
+      const rowsOut: Array<{ row: number; application_no: string; site_code: string; sku: string; qty: number; submitted_at: string }> = [];
+      let successCount = 0;
+      for (const r of parsed.rows!) {
+        const appNo = generateApplicationNo('URGENT');
+        const requestedByEmail = `${r.siteCode.toLowerCase()}@sasa.com`;
+        const insert = await client.query<SubmissionRow>(
+          `INSERT INTO submissions (
+             application_no, source, submission_type, site_code, requested_by_email, application_date,
+             brand, sku, qty, created_ip, created_ip_expires_at
+           ) VALUES ($1,'excel','urgent',$2,$3,to_char(now() AT TIME ZONE 'Asia/Hong_Kong','YYYY-MM-DD')::date,
+             '',$4,$5,$6,$7)
+           RETURNING *`,
+          [appNo, r.siteCode, requestedByEmail, r.sku, r.qty, ip, ip ? ipExpiryIso() : null],
+        );
+        const row = insert.rows[0]!;
+        await client.query(
+          `INSERT INTO submission_versions
+             (submission_id, version, data_before, data_after, actor_role, actor, ip, change_source)
+           VALUES ($1, 1, NULL, $2, 'applicant', NULL, $3, 'excel_import')`,
+          [row.id, JSON.stringify({ site_code: r.siteCode, sku: r.sku, qty: r.qty }), ip],
+        );
+        successCount++;
+        rowsOut.push({
+          row: r.rowNumber,
+          application_no: row.application_no,
+          site_code: row.site_code,
+          sku: row.sku,
+          qty: row.qty as number,
+          submitted_at: toHKString(row.submitted_at),
+        });
+      }
+      const batchId = await client.query<{ id: string }>(
+        `INSERT INTO import_batches (filename, sheet_name, row_count, success_count, failed_count, results, content_hash, created_by)
+         VALUES ($1, $2, $3, $4, 0, $5::jsonb, $6, 'applicant')
+         RETURNING id`,
+        [
+          file.originalname,
+          parsed.sheetName ?? '',
+          parsed.totalRows,
+          successCount,
+          JSON.stringify(rowsOut),
+          parsed.contentHash,
+        ],
+      );
+      return { batchId: batchId.rows[0]!.id, rows: rowsOut, successCount };
+    });
+
+    await writeAuditEvent({
+      eventType: 'excel_import',
+      actorRole: 'applicant',
+      ip,
+      metadata: {
+        filename: file.originalname,
+        submission_type: 'urgent',
+        batchId: results.batchId,
+        totalRows: parsed.totalRows,
+        successCount: results.successCount,
+      },
+    });
+
+    res.status(201).json({
+      message: `成功匯入 ${results.successCount} 行`,
+      totalRows: parsed.totalRows,
+      successCount: results.successCount,
+      rows: results.rows,
+    });
+  }),
+);
+
 /** GET /api/public/template — download import template. */
 publicRouter.get(
   '/template',
@@ -171,6 +374,7 @@ publicRouter.get(
 publicRouter.post(
   '/import',
   excelImportLimiter,
+  upload.single('file'),
   asyncHandler(async (req: Request, res: Response) => {
     const file = (req as Request & { file?: Express.Multer.File }).file;
     if (!file) {
@@ -306,8 +510,9 @@ publicRouter.get(
     }
 
     const row = await getSubmissionByApplicationNo(applicationNo, siteCode);
-    if (!row) {
-      // Do not reveal whether an application number exists.
+    if (!row || row.submission_type !== 'normal') {
+      // Do not reveal whether an application number exists, and do not expose
+      // Urgent Order submissions to the public lookup.
       await writeAuditEvent({
         eventType: 'submission_queried',
         actorRole: 'applicant',
@@ -401,6 +606,10 @@ publicRouter.post(
     } catch (err) {
       if (err instanceof LockedError) {
         res.status(409).json({ error: err.message });
+        return;
+      }
+      if (err instanceof NotSupportedError) {
+        res.status(400).json({ error: err.message });
         return;
       }
       if (err instanceof Error && err.message === '找不到申報') {

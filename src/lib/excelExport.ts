@@ -7,7 +7,10 @@ import {
   SUPPLY_SOURCE_OPTIONS,
   RP_PARAMETER_OPTIONS,
   ND_CODE_OPTIONS,
-  type SubmissionBusinessFields,
+  URGENT_COLUMNS,
+  URGENT_SHEET,
+  URGENT_QTY_MIN,
+  URGENT_QTY_MAX,
 } from '../lib/fields.js';
 import { toHKDateString } from '../lib/time.js';
 import type { SubmissionRow } from '../services/submissions.js';
@@ -143,6 +146,81 @@ export function buildSapExportBuffer(rows: SubmissionRow[]): Promise<Buffer> {
   })();
 }
 
+/** Generates the Urgent Order import template (Site Code | SKU | QTY). */
+export async function generateUrgentTemplateWorkbook(): Promise<Buffer> {
+  const workbook = new ExcelJS.Workbook();
+  const sheet = workbook.addWorksheet(URGENT_SHEET);
+
+  const headerStyle: Partial<ExcelJS.Style> = {
+    font: { bold: true, color: { argb: 'FF000000' } },
+    fill: { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFD9E1F2' } },
+    border: {
+      top: { style: 'thin' },
+      left: { style: 'thin' },
+      bottom: { style: 'thin' },
+      right: { style: 'thin' },
+    },
+  };
+
+  URGENT_COLUMNS.forEach((name, i) => {
+    const cell = sheet.getCell(1, i + 1);
+    cell.value = name;
+    cell.style = headerStyle;
+  });
+
+  const vSheet = asValidationSheet(sheet);
+  vSheet.dataValidations.add('C2:C2001', {
+    type: 'whole',
+    operator: 'between',
+    allowBlank: true,
+    formulae: [URGENT_QTY_MIN, URGENT_QTY_MAX],
+  });
+
+  sheet.getColumn(1).width = 14;
+  sheet.getColumn(2).width = 22;
+  sheet.getColumn(3).width = 12;
+
+  const buffer = await workbook.xlsx.writeBuffer();
+  return Buffer.from(buffer);
+}
+
+export interface UrgentExportRow {
+  application_no: string;
+  site_code: string;
+  sku: string;
+  qty: number | null;
+}
+
+/** Builds the Urgent Order export workbook (Application No. | Site Code | SKU | QTY). */
+export function buildUrgentExportBuffer(rows: UrgentExportRow[]): Promise<Buffer> {
+  return (async () => {
+    const workbook = new ExcelJS.Workbook();
+    const sheet = workbook.addWorksheet(URGENT_SHEET);
+    sheet.addRow(['Application No.', ...URGENT_COLUMNS]);
+
+    const headerStyle: Partial<ExcelJS.Style> = {
+      font: { bold: true },
+      fill: { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFD9E1F2' } },
+    };
+    for (let c = 1; c <= 4; c++) {
+      const cell = sheet.getCell(1, c);
+      cell.style = headerStyle;
+    }
+
+    for (const row of rows) {
+      sheet.addRow([row.application_no, row.site_code, row.sku, row.qty]);
+    }
+
+    sheet.getColumn(1).width = 32;
+    sheet.getColumn(2).width = 14;
+    sheet.getColumn(3).width = 22;
+    sheet.getColumn(4).width = 12;
+
+    const buffer = await workbook.xlsx.writeBuffer();
+    return Buffer.from(buffer);
+  })();
+}
+
 export async function buildAuditExportBuffer(
   rows: Array<{
     application_no: string;
@@ -152,8 +230,8 @@ export async function buildAuditExportBuffer(
     ip: string | null;
     change_source: string;
     changed_at: string;
-    data_before: SubmissionBusinessFields | null;
-    data_after: SubmissionBusinessFields;
+    data_before: Record<string, string | number | null> | null;
+    data_after: Record<string, string | number | null>;
     export_batch_id?: string | null;
   }>,
 ): Promise<Buffer> {
@@ -175,7 +253,7 @@ export async function buildAuditExportBuffer(
   ]);
 
   for (const r of rows) {
-    const fieldNames = Object.keys(r.data_after) as Array<keyof SubmissionBusinessFields>;
+    const fieldNames = Object.keys(r.data_after);
     for (const field of fieldNames) {
       const before = r.data_before?.[field] ?? '';
       const after = r.data_after[field] ?? '';

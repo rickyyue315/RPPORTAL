@@ -35,10 +35,13 @@ let db: PGlite;
 beforeAll(async () => {
   db = new PGlite();
   setPoolForTesting(makePglitePool(db));
-  let sql = await readFile(path.join(__dirname, '..', 'src', 'db', 'migrations', '001_init.sql'), 'utf8');
-  // PGlite bundles gen_random_uuid; the pgcrypto extension may not be available in WASM builds.
-  sql = sql.replace(/CREATE EXTENSION IF NOT EXISTS pgcrypto;\s*/g, '');
-  await db.exec(sql);
+  const migrationFiles = ['001_init.sql', '002_drop_rp_type_completed_at.sql', '003_add_submission_type_qty.sql'];
+  for (const file of migrationFiles) {
+    let sql = await readFile(path.join(__dirname, '..', 'src', 'db', 'migrations', file), 'utf8');
+    // PGlite bundles gen_random_uuid; the pgcrypto extension may not be available in WASM builds.
+    sql = sql.replace(/CREATE EXTENSION IF NOT EXISTS pgcrypto;\s*/g, '');
+    await db.exec(sql);
+  }
 });
 
 const baseFields = {
@@ -152,5 +155,26 @@ describe('submissions (integration)', () => {
     });
     const result = await db.query('SELECT count(*)::int AS cnt FROM audit_events WHERE event_type = $1', ['submission_created']);
     expect(result.rows[0]?.cnt).toBeGreaterThanOrEqual(1);
+  });
+
+  it('creates an urgent submission with URGENT prefix and qty', async () => {
+    const row = await createSubmission({
+      siteCode: 'HA02',
+      source: 'web',
+      submissionType: 'urgent',
+      fields: { brand: '', sku: 'U-INT-1', rp_type: '', supply_source: '', safety_stock: '', nd_code: '', rp_parameters_change_request: '', remark: '' },
+      qty: 42,
+      ip: '203.0.113.8',
+      changeSource: 'web_submit',
+    });
+    expect(row.application_no).toMatch(/^URGENT-/);
+    expect(row.submission_type).toBe('urgent');
+    expect(row.qty).toBe(42);
+
+    const version = await db.query('SELECT data_after FROM submission_versions WHERE submission_id = $1', [row.id]);
+    const snapshot = version.rows[0]?.data_after as { site_code: string; sku: string; qty: number };
+    expect(snapshot.site_code).toBe('HA02');
+    expect(snapshot.sku).toBe('U-INT-1');
+    expect(snapshot.qty).toBe(42);
   });
 });

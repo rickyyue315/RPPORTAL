@@ -9,7 +9,7 @@ import { fileURLToPath } from 'node:url';
 import { setPoolForTesting } from '../src/db/pool.js';
 import { createApp } from '../src/app.js';
 import { replaceStores } from '../src/services/stores.js';
-import { SAP_COLUMNS, RP_TEAM_SHEET, SHOP_CODE_HEADER } from '../src/lib/fields.js';
+import { SAP_COLUMNS, RP_TEAM_SHEET, SHOP_CODE_HEADER, URGENT_COLUMNS, URGENT_SHEET } from '../src/lib/fields.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 let app: Express;
@@ -33,9 +33,12 @@ async function csrf(agent: ReturnType<typeof request.agent>): Promise<string> {
 beforeAll(async () => {
   db = new PGlite();
   setPoolForTesting(makePglitePool(db));
-  let sql = await readFile(path.join(__dirname, '..', 'src', 'db', 'migrations', '001_init.sql'), 'utf8');
-  sql = sql.replace(/CREATE EXTENSION IF NOT EXISTS pgcrypto;\s*/g, '');
-  await db.exec(sql);
+  const migrationFiles = ['001_init.sql', '002_drop_rp_type_completed_at.sql', '003_add_submission_type_qty.sql'];
+  for (const file of migrationFiles) {
+    let sql = await readFile(path.join(__dirname, '..', 'src', 'db', 'migrations', file), 'utf8');
+    sql = sql.replace(/CREATE EXTENSION IF NOT EXISTS pgcrypto;\s*/g, '');
+    await db.exec(sql);
+  }
   await replaceStores(
     [
       { site_code: 'HA02', shop: '駱克', regional: 'HK', class1: 'B', class2: 'B2', size: 'S', om: 'Ivy', type: 'T' },
@@ -245,5 +248,225 @@ describe('admin API', () => {
       .attach('file', Buffer.from('not an excel'), 'bad.txt');
     expect(res.status).toBe(400);
     expect(res.body.error).toContain('.xlsx');
+  });
+});
+
+describe('urgent public API', () => {
+  it('accepts a valid urgent submission', async () => {
+    const res = await request(app).post('/api/public/urgent/submit').send({
+      site_code: 'HA02',
+      sku: 'U-VALID-1',
+      qty: 10,
+    });
+    expect(res.status).toBe(201);
+    expect(res.body.submission.application_no).toMatch(/^URGENT-[A-Z2-9]{8}-[A-Z2-9]{8}$/);
+    expect(res.body.submission.submission_type).toBe('urgent');
+    expect(res.body.submission.qty).toBe(10);
+    expect(res.body.submission.locked).toBe(false);
+  });
+
+  it('rejects urgent qty 0', async () => {
+    const res = await request(app).post('/api/public/urgent/submit').send({
+      site_code: 'HA02',
+      sku: 'U-ZERO',
+      qty: 0,
+    });
+    expect(res.status).toBe(400);
+    expect(res.body.field).toBe('qty');
+  });
+
+  it('rejects urgent qty over 1000', async () => {
+    const res = await request(app).post('/api/public/urgent/submit').send({
+      site_code: 'HA02',
+      sku: 'U-OVER',
+      qty: 1001,
+    });
+    expect(res.status).toBe(400);
+    expect(res.body.field).toBe('qty');
+  });
+
+  it('rejects decimal urgent qty', async () => {
+    const res = await request(app).post('/api/public/urgent/submit').send({
+      site_code: 'HA02',
+      sku: 'U-DEC',
+      qty: 1.5,
+    });
+    expect(res.status).toBe(400);
+    expect(res.body.field).toBe('qty');
+  });
+
+  it('rejects missing urgent sku', async () => {
+    const res = await request(app).post('/api/public/urgent/submit').send({
+      site_code: 'HA02',
+      sku: '',
+      qty: 5,
+    });
+    expect(res.status).toBe(400);
+    expect(res.body.field).toBe('sku');
+  });
+
+  it('rejects urgent submit with unknown site code', async () => {
+    const res = await request(app).post('/api/public/urgent/submit').send({
+      site_code: 'ZZ99',
+      sku: 'U-BAD',
+      qty: 5,
+    });
+    expect(res.status).toBe(400);
+    expect(res.body.field).toBe('site_code');
+  });
+
+  it('does not expose urgent submissions to the public lookup', async () => {
+    const created = await request(app).post('/api/public/urgent/submit').send({
+      site_code: 'HA02',
+      sku: 'U-LOOKUP-1',
+      qty: 4,
+    });
+    const no = created.body.submission.application_no;
+    const res = await request(app).get(`/api/public/query?application_no=${no}&site_code=HA02`);
+    expect(res.status).toBe(404);
+  });
+
+  it('rejects public modify of an urgent submission', async () => {
+    const created = await request(app).post('/api/public/urgent/submit').send({
+      site_code: 'HA02',
+      sku: 'U-MODIFY-1',
+      qty: 4,
+    });
+    const no = created.body.submission.application_no;
+    const res = await request(app).post('/api/public/modify').send({
+      application_no: no,
+      site_code: 'HA02',
+      sku: 'U-MODIFY-2',
+    });
+    expect(res.status).toBe(400);
+  });
+
+  it('downloads the urgent template workbook', async () => {
+    const res = await request(app).get('/api/public/urgent/template');
+    expect(res.status).toBe(200);
+    expect(res.headers['content-type']).toContain('spreadsheetml');
+    expect(Number(res.headers['content-length'])).toBeGreaterThan(1000);
+  });
+
+  it('imports a valid urgent xlsx and creates URGENT application numbers', async () => {
+    const wb = new ExcelJS.Workbook();
+    const ws = wb.addWorksheet(URGENT_SHEET);
+    ws.addRow([...URGENT_COLUMNS]);
+    ws.addRow(['HA02', 'U-IMP-1', 2]);
+    ws.addRow(['HA06', 'U-IMP-2', 999]);
+    const buffer = Buffer.from(await wb.xlsx.writeBuffer());
+
+    const res = await request(app)
+      .post('/api/public/urgent/import')
+      .attach('file', buffer, 'urgent-import.xlsx');
+    expect(res.status).toBe(201);
+    expect(res.body.successCount).toBe(2);
+    expect(res.body.rows[0].application_no).toMatch(/^URGENT-/);
+    expect(res.body.rows[1].qty).toBe(999);
+  });
+
+  it('rejects an urgent import with invalid qty without writing anything', async () => {
+    const before = await request(app).get('/api/admin/submissions?submission_type=urgent&page=1&page_size=1');
+    const beforeTotal = before.body.total;
+
+    const wb = new ExcelJS.Workbook();
+    const ws = wb.addWorksheet(URGENT_SHEET);
+    ws.addRow([...URGENT_COLUMNS]);
+    ws.addRow(['HA02', 'U-BADQTY', 1001]);
+    const buffer = Buffer.from(await wb.xlsx.writeBuffer());
+
+    const res = await request(app)
+      .post('/api/public/urgent/import')
+      .attach('file', buffer, 'urgent-bad.xlsx');
+    expect(res.status).toBe(400);
+    expect(res.body.errors?.length).toBeGreaterThan(0);
+
+    const after = await request(app).get('/api/admin/submissions?submission_type=urgent&page=1&page_size=1');
+    expect(after.body.total).toBe(beforeTotal);
+  });
+
+  it('rejects an urgent import using the wrong sheet', async () => {
+    const wb = new ExcelJS.Workbook();
+    const ws = wb.addWorksheet(RP_TEAM_SHEET);
+    ws.addRow(['HA02', 'U-WRONG', 5]);
+    const buffer = Buffer.from(await wb.xlsx.writeBuffer());
+
+    const res = await request(app)
+      .post('/api/public/urgent/import')
+      .attach('file', buffer, 'urgent-wrong-sheet.xlsx');
+    expect(res.status).toBe(400);
+    expect(res.body.errors?.[0]?.field).toBe('sheet');
+  });
+});
+
+describe('urgent admin API', () => {
+  async function urgentAdminLogin() {
+    const agent = request.agent(app);
+    const token = await csrf(agent);
+    await agent
+      .post('/api/admin/login')
+      .set('x-csrf-token', token)
+      .send({ username: 'admin', password: 'admin123' });
+    return { agent, token };
+  }
+
+  it('filters submissions by submission_type=urgent', async () => {
+    await request(app).post('/api/public/urgent/submit').send({ site_code: 'HA02', sku: 'U-FILTER-1', qty: 5 });
+    const { agent } = await urgentAdminLogin();
+    const res = await agent.get('/api/admin/submissions?submission_type=urgent&page=1');
+    expect(res.status).toBe(200);
+    expect(res.body.submissions.length).toBeGreaterThan(0);
+    expect(res.body.submissions.every((s: { submission_type: string }) => s.submission_type === 'urgent')).toBe(true);
+  });
+
+  it('admin edits urgent sku/qty and rejects out-of-range qty', async () => {
+    const created = await request(app).post('/api/public/urgent/submit').send({
+      site_code: 'HA02',
+      sku: 'U-EDIT-1',
+      qty: 7,
+    });
+    const no = created.body.submission.application_no;
+    const idRes = await db.query<{ id: string }>('SELECT id FROM submissions WHERE application_no = $1', [no]);
+    const id = idRes.rows[0]!.id;
+
+    const { agent, token } = await urgentAdminLogin();
+    const res = await agent
+      .put(`/api/admin/submissions/${id}`)
+      .set('x-csrf-token', token)
+      .send({ sku: 'U-EDIT-2', qty: 12 });
+    expect(res.status).toBe(200);
+    expect(res.body.submission.sku).toBe('U-EDIT-2');
+    expect(res.body.submission.qty).toBe(12);
+
+    const bad = await agent
+      .put(`/api/admin/submissions/${id}`)
+      .set('x-csrf-token', token)
+      .send({ sku: 'U-EDIT-2', qty: 1001 });
+    expect(bad.status).toBe(400);
+  });
+
+  it('urgent export locks urgent only; SAP export excludes urgent', async () => {
+    await request(app).post('/api/public/urgent/submit').send({ site_code: 'HA06', sku: 'U-EXP-1', qty: 3 });
+    const { agent, token } = await urgentAdminLogin();
+
+    const sap = await agent
+      .post('/api/admin/export')
+      .set('x-csrf-token', token)
+      .send({ include_exported: false });
+    expect(sap.status).toBe(200);
+    expect(sap.headers['content-type']).toContain('spreadsheetml');
+
+    const stillPending = await agent.get('/api/admin/submissions?submission_type=urgent&exported=no&page=1');
+    expect(Number(stillPending.body.total)).toBeGreaterThanOrEqual(1);
+
+    const res = await agent
+      .post('/api/admin/urgent/export')
+      .set('x-csrf-token', token)
+      .send({ include_exported: false });
+    expect(res.status).toBe(200);
+    expect(res.headers['content-type']).toContain('spreadsheetml');
+
+    const exported = await agent.get('/api/admin/submissions?submission_type=urgent&exported=yes&page=1');
+    expect(Number(exported.body.total)).toBeGreaterThanOrEqual(1);
   });
 });

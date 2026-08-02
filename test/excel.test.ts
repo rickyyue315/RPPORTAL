@@ -4,9 +4,16 @@ import {
   SAP_COLUMNS,
   RP_TEAM_SHEET,
   SHOP_CODE_HEADER,
+  URGENT_COLUMNS,
+  URGENT_SHEET,
 } from '../src/lib/fields.js';
-import { parseImportWorkbook } from '../src/lib/excelImport.js';
-import { generateTemplateWorkbook, buildSapExportBuffer } from '../src/lib/excelExport.js';
+import { parseImportWorkbook, parseUrgentImportWorkbook } from '../src/lib/excelImport.js';
+import {
+  generateTemplateWorkbook,
+  buildSapExportBuffer,
+  generateUrgentTemplateWorkbook,
+  buildUrgentExportBuffer,
+} from '../src/lib/excelExport.js';
 
 const storeCodes = new Set(['HA02', 'HA06', 'HB11']);
 
@@ -122,6 +129,7 @@ describe('buildSapExportBuffer', () => {
         id: '1',
         application_no: 'NDRF-TEST',
         source: 'web' as const,
+        submission_type: 'normal' as const,
         site_code: 'HA02',
         requested_by_email: 'ha02@sasa.com',
         application_date: '2026-08-02',
@@ -134,6 +142,7 @@ describe('buildSapExportBuffer', () => {
         nd_code: null,
         rp_parameters_change_request: null,
         remark: null,
+        qty: null,
         status: 'received',
         exported_at: null,
         export_batch_id: null,
@@ -156,5 +165,108 @@ describe('buildSapExportBuffer', () => {
     expect(data.getCell(3).value).toBe('HA02');
     expect(data.getCell(2).value).toBe('ha02@sasa.com');
     expect(data.getCell(5).value).toBe('110079623001');
+  });
+});
+
+describe('parseUrgentImportWorkbook', () => {
+  async function urgentBuffer(rows: Array<Array<string | number>>): Promise<Buffer> {
+    const wb = new ExcelJS.Workbook();
+    const ws = wb.addWorksheet(URGENT_SHEET);
+    ws.addRow([...URGENT_COLUMNS]);
+    rows.forEach((r) => ws.addRow(r));
+    return Buffer.from(await wb.xlsx.writeBuffer());
+  }
+
+  it('accepts a valid urgent workbook', async () => {
+    const buffer = await urgentBuffer([['HA02', 'U-1', 5]]);
+    const result = await parseUrgentImportWorkbook(buffer, storeCodes, 1000);
+    expect(result.ok).toBe(true);
+    expect(result.totalRows).toBe(1);
+    expect(result.rows![0].siteCode).toBe('HA02');
+    expect(result.rows![0].sku).toBe('U-1');
+    expect(result.rows![0].qty).toBe(5);
+  });
+
+  it('rejects wrong sheet name', async () => {
+    const wb = new ExcelJS.Workbook();
+    const ws = wb.addWorksheet('Other');
+    ws.addRow([...URGENT_COLUMNS]);
+    ws.addRow(['HA02', 'U-1', 5]);
+    const buffer = Buffer.from(await wb.xlsx.writeBuffer());
+    const result = await parseUrgentImportWorkbook(buffer, storeCodes, 1000);
+    expect(result.ok).toBe(false);
+    expect(result.errors?.[0]?.field).toBe('sheet');
+  });
+
+  it('rejects wrong headers', async () => {
+    const wb = new ExcelJS.Workbook();
+    const ws = wb.addWorksheet(URGENT_SHEET);
+    ws.addRow(['Site Code', 'SKU']);
+    const buffer = Buffer.from(await wb.xlsx.writeBuffer());
+    const result = await parseUrgentImportWorkbook(buffer, storeCodes, 1000);
+    expect(result.ok).toBe(false);
+    expect(result.errors?.[0]?.field).toBe('header');
+  });
+
+  it('rejects qty 0, 1001, decimals and text', async () => {
+    const buffer = await urgentBuffer([
+      ['HA02', 'U-A', 0],
+      ['HA02', 'U-B', 1001],
+      ['HA02', 'U-C', 1.5],
+      ['HA02', 'U-D', 'abc'],
+    ]);
+    const result = await parseUrgentImportWorkbook(buffer, storeCodes, 1000);
+    expect(result.ok).toBe(false);
+    expect(result.errors?.filter((e) => e.field === 'QTY')).toHaveLength(4);
+  });
+
+  it('rejects unknown site code and empty sku', async () => {
+    const buffer = await urgentBuffer([
+      ['ZZ99', 'U-E', 2],
+      ['HA02', '', 3],
+    ]);
+    const result = await parseUrgentImportWorkbook(buffer, storeCodes, 1000);
+    expect(result.ok).toBe(false);
+    expect(result.errors?.some((e) => e.field === 'Site Code')).toBe(true);
+    expect(result.errors?.some((e) => e.field === 'SKU')).toBe(true);
+  });
+
+  it('ignores blank rows', async () => {
+    const wb = new ExcelJS.Workbook();
+    const ws = wb.addWorksheet(URGENT_SHEET);
+    ws.addRow([...URGENT_COLUMNS]);
+    ws.addRow(['HA02', 'U-F', 4]);
+    ws.addRow([]);
+    const buffer = Buffer.from(await wb.xlsx.writeBuffer());
+    const result = await parseUrgentImportWorkbook(buffer, storeCodes, 1000);
+    expect(result.ok).toBe(true);
+    expect(result.totalRows).toBe(1);
+  });
+});
+
+describe('generateUrgentTemplateWorkbook / buildUrgentExportBuffer', () => {
+  it('produces an urgent template with Site Code | SKU | QTY headers', async () => {
+    const buffer = await generateUrgentTemplateWorkbook();
+    const wb = new ExcelJS.Workbook();
+    await wb.xlsx.load(buffer as never);
+    const ws = wb.getWorksheet(URGENT_SHEET)!;
+    expect(ws.getCell(1, 1).value).toBe('Site Code');
+    expect(ws.getCell(1, 2).value).toBe('SKU');
+    expect(ws.getCell(1, 3).value).toBe('QTY');
+  });
+
+  it('writes urgent export with Application No. | Site Code | SKU | QTY', async () => {
+    const buffer = await buildUrgentExportBuffer([
+      { application_no: 'URGENT-TEST', site_code: 'HA02', sku: 'U-1', qty: 9 },
+    ]);
+    const wb = new ExcelJS.Workbook();
+    await wb.xlsx.load(buffer as never);
+    const ws = wb.getWorksheet(URGENT_SHEET)!;
+    expect(ws.getCell(1, 1).value).toBe('Application No.');
+    expect(ws.getCell(1, 2).value).toBe('Site Code');
+    const data = ws.getRow(2);
+    expect(data.getCell(1).value).toBe('URGENT-TEST');
+    expect(data.getCell(2).value).toBe('HA02');
+    expect(data.getCell(4).value).toBe(9);
   });
 });

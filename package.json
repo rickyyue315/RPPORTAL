@@ -15,7 +15,6 @@
     "test": "vitest run",
     "migrate": "tsx src/migrate.ts",
     "seed:stores": "tsx src/scripts/seedStores.ts",
-    "hash:password": "tsx src/scripts/hashPassword.ts",
     "smoke": "tsx test/smoke.ts"
   },
   "dependencies": {

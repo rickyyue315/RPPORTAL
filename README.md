@@ -1,6 +1,6 @@
 # NDRF 申報平台
 
-SASA RP Team 非正常補貨（NDRF）申報平台。申請端免登入，管理端固定帳密登入，部署於 Zeabur（Web/API 服務 + PostgreSQL）。
+SASA RP Team 非正常補貨（NDRF）申報平台。申請端與管理端均免登入，部署於 Zeabur（Web/API 服務 + PostgreSQL）。
 
 ## 功能
 
@@ -12,14 +12,14 @@ SASA RP Team 非正常補貨（NDRF）申報平台。申請端免登入，管理
 - 管理後台：清單篩選（含申報類型）、詳情編輯、版本歷史、模板下載、批量匯入、SAP 12 欄匯出、獨立 Urgent 匯出、完整審計報表、門店主檔管理
 - SAP 匯出只包含一般 NDRF，Urgent Order 使用獨立 4 欄匯出；匯出成功後鎖定該批申報，申請人不能再修改；匯出失敗不鎖定
 - IP 審計保留 12 個月後自動匿名化
-- 管理端 HttpOnly session cookie、CSRF 防護、速率限制、安全 headers
+- 管理端免登入（已取消密碼登入），仍保留 CSRF 防護、速率限制、安全 headers
 
 ## 技術
 
 - Node.js + TypeScript + Express
 - PostgreSQL（pg）
 - ExcelJS（xlsx 讀寫）
-- bcryptjs（管理員密碼）、helmet、express-rate-limit
+- helmet、express-rate-limit
 
 ## 本機開發
 
@@ -29,9 +29,8 @@ SASA RP Team 非正常補貨（NDRF）申報平台。申請端免登入，管理
 # 1. 啟動資料庫
 docker compose up -d db
 
-# 2. 設定環境變數（產生管理員密碼雜湊）
-npm run hash:password -- '你的密碼'    # 輸出 bcrypt hash
-cp .env.example .env                   # 填入 DATABASE_URL / ADMIN_USERNAME / ADMIN_PASSWORD_HASH / SESSION_SECRET
+# 2. 設定環境變數
+cp .env.example .env                   # 填入 DATABASE_URL
 
 # 3. 執行 migration + 啟動
 npm run migrate
@@ -43,7 +42,7 @@ npm run dev
 - 公開申請頁（一般 NDRF）：<http://localhost:3000/>
 - Urgent Order 申報：<http://localhost:3000/urgent.html>
 - 查詢／修改：<http://localhost:3000/lookup.html>
-- 管理後台：<http://localhost:3000/admin/login.html>
+- 管理後台：<http://localhost:3000/admin/index.html>（免登入）
 
 首次啟動時若 `stores` 主檔為空，會自動載入 `stores-template.csv`（預設路徑可由 `STORES_CSV_PATH` 覆寫）。
 
@@ -63,9 +62,6 @@ npm run smoke     # 端到端 smoke test（真實 HTTP + PGlite）
 | 變數 | 說明 |
 |---|---|
 | `DATABASE_URL` | PostgreSQL 連線字串（Zeabur PostgreSQL 提供） |
-| `ADMIN_USERNAME` | 管理員帳號 |
-| `ADMIN_PASSWORD_HASH` | 管理員密碼的 bcrypt hash（`npm run hash:password -- '密碼'` 產生） |
-| `SESSION_SECRET` | 隨機長字串（session 簽章） |
 | `NODE_ENV` | `production` |
 | `PORT` | `3000` |
 | `TRUST_PROXY` | `true`（Zeabur 反向代理後） |
@@ -73,8 +69,6 @@ npm run smoke     # 端到端 smoke test（真實 HTTP + PGlite）
 | `IP_RETENTION_DAYS` | `365` |
 | `MAX_UPLOAD_MB` | `5` |
 | `MAX_IMPORT_ROWS` | `1000` |
-| `LOGIN_LOCK_THRESHOLD` | `5` |
-| `LOGIN_LOCK_MINUTES` | `15` |
 | `CORS_ORIGINS` | 留空（同源）或填允許來源，逗號分隔 |
 
 4. 容器啟動時會自動執行 migration，並在門店主檔為空時載入內建 `stores-template.csv`。
@@ -87,9 +81,7 @@ npm run smoke     # 端到端 smoke test（真實 HTTP + PGlite）
 - `submission_versions`：不可變版本歷史（前後資料快照、操作者角色、IP、時間）
 - `import_batches`：Excel 匯入批次
 - `export_batches`：SAP／Urgent 匯出批次（建立即鎖定該批申報）
-- `audit_events`：登入／提交／查詢／修改／匯入／匯出／鎖定／IP 清理審計
-- `admin_sessions`：管理員 session（DB 儲存）
-- `admin_login_attempts`：登入失敗鎖定追蹤
+- `audit_events`：提交／查詢／修改／匯入／匯出／鎖定／IP 清理審計
 
 ## 注意事項
 

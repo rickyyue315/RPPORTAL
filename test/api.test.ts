@@ -120,17 +120,7 @@ describe('public API', () => {
 });
 
 describe('admin API', () => {
-  it('rejects login with wrong password', async () => {
-    const agent = request.agent(app);
-    const token = await csrf(agent);
-    const res = await agent
-      .post('/api/admin/login')
-      .set('x-csrf-token', token)
-      .send({ username: 'admin', password: 'wrong-password' });
-    expect(res.status).toBe(401);
-  });
-
-  it('logs in, lists, exports and locks submissions', async () => {
+  it('lists, exports and locks submissions without login', async () => {
     const agent = request.agent(app);
 
     // Create two submissions to export
@@ -139,12 +129,6 @@ describe('admin API', () => {
     }
 
     const token = await csrf(agent);
-    const login = await agent
-      .post('/api/admin/login')
-      .set('x-csrf-token', token)
-      .send({ username: 'admin', password: 'admin123' });
-    expect(login.status).toBe(200);
-    expect(login.body.ok).toBe(true);
 
     const me = await agent.get('/api/admin/me');
     expect(me.status).toBe(200);
@@ -168,21 +152,19 @@ describe('admin API', () => {
 
   it('requires CSRF token for admin mutations', async () => {
     const agent = request.agent(app);
-    const token = await csrf(agent);
-    await agent.post('/api/admin/login').set('x-csrf-token', token).send({ username: 'admin', password: 'admin123' });
+    await csrf(agent);
     const res = await agent.post('/api/admin/export').send({});
     expect(res.status).toBe(403);
   });
 
-  it('rejects access without login', async () => {
+  it('allows access to the admin API without login', async () => {
     const res = await request(app).get('/api/admin/submissions');
-    expect(res.status).toBe(401);
+    expect(res.status).toBe(200);
   });
 
   it('downloads the template workbook', async () => {
     const agent = request.agent(app);
-    const token = await csrf(agent);
-    await agent.post('/api/admin/login').set('x-csrf-token', token).send({ username: 'admin', password: 'admin123' });
+    await csrf(agent);
     const res = await agent.get('/api/admin/template');
     expect(res.status).toBe(200);
     expect(res.headers['content-type']).toContain('spreadsheetml');
@@ -192,7 +174,6 @@ describe('admin API', () => {
   it('imports a valid xlsx and creates per-row application numbers', async () => {
     const agent = request.agent(app);
     const token = await csrf(agent);
-    await agent.post('/api/admin/login').set('x-csrf-token', token).send({ username: 'admin', password: 'admin123' });
 
     const wb = new ExcelJS.Workbook();
     const ws = wb.addWorksheet(RP_TEAM_SHEET);
@@ -216,7 +197,6 @@ describe('admin API', () => {
   it('rejects an import with an invalid site code without writing anything', async () => {
     const agent = request.agent(app);
     const token = await csrf(agent);
-    await agent.post('/api/admin/login').set('x-csrf-token', token).send({ username: 'admin', password: 'admin123' });
 
     const before = await agent.get('/api/admin/submissions?page=1&page_size=1');
     const beforeTotal = before.body.total;
@@ -241,7 +221,6 @@ describe('admin API', () => {
   it('rejects non-xlsx uploads', async () => {
     const agent = request.agent(app);
     const token = await csrf(agent);
-    await agent.post('/api/admin/login').set('x-csrf-token', token).send({ username: 'admin', password: 'admin123' });
     const res = await agent
       .post('/api/admin/import')
       .set('x-csrf-token', token)
@@ -400,19 +379,15 @@ describe('urgent public API', () => {
 });
 
 describe('urgent admin API', () => {
-  async function urgentAdminLogin() {
+  async function urgentAdminAgent() {
     const agent = request.agent(app);
     const token = await csrf(agent);
-    await agent
-      .post('/api/admin/login')
-      .set('x-csrf-token', token)
-      .send({ username: 'admin', password: 'admin123' });
     return { agent, token };
   }
 
   it('filters submissions by submission_type=urgent', async () => {
     await request(app).post('/api/public/urgent/submit').send({ site_code: 'HA02', sku: 'U-FILTER-1', qty: 5 });
-    const { agent } = await urgentAdminLogin();
+    const { agent } = await urgentAdminAgent();
     const res = await agent.get('/api/admin/submissions?submission_type=urgent&page=1');
     expect(res.status).toBe(200);
     expect(res.body.submissions.length).toBeGreaterThan(0);
@@ -429,7 +404,7 @@ describe('urgent admin API', () => {
     const idRes = await db.query<{ id: string }>('SELECT id FROM submissions WHERE application_no = $1', [no]);
     const id = idRes.rows[0]!.id;
 
-    const { agent, token } = await urgentAdminLogin();
+    const { agent, token } = await urgentAdminAgent();
     const res = await agent
       .put(`/api/admin/submissions/${id}`)
       .set('x-csrf-token', token)
@@ -447,7 +422,7 @@ describe('urgent admin API', () => {
 
   it('urgent export locks urgent only; SAP export excludes urgent', async () => {
     await request(app).post('/api/public/urgent/submit').send({ site_code: 'HA06', sku: 'U-EXP-1', qty: 3 });
-    const { agent, token } = await urgentAdminLogin();
+    const { agent, token } = await urgentAdminAgent();
 
     const sap = await agent
       .post('/api/admin/export')

@@ -106,18 +106,9 @@ const server = app.listen(0, async () => {
     const csrfJson = await csrf.json();
     collectCookie(csrf);
 
-    const login = await fetch(`${base}/api/admin/login`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        cookie: cookieJar,
-        'x-csrf-token': csrfJson.token,
-      },
-      body: JSON.stringify({ username: 'admin', password: 'admin123' }),
-    });
-    const loginJson = await login.json();
-    collectCookie(login);
-    check('admin login', login.status === 200 && loginJson.ok === true);
+    const me = await fetch(`${base}/api/admin/me`, { headers: { cookie: cookieJar } });
+    const meJson = await me.json();
+    check('admin me (no login)', me.status === 200 && meJson.username === 'admin');
 
     const list = await fetch(`${base}/api/admin/submissions?page=1&page_size=10`, {
       headers: { cookie: cookieJar },

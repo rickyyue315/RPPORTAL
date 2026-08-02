@@ -13,7 +13,6 @@
       const data = await api('/api/admin/me');
       return data.username;
     } catch {
-      window.location.href = '/admin/login.html';
       return null;
     }
   }
@@ -33,14 +32,6 @@
     headers['x-csrf-token'] = token;
     return api(url, { ...options, headers });
   }
-
-  $('btn_logout').addEventListener('click', async (e) => {
-    e.preventDefault();
-    try {
-      await adminFetch('/api/admin/logout', { method: 'POST' });
-    } catch {}
-    window.location.href = '/admin/login.html';
-  });
 
   function buildQuery() {
     const params = new URLSearchParams();

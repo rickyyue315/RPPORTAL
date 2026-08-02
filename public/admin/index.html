@@ -168,21 +168,6 @@
     </div>
 
     <div class="card">
-      <h2>Excel 批量匯入</h2>
-      <div class="btn-row" style="margin-top:0">
-        <a class="btn ghost" href="/api/admin/template">下載模板 (.xlsx)</a>
-      </div>
-      <div class="file-drop" id="import_drop">
-        <div id="import_label">拖曳 .xlsx 檔案到此處，或按一下選擇檔案</div>
-        <input type="file" id="import_input" accept=".xlsx" style="display:none">
-      </div>
-      <div class="btn-row">
-        <button class="btn" id="btn_import">匯入</button>
-      </div>
-      <div id="import_result"></div>
-    </div>
-
-    <div class="card">
       <h2>SAP Excel 匯出（一般 NDRF）</h2>
       <div class="hint">只會匯出一般 NDRF 申報，Urgent Order 使用下方的獨立匯出。匯出後該批申報會被鎖定，申請人不能再修改。匯出失敗不會鎖定。</div>
       <div class="toolbar">
@@ -211,22 +196,6 @@
         <button class="btn" id="btn_export">匯出並鎖定</button>
         <button class="btn ghost" id="btn_audit">下載審計報表</button>
       </div>
-    </div>
-
-    <div class="card">
-      <h2>Urgent Order 批量匯入</h2>
-      <div class="hint">使用固定模板（工作表 <b>Urgent Order</b>），欄位為 Site Code、SKU、QTY。</div>
-      <div class="btn-row" style="margin-top:0">
-        <a class="btn ghost" href="/api/admin/urgent/template">下載 Urgent 模板 (.xlsx)</a>
-      </div>
-      <div class="file-drop" id="urgent_import_drop">
-        <div id="urgent_import_label">拖曳 .xlsx 檔案到此處，或按一下選擇檔案</div>
-        <input type="file" id="urgent_import_input" accept=".xlsx" style="display:none">
-      </div>
-      <div class="btn-row">
-        <button class="btn" id="btn_urgent_import">匯入</button>
-      </div>
-      <div id="urgent_import_result"></div>
     </div>
 
     <div class="card">

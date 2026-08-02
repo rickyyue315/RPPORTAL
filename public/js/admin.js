@@ -3,9 +3,7 @@
   let currentPage = 1;
   let totalPages = 1;
   let currentDetail = null;
-  let pendingImportFile = null;
   let pendingStoreFile = null;
-  let pendingUrgentImportFile = null;
   let csrfToken = null;
 
   async function ensureAuth() {
@@ -245,52 +243,8 @@
     });
   }
 
-  setupDrop('import_drop', 'import_input', 'import_label', (f) => {
-    pendingImportFile = f;
-  });
   setupDrop('store_drop', 'store_input', 'store_label', (f) => {
     pendingStoreFile = f;
-  });
-  setupDrop('urgent_import_drop', 'urgent_import_input', 'urgent_import_label', (f) => {
-    pendingUrgentImportFile = f;
-  });
-
-  $('btn_import').addEventListener('click', async () => {
-    if (!pendingImportFile) {
-      showAlert($('import_result'), 'error', '請先選擇 .xlsx 檔案');
-      return;
-    }
-    const btn = $('btn_import');
-    btn.disabled = true;
-    btn.textContent = '匯入中…';
-    const fd = new FormData();
-    fd.append('file', pendingImportFile);
-    try {
-      const data = await adminFetch('/api/admin/import', { method: 'POST', body: fd });
-      let html = `<div class="alert success"><b>${escapeHtml(data.message)}</b>（總行數：${data.totalRows}）</div>`;
-      html += '<table><thead><tr><th>Excel 行</th><th>申請編號</th><th>Site Code</th><th>SKU</th><th>已收件時間</th></tr></thead><tbody>';
-      data.rows.forEach((r) => {
-        html += `<tr><td>${r.row}</td><td>${escapeHtml(r.application_no)}</td><td>${escapeHtml(r.site_code)}</td><td>${escapeHtml(r.sku)}</td><td>${escapeHtml(r.submitted_at)}</td></tr>`;
-      });
-      html += '</tbody></table>';
-      $('import_result').innerHTML = html;
-      $('import_label').textContent = '拖曳 .xlsx 檔案到此處，或按一下選擇檔案';
-      pendingImportFile = null;
-      loadList();
-    } catch (err) {
-      let html = `<div class="alert error"><b>${escapeHtml(err.message)}</b></div>`;
-      if (err.data?.errors?.length) {
-        html += '<table><thead><tr><th>行</th><th>欄位</th><th>原因</th></tr></thead><tbody>';
-        err.data.errors.forEach((e) => {
-          html += `<tr><td>${e.row || '—'}</td><td>${escapeHtml(e.field)}</td><td>${escapeHtml(e.reason)}</td></tr>`;
-        });
-        html += '</tbody></table>';
-      }
-      $('import_result').innerHTML = html;
-    } finally {
-      btn.disabled = false;
-      btn.textContent = '匯入';
-    }
   });
 
   $('btn_export').addEventListener('click', async () => {
@@ -333,44 +287,6 @@
     } finally {
       btn.disabled = false;
       btn.textContent = '匯出並鎖定';
-    }
-  });
-
-  $('btn_urgent_import').addEventListener('click', async () => {
-    if (!pendingUrgentImportFile) {
-      showAlert($('urgent_import_result'), 'error', '請先選擇 .xlsx 檔案');
-      return;
-    }
-    const btn = $('btn_urgent_import');
-    btn.disabled = true;
-    btn.textContent = '匯入中…';
-    const fd = new FormData();
-    fd.append('file', pendingUrgentImportFile);
-    try {
-      const data = await adminFetch('/api/admin/urgent/import', { method: 'POST', body: fd });
-      let html = `<div class="alert success"><b>${escapeHtml(data.message)}</b>（總行數：${data.totalRows}）</div>`;
-      html += '<table><thead><tr><th>Excel 行</th><th>申請編號</th><th>Site Code</th><th>SKU</th><th>QTY</th><th>已收件時間</th></tr></thead><tbody>';
-      data.rows.forEach((r) => {
-        html += `<tr><td>${r.row}</td><td>${escapeHtml(r.application_no)}</td><td>${escapeHtml(r.site_code)}</td><td>${escapeHtml(r.sku)}</td><td>${escapeHtml(r.qty)}</td><td>${escapeHtml(r.submitted_at)}</td></tr>`;
-      });
-      html += '</tbody></table>';
-      $('urgent_import_result').innerHTML = html;
-      $('urgent_import_label').textContent = '拖曳 .xlsx 檔案到此處，或按一下選擇檔案';
-      pendingUrgentImportFile = null;
-      loadList();
-    } catch (err) {
-      let html = `<div class="alert error"><b>${escapeHtml(err.message)}</b></div>`;
-      if (err.data?.errors?.length) {
-        html += '<table><thead><tr><th>行</th><th>欄位</th><th>原因</th></tr></thead><tbody>';
-        err.data.errors.forEach((e) => {
-          html += `<tr><td>${e.row || '—'}</td><td>${escapeHtml(e.field)}</td><td>${escapeHtml(e.reason)}</td></tr>`;
-        });
-        html += '</tbody></table>';
-      }
-      $('urgent_import_result').innerHTML = html;
-    } finally {
-      btn.disabled = false;
-      btn.textContent = '匯入';
     }
   });
 

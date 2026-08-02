@@ -33,7 +33,7 @@
 
   function buildQuery() {
     const params = new URLSearchParams();
-    const idMap = { application_no: 'appno', submission_type: 'type' };
+    const idMap = { application_no: 'appno', submission_type: 'type', site_code: 'site' };
     ['from', 'to', 'site_code', 'source', 'submission_type', 'exported', 'sku', 'application_no'].forEach((k) => {
       const v = $(`f_${idMap[k] || k}`).value.trim();
       if (v) params.set(k, v);

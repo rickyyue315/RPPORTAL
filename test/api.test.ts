@@ -160,7 +160,7 @@ describe('public API', () => {
       brand: 'NEG - NEOGENCE',
       sku: '110079623001',
       rp_type: 'ND',
-      nd_code: 'ND01-Under ND Classification',
+      nd_code: 'ND20-SO-Not displayed in small stores',
     });
     expect(res.status).toBe(201);
     expect(res.body.submission.application_no).toMatch(/^NDRF-/);
@@ -174,7 +174,7 @@ describe('public API', () => {
       site_code: 'HA06',
       sku: '999001',
       rp_type: 'ND',
-      nd_code: 'ND01-Under ND Classification',
+      nd_code: 'ND20-SO-Not displayed in small stores',
       remark: 'test',
     });
     const no = created.body.submission.application_no;
@@ -208,7 +208,7 @@ describe('admin API', () => {
         site_code: site,
         sku: `EXP-${site}`,
         rp_type: 'ND',
-        nd_code: 'ND01-Under ND Classification',
+        nd_code: 'ND20-SO-Not displayed in small stores',
       });
     }
 
@@ -278,7 +278,7 @@ describe('admin API', () => {
     const wb = new ExcelJS.Workbook();
     const ws = wb.addWorksheet(RP_TEAM_SHEET);
     ws.addRow([...SAP_COLUMNS]);
-    ws.addRow(['', '', 'HA02', 'NEG - NEOGENCE', '110001', 'ND', '', 'ND01-Under ND Classification', '']);
+    ws.addRow(['', '', 'HA02', 'NEG - NEOGENCE', '110001', 'ND', '', 'ND20-SO-Not displayed in small stores', '']);
     ws.addRow(['', '', 'HA06', 'NEG - NEOGENCE', '110002', 'RF', '5', '', '']);
     const buffer = Buffer.from(await wb.xlsx.writeBuffer());
 

@@ -49,7 +49,7 @@ const baseFields = {
   sku: '110079623001',
   rp_type: 'ND',
   safety_stock: '5',
-  nd_code: 'ND01-Under ND Classification',
+  nd_code: 'ND20-SO-Not displayed in small stores',
   remark: '',
 };
 

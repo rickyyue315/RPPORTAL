@@ -69,7 +69,7 @@ export async function generateTemplateWorkbook(): Promise<Buffer> {
   vSheet.dataValidations.add(range('ND Code'), {
     type: 'list',
     allowBlank: true,
-    formulae: ["' Data Validation'!$B$1:$B$21"],
+    formulae: [`' Data Validation'!$B$1:$B$${ND_CODE_OPTIONS.length}`],
   });
   vSheet.dataValidations.add(range(REQUESTED_BY_HEADER), {
     type: 'list',

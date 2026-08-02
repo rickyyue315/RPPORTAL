@@ -38,7 +38,7 @@ function dataRow(overrides: Partial<Record<string, string>> = {}): string[] {
   put('SKU', '110079623001');
   put('Brand', 'NEG - NEOGENCE');
   put('RP Type', 'ND');
-  put('ND Code', 'ND01-Under ND Classification');
+  put('ND Code', 'ND20-SO-Not displayed in small stores');
   Object.entries(overrides).forEach(([k, v]) => put(k, v));
   return row;
 }

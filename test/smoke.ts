@@ -85,7 +85,7 @@ const server = app.listen(0, async () => {
     const submit = await fetch(`${base}/api/public/submit`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ site_code: 'HA02', sku: 'SMOKE-001', brand: 'Test', rp_type: 'ND', nd_code: 'ND01-Under ND Classification' }),
+      body: JSON.stringify({ site_code: 'HA02', sku: 'SMOKE-001', brand: 'Test', rp_type: 'ND', nd_code: 'ND20-SO-Not displayed in small stores' }),
     });
     const submitJson = await submit.json();
     check('web submit', submit.status === 201 && /^NDRF-/.test(submitJson.submission.application_no));

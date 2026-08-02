@@ -33,27 +33,11 @@ function showAlert(el, type, message) {
 }
 
 const ND_CODE_OPTIONS = [
-  'ND00-Default SKU ND status when created',
-  'ND01-Under ND Classification',
-  'ND10-CMPD-Not assigned to specific store',
-  'ND11-CMPD-Seasona item(Winter)',
-  'ND12-CMPD-Seasona item(Summer)',
-  'ND13-CMPD-Non Active SKU',
-  'ND14-CMPD-One-time purchase',
   'ND20-SO-Not displayed in small stores',
   'ND21-SO-Seasonal item(Winter)',
   'ND22-SO-Seasonal item(Summer)',
   'ND23-SO-Due to OM/SUP reason',
   'ND29-SO-Optimized SKU(Specific store)',
-  'ND30-Legal & Regulatory Restrictions',
-  'ND31-Hazardous Goods',
-  'ND32-Health Products-Macau',
-  'ND33-Outlets',
-  'ND34-Health Products-HK',
-  'ND35-SSDC Exclusive',
-  'ND40-Product Issue-Quality',
-  'ND41-Product Issue-Label',
-  'ND50-Vendor Return',
 ];
 
 function populateNdCodeDatalists() {

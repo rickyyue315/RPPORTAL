@@ -195,6 +195,13 @@
           rp_parameters_change_request: $('a_rp_parameters_change_request').value.trim(),
           remark: $('a_remark').value.trim(),
         };
+    if (!isUrgent) {
+      const clientErrs = validateBusinessFields(body, currentDetail.submission.site_code);
+      if (clientErrs.length) {
+        showAlert($('save_edit_error'), 'error', clientErrs.map((e) => escapeHtml(e.message)).join('<br>'));
+        return;
+      }
+    }
     const btn = $('btn_save_edit');
     btn.disabled = true;
     showAlert($('save_edit_error'), '', '');

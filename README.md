@@ -4,7 +4,7 @@ SASA RP Team 非正常補貨（NDRF）申報平台。申請端與管理端均免
 
 ## 功能
 
-- 公開單筆申報（Site Code + SKU 必填，Site Code 驗證門店主檔）
+- 公開單筆申報（Site Code + SKU + RP Type 必填，Site Code 驗證門店主檔；RP Type 為 RF 時必須填寫 Safety stock（大於 0）及指定店舖的 Remark，為 ND 時必須填寫 ND Code）
 - 公開 Excel 批量上載（固定模板 `RP Team` 工作表，整檔驗證，錯誤不寫入任何行）
 - Urgent Order 申報（`/urgent.html`）：只需 Site Code、SKU、QTY（1 至 1000 的整數），單筆提交或獨立 3 欄 Excel 批量上載
 - Urgent Order 申請編號使用 `URGENT-...` 前綴；超出 1000 件的需求改以電郵向相關 Buyer 申請，不在平台處理

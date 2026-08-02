@@ -15,7 +15,7 @@ import {
   buildUrgentExportBuffer,
 } from '../src/lib/excelExport.js';
 
-const storeCodes = new Set(['HA02', 'HA06', 'HB11']);
+const storeCodes = new Set(['HA02', 'HA06', 'HB11', 'HA19']);
 
 async function makeWorkbookBuffer(rows: string[][]): Promise<Buffer> {
   const wb = new ExcelJS.Workbook();
@@ -37,6 +37,8 @@ function dataRow(overrides: Partial<Record<string, string>> = {}): string[] {
   put(SHOP_CODE_HEADER, 'HA02');
   put('SKU', '110079623001');
   put('Brand', 'NEG - NEOGENCE');
+  put('RP Type', 'ND');
+  put('ND Code', 'ND01-Under ND Classification');
   Object.entries(overrides).forEach(([k, v]) => put(k, v));
   return row;
 }
@@ -107,6 +109,64 @@ describe('parseImportWorkbook', () => {
     const result = await parseImportWorkbook(buffer, storeCodes, 1000);
     expect(result.ok).toBe(true);
     expect(result.rows).toHaveLength(2);
+  });
+
+  it('rejects missing RP Type', async () => {
+    const buffer = await makeWorkbookBuffer([dataRow({ 'RP Type': '' })]);
+    const result = await parseImportWorkbook(buffer, storeCodes, 1000);
+    expect(result.ok).toBe(false);
+    expect(result.errors?.[0]?.field).toBe('RP Type');
+    expect(result.errors?.[0]?.reason).toContain('RP Type 為必填');
+  });
+
+  it('rejects ND without ND Code', async () => {
+    const buffer = await makeWorkbookBuffer([dataRow({ 'ND Code': '' })]);
+    const result = await parseImportWorkbook(buffer, storeCodes, 1000);
+    expect(result.ok).toBe(false);
+    expect(result.errors?.[0]?.field).toBe('ND Code');
+    expect(result.errors?.[0]?.reason).toContain('ND Code');
+  });
+
+  it('rejects RF without Safety stock and rejects non-positive Safety stock', async () => {
+    const missing = await parseImportWorkbook(
+      await makeWorkbookBuffer([dataRow({ 'RP Type': 'RF', 'ND Code': '' })]),
+      storeCodes,
+      1000,
+    );
+    expect(missing.ok).toBe(false);
+    expect(missing.errors?.[0]?.field).toBe('Safety stock');
+    expect(missing.errors?.[0]?.reason).toContain('Safety stock');
+
+    const zero = await parseImportWorkbook(
+      await makeWorkbookBuffer([dataRow({ 'RP Type': 'RF', 'ND Code': '', 'Safety stock': '0' })]),
+      storeCodes,
+      1000,
+    );
+    expect(zero.ok).toBe(false);
+    expect(zero.errors?.[0]?.reason).toContain('大於 0');
+  });
+
+  it('accepts RF with positive Safety stock for a non-listed store', async () => {
+    const buffer = await makeWorkbookBuffer([dataRow({ 'RP Type': 'RF', 'ND Code': '', 'Safety stock': '6.5' })]);
+    const result = await parseImportWorkbook(buffer, storeCodes, 1000);
+    expect(result.ok).toBe(true);
+  });
+
+  it('rejects RF without Remark for a listed store', async () => {
+    const buffer = await makeWorkbookBuffer([
+      dataRow({ 'Shop Code': 'HA19', 'RP Type': 'RF', 'ND Code': '', 'Safety stock': '10' }),
+    ]);
+    const result = await parseImportWorkbook(buffer, storeCodes, 1000);
+    expect(result.ok).toBe(false);
+    expect(result.errors?.[0]?.field).toBe('Remark');
+  });
+
+  it('accepts RF with Remark for a listed store', async () => {
+    const buffer = await makeWorkbookBuffer([
+      dataRow({ 'Shop Code': 'HA19', 'RP Type': 'RF', 'ND Code': '', 'Safety stock': '10', Remark: '原因' }),
+    ]);
+    const result = await parseImportWorkbook(buffer, storeCodes, 1000);
+    expect(result.ok).toBe(true);
   });
 });
 

@@ -59,6 +59,7 @@
     const errs = [];
     if (!d.site_code) errs.push('Site Code 為必填');
     if (!d.sku) errs.push('SKU 為必填');
+    validateBusinessFields(d, d.site_code).forEach((e) => errs.push(e.message));
     return errs;
   }
 

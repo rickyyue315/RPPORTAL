@@ -65,3 +65,36 @@ function populateNdCodeDatalists() {
     });
   });
 }
+
+const RF_REMARK_REQUIRED_SITES = new Set([
+  'HA19', 'HA21', 'HA33', 'HA37',
+  'HB77', 'HB86', 'HB87', 'HB91', 'HBA5', 'HBA7',
+  'HC13', 'HC44', 'HC68', 'HC70',
+]);
+
+function validateBusinessFields(fields, siteCode) {
+  const errors = [];
+  const rpType = (fields.rp_type || '').trim();
+  const safetyStock = (fields.safety_stock || '').trim();
+  const ndCode = (fields.nd_code || '').trim();
+  const remark = (fields.remark || '').trim();
+  if (!rpType) {
+    errors.push({ field: 'rp_type', message: 'RP Type 為必填' });
+    return errors;
+  }
+  if (rpType === 'RF') {
+    if (!safetyStock) {
+      errors.push({ field: 'safety_stock', message: 'RP Type 為 RF 時必須填寫 Safety stock' });
+    } else if (!/^\d+(\.\d+)?$/.test(safetyStock) || Number(safetyStock) <= 0) {
+      errors.push({ field: 'safety_stock', message: 'Safety stock 必須為大於 0 的數字' });
+    }
+    if (RF_REMARK_REQUIRED_SITES.has((siteCode || '').trim().toUpperCase()) && !remark) {
+      errors.push({ field: 'remark', message: '此店舖轉 RF 時必須填寫 Remark' });
+    }
+  } else if (rpType === 'ND') {
+    if (!ndCode) {
+      errors.push({ field: 'nd_code', message: 'RP Type 為 ND 時必須填寫 ND Code' });
+    }
+  }
+  return errors;
+}

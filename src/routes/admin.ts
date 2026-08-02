@@ -31,6 +31,7 @@ import { toHKString, hkTodayForDateColumn } from '../lib/time.js';
 import { generateApplicationNo } from '../lib/applicationNo.js';
 import { ipExpiryIso } from '../lib/ip.js';
 import { URGENT_QTY_MIN, URGENT_QTY_MAX } from '../lib/fields.js';
+import { validateBusinessFields } from '../lib/validation.js';
 
 export const adminRouter = Router();
 
@@ -272,6 +273,15 @@ adminRouter.put(
     if (!parsed.success) {
       const first = parsed.error.issues[0];
       res.status(400).json({ error: first?.message ?? '輸入資料無效', field: first?.path[0] ?? null });
+      return;
+    }
+    const businessErrors = validateBusinessFields(parsed.data, row.site_code);
+    if (businessErrors.length) {
+      res.status(400).json({
+        error: businessErrors[0]!.message,
+        field: businessErrors[0]!.field,
+        errors: businessErrors,
+      });
       return;
     }
     const updated = await adminUpdateSubmission(

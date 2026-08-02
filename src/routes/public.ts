@@ -23,6 +23,7 @@ import { toHKString } from '../lib/time.js';
 import { parseImportWorkbook, parseUrgentImportWorkbook } from '../lib/excelImport.js';
 import { generateTemplateWorkbook, generateUrgentTemplateWorkbook } from '../lib/excelExport.js';
 import { URGENT_QTY_MIN, URGENT_QTY_MAX } from '../lib/fields.js';
+import { validateBusinessFields } from '../lib/validation.js';
 import { query, withTransaction } from '../db/pool.js';
 import { config } from '../config.js';
 import { generateApplicationNo } from '../lib/applicationNo.js';
@@ -145,20 +146,31 @@ publicRouter.post(
       return;
     }
 
+    const businessFields = {
+      brand: data.brand,
+      sku: data.sku,
+      rp_type: data.rp_type,
+      supply_source: data.supply_source,
+      safety_stock: data.safety_stock,
+      nd_code: data.nd_code,
+      rp_parameters_change_request: data.rp_parameters_change_request,
+      remark: data.remark,
+    };
+    const businessErrors = validateBusinessFields(businessFields, siteCode);
+    if (businessErrors.length) {
+      res.status(400).json({
+        error: businessErrors[0]!.message,
+        field: businessErrors[0]!.field,
+        errors: businessErrors,
+      });
+      return;
+    }
+
     const ip = getClientIp(req);
     const row = await createSubmission({
       siteCode,
       source: 'web',
-      fields: {
-        brand: data.brand,
-        sku: data.sku,
-        rp_type: data.rp_type,
-        supply_source: data.supply_source,
-        safety_stock: data.safety_stock,
-        nd_code: data.nd_code,
-        rp_parameters_change_request: data.rp_parameters_change_request,
-        remark: data.remark,
-      },
+      fields: businessFields,
       ip,
       changeSource: 'web_submit',
     });
@@ -574,21 +586,45 @@ publicRouter.post(
       return;
     }
 
+    const businessFields = {
+      brand: data.brand,
+      sku: data.sku,
+      rp_type: data.rp_type,
+      supply_source: data.supply_source,
+      safety_stock: data.safety_stock,
+      nd_code: data.nd_code,
+      rp_parameters_change_request: data.rp_parameters_change_request,
+      remark: data.remark,
+    };
+    const existing = await getSubmissionByApplicationNo(data.application_no, siteCode);
+    if (!existing) {
+      res.status(404).json({ error: '找不到相符申報' });
+      return;
+    }
+    if (existing.submission_type !== 'normal') {
+      res.status(400).json({ error: '此申報不支援網頁查詢／修改' });
+      return;
+    }
+    if (existing.locked_at || existing.exported_at) {
+      res.status(409).json({ error: '此申報已匯出並鎖定，不能修改' });
+      return;
+    }
+    const businessErrors = validateBusinessFields(businessFields, siteCode);
+    if (businessErrors.length) {
+      res.status(400).json({
+        error: businessErrors[0]!.message,
+        field: businessErrors[0]!.field,
+        errors: businessErrors,
+      });
+      return;
+    }
+
     const ip = getClientIp(req);
     try {
       const row = await modifySubmission({
         applicationNo: data.application_no,
         siteCode,
-        fields: {
-          brand: data.brand,
-          sku: data.sku,
-          rp_type: data.rp_type,
-          supply_source: data.supply_source,
-          safety_stock: data.safety_stock,
-          nd_code: data.nd_code,
-          rp_parameters_change_request: data.rp_parameters_change_request,
-          remark: data.remark,
-        },
+        fields: businessFields,
         ip,
         actorRole: 'applicant',
         changeSource: 'web_modify',

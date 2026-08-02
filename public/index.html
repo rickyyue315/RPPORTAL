@@ -22,7 +22,7 @@
   <main class="container">
     <div class="card">
       <h2>單筆申報</h2>
-      <p class="hint">只有 <b>Site Code</b> 及 <b>SKU</b> 為必填。</p>
+      <p class="hint">只有 <b>Site Code</b>、<b>SKU</b> 及 <b>RP Type</b> 為必填。RP Type 為 <b>RF</b> 時必須填寫 Safety stock（大於 0）；RP Type 為 <b>ND</b> 時必須填寫 ND Code。部分店舖轉 RF 時必須填寫 Remark。</p>
       <div id="form_error"></div>
       <form id="apply_form">
         <div class="form-grid">
@@ -44,7 +44,7 @@
             <input type="text" id="sku">
           </div>
           <div>
-            <label for="rp_type">RP Type</label>
+            <label for="rp_type">RP Type <span class="optional">（必填）</span></label>
             <select id="rp_type">
               <option value="">—</option>
               <option value="ND">ND</option>

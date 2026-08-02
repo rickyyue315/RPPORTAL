@@ -43,6 +43,8 @@ beforeAll(async () => {
     [
       { site_code: 'HA02', shop: '駱克', regional: 'HK', class1: 'B', class2: 'B2', size: 'S', om: 'Ivy', type: 'T' },
       { site_code: 'HA06', shop: '北角', regional: 'HK', class1: 'B', class2: 'B2', size: 'M', om: 'Ivy', type: 'M' },
+      { site_code: 'HA19', shop: '康山', regional: 'HK', class1: 'C', class2: 'C2', size: 'S', om: 'Violet', type: 'L' },
+      { site_code: 'HBA7', shop: 'AIRSIDE', regional: 'HK', class1: 'C', class2: 'C2', size: 'XS', om: 'Hippo', type: 'M' },
     ],
   );
   app = createApp();
@@ -78,12 +80,87 @@ describe('public API', () => {
     expect(res.body.field).toBe('sku');
   });
 
+  it('rejects submit with missing RP Type', async () => {
+    const res = await request(app).post('/api/public/submit').send({
+      site_code: 'HA02',
+      sku: '110001',
+    });
+    expect(res.status).toBe(400);
+    expect(res.body.field).toBe('rp_type');
+  });
+
+  it('rejects ND submit without ND Code', async () => {
+    const res = await request(app).post('/api/public/submit').send({
+      site_code: 'HA02',
+      sku: '110002',
+      rp_type: 'ND',
+    });
+    expect(res.status).toBe(400);
+    expect(res.body.field).toBe('nd_code');
+  });
+
+  it('rejects RF submit without Safety stock', async () => {
+    const res = await request(app).post('/api/public/submit').send({
+      site_code: 'HA02',
+      sku: '110003',
+      rp_type: 'RF',
+    });
+    expect(res.status).toBe(400);
+    expect(res.body.field).toBe('safety_stock');
+  });
+
+  it('rejects RF submit with Safety stock not greater than 0', async () => {
+    for (const safetyStock of ['0', '-5', 'abc']) {
+      const res = await request(app).post('/api/public/submit').send({
+        site_code: 'HA02',
+        sku: '110004',
+        rp_type: 'RF',
+        safety_stock: safetyStock,
+      });
+      expect(res.status).toBe(400);
+      expect(res.body.field).toBe('safety_stock');
+    }
+  });
+
+  it('accepts RF submit with positive Safety stock for a non-listed store', async () => {
+    const res = await request(app).post('/api/public/submit').send({
+      site_code: 'HA02',
+      sku: '110005',
+      rp_type: 'RF',
+      safety_stock: '3.5',
+    });
+    expect(res.status).toBe(201);
+  });
+
+  it('rejects RF submit for a listed store without Remark', async () => {
+    const res = await request(app).post('/api/public/submit').send({
+      site_code: 'HA19',
+      sku: '110006',
+      rp_type: 'RF',
+      safety_stock: '5',
+    });
+    expect(res.status).toBe(400);
+    expect(res.body.field).toBe('remark');
+  });
+
+  it('accepts RF submit for a listed store with Remark', async () => {
+    const res = await request(app).post('/api/public/submit').send({
+      site_code: 'HBA7',
+      sku: '110007',
+      rp_type: 'RF',
+      safety_stock: '8',
+      remark: '轉 RF 原因',
+    });
+    expect(res.status).toBe(201);
+  });
+
   it('accepts a valid submission', async () => {
     const res = await request(app).post('/api/public/submit').send({
       site_code: 'HA02',
       brand: 'NEG - NEOGENCE',
       sku: '110079623001',
       rp_type: 'ND',
+      nd_code: 'ND01-Under ND Classification',
     });
     expect(res.status).toBe(201);
     expect(res.body.submission.application_no).toMatch(/^NDRF-/);
@@ -96,6 +173,8 @@ describe('public API', () => {
     const created = await request(app).post('/api/public/submit').send({
       site_code: 'HA06',
       sku: '999001',
+      rp_type: 'ND',
+      nd_code: 'ND01-Under ND Classification',
       remark: 'test',
     });
     const no = created.body.submission.application_no;
@@ -125,7 +204,12 @@ describe('admin API', () => {
 
     // Create two submissions to export
     for (const site of ['HA02', 'HA06']) {
-      await request(app).post('/api/public/submit').send({ site_code: site, sku: `EXP-${site}` });
+      await request(app).post('/api/public/submit').send({
+        site_code: site,
+        sku: `EXP-${site}`,
+        rp_type: 'ND',
+        nd_code: 'ND01-Under ND Classification',
+      });
     }
 
     const token = await csrf(agent);
@@ -194,8 +278,8 @@ describe('admin API', () => {
     const wb = new ExcelJS.Workbook();
     const ws = wb.addWorksheet(RP_TEAM_SHEET);
     ws.addRow([...SAP_COLUMNS]);
-    ws.addRow(['', '', 'HA02', 'NEG - NEOGENCE', '110001', 'ND', '1 - Vendor (由供應商送貨到舖)', '', '', '', '', '']);
-    ws.addRow(['', '', 'HA06', 'NEG - NEOGENCE', '110002', 'RF', '', '', '', '', '', '']);
+    ws.addRow(['', '', 'HA02', 'NEG - NEOGENCE', '110001', 'ND', '1 - Vendor (由供應商送貨到舖)', '', 'ND01-Under ND Classification', '', '']);
+    ws.addRow(['', '', 'HA06', 'NEG - NEOGENCE', '110002', 'RF', '', '5', '', '', '', '']);
     const buffer = Buffer.from(await wb.xlsx.writeBuffer());
 
     const res = await agent

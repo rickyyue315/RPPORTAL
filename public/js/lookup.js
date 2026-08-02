@@ -89,6 +89,11 @@
       rp_parameters_change_request: $('f_rp_parameters_change_request').value,
       remark: $('f_remark').value.trim(),
     };
+    const clientErrs = validateBusinessFields(body, current.submission.site_code);
+    if (clientErrs.length) {
+      showAlert($('save_error'), 'error', clientErrs.map((e) => escapeHtml(e.message)).join('<br>'));
+      return;
+    }
     const btn = $('btn_save');
     btn.disabled = true;
     btn.textContent = '儲存中…';

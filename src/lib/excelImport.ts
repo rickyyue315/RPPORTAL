@@ -10,9 +10,11 @@ import {
   URGENT_SHEET,
   URGENT_QTY_MIN,
   URGENT_QTY_MAX,
+  BUSINESS_FIELD_LABELS,
   type SubmissionBusinessFields,
 } from '../lib/fields.js';
 import { normalizeSiteCode } from '../services/stores.js';
+import { validateBusinessFields } from './validation.js';
 
 export interface ImportRowError {
   row: number;
@@ -161,6 +163,14 @@ export async function parseImportWorkbook(
 
     if (!fields.sku) {
       errors.push({ row: rowNumber, field: 'SKU', reason: 'SKU 為必填' });
+    }
+
+    for (const err of validateBusinessFields(fields, siteCode)) {
+      errors.push({
+        row: rowNumber,
+        field: BUSINESS_FIELD_LABELS[err.field as keyof typeof BUSINESS_FIELD_LABELS] ?? err.field,
+        reason: err.message,
+      });
     }
 
     rows.push({ rowNumber, siteCode, fields });

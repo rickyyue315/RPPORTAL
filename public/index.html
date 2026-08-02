@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>NDRF 申報平台</title>
+  <link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+  <header class="topbar">
+    <div>
+      <h1>NDRF 申報平台</h1>
+      <div class="subtitle">SASA RP Team 非正常補貨申報</div>
+    </div>
+    <nav>
+      <a href="/">申請</a>
+      <a href="/lookup.html">查詢／修改</a>
+    </nav>
+  </header>
+
+  <main class="container">
+    <div class="card">
+      <h2>單筆申報</h2>
+      <p class="hint">只有 <b>Site Code</b> 及 <b>SKU</b> 為必填。</p>
+      <div id="form_error"></div>
+      <form id="apply_form">
+        <div class="form-grid">
+          <div>
+            <label for="site_code">Site Code <span class="optional">（必填）</span></label>
+            <input type="text" id="site_code" autocomplete="off" placeholder="例如 HA02">
+            <div class="hint">輸入後自動驗證門店。</div>
+          </div>
+          <div>
+            <label>門店資訊</label>
+            <div id="store_info" class="hint" style="padding-top:9px">—</div>
+          </div>
+          <div>
+            <label for="brand">Brand</label>
+            <input type="text" id="brand">
+          </div>
+          <div>
+            <label for="sku">SKU <span class="optional">（必填）</span></label>
+            <input type="text" id="sku">
+          </div>
+          <div>
+            <label for="rp_type">RP Type</label>
+            <select id="rp_type">
+              <option value="">—</option>
+              <option value="ND">ND</option>
+              <option value="RF">RF</option>
+            </select>
+          </div>
+          <div>
+            <label for="supply_source">Supply source</label>
+            <select id="supply_source">
+              <option value="">—</option>
+              <option value="1 - Vendor (由供應商送貨到舖)">1 - Vendor</option>
+              <option value="2 - Warehouse (由貨倉送貨到舖)">2 - Warehouse</option>
+              <option value="4 - Flow Thru (供應商送貨經貨倉統一派送到舖)">4 - Flow Thru</option>
+            </select>
+          </div>
+          <div>
+            <label for="safety_stock">Safety stock</label>
+            <input type="text" id="safety_stock">
+          </div>
+          <div>
+            <label for="nd_code">ND Code</label>
+            <input type="text" id="nd_code" list="nd_code_list">
+            <datalist id="nd_code_list"></datalist>
+          </div>
+          <div>
+            <label for="rp_parameters_change_request">RP Parameters Change Request</label>
+            <select id="rp_parameters_change_request">
+              <option value="">—</option>
+              <option value="New SKU Maintenance">New SKU Maintenance</option>
+              <option value="RP Type">RP Type</option>
+              <option value="Supply Source ">Supply Source</option>
+              <option value="Safety stock">Safety stock</option>
+              <option value="Display Stock">Display Stock</option>
+            </select>
+          </div>
+          <div>
+            <label for="rp_type_completed_at">RP Type 回覆完成日期</label>
+            <input type="date" id="rp_type_completed_at">
+          </div>
+          <div class="full">
+            <label for="remark">Remark</label>
+            <input type="text" id="remark">
+          </div>
+        </div>
+        <div class="btn-row">
+          <button type="submit" class="btn" id="btn_submit">提交</button>
+          <button type="button" class="btn secondary" id="btn_preview">預覽</button>
+        </div>
+      </form>
+
+      <div id="preview_box" style="display:none">
+        <hr>
+        <h3>提交預覽</h3>
+        <div class="dl" id="preview_body"></div>
+        <div class="btn-row">
+          <button class="btn" id="btn_confirm">確認提交</button>
+          <button class="btn secondary" id="btn_cancel_preview">返回修改</button>
+        </div>
+        <div id="confirm_error"></div>
+      </div>
+    </div>
+
+    <div class="card" id="result_card" style="display:none">
+      <h2>已收件</h2>
+      <div class="result-box">
+        <div>申請時間：<b id="res_time"></b></div>
+        <div style="margin-top:8px">申請編號：</div>
+        <div class="app-no" id="res_no"></div>
+        <div class="hint" style="margin-top:12px">
+          請記下申請編號。之後可於「<a href="/lookup.html">查詢／修改</a>」頁面輸入「申請編號 + Site Code」查看及在匯出前修改。
+        </div>
+      </div>
+      <div class="btn-row">
+        <button class="btn" id="btn_again">再提交一筆</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Excel 批量上載</h2>
+      <p class="hint">使用固定模板（工作表 <b>RP Team</b>），一行代表一筆申請。整份檔案會先完整驗證，任何錯誤都不會寫入資料。</p>
+      <div class="file-drop" id="file_drop">
+        <div id="file_label">拖曳 .xlsx 檔案到此處，或按一下選擇檔案</div>
+        <input type="file" id="file_input" accept=".xlsx" style="display:none">
+      </div>
+      <div class="btn-row">
+        <button class="btn" id="btn_import">上載並匯入</button>
+      </div>
+      <div id="import_result"></div>
+    </div>
+  </main>
+
+  <script src="/js/api.js"></script>
+  <script src="/js/apply.js"></script>
+</body>
+</html>

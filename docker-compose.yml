@@ -1,0 +1,37 @@
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: ndrf-db
+    environment:
+      POSTGRES_USER: ndrf
+      POSTGRES_PASSWORD: ndrf
+      POSTGRES_DB: ndrf
+    ports:
+      - "5432:5432"
+    volumes:
+      - ndrf_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ndrf"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  app:
+    build: .
+    container_name: ndrf-app
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      DATABASE_URL: postgres://ndrf:ndrf@db:5432/ndrf
+      ADMIN_USERNAME: admin
+      ADMIN_PASSWORD_HASH: $2a$12$52BPQfJl5dwSMP3qFcpTT.HidljvFnsfw7QCuIO/ePL7vVN2WMzPy
+      SESSION_SECRET: local-dev-secret-change-me
+      TRUST_PROXY: "true"
+    ports:
+      - "3000:3000"
+
+volumes:
+  ndrf_pgdata:

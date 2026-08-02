@@ -1,0 +1,217 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>管理後台 — NDRF 申報平台</title>
+  <link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+  <header class="topbar">
+    <div>
+      <h1>NDRF 管理後台</h1>
+      <div class="subtitle">申報管理、Excel 匯入／匯出、審計</div>
+    </div>
+    <nav>
+      <a href="#" id="btn_logout">登出</a>
+      <a href="/">公開申請頁</a>
+    </nav>
+  </header>
+
+  <main class="container wide">
+    <div class="card">
+      <h2>申報清單</h2>
+      <div class="toolbar">
+        <div class="field">
+          <label>由 (日期)</label>
+          <input type="date" id="f_from">
+        </div>
+        <div class="field">
+          <label>至 (日期)</label>
+          <input type="date" id="f_to">
+        </div>
+        <div class="field">
+          <label>Site Code</label>
+          <input type="text" id="f_site">
+        </div>
+        <div class="field">
+          <label>來源</label>
+          <select id="f_source">
+            <option value="">全部</option>
+            <option value="web">網頁</option>
+            <option value="excel">Excel</option>
+          </select>
+        </div>
+        <div class="field">
+          <label>匯出狀態</label>
+          <select id="f_exported">
+            <option value="">全部</option>
+            <option value="no">未匯出</option>
+            <option value="yes">已匯出</option>
+          </select>
+        </div>
+        <div class="field">
+          <label>SKU</label>
+          <input type="text" id="f_sku">
+        </div>
+        <div class="field">
+          <label>申請編號</label>
+          <input type="text" id="f_appno">
+        </div>
+        <div class="btn-row" style="margin-top:0">
+          <button class="btn" id="btn_filter">篩選</button>
+          <button class="btn secondary" id="btn_reset">重設</button>
+        </div>
+      </div>
+      <div id="list_error"></div>
+      <table id="list_table">
+        <thead>
+          <tr>
+            <th>申請編號</th><th>Site Code</th><th>SKU</th><th>來源</th>
+            <th>申請時間</th><th>修改時間</th><th>狀態</th><th></th>
+          </tr>
+        </thead>
+        <tbody id="list_body"></tbody>
+      </table>
+      <div class="pagination">
+        <button class="btn secondary" id="btn_prev">上一頁</button>
+        <span id="page_info"></span>
+        <button class="btn secondary" id="btn_next">下一頁</button>
+      </div>
+    </div>
+
+    <div class="card" id="detail_card" style="display:none">
+      <h2 id="detail_title">申報詳情</h2>
+      <div id="detail_error"></div>
+      <div class="dl" id="detail_header"></div>
+
+      <h3>編輯業務欄位</h3>
+      <form id="edit_form" class="form-grid">
+        <div>
+          <label for="a_brand">Brand</label>
+          <input type="text" id="a_brand">
+        </div>
+        <div>
+          <label for="a_sku">SKU</label>
+          <input type="text" id="a_sku">
+        </div>
+        <div>
+          <label for="a_rp_type">RP Type</label>
+          <select id="a_rp_type">
+            <option value="">—</option>
+            <option value="ND">ND</option>
+            <option value="RF">RF</option>
+          </select>
+        </div>
+        <div>
+          <label for="a_supply_source">Supply source</label>
+          <input type="text" id="a_supply_source" list="supply_source_list">
+          <datalist id="supply_source_list">
+            <option value="1 - Vendor (由供應商送貨到舖)"></option>
+            <option value="2 - Warehouse (由貨倉送貨到舖)"></option>
+            <option value="4 - Flow Thru (供應商送貨經貨倉統一派送到舖)"></option>
+          </datalist>
+        </div>
+        <div>
+          <label for="a_safety_stock">Safety stock</label>
+          <input type="text" id="a_safety_stock">
+        </div>
+        <div>
+          <label for="a_nd_code">ND Code</label>
+          <input type="text" id="a_nd_code" list="nd_code_list">
+          <datalist id="nd_code_list"></datalist>
+        </div>
+        <div>
+          <label for="a_rp_parameters_change_request">RP Parameters Change Request</label>
+          <input type="text" id="a_rp_parameters_change_request" list="rp_params_list">
+          <datalist id="rp_params_list">
+            <option value="New SKU Maintenance"></option>
+            <option value="RP Type"></option>
+            <option value="Supply Source "></option>
+            <option value="Safety stock"></option>
+            <option value="Display Stock"></option>
+          </datalist>
+        </div>
+        <div>
+          <label for="a_rp_type_completed_at">RP Type 回覆完成日期</label>
+          <input type="date" id="a_rp_type_completed_at">
+        </div>
+        <div class="full">
+          <label for="a_remark">Remark</label>
+          <input type="text" id="a_remark">
+        </div>
+      </form>
+      <div class="btn-row">
+        <button class="btn" id="btn_save_edit">儲存修改</button>
+        <button class="btn secondary" id="btn_close_detail">返回清單</button>
+      </div>
+      <div id="save_edit_error"></div>
+
+      <h3>版本歷史</h3>
+      <div id="versions_box"></div>
+    </div>
+
+    <div class="card">
+      <h2>Excel 批量匯入</h2>
+      <div class="btn-row" style="margin-top:0">
+        <a class="btn ghost" href="/api/admin/template">下載模板 (.xlsx)</a>
+      </div>
+      <div class="file-drop" id="import_drop">
+        <div id="import_label">拖曳 .xlsx 檔案到此處，或按一下選擇檔案</div>
+        <input type="file" id="import_input" accept=".xlsx" style="display:none">
+      </div>
+      <div class="btn-row">
+        <button class="btn" id="btn_import">匯入</button>
+      </div>
+      <div id="import_result"></div>
+    </div>
+
+    <div class="card">
+      <h2>SAP Excel 匯出</h2>
+      <div class="hint">匯出後該批申報會被鎖定，申請人不能再修改。匯出失敗不會鎖定。</div>
+      <div class="toolbar">
+        <div class="field">
+          <label>由 (日期)</label>
+          <input type="date" id="e_from">
+        </div>
+        <div class="field">
+          <label>至 (日期)</label>
+          <input type="date" id="e_to">
+        </div>
+        <div class="field">
+          <label>Site Code</label>
+          <input type="text" id="e_site">
+        </div>
+        <div class="field">
+          <label>包含已匯出資料</label>
+          <select id="e_include">
+            <option value="false">否（只匯出未匯出）</option>
+            <option value="true">是</option>
+          </select>
+        </div>
+      </div>
+      <div id="export_info"></div>
+      <div class="btn-row">
+        <button class="btn" id="btn_export">匯出並鎖定</button>
+        <button class="btn ghost" id="btn_audit">下載審計報表</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>門店主檔</h2>
+      <div class="hint" id="store_count"></div>
+      <div class="file-drop" id="store_drop">
+        <div id="store_label">拖曳 stores CSV 檔案到此處，或按一下選擇檔案</div>
+        <input type="file" id="store_input" accept=".csv" style="display:none">
+      </div>
+      <div class="btn-row">
+        <button class="btn" id="btn_store">上載並取代門店主檔</button>
+      </div>
+      <div id="store_result"></div>
+    </div>
+  </main>
+
+  <script src="/js/api.js"></script>
+  <script src="/js/admin.js"></script>
+</body>
+</html>

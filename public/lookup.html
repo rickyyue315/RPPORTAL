@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>查詢／修改 — NDRF 申報平台</title>
+  <link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+  <header class="topbar">
+    <div>
+      <h1>NDRF 申報平台</h1>
+      <div class="subtitle">查詢／修改申報</div>
+    </div>
+    <nav>
+      <a href="/">申請</a>
+      <a href="/lookup.html">查詢／修改</a>
+    </nav>
+  </header>
+
+  <main class="container">
+    <div class="card" id="search_card">
+      <h2>查詢申報</h2>
+      <p class="hint">輸入申請編號及申請時的 Site Code。</p>
+      <div id="search_error"></div>
+      <form id="search_form">
+        <div class="form-grid">
+          <div>
+            <label for="q_no">申請編號</label>
+            <input type="text" id="q_no" placeholder="NDRF-XXXXXXXX-XXXXXXXX">
+          </div>
+          <div>
+            <label for="q_site">Site Code</label>
+            <input type="text" id="q_site" placeholder="例如 HA02">
+          </div>
+        </div>
+        <div class="btn-row">
+          <button type="submit" class="btn">查詢</button>
+        </div>
+      </form>
+    </div>
+
+    <div class="card" id="detail_card" style="display:none">
+      <h2>申報詳情</h2>
+      <div id="lock_banner"></div>
+      <div class="dl" id="detail_header"></div>
+
+      <h3>目前資料</h3>
+      <div id="edit_error"></div>
+      <form id="edit_form" class="form-grid">
+        <div>
+          <label for="f_brand">Brand</label>
+          <input type="text" id="f_brand">
+        </div>
+        <div>
+          <label for="f_sku">SKU <span class="optional">（必填）</span></label>
+          <input type="text" id="f_sku">
+        </div>
+        <div>
+          <label for="f_rp_type">RP Type</label>
+          <select id="f_rp_type">
+            <option value="">—</option>
+            <option value="ND">ND</option>
+            <option value="RF">RF</option>
+          </select>
+        </div>
+        <div>
+          <label for="f_supply_source">Supply source</label>
+          <select id="f_supply_source">
+            <option value="">—</option>
+            <option value="1 - Vendor (由供應商送貨到舖)">1 - Vendor</option>
+            <option value="2 - Warehouse (由貨倉送貨到舖)">2 - Warehouse</option>
+            <option value="4 - Flow Thru (供應商送貨經貨倉統一派送到舖)">4 - Flow Thru</option>
+          </select>
+        </div>
+        <div>
+          <label for="f_safety_stock">Safety stock</label>
+          <input type="text" id="f_safety_stock">
+        </div>
+        <div>
+          <label for="f_nd_code">ND Code</label>
+          <input type="text" id="f_nd_code" list="nd_code_list">
+          <datalist id="nd_code_list"></datalist>
+        </div>
+        <div>
+          <label for="f_rp_parameters_change_request">RP Parameters Change Request</label>
+          <select id="f_rp_parameters_change_request">
+            <option value="">—</option>
+            <option value="New SKU Maintenance">New SKU Maintenance</option>
+            <option value="RP Type">RP Type</option>
+            <option value="Supply Source ">Supply Source</option>
+            <option value="Safety stock">Safety stock</option>
+            <option value="Display Stock">Display Stock</option>
+          </select>
+        </div>
+        <div>
+          <label for="f_rp_type_completed_at">RP Type 回覆完成日期</label>
+          <input type="date" id="f_rp_type_completed_at">
+        </div>
+        <div class="full">
+          <label for="f_remark">Remark</label>
+          <input type="text" id="f_remark">
+        </div>
+      </form>
+
+      <div id="modify_box">
+        <div class="btn-row">
+          <button class="btn" id="btn_save">儲存修改</button>
+          <span class="hint" id="save_note"></span>
+        </div>
+        <div id="save_error"></div>
+      </div>
+
+      <h3>版本歷史</h3>
+      <table id="versions_table">
+        <thead>
+          <tr><th>版本</th><th>修改日期時間 (HK)</th><th>操作者</th><th>修改來源</th></tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+
+      <div class="btn-row">
+        <button class="btn secondary" id="btn_back">返回查詢</button>
+      </div>
+    </div>
+  </main>
+
+  <script src="/js/api.js"></script>
+  <script src="/js/lookup.js"></script>
+</body>
+</html>

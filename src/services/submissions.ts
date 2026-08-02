@@ -24,10 +24,8 @@ export interface SubmissionRow {
   brand: string | null;
   sku: string;
   rp_type: string | null;
-  supply_source: string | null;
   safety_stock: string | null;
   nd_code: string | null;
-  rp_parameters_change_request: string | null;
   remark: string | null;
   qty: number | null;
   status: string;
@@ -70,10 +68,8 @@ export function businessFieldsFromRow(row: SubmissionRow): SubmissionBusinessFie
     brand: normalizeText(row.brand),
     sku: normalizeText(row.sku),
     rp_type: normalizeText(row.rp_type),
-    supply_source: normalizeText(row.supply_source),
     safety_stock: normalizeText(row.safety_stock),
     nd_code: normalizeText(row.nd_code),
-    rp_parameters_change_request: normalizeText(row.rp_parameters_change_request),
     remark: normalizeText(row.remark),
   };
 }
@@ -91,10 +87,8 @@ function toBusinessParams(fields: SubmissionBusinessFields): unknown[] {
     normalizeText(fields.brand) || null,
     normalizeText(fields.sku),
     normalizeText(fields.rp_type) || null,
-    normalizeText(fields.supply_source) || null,
     normalizeText(fields.safety_stock) || null,
     normalizeText(fields.nd_code) || null,
-    normalizeText(fields.rp_parameters_change_request) || null,
     normalizeText(fields.remark) || null,
   ];
 }
@@ -142,11 +136,10 @@ export async function createSubmission(
     const result = await client.query<SubmissionRow>(
       `INSERT INTO submissions (
          application_no, source, submission_type, site_code, requested_by_email, application_date,
-         brand, sku, rp_type, supply_source, safety_stock, nd_code,
-         rp_parameters_change_request, remark,
+         brand, sku, rp_type, safety_stock, nd_code, remark,
          qty, created_ip, created_ip_expires_at
        )
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
        RETURNING *`,
       values,
     );
@@ -253,10 +246,9 @@ export async function modifySubmission(
     const before = businessFieldsFromRow(row);
     const updated = await client.query<SubmissionRow>(
       `UPDATE submissions SET
-         brand = $1, sku = $2, rp_type = $3, supply_source = $4, safety_stock = $5,
-         nd_code = $6, rp_parameters_change_request = $7,
-         remark = $8, updated_at = now()
-       WHERE id = $9
+         brand = $1, sku = $2, rp_type = $3, safety_stock = $4,
+         nd_code = $5, remark = $6, updated_at = now()
+       WHERE id = $7
        RETURNING *`,
       [...toBusinessParams(fields), row.id],
     );
@@ -305,10 +297,9 @@ export async function adminUpdateSubmission(
     const before = businessFieldsFromRow(row);
     const updated = await client.query<SubmissionRow>(
       `UPDATE submissions SET
-         brand = $1, sku = $2, rp_type = $3, supply_source = $4, safety_stock = $5,
-         nd_code = $6, rp_parameters_change_request = $7,
-         remark = $8, updated_at = now()
-       WHERE id = $9
+         brand = $1, sku = $2, rp_type = $3, safety_stock = $4,
+         nd_code = $5, remark = $6, updated_at = now()
+       WHERE id = $7
        RETURNING *`,
       [...toBusinessParams(fields), row.id],
     );

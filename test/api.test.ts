@@ -278,8 +278,8 @@ describe('admin API', () => {
     const wb = new ExcelJS.Workbook();
     const ws = wb.addWorksheet(RP_TEAM_SHEET);
     ws.addRow([...SAP_COLUMNS]);
-    ws.addRow(['', '', 'HA02', 'NEG - NEOGENCE', '110001', 'ND', '1 - Vendor (由供應商送貨到舖)', '', 'ND01-Under ND Classification', '', '']);
-    ws.addRow(['', '', 'HA06', 'NEG - NEOGENCE', '110002', 'RF', '', '5', '', '', '', '']);
+    ws.addRow(['', '', 'HA02', 'NEG - NEOGENCE', '110001', 'ND', '', 'ND01-Under ND Classification', '']);
+    ws.addRow(['', '', 'HA06', 'NEG - NEOGENCE', '110002', 'RF', '5', '', '']);
     const buffer = Buffer.from(await wb.xlsx.writeBuffer());
 
     const res = await agent
@@ -304,7 +304,7 @@ describe('admin API', () => {
     const wb = new ExcelJS.Workbook();
     const ws = wb.addWorksheet(RP_TEAM_SHEET);
     ws.addRow([...SAP_COLUMNS]);
-    ws.addRow(['', '', 'ZZ99', 'NEG - NEOGENCE', '110003', '', '', '', '', '', '', '']);
+    ws.addRow(['', '', 'ZZ99', 'NEG - NEOGENCE', '110003', '', '', '', '']);
     const buffer = Buffer.from(await wb.xlsx.writeBuffer());
 
     const res = await agent

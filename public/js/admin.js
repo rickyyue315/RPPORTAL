@@ -153,10 +153,8 @@
     $('a_brand').value = s.brand || '';
     $('a_sku_normal').value = s.sku || '';
     $('a_rp_type').value = s.rp_type || '';
-    $('a_supply_source').value = s.supply_source || '';
     $('a_safety_stock').value = s.safety_stock || '';
     $('a_nd_code').value = s.nd_code || '';
-    $('a_rp_parameters_change_request').value = s.rp_parameters_change_request || '';
     $('a_remark').value = s.remark || '';
     $('a_sku_urgent').value = s.sku || '';
     $('a_qty').value = s.qty || '';
@@ -189,10 +187,8 @@
           brand: $('a_brand').value.trim(),
           sku: $('a_sku_normal').value.trim(),
           rp_type: $('a_rp_type').value,
-          supply_source: $('a_supply_source').value.trim(),
           safety_stock: $('a_safety_stock').value.trim(),
           nd_code: $('a_nd_code').value.trim(),
-          rp_parameters_change_request: $('a_rp_parameters_change_request').value.trim(),
           remark: $('a_remark').value.trim(),
         };
     if (!isUrgent) {

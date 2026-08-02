@@ -52,10 +52,8 @@
     $('f_brand').value = s.brand || '';
     $('f_sku').value = s.sku || '';
     $('f_rp_type').value = s.rp_type || '';
-    $('f_supply_source').value = s.supply_source || '';
     $('f_safety_stock').value = s.safety_stock || '';
     $('f_nd_code').value = s.nd_code || '';
-    $('f_rp_parameters_change_request').value = s.rp_parameters_change_request || '';
     $('f_remark').value = s.remark || '';
 
     const tbody = $('versions_table').querySelector('tbody');
@@ -83,10 +81,8 @@
       brand: $('f_brand').value.trim(),
       sku: $('f_sku').value.trim(),
       rp_type: $('f_rp_type').value,
-      supply_source: $('f_supply_source').value,
       safety_stock: $('f_safety_stock').value.trim(),
       nd_code: $('f_nd_code').value.trim(),
-      rp_parameters_change_request: $('f_rp_parameters_change_request').value,
       remark: $('f_remark').value.trim(),
     };
     const clientErrs = validateBusinessFields(body, current.submission.site_code);

@@ -45,10 +45,8 @@ const businessFieldsSchema = z.object({
   brand: z.string().max(500).optional().default(''),
   sku: z.string().trim().min(1, 'SKU 為必填').max(100),
   rp_type: z.string().max(100).optional().default(''),
-  supply_source: z.string().max(300).optional().default(''),
   safety_stock: z.string().max(100).optional().default(''),
   nd_code: z.string().max(300).optional().default(''),
-  rp_parameters_change_request: z.string().max(300).optional().default(''),
   remark: z.string().max(2000).optional().default(''),
 });
 
@@ -69,10 +67,8 @@ function serializeAdminSubmission(row: SubmissionRow) {
     brand: row.brand,
     sku: row.sku,
     rp_type: row.rp_type,
-    supply_source: row.supply_source,
     safety_stock: row.safety_stock,
     nd_code: row.nd_code,
-    rp_parameters_change_request: row.rp_parameters_change_request,
     remark: row.remark,
     qty: row.qty,
   };
@@ -366,10 +362,9 @@ adminRouter.post(
         const insert = await client.query<SubmissionRow>(
           `INSERT INTO submissions (
              application_no, source, site_code, requested_by_email, application_date,
-             brand, sku, rp_type, supply_source, safety_stock, nd_code,
-             rp_parameters_change_request, remark, created_ip, created_ip_expires_at
+             brand, sku, rp_type, safety_stock, nd_code, remark, created_ip, created_ip_expires_at
            ) VALUES ($1,'excel',$2,$3,to_char(now() AT TIME ZONE 'Asia/Hong_Kong','YYYY-MM-DD')::date,
-             $4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
+             $4,$5,$6,$7,$8,$9,$10,$11)
            RETURNING *`,
           [
             appNo,
@@ -378,10 +373,8 @@ adminRouter.post(
             r.fields.brand,
             r.fields.sku,
             r.fields.rp_type,
-            r.fields.supply_source,
             r.fields.safety_stock,
             r.fields.nd_code,
-            r.fields.rp_parameters_change_request,
             r.fields.remark,
             ip,
             ip ? ipExpiryIso() : null,

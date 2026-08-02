@@ -178,7 +178,7 @@ describe('generateTemplateWorkbook', () => {
     expect(wb.getWorksheet(RP_TEAM_SHEET)).toBeDefined();
     const ws = wb.getWorksheet(RP_TEAM_SHEET)!;
     expect(ws.getCell(1, 1).value).toBe('Application Date');
-    expect(ws.getCell(1, 11).value).toBe('Remark');
+    expect(ws.getCell(1, 9).value).toBe('Remark');
   });
 });
 
@@ -197,10 +197,8 @@ describe('buildSapExportBuffer', () => {
         brand: 'NEG - NEOGENCE',
         sku: '110079623001',
         rp_type: 'ND',
-        supply_source: '1 - Vendor (由供應商送貨到舖)',
         safety_stock: null,
         nd_code: null,
-        rp_parameters_change_request: null,
         remark: null,
         qty: null,
         status: 'received',

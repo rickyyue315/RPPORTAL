@@ -10,10 +10,8 @@
       brand: $('brand').value.trim(),
       sku: $('sku').value.trim(),
       rp_type: $('rp_type').value,
-      supply_source: $('supply_source').value,
       safety_stock: $('safety_stock').value.trim(),
       nd_code: $('nd_code').value.trim(),
-      rp_parameters_change_request: $('rp_parameters_change_request').value,
       remark: $('remark').value.trim(),
     };
   }
@@ -23,10 +21,8 @@
     brand: 'Brand',
     sku: 'SKU',
     rp_type: 'RP Type',
-    supply_source: 'Supply source',
     safety_stock: 'Safety stock',
     nd_code: 'ND Code',
-    rp_parameters_change_request: 'RP Parameters Change Request',
     remark: 'Remark',
   };
 

@@ -4,8 +4,6 @@ import {
   RP_TEAM_SHEET,
   REQUESTED_BY_HEADER,
   RP_TYPE_OPTIONS,
-  SUPPLY_SOURCE_OPTIONS,
-  RP_PARAMETER_OPTIONS,
   ND_CODE_OPTIONS,
   URGENT_COLUMNS,
   URGENT_SHEET,
@@ -68,16 +66,6 @@ export async function generateTemplateWorkbook(): Promise<Buffer> {
     allowBlank: true,
     formulae: [`"${RP_TYPE_OPTIONS.join(',')}"`],
   });
-  vSheet.dataValidations.add(range('Supply source'), {
-    type: 'list',
-    allowBlank: true,
-    formulae: [`"${SUPPLY_SOURCE_OPTIONS.join(',')}"`],
-  });
-  vSheet.dataValidations.add(range('RP Parameters Change Request'), {
-    type: 'list',
-    allowBlank: true,
-    formulae: [`"${RP_PARAMETER_OPTIONS.join(',')}"`],
-  });
   vSheet.dataValidations.add(range('ND Code'), {
     type: 'list',
     allowBlank: true,
@@ -89,7 +77,7 @@ export async function generateTemplateWorkbook(): Promise<Buffer> {
     formulae: ['"Cora Lai ,Ice Lin,Bridget Wong ,Ricky Yue,Ting Chan,Laurent Wong,Winnie Lin"'],
   });
 
-  const widths = [18, 22, 14, 16, 18, 10, 40, 14, 45, 28, 30];
+  const widths = [18, 22, 14, 16, 18, 10, 14, 45, 30];
   widths.forEach((w, i) => {
     sheet.getColumn(i + 1).width = w;
   });
@@ -128,15 +116,13 @@ export function buildSapExportBuffer(rows: SubmissionRow[]): Promise<Buffer> {
         row.brand,
         row.sku,
         row.rp_type,
-        row.supply_source,
         row.safety_stock,
         row.nd_code,
-        row.rp_parameters_change_request,
         row.remark,
       ]);
     }
 
-    const widths = [18, 22, 14, 16, 18, 10, 40, 14, 45, 28, 30];
+    const widths = [18, 22, 14, 16, 18, 10, 14, 45, 30];
     widths.forEach((w, i) => {
       sheet.getColumn(i + 1).width = w;
     });

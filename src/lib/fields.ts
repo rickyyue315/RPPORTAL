@@ -5,10 +5,8 @@ export const SAP_COLUMNS = [
   'Brand',
   'SKU',
   'RP Type',
-  'Supply source',
   'Safety stock',
   'ND Code',
-  'RP Parameters Change Request',
   'Remark',
 ] as const;
 
@@ -19,10 +17,8 @@ export interface SubmissionBusinessFields {
   brand: string;
   sku: string;
   rp_type: string;
-  supply_source: string;
   safety_stock: string;
   nd_code: string;
-  rp_parameters_change_request: string;
   remark: string;
 }
 
@@ -30,10 +26,8 @@ export const BUSINESS_FIELD_LABELS: Record<keyof SubmissionBusinessFields, strin
   brand: 'Brand',
   sku: 'SKU',
   rp_type: 'RP Type',
-  supply_source: 'Supply source',
   safety_stock: 'Safety stock',
   nd_code: 'ND Code',
-  rp_parameters_change_request: 'RP Parameters Change Request',
   remark: 'Remark',
 };
 
@@ -42,11 +36,9 @@ export const FIELD_TO_SAP_INDEX: Record<keyof SubmissionBusinessFields, number> 
   brand: 3,
   sku: 4,
   rp_type: 5,
-  supply_source: 6,
-  safety_stock: 7,
-  nd_code: 8,
-  rp_parameters_change_request: 9,
-  remark: 10,
+  safety_stock: 6,
+  nd_code: 7,
+  remark: 8,
 };
 
 /** Map SAP column name -> internal field. */
@@ -54,26 +46,12 @@ export const SAP_INDEX_TO_FIELD: Record<number, keyof SubmissionBusinessFields> 
   3: 'brand',
   4: 'sku',
   5: 'rp_type',
-  6: 'supply_source',
-  7: 'safety_stock',
-  8: 'nd_code',
-  9: 'rp_parameters_change_request',
-  10: 'remark',
+  6: 'safety_stock',
+  7: 'nd_code',
+  8: 'remark',
 };
 
 export const RP_TYPE_OPTIONS = ['ND', 'RF'];
-export const SUPPLY_SOURCE_OPTIONS = [
-  '1 - Vendor (由供應商送貨到舖)',
-  '2 - Warehouse (由貨倉送貨到舖)',
-  '4 - Flow Thru (供應商送貨經貨倉統一派送到舖)',
-];
-export const RP_PARAMETER_OPTIONS = [
-  'New SKU Maintenance',
-  'RP Type',
-  'Supply Source ',
-  'Safety stock',
-  'Display Stock',
-];
 export const REQUESTED_BY_OPTIONS = [
   'Cora Lai ',
   'Ice Lin',

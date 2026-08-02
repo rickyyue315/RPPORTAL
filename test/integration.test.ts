@@ -48,10 +48,8 @@ const baseFields = {
   brand: 'NEG - NEOGENCE',
   sku: '110079623001',
   rp_type: 'ND',
-  supply_source: '1 - Vendor (由供應商送貨到舖)',
   safety_stock: '5',
   nd_code: 'ND01-Under ND Classification',
-  rp_parameters_change_request: '',
   remark: '',
 };
 
@@ -162,7 +160,7 @@ describe('submissions (integration)', () => {
       siteCode: 'HA02',
       source: 'web',
       submissionType: 'urgent',
-      fields: { brand: '', sku: 'U-INT-1', rp_type: '', supply_source: '', safety_stock: '', nd_code: '', rp_parameters_change_request: '', remark: '' },
+      fields: { brand: '', sku: 'U-INT-1', rp_type: '', safety_stock: '', nd_code: '', remark: '' },
       qty: 42,
       ip: '203.0.113.8',
       changeSource: 'web_submit',

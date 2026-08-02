@@ -150,6 +150,22 @@ describe('admin API', () => {
     expect(Number(listAfter.body.total)).toBeGreaterThanOrEqual(2);
   });
 
+  it('returns submission summary counts', async () => {
+    const agent = request.agent(app);
+    const res = await agent.get('/api/admin/summary');
+    expect(res.status).toBe(200);
+    expect(res.body).toMatchObject({
+      total: expect.any(Number),
+      today: expect.any(Number),
+      normal: expect.any(Number),
+      urgent: expect.any(Number),
+      exported: expect.any(Number),
+      unexported: expect.any(Number),
+    });
+    expect(res.body.total).toBeGreaterThanOrEqual(1);
+    expect(res.body.total).toBe(res.body.normal + res.body.urgent);
+  });
+
   it('requires CSRF token for admin mutations', async () => {
     const agent = request.agent(app);
     await csrf(agent);

@@ -27,7 +27,7 @@ import {
 } from '../lib/excelExport.js';
 import { parseImportWorkbook, parseUrgentImportWorkbook } from '../lib/excelImport.js';
 import { getStore, normalizeSiteCode, parseStoresCsv, replaceStores, listStores } from '../services/stores.js';
-import { toHKString } from '../lib/time.js';
+import { toHKString, hkTodayForDateColumn } from '../lib/time.js';
 import { generateApplicationNo } from '../lib/applicationNo.js';
 import { ipExpiryIso } from '../lib/ip.js';
 import { URGENT_QTY_MIN, URGENT_QTY_MAX } from '../lib/fields.js';
@@ -158,6 +158,42 @@ adminRouter.get(
       page_size: size,
       total_pages: Math.ceil(total / size),
       submissions: result.rows.map(serializeAdminSubmission),
+    });
+  }),
+);
+
+/** GET /api/admin/summary — submission counts for the dashboard preview. */
+adminRouter.get(
+  '/summary',
+  requireAdmin,
+  adminActionLimiter,
+  asyncHandler(async (_req: Request, res: Response) => {
+    const today = hkTodayForDateColumn();
+    const rows = await query<{
+      total: string;
+      today: string;
+      normal: string;
+      urgent: string;
+      exported: string;
+      unexported: string;
+    }>(
+      `SELECT
+         (SELECT count(*)::text FROM submissions) AS total,
+         (SELECT count(*)::text FROM submissions WHERE application_date = $1::date) AS today,
+         (SELECT count(*)::text FROM submissions WHERE submission_type = 'normal') AS normal,
+         (SELECT count(*)::text FROM submissions WHERE submission_type = 'urgent') AS urgent,
+         (SELECT count(*)::text FROM submissions WHERE exported_at IS NOT NULL) AS exported,
+         (SELECT count(*)::text FROM submissions WHERE exported_at IS NULL) AS unexported`,
+      [today],
+    );
+    const r = rows.rows[0]!;
+    res.json({
+      total: Number(r.total),
+      today: Number(r.today),
+      normal: Number(r.normal),
+      urgent: Number(r.urgent),
+      exported: Number(r.exported),
+      unexported: Number(r.unexported),
     });
   }),
 );

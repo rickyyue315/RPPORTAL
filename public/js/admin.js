@@ -364,6 +364,31 @@
     } catch {}
   }
 
+  async function loadSummary() {
+    const setNum = (id, v) => {
+      const el = $(id);
+      if (el) el.textContent = String(v);
+    };
+    try {
+      const data = await adminFetch('/api/admin/summary');
+      setNum('s_total', data.total);
+      setNum('s_today', data.today);
+      setNum('s_normal', data.normal);
+      setNum('s_urgent', data.urgent);
+      setNum('s_unexported', data.unexported);
+      setNum('s_exported', data.exported);
+      const note = $('summary_note');
+      if (note) {
+        note.textContent = data.total > 0
+          ? '已有提交資料。'
+          : '目前尚無任何申報提交。';
+      }
+    } catch {
+      const note = $('summary_note');
+      if (note) note.textContent = '預覽載入失敗。';
+    }
+  }
+
   $('btn_store').addEventListener('click', async () => {
     if (!pendingStoreFile) {
       showAlert($('store_result'), 'error', '請先選擇 CSV 檔案');
@@ -391,6 +416,7 @@
 
   ensureAuth().then(() => {
     loadList();
+    loadSummary();
     loadStoreCount();
   });
   populateNdCodeDatalists();

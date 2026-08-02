@@ -379,9 +379,11 @@
       setNum('s_exported', data.exported);
       const note = $('summary_note');
       if (note) {
-        note.textContent = data.total > 0
-          ? '已有提交資料。'
-          : '目前尚無任何申報提交。';
+        if (data.total > 0) {
+          note.innerHTML = `<span class="dash-dot dash-dot--ok"></span> 已有 <b>${data.total}</b> 筆提交`;
+        } else {
+          note.innerHTML = `<span class="dash-dot dash-dot--empty"></span> 目前尚無任何申報提交`;
+        }
       }
     } catch {
       const note = $('summary_note');

@@ -18,33 +18,32 @@
   </header>
 
   <main class="container wide">
-    <div class="card">
-      <h2>資料預覽</h2>
-      <div id="summary_note" class="hint" style="margin-top:0">載入中…</div>
-      <div class="summary-grid">
-        <div class="summary-item">
-          <div class="summary-num" id="s_total">—</div>
-          <div class="summary-label">總提交</div>
+    <div class="dash-stats">
+      <div id="summary_note" class="dash-status">載入中…</div>
+      <div class="dash-grid">
+        <div class="dash-stat dash-stat--primary">
+          <div class="dash-val" id="s_total">—</div>
+          <div class="dash-lbl">總提交</div>
         </div>
-        <div class="summary-item">
-          <div class="summary-num" id="s_today">—</div>
-          <div class="summary-label">今日提交</div>
+        <div class="dash-stat dash-stat--info">
+          <div class="dash-val" id="s_today">—</div>
+          <div class="dash-lbl">今日提交</div>
         </div>
-        <div class="summary-item">
-          <div class="summary-num" id="s_normal">—</div>
-          <div class="summary-label">一般 NDRF</div>
+        <div class="dash-stat">
+          <div class="dash-val" id="s_normal">—</div>
+          <div class="dash-lbl">一般 NDRF</div>
         </div>
-        <div class="summary-item">
-          <div class="summary-num" id="s_urgent">—</div>
-          <div class="summary-label">Urgent Order</div>
+        <div class="dash-stat dash-stat--urgent">
+          <div class="dash-val" id="s_urgent">—</div>
+          <div class="dash-lbl">Urgent Order</div>
         </div>
-        <div class="summary-item">
-          <div class="summary-num" id="s_unexported">—</div>
-          <div class="summary-label">未匯出</div>
+        <div class="dash-stat dash-stat--warn">
+          <div class="dash-val" id="s_unexported">—</div>
+          <div class="dash-lbl">未匯出</div>
         </div>
-        <div class="summary-item">
-          <div class="summary-num" id="s_exported">—</div>
-          <div class="summary-label">已匯出</div>
+        <div class="dash-stat dash-stat--ok">
+          <div class="dash-val" id="s_exported">—</div>
+          <div class="dash-lbl">已匯出</div>
         </div>
       </div>
     </div>

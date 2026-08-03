@@ -21,7 +21,7 @@ import {
 import { writeAuditEvent } from '../lib/audit.js';
 import { toHKString } from '../lib/time.js';
 import { parseImportWorkbook, parseUrgentImportWorkbook } from '../lib/excelImport.js';
-import { generateTemplateWorkbook, generateUrgentTemplateWorkbook } from '../lib/excelExport.js';
+import { generateTemplateWorkbook, generateUrgentTemplateWorkbook, buildImportRecordBuffer } from '../lib/excelExport.js';
 import { URGENT_QTY_MIN, URGENT_QTY_MAX } from '../lib/fields.js';
 import { validateBusinessFields } from '../lib/validation.js';
 import { query, withTransaction } from '../db/pool.js';
@@ -496,6 +496,39 @@ publicRouter.post(
       successCount: results.successCount,
       rows: results.rows,
     });
+  }),
+);
+
+const importRecordSchema = z.object({
+  rows: z
+    .array(
+      z.object({
+        row: z.number(),
+        application_no: z.string().max(64),
+        site_code: z.string().max(20),
+        sku: z.string().max(100),
+        submitted_at: z.string().max(64),
+      }),
+    )
+    .min(1)
+    .max(config.maxImportRows),
+});
+
+/** POST /api/public/import/record — download the just-imported rows as an Excel record (one sheet per store). */
+publicRouter.post(
+  '/import/record',
+  excelExportLimiter,
+  asyncHandler(async (req: Request, res: Response) => {
+    const parsed = importRecordSchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ error: '資料格式錯誤' });
+      return;
+    }
+    const buffer = await buildImportRecordBuffer(parsed.data.rows);
+    const stamp = toHKString(new Date()).replace(/[^0-9]/g, '');
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition', `attachment; filename="NDRF_Import_Record_${stamp}.xlsx"`);
+    res.send(buffer);
   }),
 );
 

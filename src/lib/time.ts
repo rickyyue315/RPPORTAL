@@ -42,7 +42,7 @@ function hkHourMinute(date: Date): { hour: number; minute: number } {
     hour12: false,
     hourCycle: 'h23',
   });
-  const [hour, minute] = s.split(':').map((v) => Number(v) || 0);
+  const [hour = 0, minute = 0] = s.split(':').map((v) => Number(v) || 0);
   return { hour, minute };
 }
 

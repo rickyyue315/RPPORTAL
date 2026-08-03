@@ -27,9 +27,12 @@ body {
 a {
   color: var(--brand);
   text-decoration: none;
+  transition: color 0.15s ease;
 }
 a:hover {
+  color: var(--brand-dark);
   text-decoration: underline;
+  text-underline-offset: 3px;
 }
 
 .topbar {
@@ -50,15 +53,41 @@ a:hover {
   font-size: 13px;
   opacity: 0.85;
 }
+.topbar nav {
+  display: flex;
+  gap: 6px;
+}
 .topbar nav a {
-  color: #fff;
-  margin-left: 18px;
+  display: inline-block;
+  padding: 8px 16px;
+  border-radius: 999px;
+  color: rgba(255, 255, 255, 0.85);
+  margin-left: 0;
   font-size: 14px;
-  opacity: 0.9;
+  font-weight: 500;
+  transition: background 0.15s ease, color 0.15s ease;
 }
 .topbar nav a:hover {
-  opacity: 1;
-  text-decoration: underline;
+  background: rgba(255, 255, 255, 0.14);
+  color: #fff;
+  text-decoration: none;
+}
+.topbar nav a.active,
+.topbar nav a[aria-current='page'] {
+  background: #fff;
+  color: var(--brand);
+  font-weight: 600;
+}
+
+@media (max-width: 640px) {
+  .topbar {
+    flex-wrap: wrap;
+    padding: 12px 16px;
+  }
+  .topbar nav a {
+    padding: 6px 12px;
+    font-size: 13px;
+  }
 }
 
 .container {
@@ -186,37 +215,48 @@ textarea {
 }
 
 .btn {
-  display: inline-block;
-  padding: 10px 20px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 48px;
+  padding: 12px 28px;
   border: none;
-  border-radius: 6px;
-  font-size: 14px;
+  border-radius: 999px;
+  font-size: 15px;
   font-weight: 600;
+  letter-spacing: 0.2px;
   cursor: pointer;
   background: var(--brand);
   color: #fff;
+  transition: background-color 0.15s ease, color 0.15s ease, border-color 0.15s ease;
 }
 .btn:hover {
   background: var(--brand-dark);
 }
+.btn:active {
+  transform: translateY(1px);
+}
 .btn:disabled {
-  opacity: 0.6;
+  opacity: 0.55;
   cursor: not-allowed;
 }
 .btn.secondary {
-  background: #e8edf2;
+  background: #eef1f4;
   color: var(--text);
 }
 .btn.secondary:hover {
-  background: #d8e0e8;
+  background: #e0e5ea;
 }
 .btn.danger {
   background: var(--danger);
 }
+.btn.danger:hover {
+  background: #a93226;
+}
 .btn.ghost {
   background: transparent;
   color: var(--brand);
-  border: 1px solid var(--brand);
+  border: 1.5px solid var(--brand);
 }
 .btn.ghost:hover {
   background: rgba(15, 92, 156, 0.08);
@@ -224,7 +264,7 @@ textarea {
 .btn-row {
   margin-top: 22px;
   display: flex;
-  gap: 10px;
+  gap: 12px;
   flex-wrap: wrap;
   align-items: center;
 }
@@ -338,7 +378,8 @@ tr:nth-child(even) td {
   font-size: 13px;
 }
 .pagination button {
-  padding: 6px 14px;
+  min-height: 36px;
+  padding: 6px 16px;
 }
 .file-drop {
   border: 2px dashed var(--border);

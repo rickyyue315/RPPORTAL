@@ -97,7 +97,7 @@ export const URGENT_QTY_MAX = 1000;
 
 /** Approved Urgent Order reasons in display order. Codes are stable DB values. */
 export const URGENT_REASONS: ReadonlyArray<{ code: string; label: string }> = [
-  { code: '1', label: '1. 客人訂購 (RP Tea定期隨機抽查核實)' },
+  { code: '1', label: '1. 客人訂購 (RP Team定期隨機抽查核實)' },
   { code: '2', label: '2. ROADSHOW' },
   { code: '3', label: '3. 追數 (OM指定)' },
   { code: '4', label: '4. Promotion' },

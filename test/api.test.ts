@@ -513,7 +513,7 @@ describe('urgent public API', () => {
     const wb = new ExcelJS.Workbook();
     const ws = wb.addWorksheet(URGENT_SHEET);
     ws.addRow([...URGENT_COLUMNS]);
-    ws.addRow(['HA02', 'U-IMP-LABEL', 3, '1. 客人訂購 (RP Tea定期隨機抽查核實)', '']);
+    ws.addRow(['HA02', 'U-IMP-LABEL', 3, '1. 客人訂購 (RP Team定期隨機抽查核實)', '']);
     const buffer = Buffer.from(await wb.xlsx.writeBuffer());
 
     const res = await request(app)

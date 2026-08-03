@@ -22,7 +22,7 @@ import {
 import { writeAuditEvent } from '../lib/audit.js';
 import { toHKString, hkTodayForDateColumn } from '../lib/time.js';
 import { parseImportWorkbook, parseUrgentImportWorkbook, findDuplicateImportErrors } from '../lib/excelImport.js';
-import { generateTemplateWorkbook, generateUrgentTemplateWorkbook, buildImportRecordBuffer } from '../lib/excelExport.js';
+import { generateTemplateWorkbook, generateUrgentTemplateWorkbook, buildImportRecordBuffer, buildUrgentImportRecordBuffer } from '../lib/excelExport.js';
 import { URGENT_QTY_MIN, URGENT_QTY_MAX, urgentReasonLabel } from '../lib/fields.js';
 import { RF_REMARK_REQUIRED_SITES, validateBusinessFields, validateUrgentReason } from '../lib/validation.js';
 import { query, withTransaction } from '../db/pool.js';
@@ -462,6 +462,42 @@ publicRouter.post(
       successCount: results.successCount,
       rows: results.rows,
     });
+  }),
+);
+
+const urgentImportRecordSchema = z.object({
+  rows: z
+    .array(
+      z.object({
+        row: z.number(),
+        application_no: z.string().max(64),
+        site_code: z.string().max(20),
+        sku: z.string().max(100),
+        qty: z.number(),
+        urgent_reason: z.string().max(100).optional().default(''),
+        urgent_reason_other: z.string().max(2000).optional().default(''),
+        submitted_at: z.string().max(64),
+      }),
+    )
+    .min(1)
+    .max(config.maxImportRows),
+});
+
+/** POST /api/public/urgent/import/record — download the just-imported urgent rows as an Excel record (one sheet per store). */
+publicRouter.post(
+  '/urgent/import/record',
+  excelExportLimiter,
+  asyncHandler(async (req: Request, res: Response) => {
+    const parsed = urgentImportRecordSchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ error: '資料格式錯誤' });
+      return;
+    }
+    const buffer = await buildUrgentImportRecordBuffer(parsed.data.rows);
+    const stamp = toHKString(new Date()).replace(/[^0-9]/g, '');
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition', `attachment; filename="Urgent_Import_Record_${stamp}.xlsx"`);
+    res.send(buffer);
   }),
 );
 

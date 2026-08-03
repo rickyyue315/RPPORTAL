@@ -201,9 +201,39 @@
         html += `<tr><td>${r.row}</td><td>${escapeHtml(r.application_no)}</td><td>${escapeHtml(r.site_code)}</td><td>${escapeHtml(r.sku)}</td><td>${escapeHtml(r.qty)}</td><td>${escapeHtml(r.urgent_reason_label || '')}</td><td>${escapeHtml(r.urgent_reason_other || '—')}</td><td>${escapeHtml(r.submitted_at)}</td></tr>`;
       });
       html += '</tbody></table>';
+      html += '<div class="btn-row"><button class="btn" id="btn_dl_record">下載匯入記錄 Excel（按店舖分頁）</button></div>';
       $('import_result').innerHTML = html;
       $('file_label').textContent = '拖曳 .xlsx 檔案到此處，或按一下選擇檔案';
       pendingFile = null;
+      const dlBtn = $('btn_dl_record');
+      dlBtn.addEventListener('click', async () => {
+        dlBtn.disabled = true;
+        dlBtn.textContent = '下載中…';
+        try {
+          const res = await fetch('/api/public/urgent/import/record', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ rows: data.rows }),
+          });
+          if (!res.ok) throw new Error('無法下載匯入記錄');
+          const blob = await res.blob();
+          const disp = res.headers.get('Content-Disposition') || '';
+          const match = disp.match(/filename="([^"]+)"/);
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement('a');
+          a.href = url;
+          a.download = match ? match[1] : 'Urgent_Import_Record.xlsx';
+          document.body.appendChild(a);
+          a.click();
+          a.remove();
+          URL.revokeObjectURL(url);
+        } catch (err) {
+          showAlert($('import_result'), 'error', escapeHtml(err.message));
+        } finally {
+          dlBtn.disabled = false;
+          dlBtn.textContent = '下載匯入記錄 Excel（按店舖分頁）';
+        }
+      });
     } catch (err) {
       let html = `<div class="alert error"><b>${escapeHtml(err.message)}</b></div>`;
       if (err.data?.errors?.length) {

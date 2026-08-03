@@ -509,6 +509,44 @@ describe('urgent public API', () => {
     expect(res.body.rows[1].urgent_reason_other).toBe('roadshow 加單');
   });
 
+  it('downloads the urgent import record workbook from just-imported rows', async () => {
+    const res = await request(app)
+      .post('/api/public/urgent/import/record')
+      .send({
+        rows: [
+          {
+            row: 2,
+            application_no: 'URGENT-00000000-00000000',
+            site_code: 'HA02',
+            sku: 'U-IMP-1',
+            qty: 2,
+            urgent_reason: '1',
+            urgent_reason_other: '',
+            submitted_at: '2026-08-03 09:00:00',
+          },
+          {
+            row: 3,
+            application_no: 'URGENT-00000000-00000001',
+            site_code: 'HA06',
+            sku: 'U-IMP-2',
+            qty: 999,
+            urgent_reason: '9',
+            urgent_reason_other: 'roadshow 加單',
+            submitted_at: '2026-08-03 09:00:01',
+          },
+        ],
+      });
+    expect(res.status).toBe(200);
+    expect(res.headers['content-type']).toContain('spreadsheetml');
+    expect(Number(res.headers['content-length'])).toBeGreaterThan(1000);
+    expect(res.headers['content-disposition']).toContain('Urgent_Import_Record');
+  });
+
+  it('rejects an urgent import record request with empty rows', async () => {
+    const res = await request(app).post('/api/public/urgent/import/record').send({ rows: [] });
+    expect(res.status).toBe(400);
+  });
+
   it('imports an urgent xlsx using the template dropdown label and stores its code', async () => {
     const wb = new ExcelJS.Workbook();
     const ws = wb.addWorksheet(URGENT_SHEET);

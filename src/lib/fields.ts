@@ -12,6 +12,9 @@ export const SAP_COLUMNS = [
 
 export type SapColumn = (typeof SAP_COLUMNS)[number];
 
+/** Columns shown in the downloadable import template. */
+export const TEMPLATE_COLUMNS = ['Shop Code', 'SKU', 'RP Type', 'Safety stock', 'ND Code', 'Remark'] as const;
+
 /** Business fields a user/admin can set, keyed by internal column name. */
 export interface SubmissionBusinessFields {
   brand: string;

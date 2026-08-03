@@ -1,8 +1,8 @@
 import ExcelJS from 'exceljs';
 import {
   SAP_COLUMNS,
+  TEMPLATE_COLUMNS,
   RP_TEAM_SHEET,
-  REQUESTED_BY_HEADER,
   RP_TYPE_OPTIONS,
   ND_CODE_OPTIONS,
   URGENT_COLUMNS,
@@ -49,7 +49,7 @@ export async function generateTemplateWorkbook(): Promise<Buffer> {
     },
   };
 
-  SAP_COLUMNS.forEach((name, i) => {
+  TEMPLATE_COLUMNS.forEach((name, i) => {
     const cell = sheet.getCell(1, i + 1);
     cell.value = name;
     cell.style = headerStyle;
@@ -57,8 +57,8 @@ export async function generateTemplateWorkbook(): Promise<Buffer> {
 
   // Data validation dropdowns replicating the original template.
   const lastDataRow = 2001;
-  const colLetter = (sapColumn: string) => String.fromCharCode(64 + SAP_COLUMNS.indexOf(sapColumn as (typeof SAP_COLUMNS)[number]) + 1);
-  const range = (sapColumn: string) => `${colLetter(sapColumn)}2:${colLetter(sapColumn)}${lastDataRow}`;
+  const colLetter = (templateColumn: string) => String.fromCharCode(64 + TEMPLATE_COLUMNS.indexOf(templateColumn as (typeof TEMPLATE_COLUMNS)[number]) + 1);
+  const range = (templateColumn: string) => `${colLetter(templateColumn)}2:${colLetter(templateColumn)}${lastDataRow}`;
 
   const vSheet = asValidationSheet(sheet);
   vSheet.dataValidations.add(range('RP Type'), {
@@ -71,13 +71,8 @@ export async function generateTemplateWorkbook(): Promise<Buffer> {
     allowBlank: true,
     formulae: [`' Data Validation'!$B$1:$B$${ND_CODE_OPTIONS.length}`],
   });
-  vSheet.dataValidations.add(range(REQUESTED_BY_HEADER), {
-    type: 'list',
-    allowBlank: true,
-    formulae: ['"Cora Lai ,Ice Lin,Bridget Wong ,Ricky Yue,Ting Chan,Laurent Wong,Winnie Lin"'],
-  });
 
-  const widths = [18, 22, 14, 16, 18, 10, 14, 45, 30];
+  const widths = [14, 18, 10, 14, 45, 30];
   widths.forEach((w, i) => {
     sheet.getColumn(i + 1).width = w;
   });

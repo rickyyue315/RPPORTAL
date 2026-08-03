@@ -49,7 +49,6 @@
       $('save_note').textContent = '匯出前可修改，每次修改會新增一個版本紀錄。';
     }
 
-    $('f_brand').value = s.brand || '';
     $('f_sku').value = s.sku || '';
     $('f_rp_type').value = s.rp_type || '';
     $('f_safety_stock').value = s.safety_stock || '';
@@ -78,7 +77,6 @@
     const body = {
       application_no: current.submission.application_no,
       site_code: current.submission.site_code,
-      brand: $('f_brand').value.trim(),
       sku: $('f_sku').value.trim(),
       rp_type: $('f_rp_type').value,
       safety_stock: $('f_safety_stock').value.trim(),

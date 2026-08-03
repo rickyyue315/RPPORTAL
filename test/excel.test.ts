@@ -177,8 +177,8 @@ describe('generateTemplateWorkbook', () => {
     await wb.xlsx.load(buffer as never);
     expect(wb.getWorksheet(RP_TEAM_SHEET)).toBeDefined();
     const ws = wb.getWorksheet(RP_TEAM_SHEET)!;
-    expect(ws.getCell(1, 1).value).toBe('Application Date');
-    expect(ws.getCell(1, 9).value).toBe('Remark');
+    expect(ws.getCell(1, 1).value).toBe('Shop Code');
+    expect(ws.getCell(1, 6).value).toBe('Remark');
   });
 });
 

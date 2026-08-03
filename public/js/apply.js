@@ -7,7 +7,6 @@
   function readForm() {
     return {
       site_code: $('site_code').value.trim(),
-      brand: $('brand').value.trim(),
       sku: $('sku').value.trim(),
       rp_type: $('rp_type').value,
       safety_stock: $('safety_stock').value.trim(),
@@ -18,7 +17,6 @@
 
   const LABELS = {
     site_code: 'Site Code',
-    brand: 'Brand',
     sku: 'SKU',
     rp_type: 'RP Type',
     safety_stock: 'Safety stock',

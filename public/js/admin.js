@@ -150,7 +150,6 @@
     $('urgent_fields').style.display = isUrgent ? '' : 'none';
     $('urgent_note').style.display = isUrgent ? '' : 'none';
 
-    $('a_brand').value = s.brand || '';
     $('a_sku_normal').value = s.sku || '';
     $('a_rp_type').value = s.rp_type || '';
     $('a_safety_stock').value = s.safety_stock || '';
@@ -184,7 +183,6 @@
     const body = isUrgent
       ? { sku: $('a_sku_urgent').value.trim(), qty: $('a_qty').value === '' ? null : Number($('a_qty').value) }
       : {
-          brand: $('a_brand').value.trim(),
           sku: $('a_sku_normal').value.trim(),
           rp_type: $('a_rp_type').value,
           safety_stock: $('a_safety_stock').value.trim(),

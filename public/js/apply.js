@@ -158,9 +158,10 @@
     try {
       const data = await api('/api/public/import', { method: 'POST', body: fd });
       let html = `<div class="alert success"><b>${escapeHtml(data.message)}</b>（總行數：${data.totalRows}）</div>`;
-      html += '<table><thead><tr><th>Excel 行</th><th>申請編號</th><th>Site Code</th><th>SKU</th><th>已收件時間</th></tr></thead><tbody>';
+      html += '<div class="hint" style="margin-bottom:8px">下表為已收件記錄（含原上載資料），請核對店舖填寫是否正確。</div>';
+      html += '<table><thead><tr><th>Excel 行</th><th>申請編號</th><th>Site Code</th><th>SKU</th><th>RP Type</th><th>Safety stock</th><th>ND Code</th><th>Remark</th><th>已收件時間</th></tr></thead><tbody>';
       data.rows.forEach((r) => {
-        html += `<tr><td>${r.row}</td><td>${escapeHtml(r.application_no)}</td><td>${escapeHtml(r.site_code)}</td><td>${escapeHtml(r.sku)}</td><td>${escapeHtml(r.submitted_at)}</td></tr>`;
+        html += `<tr><td>${r.row}</td><td>${escapeHtml(r.application_no)}</td><td>${escapeHtml(r.site_code)}</td><td>${escapeHtml(r.sku)}</td><td>${escapeHtml(r.rp_type || '—')}</td><td>${escapeHtml(r.safety_stock || '—')}</td><td>${escapeHtml(r.nd_code || '—')}</td><td>${escapeHtml(r.remark || '—')}</td><td>${escapeHtml(r.submitted_at)}</td></tr>`;
       });
       html += '</tbody></table>';
       html += '<div class="btn-row"><button class="btn" id="btn_dl_record">下載匯入記錄 Excel（按店舖分頁）</button></div>';

@@ -207,6 +207,10 @@ export interface ImportRecordRow {
   application_no: string;
   site_code: string;
   sku: string;
+  rp_type?: string;
+  safety_stock?: string;
+  nd_code?: string;
+  remark?: string;
   submitted_at: string;
 }
 
@@ -217,8 +221,8 @@ export async function buildImportRecordBuffer(rows: ImportRecordRow[]): Promise<
     font: { bold: true },
     fill: { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFD9E1F2' } },
   };
-  const headers = ['Excel 行', '申請編號', 'Site Code', 'SKU', '已收件時間'];
-  const widths = [10, 32, 12, 20, 24];
+  const headers = ['Excel 行', '申請編號', 'Site Code', 'SKU', 'RP Type', 'Safety stock', 'ND Code', 'Remark', '已收件時間'];
+  const widths = [10, 32, 12, 20, 10, 14, 45, 30, 24];
 
   const bySite = new Map<string, ImportRecordRow[]>();
   for (const r of rows) {
@@ -234,7 +238,17 @@ export async function buildImportRecordBuffer(rows: ImportRecordRow[]): Promise<
       sheet.getCell(1, c).style = headerStyle;
     }
     for (const r of bySite.get(site)!) {
-      sheet.addRow([r.row, r.application_no, r.site_code, r.sku, r.submitted_at]);
+      sheet.addRow([
+        r.row,
+        r.application_no,
+        r.site_code,
+        r.sku,
+        r.rp_type ?? '',
+        r.safety_stock ?? '',
+        r.nd_code ?? '',
+        r.remark ?? '',
+        r.submitted_at,
+      ]);
     }
     widths.forEach((w, i) => {
       sheet.getColumn(i + 1).width = w;

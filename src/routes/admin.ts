@@ -354,7 +354,17 @@ adminRouter.post(
 
     const ip = getClientIp(req);
     const results = await withTransaction(async (client) => {
-      const rowsOut: Array<{ row: number; application_no: string; site_code: string; sku: string; submitted_at: string }> = [];
+      const rowsOut: Array<{
+        row: number;
+        application_no: string;
+        site_code: string;
+        sku: string;
+        rp_type: string;
+        safety_stock: string;
+        nd_code: string;
+        remark: string;
+        submitted_at: string;
+      }> = [];
       let successCount = 0;
       for (const r of parsed.rows!) {
         const appNo = generateApplicationNo();
@@ -393,6 +403,10 @@ adminRouter.post(
           application_no: row.application_no,
           site_code: row.site_code,
           sku: row.sku,
+          rp_type: r.fields.rp_type,
+          safety_stock: r.fields.safety_stock,
+          nd_code: r.fields.nd_code,
+          remark: r.fields.remark,
           submitted_at: toHKString(row.submitted_at),
         });
       }

@@ -420,7 +420,17 @@ publicRouter.post(
 
     const ip = getClientIp(req);
     const results = await withTransaction(async (client) => {
-      const rowsOut: Array<{ row: number; application_no: string; site_code: string; sku: string; submitted_at: string }> = [];
+      const rowsOut: Array<{
+        row: number;
+        application_no: string;
+        site_code: string;
+        sku: string;
+        rp_type: string;
+        safety_stock: string;
+        nd_code: string;
+        remark: string;
+        submitted_at: string;
+      }> = [];
       let successCount = 0;
       for (const r of parsed.rows!) {
         const appNo = generateApplicationNo();
@@ -459,6 +469,10 @@ publicRouter.post(
           application_no: row.application_no,
           site_code: row.site_code,
           sku: row.sku,
+          rp_type: r.fields.rp_type,
+          safety_stock: r.fields.safety_stock,
+          nd_code: r.fields.nd_code,
+          remark: r.fields.remark,
           submitted_at: toHKString(row.submitted_at),
         });
       }
@@ -507,6 +521,10 @@ const importRecordSchema = z.object({
         application_no: z.string().max(64),
         site_code: z.string().max(20),
         sku: z.string().max(100),
+        rp_type: z.string().max(100).optional().default(''),
+        safety_stock: z.string().max(100).optional().default(''),
+        nd_code: z.string().max(300).optional().default(''),
+        remark: z.string().max(2000).optional().default(''),
         submitted_at: z.string().max(64),
       }),
     )

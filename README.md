@@ -9,6 +9,7 @@ SASA RP Team 非正常補貨（NDRF）申報平台。申請端與管理端均免
 - Urgent Order 申報（`/urgent.html`）：只需 Site Code、SKU、QTY（1 至 1000 的整數），單筆提交或獨立 3 欄 Excel 批量上載
 - Urgent Order 申請編號使用 `URGENT-...` 前綴；超出 1000 件的需求改以電郵向相關 Buyer 申請，不在平台處理
 - 申請編號 + Site Code 查詢／修改（匯出前可修改，每次修改新增不可變版本；Urgent 不提供申請人查詢／修改）
+- 同一 Site Code + SKU 於同一日（香港日期）只可申報一次；一般 NDRF 與 Urgent 分開計算。被拒時可用查詢／修改更正，翌日可重新申報；管理後台操作不受此限
 - 管理後台：清單篩選（含申報類型）、詳情編輯、版本歷史、模板下載、批量匯入、SAP 9 欄匯出、獨立 Urgent 匯出、完整審計報表、門店主檔管理
 - SAP 匯出只包含一般 NDRF，Urgent Order 使用獨立 4 欄匯出；匯出成功後鎖定該批申報，申請人不能再修改；匯出失敗不鎖定
 - IP 審計保留 12 個月後自動匿名化
@@ -89,5 +90,6 @@ npm run smoke     # 端到端 smoke test（真實 HTTP + PGlite）
 - Urgent Order 的 QTY 必須為 1 至 1000 的整數；單筆表單、Excel 模板及管理員修改共用相同驗證規則。
 - Urgent Order Excel 模板使用獨立 `Urgent Order` 工作表（欄位：Site Code、SKU、QTY），與 Page 1 的 `RP Team` 9 欄模板完全分開。
 - 上載檔內的 `Application Date` 及 `Requested by` 不可信，系統一律以伺服器值及 Site Code 產生值覆蓋。
+- 「同一 Site Code + SKU 每日只可申報一次」以 `application_date`（香港當日日期）計算，申請人修改時若把 SKU 改成同日已存在的組合亦會被拒；管理員匯入／編輯不受限制。
 - 錯誤訊息不包含資料庫或內部設定資訊。
 - 一般日誌不記錄申報內容、密碼或完整 IP。

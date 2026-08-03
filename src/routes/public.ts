@@ -16,11 +16,12 @@ import {
   modifySubmission,
   LockedError,
   NotSupportedError,
+  DuplicateSubmissionError,
   type SubmissionRow,
 } from '../services/submissions.js';
 import { writeAuditEvent } from '../lib/audit.js';
-import { toHKString } from '../lib/time.js';
-import { parseImportWorkbook, parseUrgentImportWorkbook } from '../lib/excelImport.js';
+import { toHKString, hkTodayForDateColumn } from '../lib/time.js';
+import { parseImportWorkbook, parseUrgentImportWorkbook, findDuplicateImportErrors } from '../lib/excelImport.js';
 import { generateTemplateWorkbook, generateUrgentTemplateWorkbook, buildImportRecordBuffer } from '../lib/excelExport.js';
 import { URGENT_QTY_MIN, URGENT_QTY_MAX } from '../lib/fields.js';
 import { validateBusinessFields } from '../lib/validation.js';
@@ -161,13 +162,22 @@ publicRouter.post(
     }
 
     const ip = getClientIp(req);
-    const row = await createSubmission({
-      siteCode,
-      source: 'web',
-      fields: businessFields,
-      ip,
-      changeSource: 'web_submit',
-    });
+    let row: SubmissionRow;
+    try {
+      row = await createSubmission({
+        siteCode,
+        source: 'web',
+        fields: businessFields,
+        ip,
+        changeSource: 'web_submit',
+      });
+    } catch (err) {
+      if (err instanceof DuplicateSubmissionError) {
+        res.status(409).json({ error: err.message, field: 'sku' });
+        return;
+      }
+      throw err;
+    }
 
     await writeAuditEvent({
       eventType: 'submission_created',
@@ -215,15 +225,24 @@ publicRouter.post(
     }
 
     const ip = getClientIp(req);
-    const row = await createSubmission({
-      siteCode,
-      source: 'web',
-      submissionType: 'urgent',
-      fields: { brand: '', sku: data.sku, rp_type: '', safety_stock: '', nd_code: '', remark: '' },
-      qty: data.qty,
-      ip,
-      changeSource: 'web_submit',
-    });
+    let row: SubmissionRow;
+    try {
+      row = await createSubmission({
+        siteCode,
+        source: 'web',
+        submissionType: 'urgent',
+        fields: { brand: '', sku: data.sku, rp_type: '', safety_stock: '', nd_code: '', remark: '' },
+        qty: data.qty,
+        ip,
+        changeSource: 'web_submit',
+      });
+    } catch (err) {
+      if (err instanceof DuplicateSubmissionError) {
+        res.status(409).json({ error: err.message, field: 'sku' });
+        return;
+      }
+      throw err;
+    }
 
     await writeAuditEvent({
       eventType: 'submission_created',
@@ -289,6 +308,31 @@ publicRouter.post(
         error: '匯入失敗',
         totalRows: parsed.totalRows,
         errors: parsed.errors ?? [],
+      });
+      return;
+    }
+
+    const existing = await query<{ site_code: string; sku: string }>(
+      `SELECT site_code, sku FROM submissions
+       WHERE application_date = $1::date AND submission_type = 'urgent'`,
+      [hkTodayForDateColumn()],
+    );
+    const existingKeys = new Set(existing.rows.map((s) => `${s.site_code}|${s.sku}`));
+    const dupErrors = findDuplicateImportErrors(
+      parsed.rows.map((r) => ({ rowNumber: r.rowNumber, siteCode: r.siteCode, sku: r.sku })),
+      existingKeys,
+    );
+    if (dupErrors.length) {
+      await writeAuditEvent({
+        eventType: 'excel_import_error',
+        actorRole: 'applicant',
+        ip: getClientIp(req),
+        metadata: { filename: file.originalname, submission_type: 'urgent', errors: dupErrors },
+      });
+      res.status(400).json({
+        error: '匯入失敗',
+        totalRows: parsed.totalRows,
+        errors: dupErrors,
       });
       return;
     }
@@ -414,6 +458,31 @@ publicRouter.post(
         error: '匯入失敗',
         totalRows: parsed.totalRows,
         errors: parsed.errors ?? [],
+      });
+      return;
+    }
+
+    const existing = await query<{ site_code: string; sku: string }>(
+      `SELECT site_code, sku FROM submissions
+       WHERE application_date = $1::date AND submission_type = 'normal'`,
+      [hkTodayForDateColumn()],
+    );
+    const existingKeys = new Set(existing.rows.map((s) => `${s.site_code}|${s.sku}`));
+    const dupErrors = findDuplicateImportErrors(
+      parsed.rows.map((r) => ({ rowNumber: r.rowNumber, siteCode: r.siteCode, sku: r.fields.sku })),
+      existingKeys,
+    );
+    if (dupErrors.length) {
+      await writeAuditEvent({
+        eventType: 'excel_import_error',
+        actorRole: 'applicant',
+        ip: getClientIp(req),
+        metadata: { filename: file.originalname, errors: dupErrors },
+      });
+      res.status(400).json({
+        error: '匯入失敗',
+        totalRows: parsed.totalRows,
+        errors: dupErrors,
       });
       return;
     }
@@ -686,6 +755,10 @@ publicRouter.post(
       }
       if (err instanceof NotSupportedError) {
         res.status(400).json({ error: err.message });
+        return;
+      }
+      if (err instanceof DuplicateSubmissionError) {
+        res.status(409).json({ error: err.message, field: 'sku' });
         return;
       }
       if (err instanceof Error && err.message === '找不到申報') {

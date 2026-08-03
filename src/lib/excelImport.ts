@@ -337,3 +337,31 @@ export async function parseUrgentImportWorkbook(
     contentHash,
   };
 }
+
+/**
+ * Detects duplicate (site_code, sku) rows against existing keys of the same
+ * application date AND duplicate rows within the same file. Used by the public
+ * import routes only; admin imports are exempt. Returns row errors following
+ * the existing all-or-nothing import semantics (nothing is written).
+ */
+export function findDuplicateImportErrors(
+  rows: Array<{ rowNumber: number; siteCode: string; sku: string }>,
+  existingKeys: Set<string>,
+): ImportRowError[] {
+  const errors: ImportRowError[] = [];
+  const seen = new Set<string>();
+  for (const r of rows) {
+    if (!r.siteCode || !r.sku) continue;
+    const key = `${r.siteCode}|${r.sku}`;
+    if (seen.has(key) || existingKeys.has(key)) {
+      errors.push({
+        row: r.rowNumber,
+        field: 'SKU',
+        reason: '同日已申報相同 SKU 或與檔案內其他行重複',
+        siteCode: r.siteCode,
+      });
+    }
+    seen.add(key);
+  }
+  return errors;
+}

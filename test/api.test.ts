@@ -545,3 +545,129 @@ describe('urgent admin API', () => {
     expect(Number(exported.body.total)).toBeGreaterThanOrEqual(1);
   });
 });
+
+describe('daily duplicate rule', () => {
+  const ND = { rp_type: 'ND', nd_code: 'ND20-SO-Not displayed in small stores' };
+
+  it('blocks a second normal submission for the same site+sku on the same day', async () => {
+    const first = await request(app).post('/api/public/submit').send({ site_code: 'HA02', sku: 'DUP-001', ...ND });
+    expect(first.status).toBe(201);
+    const dup = await request(app).post('/api/public/submit').send({ site_code: 'HA02', sku: 'DUP-001', ...ND });
+    expect(dup.status).toBe(409);
+    expect(dup.body.field).toBe('sku');
+  });
+
+  it('allows the same sku on a different site code', async () => {
+    const res = await request(app).post('/api/public/submit').send({ site_code: 'HA06', sku: 'DUP-001', ...ND });
+    expect(res.status).toBe(201);
+  });
+
+  it('allows the same site+sku once for normal and once for urgent, but not urgent twice', async () => {
+    const urgent = await request(app).post('/api/public/urgent/submit').send({ site_code: 'HA02', sku: 'DUP-001', qty: 5 });
+    expect(urgent.status).toBe(201);
+    const urgentDup = await request(app).post('/api/public/urgent/submit').send({ site_code: 'HA02', sku: 'DUP-001', qty: 6 });
+    expect(urgentDup.status).toBe(409);
+    expect(urgentDup.body.field).toBe('sku');
+  });
+
+  it('blocks modify changing sku to one already submitted today, allows a new sku', async () => {
+    const a = await request(app).post('/api/public/submit').send({ site_code: 'HA02', sku: 'DUP-MOD-1', ...ND });
+    await request(app).post('/api/public/submit').send({ site_code: 'HA02', sku: 'DUP-MOD-2', ...ND });
+    const no = a.body.submission.application_no;
+
+    const blocked = await request(app)
+      .post('/api/public/modify')
+      .send({ application_no: no, site_code: 'HA02', sku: 'DUP-MOD-2', ...ND });
+    expect(blocked.status).toBe(409);
+
+    const ok = await request(app)
+      .post('/api/public/modify')
+      .send({ application_no: no, site_code: 'HA02', sku: 'DUP-MOD-3', ...ND });
+    expect(ok.status).toBe(200);
+    expect(ok.body.submission.sku).toBe('DUP-MOD-3');
+  });
+
+  it('rejects a public import row duplicating an existing today submission without writing', async () => {
+    await request(app).post('/api/public/submit').send({ site_code: 'HA02', sku: 'DUP-IMP-1', ...ND });
+    const before = await request(app).get('/api/admin/submissions?page=1&page_size=1');
+    const beforeTotal = before.body.total;
+
+    const wb = new ExcelJS.Workbook();
+    const ws = wb.addWorksheet(RP_TEAM_SHEET);
+    ws.addRow([...TEMPLATE_COLUMNS]);
+    ws.addRow(['HA02', 'DUP-IMP-1', 'ND', '', 'ND20-SO-Not displayed in small stores', '']);
+    const buffer = Buffer.from(await wb.xlsx.writeBuffer());
+
+    const res = await request(app).post('/api/public/import').attach('file', buffer, 'dup-import.xlsx');
+    expect(res.status).toBe(400);
+    expect(res.body.errors?.some((e: { field: string }) => e.field === 'SKU')).toBe(true);
+
+    const after = await request(app).get('/api/admin/submissions?page=1&page_size=1');
+    expect(after.body.total).toBe(beforeTotal);
+  });
+
+  it('rejects a public import file with duplicate rows inside the file without writing', async () => {
+    const before = await request(app).get('/api/admin/submissions?page=1&page_size=1');
+    const beforeTotal = before.body.total;
+
+    const wb = new ExcelJS.Workbook();
+    const ws = wb.addWorksheet(RP_TEAM_SHEET);
+    ws.addRow([...TEMPLATE_COLUMNS]);
+    ws.addRow(['HA02', 'DUP-IMP-2', 'ND', '', 'ND20-SO-Not displayed in small stores', '']);
+    ws.addRow(['HA02', 'DUP-IMP-2', 'ND', '', 'ND20-SO-Not displayed in small stores', '']);
+    const buffer = Buffer.from(await wb.xlsx.writeBuffer());
+
+    const res = await request(app).post('/api/public/import').attach('file', buffer, 'dup-inline.xlsx');
+    expect(res.status).toBe(400);
+    expect(res.body.errors?.length).toBeGreaterThan(0);
+
+    const after = await request(app).get('/api/admin/submissions?page=1&page_size=1');
+    expect(after.body.total).toBe(beforeTotal);
+  });
+
+  it('allows admin import of rows duplicating existing today submissions (exempt)', async () => {
+    const agent = request.agent(app);
+    const token = await csrf(agent);
+
+    const wb = new ExcelJS.Workbook();
+    const ws = wb.addWorksheet(RP_TEAM_SHEET);
+    ws.addRow([...TEMPLATE_COLUMNS]);
+    ws.addRow(['HA02', 'DUP-001', 'ND', '', 'ND20-SO-Not displayed in small stores', '']);
+    ws.addRow(['HA02', 'DUP-001', 'ND', '', 'ND20-SO-Not displayed in small stores', '']);
+    const buffer = Buffer.from(await wb.xlsx.writeBuffer());
+
+    const res = await agent
+      .post('/api/admin/import')
+      .set('x-csrf-token', token)
+      .attach('file', buffer, 'admin-dup.xlsx');
+    expect(res.status).toBe(201);
+    expect(res.body.successCount).toBe(2);
+  });
+
+  it('allows admin edit to change sku to a duplicate combination (exempt)', async () => {
+    const a = await request(app).post('/api/public/submit').send({ site_code: 'HA02', sku: 'DUP-ADM-1', ...ND });
+    await request(app).post('/api/public/submit').send({ site_code: 'HA02', sku: 'DUP-ADM-2', ...ND });
+    const no = a.body.submission.application_no;
+    const idRes = await db.query<{ id: string }>('SELECT id FROM submissions WHERE application_no = $1', [no]);
+    const id = idRes.rows[0]!.id;
+
+    const agent = request.agent(app);
+    const token = await csrf(agent);
+    const res = await agent
+      .put(`/api/admin/submissions/${id}`)
+      .set('x-csrf-token', token)
+      .send({ sku: 'DUP-ADM-2', ...ND });
+    expect(res.status).toBe(200);
+    expect(res.body.submission.sku).toBe('DUP-ADM-2');
+  });
+
+  it('allows re-submission on the next day', async () => {
+    await request(app).post('/api/public/submit').send({ site_code: 'HA02', sku: 'DUP-NEXT-1', ...ND });
+    await db.query(
+      `UPDATE submissions SET application_date = application_date - 1
+       WHERE site_code = 'HA02' AND sku = 'DUP-NEXT-1' AND submission_type = 'normal'`,
+    );
+    const res = await request(app).post('/api/public/submit').send({ site_code: 'HA02', sku: 'DUP-NEXT-1', ...ND });
+    expect(res.status).toBe(201);
+  });
+});

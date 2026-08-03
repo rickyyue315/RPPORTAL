@@ -87,7 +87,7 @@ describe('submissions (integration)', () => {
     const row = await createSubmission({
       siteCode: 'HA02',
       source: 'web',
-      fields: baseFields,
+      fields: { ...baseFields, sku: '110079623002' },
       ip: '203.0.113.2',
       changeSource: 'web_submit',
     });
@@ -111,7 +111,7 @@ describe('submissions (integration)', () => {
     const row = await createSubmission({
       siteCode: 'HA02',
       source: 'excel',
-      fields: baseFields,
+      fields: { ...baseFields, sku: '110079623003' },
       ip: '203.0.113.3',
       changeSource: 'excel_import',
     });
@@ -136,11 +136,11 @@ describe('submissions (integration)', () => {
     const row = await createSubmission({
       siteCode: 'HA02',
       source: 'web',
-      fields: baseFields,
+      fields: { ...baseFields, sku: '110079623004' },
       ip: '203.0.113.5',
       changeSource: 'web_submit',
     });
-    const updated = await adminUpdateSubmission(row.id, { ...baseFields, brand: 'NEG - NEW' }, '203.0.113.6', 'admin');
+    const updated = await adminUpdateSubmission(row.id, { ...baseFields, sku: '110079623004', brand: 'NEG - NEW' }, '203.0.113.6', 'admin');
     expect(updated.brand).toBe('NEG - NEW');
   });
 

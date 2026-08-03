@@ -102,6 +102,34 @@ async function nextApplicationNo(prefix: string): Promise<string> {
   throw new Error('無法產生唯一申請編號');
 }
 
+interface DuplicateCheckClient {
+  query: (text: string, params?: unknown[]) => Promise<{ rows: unknown[] }>;
+}
+
+/**
+ * Enforces the "one submission per Site Code + SKU + day" rule.
+ * The same SKU + Site Code may only be submitted once per application_date
+ * (HK date) within the same submission type. Re-application is allowed from
+ * the next day because application_date changes.
+ */
+async function assertNoDuplicate(
+  client: DuplicateCheckClient,
+  params: { siteCode: string; sku: string; submissionType: SubmissionType; date: string; excludeId?: string },
+): Promise<void> {
+  const { siteCode, sku, submissionType, date, excludeId } = params;
+  const result = await client.query(
+    `SELECT 1 FROM submissions
+     WHERE site_code = $1 AND sku = $2 AND submission_type = $3
+       AND application_date = $4::date
+       AND ($5::uuid IS NULL OR id <> $5)
+     LIMIT 1`,
+    [siteCode, normalizeText(sku), submissionType, date, excludeId ?? null],
+  );
+  if (result.rows.length > 0) {
+    throw new DuplicateSubmissionError();
+  }
+}
+
 export async function createSubmission(
   input: CreateSubmissionInput,
 ): Promise<SubmissionRow> {
@@ -120,6 +148,7 @@ export async function createSubmission(
   const appNoPrefix = isUrgent ? 'URGENT' : 'NDRF';
 
   return withTransaction(async (client) => {
+    await assertNoDuplicate(client, { siteCode, sku: fields.sku, submissionType, date: applicationDate });
     const applicationNo = await nextApplicationNo(appNoPrefix);
     const values = [
       applicationNo,
@@ -222,6 +251,13 @@ export class NotSupportedError extends Error {
   }
 }
 
+export class DuplicateSubmissionError extends Error {
+  constructor() {
+    super('同日已申報相同 SKU，請使用「查詢／修改」更正現有申報，或明日再申報');
+    this.name = 'DuplicateSubmissionError';
+  }
+}
+
 export async function modifySubmission(
   input: ModifySubmissionInput,
 ): Promise<SubmissionRow> {
@@ -242,6 +278,14 @@ export async function modifySubmission(
     if (row.locked_at || row.exported_at) {
       throw new LockedError(row.locked_at ? new Date(row.locked_at) : null);
     }
+
+    await assertNoDuplicate(client, {
+      siteCode,
+      sku: fields.sku,
+      submissionType: row.submission_type,
+      date: row.application_date,
+      excludeId: row.id,
+    });
 
     const before = businessFieldsFromRow(row);
     const updated = await client.query<SubmissionRow>(

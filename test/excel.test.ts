@@ -6,6 +6,7 @@ import {
   SHOP_CODE_HEADER,
   URGENT_COLUMNS,
   URGENT_SHEET,
+  SAP_COLUMNS,
 } from '../src/lib/fields.js';
 import { parseImportWorkbook, parseUrgentImportWorkbook } from '../src/lib/excelImport.js';
 import {

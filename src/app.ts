@@ -50,7 +50,6 @@ export function createApp() {
   app.use(
     express.static(path.join(process.cwd(), 'public'), {
       index: 'index.html',
-      maxAge: '1h',
       setHeaders: (res, filePath) => {
         if (filePath.endsWith('.html')) {
           res.setHeader('Cache-Control', 'no-store');

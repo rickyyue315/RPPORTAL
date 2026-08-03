@@ -30,8 +30,8 @@ import { getStore, normalizeSiteCode, parseStoresCsv, replaceStores, listStores 
 import { toHKString, hkTodayForDateColumn } from '../lib/time.js';
 import { generateApplicationNo } from '../lib/applicationNo.js';
 import { ipExpiryIso } from '../lib/ip.js';
-import { URGENT_QTY_MIN, URGENT_QTY_MAX } from '../lib/fields.js';
-import { validateBusinessFields } from '../lib/validation.js';
+import { URGENT_QTY_MIN, URGENT_QTY_MAX, urgentReasonLabel } from '../lib/fields.js';
+import { validateBusinessFields, validateUrgentReason } from '../lib/validation.js';
 
 export const adminRouter = Router();
 
@@ -71,6 +71,9 @@ function serializeAdminSubmission(row: SubmissionRow) {
     nd_code: row.nd_code,
     remark: row.remark,
     qty: row.qty,
+    urgent_reason: row.urgent_reason,
+    urgent_reason_label: urgentReasonLabel(row.urgent_reason),
+    urgent_reason_other: row.urgent_reason_other,
   };
 }
 
@@ -258,6 +261,8 @@ adminRouter.put(
           .int('QTY 必須為整數')
           .min(URGENT_QTY_MIN, `QTY 最少為 ${URGENT_QTY_MIN}`)
           .max(URGENT_QTY_MAX, `QTY 最多為 ${URGENT_QTY_MAX}`),
+        urgent_reason: z.string().trim().max(20).optional().default(''),
+        urgent_reason_other: z.string().max(2000).optional().default(''),
       });
       const parsed = urgentSchema.safeParse(req.body);
       if (!parsed.success) {
@@ -265,7 +270,24 @@ adminRouter.put(
         res.status(400).json({ error: first?.message ?? '輸入資料無效', field: first?.path[0] ?? null });
         return;
       }
-      const updated = await adminUpdateUrgentSubmission(row.id, parsed.data.sku, parsed.data.qty, ip, req.adminUsername!);
+      const reasonErrors = validateUrgentReason(parsed.data.urgent_reason, parsed.data.urgent_reason_other);
+      if (reasonErrors.length) {
+        res.status(400).json({
+          error: reasonErrors[0]!.message,
+          field: reasonErrors[0]!.field,
+          errors: reasonErrors,
+        });
+        return;
+      }
+      const updated = await adminUpdateUrgentSubmission({
+        id: row.id,
+        sku: parsed.data.sku,
+        qty: parsed.data.qty,
+        urgentReason: parsed.data.urgent_reason,
+        urgentReasonOther: parsed.data.urgent_reason_other,
+        ip,
+        username: req.adminUsername!,
+      });
       await writeAuditEvent({
         eventType: 'admin_modified',
         actorRole: 'admin',
@@ -599,7 +621,17 @@ adminRouter.post(
 
     const ip = getClientIp(req);
     const results = await withTransaction(async (client) => {
-      const rowsOut: Array<{ row: number; application_no: string; site_code: string; sku: string; qty: number; submitted_at: string }> = [];
+      const rowsOut: Array<{
+        row: number;
+        application_no: string;
+        site_code: string;
+        sku: string;
+        qty: number;
+        urgent_reason: string | null;
+        urgent_reason_label: string;
+        urgent_reason_other: string | null;
+        submitted_at: string;
+      }> = [];
       let successCount = 0;
       for (const r of parsed.rows!) {
         const appNo = generateApplicationNo('URGENT');
@@ -607,18 +639,29 @@ adminRouter.post(
         const insert = await client.query<SubmissionRow>(
           `INSERT INTO submissions (
              application_no, source, submission_type, site_code, requested_by_email, application_date,
-             brand, sku, qty, created_ip, created_ip_expires_at
+             brand, sku, qty, urgent_reason, urgent_reason_other, created_ip, created_ip_expires_at
            ) VALUES ($1,'excel','urgent',$2,$3,to_char(now() AT TIME ZONE 'Asia/Hong_Kong','YYYY-MM-DD')::date,
-             '',$4,$5,$6,$7)
+             '',$4,$5,$6,$7,$8,$9)
            RETURNING *`,
-          [appNo, r.siteCode, requestedByEmail, r.sku, r.qty, ip, ip ? ipExpiryIso() : null],
+          [appNo, r.siteCode, requestedByEmail, r.sku, r.qty, r.urgentReason || null, r.urgentReasonOther || null, ip, ip ? ipExpiryIso() : null],
         );
         const row = insert.rows[0]!;
         await client.query(
           `INSERT INTO submission_versions
              (submission_id, version, data_before, data_after, actor_role, actor, ip, change_source)
            VALUES ($1, 1, NULL, $2, 'admin', $3, $4, 'excel_import')`,
-          [row.id, JSON.stringify({ site_code: r.siteCode, sku: r.sku, qty: r.qty }), req.adminUsername, ip],
+          [
+            row.id,
+            JSON.stringify({
+              site_code: r.siteCode,
+              sku: r.sku,
+              qty: r.qty,
+              urgent_reason: r.urgentReason || null,
+              urgent_reason_other: r.urgentReasonOther || null,
+            }),
+            req.adminUsername,
+            ip,
+          ],
         );
         successCount++;
         rowsOut.push({
@@ -627,6 +670,9 @@ adminRouter.post(
           site_code: row.site_code,
           sku: row.sku,
           qty: row.qty as number,
+          urgent_reason: row.urgent_reason,
+          urgent_reason_label: urgentReasonLabel(row.urgent_reason),
+          urgent_reason_other: row.urgent_reason_other,
           submitted_at: toHKString(row.submitted_at),
         });
       }
@@ -711,6 +757,8 @@ adminRouter.post(
         site_code: r.site_code,
         sku: r.sku,
         qty: r.qty,
+        urgent_reason: r.urgent_reason,
+        urgent_reason_other: r.urgent_reason_other,
       })),
     );
 

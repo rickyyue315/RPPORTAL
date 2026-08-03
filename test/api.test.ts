@@ -33,7 +33,7 @@ async function csrf(agent: ReturnType<typeof request.agent>): Promise<string> {
 beforeAll(async () => {
   db = new PGlite();
   setPoolForTesting(makePglitePool(db));
-  const migrationFiles = ['001_init.sql', '002_drop_rp_type_completed_at.sql', '003_add_submission_type_qty.sql'];
+  const migrationFiles = ['001_init.sql', '002_drop_rp_type_completed_at.sql', '003_add_submission_type_qty.sql', '004_add_urgent_reason.sql'];
   for (const file of migrationFiles) {
     let sql = await readFile(path.join(__dirname, '..', 'src', 'db', 'migrations', file), 'utf8');
     sql = sql.replace(/CREATE EXTENSION IF NOT EXISTS pgcrypto;\s*/g, '');
@@ -343,12 +343,61 @@ describe('urgent public API', () => {
       site_code: 'HA02',
       sku: 'U-VALID-1',
       qty: 10,
+      urgent_reason: '1',
     });
     expect(res.status).toBe(201);
     expect(res.body.submission.application_no).toMatch(/^URGENT-[A-Z2-9]{8}-[A-Z2-9]{8}$/);
     expect(res.body.submission.submission_type).toBe('urgent');
     expect(res.body.submission.qty).toBe(10);
+    expect(res.body.submission.urgent_reason).toBe('1');
+    expect(res.body.submission.urgent_reason_label).toContain('客人訂購');
     expect(res.body.submission.locked).toBe(false);
+  });
+
+  it('accepts option 9 with other reason', async () => {
+    const res = await request(app).post('/api/public/urgent/submit').send({
+      site_code: 'HA02',
+      sku: 'U-OTHER-1',
+      qty: 5,
+      urgent_reason: '9',
+      urgent_reason_other: '臨時加單',
+    });
+    expect(res.status).toBe(201);
+    expect(res.body.submission.urgent_reason).toBe('9');
+    expect(res.body.submission.urgent_reason_other).toBe('臨時加單');
+  });
+
+  it('rejects urgent submit without reason', async () => {
+    const res = await request(app).post('/api/public/urgent/submit').send({
+      site_code: 'HA02',
+      sku: 'U-NOREASON',
+      qty: 5,
+    });
+    expect(res.status).toBe(400);
+    expect(res.body.field).toBe('urgent_reason');
+  });
+
+  it('rejects urgent option 9 without other reason', async () => {
+    const res = await request(app).post('/api/public/urgent/submit').send({
+      site_code: 'HA02',
+      sku: 'U-NOOTHER',
+      qty: 5,
+      urgent_reason: '9',
+    });
+    expect(res.status).toBe(400);
+    expect(res.body.field).toBe('urgent_reason_other');
+  });
+
+  it('rejects urgent non-9 with other reason', async () => {
+    const res = await request(app).post('/api/public/urgent/submit').send({
+      site_code: 'HA02',
+      sku: 'U-BADOTHER',
+      qty: 5,
+      urgent_reason: '2',
+      urgent_reason_other: '不應填寫',
+    });
+    expect(res.status).toBe(400);
+    expect(res.body.field).toBe('urgent_reason_other');
   });
 
   it('rejects urgent qty 0', async () => {
@@ -356,6 +405,7 @@ describe('urgent public API', () => {
       site_code: 'HA02',
       sku: 'U-ZERO',
       qty: 0,
+      urgent_reason: '1',
     });
     expect(res.status).toBe(400);
     expect(res.body.field).toBe('qty');
@@ -366,6 +416,7 @@ describe('urgent public API', () => {
       site_code: 'HA02',
       sku: 'U-OVER',
       qty: 1001,
+      urgent_reason: '1',
     });
     expect(res.status).toBe(400);
     expect(res.body.field).toBe('qty');
@@ -376,6 +427,7 @@ describe('urgent public API', () => {
       site_code: 'HA02',
       sku: 'U-DEC',
       qty: 1.5,
+      urgent_reason: '1',
     });
     expect(res.status).toBe(400);
     expect(res.body.field).toBe('qty');
@@ -386,6 +438,7 @@ describe('urgent public API', () => {
       site_code: 'HA02',
       sku: '',
       qty: 5,
+      urgent_reason: '1',
     });
     expect(res.status).toBe(400);
     expect(res.body.field).toBe('sku');
@@ -396,6 +449,7 @@ describe('urgent public API', () => {
       site_code: 'ZZ99',
       sku: 'U-BAD',
       qty: 5,
+      urgent_reason: '1',
     });
     expect(res.status).toBe(400);
     expect(res.body.field).toBe('site_code');
@@ -406,6 +460,7 @@ describe('urgent public API', () => {
       site_code: 'HA02',
       sku: 'U-LOOKUP-1',
       qty: 4,
+      urgent_reason: '1',
     });
     const no = created.body.submission.application_no;
     const res = await request(app).get(`/api/public/query?application_no=${no}&site_code=HA02`);
@@ -417,6 +472,7 @@ describe('urgent public API', () => {
       site_code: 'HA02',
       sku: 'U-MODIFY-1',
       qty: 4,
+      urgent_reason: '1',
     });
     const no = created.body.submission.application_no;
     const res = await request(app).post('/api/public/modify').send({
@@ -438,8 +494,8 @@ describe('urgent public API', () => {
     const wb = new ExcelJS.Workbook();
     const ws = wb.addWorksheet(URGENT_SHEET);
     ws.addRow([...URGENT_COLUMNS]);
-    ws.addRow(['HA02', 'U-IMP-1', 2]);
-    ws.addRow(['HA06', 'U-IMP-2', 999]);
+    ws.addRow(['HA02', 'U-IMP-1', 2, '1', '']);
+    ws.addRow(['HA06', 'U-IMP-2', 999, '9', 'roadshow 加單']);
     const buffer = Buffer.from(await wb.xlsx.writeBuffer());
 
     const res = await request(app)
@@ -449,6 +505,22 @@ describe('urgent public API', () => {
     expect(res.body.successCount).toBe(2);
     expect(res.body.rows[0].application_no).toMatch(/^URGENT-/);
     expect(res.body.rows[1].qty).toBe(999);
+    expect(res.body.rows[1].urgent_reason).toBe('9');
+    expect(res.body.rows[1].urgent_reason_other).toBe('roadshow 加單');
+  });
+
+  it('imports an urgent xlsx using the template dropdown label and stores its code', async () => {
+    const wb = new ExcelJS.Workbook();
+    const ws = wb.addWorksheet(URGENT_SHEET);
+    ws.addRow([...URGENT_COLUMNS]);
+    ws.addRow(['HA02', 'U-IMP-LABEL', 3, '1. 客人訂購 (RP Tea定期隨機抽查核實)', '']);
+    const buffer = Buffer.from(await wb.xlsx.writeBuffer());
+
+    const res = await request(app)
+      .post('/api/public/urgent/import')
+      .attach('file', buffer, 'urgent-label.xlsx');
+    expect(res.status).toBe(201);
+    expect(res.body.rows[0].urgent_reason).toBe('1');
   });
 
   it('rejects an urgent import with invalid qty without writing anything', async () => {
@@ -458,7 +530,7 @@ describe('urgent public API', () => {
     const wb = new ExcelJS.Workbook();
     const ws = wb.addWorksheet(URGENT_SHEET);
     ws.addRow([...URGENT_COLUMNS]);
-    ws.addRow(['HA02', 'U-BADQTY', 1001]);
+    ws.addRow(['HA02', 'U-BADQTY', 1001, '1', '']);
     const buffer = Buffer.from(await wb.xlsx.writeBuffer());
 
     const res = await request(app)
@@ -466,6 +538,26 @@ describe('urgent public API', () => {
       .attach('file', buffer, 'urgent-bad.xlsx');
     expect(res.status).toBe(400);
     expect(res.body.errors?.length).toBeGreaterThan(0);
+
+    const after = await request(app).get('/api/admin/submissions?submission_type=urgent&page=1&page_size=1');
+    expect(after.body.total).toBe(beforeTotal);
+  });
+
+  it('rejects an urgent import with missing reason without writing anything', async () => {
+    const before = await request(app).get('/api/admin/submissions?submission_type=urgent&page=1&page_size=1');
+    const beforeTotal = before.body.total;
+
+    const wb = new ExcelJS.Workbook();
+    const ws = wb.addWorksheet(URGENT_SHEET);
+    ws.addRow([...URGENT_COLUMNS]);
+    ws.addRow(['HA02', 'U-BADREASON', 5, '', '']);
+    const buffer = Buffer.from(await wb.xlsx.writeBuffer());
+
+    const res = await request(app)
+      .post('/api/public/urgent/import')
+      .attach('file', buffer, 'urgent-bad-reason.xlsx');
+    expect(res.status).toBe(400);
+    expect(res.body.errors?.some((e: { field: string }) => e.field === 'Urgent Reason')).toBe(true);
 
     const after = await request(app).get('/api/admin/submissions?submission_type=urgent&page=1&page_size=1');
     expect(after.body.total).toBe(beforeTotal);
@@ -493,7 +585,7 @@ describe('urgent admin API', () => {
   }
 
   it('filters submissions by submission_type=urgent', async () => {
-    await request(app).post('/api/public/urgent/submit').send({ site_code: 'HA02', sku: 'U-FILTER-1', qty: 5 });
+    await request(app).post('/api/public/urgent/submit').send({ site_code: 'HA02', sku: 'U-FILTER-1', qty: 5, urgent_reason: '1' });
     const { agent } = await urgentAdminAgent();
     const res = await agent.get('/api/admin/submissions?submission_type=urgent&page=1');
     expect(res.status).toBe(200);
@@ -501,11 +593,12 @@ describe('urgent admin API', () => {
     expect(res.body.submissions.every((s: { submission_type: string }) => s.submission_type === 'urgent')).toBe(true);
   });
 
-  it('admin edits urgent sku/qty and rejects out-of-range qty', async () => {
+  it('admin edits urgent sku/qty/reason and rejects out-of-range qty', async () => {
     const created = await request(app).post('/api/public/urgent/submit').send({
       site_code: 'HA02',
       sku: 'U-EDIT-1',
       qty: 7,
+      urgent_reason: '1',
     });
     const no = created.body.submission.application_no;
     const idRes = await db.query<{ id: string }>('SELECT id FROM submissions WHERE application_no = $1', [no]);
@@ -515,20 +608,53 @@ describe('urgent admin API', () => {
     const res = await agent
       .put(`/api/admin/submissions/${id}`)
       .set('x-csrf-token', token)
-      .send({ sku: 'U-EDIT-2', qty: 12 });
+      .send({ sku: 'U-EDIT-2', qty: 12, urgent_reason: '2' });
     expect(res.status).toBe(200);
     expect(res.body.submission.sku).toBe('U-EDIT-2');
     expect(res.body.submission.qty).toBe(12);
+    expect(res.body.submission.urgent_reason).toBe('2');
 
     const bad = await agent
       .put(`/api/admin/submissions/${id}`)
       .set('x-csrf-token', token)
-      .send({ sku: 'U-EDIT-2', qty: 1001 });
+      .send({ sku: 'U-EDIT-2', qty: 1001, urgent_reason: '2' });
     expect(bad.status).toBe(400);
+
+    const noReason = await agent
+      .put(`/api/admin/submissions/${id}`)
+      .set('x-csrf-token', token)
+      .send({ sku: 'U-EDIT-2', qty: 12, urgent_reason: '' });
+    expect(noReason.status).toBe(400);
+    expect(noReason.body.field).toBe('urgent_reason');
+  });
+
+  it('admin can complete a reason on a legacy blank urgent row', async () => {
+    const created = await request(app).post('/api/public/urgent/submit').send({
+      site_code: 'HA02',
+      sku: 'U-LEGACY-1',
+      qty: 6,
+      urgent_reason: '1',
+    });
+    const no = created.body.submission.application_no;
+    await db.query(
+      `UPDATE submissions SET urgent_reason = NULL, urgent_reason_other = NULL WHERE application_no = $1`,
+      [no],
+    );
+    const idRes = await db.query<{ id: string }>('SELECT id FROM submissions WHERE application_no = $1', [no]);
+    const id = idRes.rows[0]!.id;
+
+    const { agent, token } = await urgentAdminAgent();
+    const res = await agent
+      .put(`/api/admin/submissions/${id}`)
+      .set('x-csrf-token', token)
+      .send({ sku: 'U-LEGACY-1', qty: 6, urgent_reason: '9', urgent_reason_other: '補回原因' });
+    expect(res.status).toBe(200);
+    expect(res.body.submission.urgent_reason).toBe('9');
+    expect(res.body.submission.urgent_reason_other).toBe('補回原因');
   });
 
   it('urgent export locks urgent only; SAP export excludes urgent', async () => {
-    await request(app).post('/api/public/urgent/submit').send({ site_code: 'HA06', sku: 'U-EXP-1', qty: 3 });
+    await request(app).post('/api/public/urgent/submit').send({ site_code: 'HA06', sku: 'U-EXP-1', qty: 3, urgent_reason: '1' });
     const { agent, token } = await urgentAdminAgent();
 
     const sap = await agent
@@ -570,9 +696,9 @@ describe('daily duplicate rule', () => {
   });
 
   it('allows the same site+sku once for normal and once for urgent, but not urgent twice', async () => {
-    const urgent = await request(app).post('/api/public/urgent/submit').send({ site_code: 'HA02', sku: 'DUP-001', qty: 5 });
+    const urgent = await request(app).post('/api/public/urgent/submit').send({ site_code: 'HA02', sku: 'DUP-001', qty: 5, urgent_reason: '1' });
     expect(urgent.status).toBe(201);
-    const urgentDup = await request(app).post('/api/public/urgent/submit').send({ site_code: 'HA02', sku: 'DUP-001', qty: 6 });
+    const urgentDup = await request(app).post('/api/public/urgent/submit').send({ site_code: 'HA02', sku: 'DUP-001', qty: 6, urgent_reason: '2' });
     expect(urgentDup.status).toBe(409);
     expect(urgentDup.body.field).toBe('sku');
   });

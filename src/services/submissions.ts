@@ -7,6 +7,7 @@ import {
   URGENT_QTY_MIN,
   URGENT_QTY_MAX,
 } from '../lib/fields.js';
+import { validateUrgentReason } from '../lib/validation.js';
 import { toHKDateString, hkTodayForDateColumn } from '../lib/time.js';
 import { normalizeSiteCode } from './stores.js';
 
@@ -28,6 +29,8 @@ export interface SubmissionRow {
   nd_code: string | null;
   remark: string | null;
   qty: number | null;
+  urgent_reason: string | null;
+  urgent_reason_other: string | null;
   status: string;
   exported_at: string | null;
   export_batch_id: string | null;
@@ -47,6 +50,8 @@ export interface CreateSubmissionInput {
   submissionType?: SubmissionType;
   fields: SubmissionBusinessFields;
   qty?: number | null;
+  urgentReason?: string | null;
+  urgentReasonOther?: string | null;
   ip: string;
   changeSource: string;
   actor?: string;
@@ -74,11 +79,19 @@ export function businessFieldsFromRow(row: SubmissionRow): SubmissionBusinessFie
   };
 }
 
-export function urgentFieldsFromRow(row: SubmissionRow): { site_code: string; sku: string; qty: number | null } {
+export function urgentFieldsFromRow(row: SubmissionRow): {
+  site_code: string;
+  sku: string;
+  qty: number | null;
+  urgent_reason: string | null;
+  urgent_reason_other: string | null;
+} {
   return {
     site_code: row.site_code,
     sku: normalizeText(row.sku),
     qty: row.qty,
+    urgent_reason: normalizeText(row.urgent_reason) || null,
+    urgent_reason_other: normalizeText(row.urgent_reason_other) || null,
   };
 }
 
@@ -142,6 +155,10 @@ export async function createSubmission(
     if (!(typeof qty === 'number' && Number.isInteger(qty) && qty >= URGENT_QTY_MIN && qty <= URGENT_QTY_MAX)) {
       throw new Error(`QTY 必須為 ${URGENT_QTY_MIN} 至 ${URGENT_QTY_MAX} 的整數`);
     }
+    const reasonErrors = validateUrgentReason(input.urgentReason, input.urgentReasonOther);
+    if (reasonErrors.length) {
+      throw new Error(reasonErrors[0]!.message);
+    }
   }
   const requestedByEmail = `${siteCode.toLowerCase()}@sasa.com`;
   const applicationDate = input.applicationDateOverride ?? hkTodayForDateColumn();
@@ -159,6 +176,8 @@ export async function createSubmission(
       applicationDate,
       ...toBusinessParams(fields),
       qty,
+      isUrgent ? (normalizeText(input.urgentReason) || null) : null,
+      isUrgent ? (normalizeText(input.urgentReasonOther) || null) : null,
       input.ip,
       input.ip ? ipExpiryIso() : null,
     ];
@@ -166,16 +185,22 @@ export async function createSubmission(
       `INSERT INTO submissions (
          application_no, source, submission_type, site_code, requested_by_email, application_date,
          brand, sku, rp_type, safety_stock, nd_code, remark,
-         qty, created_ip, created_ip_expires_at
+         qty, urgent_reason, urgent_reason_other, created_ip, created_ip_expires_at
        )
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
        RETURNING *`,
       values,
     );
     const row = result.rows[0]!;
 
     const snapshot = isUrgent
-      ? { site_code: siteCode, sku: normalizeText(fields.sku), qty }
+      ? {
+          site_code: siteCode,
+          sku: normalizeText(fields.sku),
+          qty,
+          urgent_reason: normalizeText(input.urgentReason) || null,
+          urgent_reason_other: normalizeText(input.urgentReasonOther) || null,
+        }
       : fields;
 
     await client.query(
@@ -366,20 +391,28 @@ export async function adminUpdateSubmission(
   });
 }
 
-export async function adminUpdateUrgentSubmission(
-  id: string,
-  sku: string,
-  qty: number,
-  ip: string,
-  username: string,
-): Promise<SubmissionRow> {
-  if (!Number.isInteger(qty) || qty < URGENT_QTY_MIN || qty > URGENT_QTY_MAX) {
+export async function adminUpdateUrgentSubmission(input: {
+  id: string;
+  sku: string;
+  qty: number;
+  urgentReason: string | null;
+  urgentReasonOther: string | null;
+  ip: string;
+  username: string;
+}): Promise<SubmissionRow> {
+  if (!Number.isInteger(input.qty) || input.qty < URGENT_QTY_MIN || input.qty > URGENT_QTY_MAX) {
     throw new Error(`QTY 必須為 ${URGENT_QTY_MIN} 至 ${URGENT_QTY_MAX} 的整數`);
   }
+  const reasonErrors = validateUrgentReason(input.urgentReason, input.urgentReasonOther);
+  if (reasonErrors.length) {
+    throw new Error(reasonErrors[0]!.message);
+  }
+  const urgentReason = normalizeText(input.urgentReason) || null;
+  const urgentReasonOther = normalizeText(input.urgentReasonOther) || null;
   return withTransaction(async (client) => {
     const rowResult = await client.query<SubmissionRow>(
       'SELECT * FROM submissions WHERE id = $1',
-      [id],
+      [input.id],
     );
     const row = rowResult.rows[0];
     if (!row) throw new Error('找不到申報');
@@ -388,10 +421,10 @@ export async function adminUpdateUrgentSubmission(
     const before = urgentFieldsFromRow(row);
     const updated = await client.query<SubmissionRow>(
       `UPDATE submissions SET
-         sku = $1, qty = $2, updated_at = now()
-       WHERE id = $3
+         sku = $1, qty = $2, urgent_reason = $3, urgent_reason_other = $4, updated_at = now()
+       WHERE id = $5
        RETURNING *`,
-      [normalizeText(sku), qty, row.id],
+      [normalizeText(input.sku), input.qty, urgentReason, urgentReasonOther, row.id],
     );
     const newRow = updated.rows[0]!;
 
@@ -406,7 +439,7 @@ export async function adminUpdateUrgentSubmission(
       `INSERT INTO submission_versions
          (submission_id, version, data_before, data_after, actor_role, actor, ip, change_source)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
-      [row.id, nextVersion, JSON.stringify(before), JSON.stringify(after), 'admin', username, ip, 'admin_edit'],
+      [row.id, nextVersion, JSON.stringify(before), JSON.stringify(after), 'admin', input.username, input.ip, 'admin_edit'],
     );
 
     return newRow;

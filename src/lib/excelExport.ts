@@ -9,6 +9,8 @@ import {
   URGENT_SHEET,
   URGENT_QTY_MIN,
   URGENT_QTY_MAX,
+  URGENT_REASONS,
+  urgentReasonLabel,
 } from '../lib/fields.js';
 import { toHKDateString } from '../lib/time.js';
 import type { SubmissionRow } from '../services/submissions.js';
@@ -127,7 +129,7 @@ export function buildSapExportBuffer(rows: SubmissionRow[]): Promise<Buffer> {
   })();
 }
 
-/** Generates the Urgent Order import template (Site Code | SKU | QTY). */
+/** Generates the Urgent Order import template (Site Code | SKU | QTY | Urgent Reason | Other Reason). */
 export async function generateUrgentTemplateWorkbook(): Promise<Buffer> {
   const workbook = new ExcelJS.Workbook();
   const sheet = workbook.addWorksheet(URGENT_SHEET);
@@ -156,10 +158,17 @@ export async function generateUrgentTemplateWorkbook(): Promise<Buffer> {
     allowBlank: true,
     formulae: [URGENT_QTY_MIN, URGENT_QTY_MAX],
   });
+  vSheet.dataValidations.add('D2:D2001', {
+    type: 'list',
+    allowBlank: true,
+    formulae: [`"${URGENT_REASONS.map((r) => r.label).join(',')}"`],
+  });
 
   sheet.getColumn(1).width = 14;
   sheet.getColumn(2).width = 22;
   sheet.getColumn(3).width = 12;
+  sheet.getColumn(4).width = 45;
+  sheet.getColumn(5).width = 30;
 
   const buffer = await workbook.xlsx.writeBuffer();
   return Buffer.from(buffer);
@@ -170,9 +179,11 @@ export interface UrgentExportRow {
   site_code: string;
   sku: string;
   qty: number | null;
+  urgent_reason: string | null;
+  urgent_reason_other: string | null;
 }
 
-/** Builds the Urgent Order export workbook (Application No. | Site Code | SKU | QTY). */
+/** Builds the Urgent Order export workbook (Application No. | Site Code | SKU | QTY | Urgent Reason | Other Reason). */
 export function buildUrgentExportBuffer(rows: UrgentExportRow[]): Promise<Buffer> {
   return (async () => {
     const workbook = new ExcelJS.Workbook();
@@ -183,19 +194,28 @@ export function buildUrgentExportBuffer(rows: UrgentExportRow[]): Promise<Buffer
       font: { bold: true },
       fill: { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFD9E1F2' } },
     };
-    for (let c = 1; c <= 4; c++) {
+    for (let c = 1; c <= URGENT_COLUMNS.length + 1; c++) {
       const cell = sheet.getCell(1, c);
       cell.style = headerStyle;
     }
 
     for (const row of rows) {
-      sheet.addRow([row.application_no, row.site_code, row.sku, row.qty]);
+      sheet.addRow([
+        row.application_no,
+        row.site_code,
+        row.sku,
+        row.qty,
+        urgentReasonLabel(row.urgent_reason),
+        row.urgent_reason_other ?? '',
+      ]);
     }
 
     sheet.getColumn(1).width = 32;
     sheet.getColumn(2).width = 14;
     sheet.getColumn(3).width = 22;
     sheet.getColumn(4).width = 12;
+    sheet.getColumn(5).width = 45;
+    sheet.getColumn(6).width = 30;
 
     const buffer = await workbook.xlsx.writeBuffer();
     return Buffer.from(buffer);

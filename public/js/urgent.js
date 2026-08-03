@@ -2,6 +2,22 @@
   const $ = (id) => document.getElementById(id);
   const QTY_MIN = 1;
   const QTY_MAX = 1000;
+  const URGENT_OTHER_CODE = '9';
+  const URGENT_REASONS = [
+    { code: '1', label: '1. 客人訂購 (RP Tea定期隨機抽查核實)' },
+    { code: '2', label: '2. ROADSHOW' },
+    { code: '3', label: '3. 追數 (OM指定)' },
+    { code: '4', label: '4. Promotion' },
+    { code: '5', label: '5. 新舖落貨(只限開舖第一週)' },
+    { code: '6', label: '6. 新產品SAP無法落貨' },
+    { code: '7', label: '7. 大堆頭擺放' },
+    { code: '8', label: '8. 管理層要求(只限Portal落貨)(缺貨)' },
+    { code: '9', label: '9. 其他' },
+  ];
+  function reasonLabel(code) {
+    const found = URGENT_REASONS.find((r) => r.code === code);
+    return found ? found.label : code;
+  }
   let storeCache = null;
   let previewData = null;
   let pendingFile = null;
@@ -11,6 +27,8 @@
       site_code: $('site_code').value.trim(),
       sku: $('sku').value.trim(),
       qty: $('qty').value === '' ? '' : Number($('qty').value),
+      urgent_reason: $('urgent_reason').value,
+      urgent_reason_other: $('urgent_reason_other').value.trim(),
     };
   }
 
@@ -18,6 +36,8 @@
     site_code: 'Site Code',
     sku: 'SKU',
     qty: 'QTY',
+    urgent_reason: 'Urgent Reason',
+    urgent_reason_other: 'Other Reason',
   };
 
   let siteTimer = null;
@@ -54,6 +74,15 @@
     } else if (d.qty < QTY_MIN || d.qty > QTY_MAX) {
       errs.push(`QTY 必須為 ${QTY_MIN} 至 ${QTY_MAX} 的整數`);
     }
+    if (!d.urgent_reason) {
+      errs.push('Urgent Reason 為必填');
+    } else if (d.urgent_reason === URGENT_OTHER_CODE) {
+      if (!d.urgent_reason_other) {
+        errs.push('選擇「9. 其他」時必須填寫 Other Reason');
+      }
+    } else if (d.urgent_reason_other) {
+      errs.push('僅選擇「9. 其他」時才可填寫 Other Reason');
+    }
     return errs;
   }
 
@@ -68,6 +97,7 @@
         const v = d[k];
         let val = v === '' || v === null || v === undefined ? '—' : String(v);
         if (k === 'site_code' && storeCache) val += `（${escapeHtml(storeCache.shop)}）`;
+        if (k === 'urgent_reason') val = reasonLabel(d[k]);
         return `<dt>${LABELS[k]}</dt><dd>${escapeHtml(val)}</dd>`;
       })
       .join('');
@@ -101,6 +131,7 @@
 
   function resetForm() {
     $('apply_form').reset();
+    $('urgent_reason_other_wrap').style.display = 'none';
     $('store_info').textContent = '—';
     storeCache = null;
     previewData = null;
@@ -109,6 +140,13 @@
     $('result_card').style.display = 'none';
     showAlert($('form_error'), '', '');
   }
+
+  $('urgent_reason').addEventListener('change', () => {
+    const wrap = $('urgent_reason_other_wrap');
+    const showOther = $('urgent_reason').value === URGENT_OTHER_CODE;
+    wrap.style.display = showOther ? '' : 'none';
+    if (!showOther) $('urgent_reason_other').value = '';
+  });
 
   $('btn_preview').addEventListener('click', showPreview);
   $('btn_confirm').addEventListener('click', submit);
@@ -158,9 +196,9 @@
     try {
       const data = await api('/api/public/urgent/import', { method: 'POST', body: fd });
       let html = `<div class="alert success"><b>${escapeHtml(data.message)}</b>（總行數：${data.totalRows}）</div>`;
-      html += '<table><thead><tr><th>Excel 行</th><th>申請編號</th><th>Site Code</th><th>SKU</th><th>QTY</th><th>已收件時間</th></tr></thead><tbody>';
+      html += '<table><thead><tr><th>Excel 行</th><th>申請編號</th><th>Site Code</th><th>SKU</th><th>QTY</th><th>Urgent Reason</th><th>Other Reason</th><th>已收件時間</th></tr></thead><tbody>';
       data.rows.forEach((r) => {
-        html += `<tr><td>${r.row}</td><td>${escapeHtml(r.application_no)}</td><td>${escapeHtml(r.site_code)}</td><td>${escapeHtml(r.sku)}</td><td>${escapeHtml(r.qty)}</td><td>${escapeHtml(r.submitted_at)}</td></tr>`;
+        html += `<tr><td>${r.row}</td><td>${escapeHtml(r.application_no)}</td><td>${escapeHtml(r.site_code)}</td><td>${escapeHtml(r.sku)}</td><td>${escapeHtml(r.qty)}</td><td>${escapeHtml(r.urgent_reason_label || '')}</td><td>${escapeHtml(r.urgent_reason_other || '—')}</td><td>${escapeHtml(r.submitted_at)}</td></tr>`;
       });
       html += '</tbody></table>';
       $('import_result').innerHTML = html;

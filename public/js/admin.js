@@ -141,7 +141,11 @@
       <dt>來源</dt><dd>${s.source === 'web' ? '網頁' : 'Excel'}</dd>
       <dt>申請日期</dt><dd>${escapeHtml(s.application_date)}</dd>
       <dt>申請時間</dt><dd>${escapeHtml(s.submitted_at)}</dd>`;
-    if (isUrgent) header += `<dt>QTY</dt><dd>${escapeHtml(s.qty)}</dd>`;
+    if (isUrgent) {
+      header += `<dt>QTY</dt><dd>${escapeHtml(s.qty)}</dd>`;
+      header += `<dt>Urgent Reason</dt><dd>${escapeHtml(s.urgent_reason_label || '—')}</dd>`;
+      header += `<dt>Other Reason</dt><dd>${escapeHtml(s.urgent_reason_other || '—')}</dd>`;
+    }
     if (s.locked_at) header += `<dt>鎖定時間</dt><dd>${escapeHtml(s.locked_at)}</dd>`;
     if (s.exported_at) header += `<dt>匯出時間</dt><dd>${escapeHtml(s.exported_at)}</dd>`;
     $('detail_header').innerHTML = header;
@@ -157,6 +161,9 @@
     $('a_remark').value = s.remark || '';
     $('a_sku_urgent').value = s.sku || '';
     $('a_qty').value = s.qty || '';
+    $('a_urgent_reason').value = s.urgent_reason || '';
+    $('a_urgent_reason_other').value = s.urgent_reason_other || '';
+    syncUrgentOtherField();
 
     $('btn_save_edit').disabled = s.locked;
     $('btn_save_edit').textContent = s.locked ? '已鎖定，不能修改' : '儲存修改';
@@ -177,11 +184,24 @@
     box.innerHTML = html;
   }
 
+  function syncUrgentOtherField() {
+    const showOther = $('a_urgent_reason').value === '9';
+    $('a_urgent_reason_other_wrap').style.display = showOther ? '' : 'none';
+    if (!showOther) $('a_urgent_reason_other').value = '';
+  }
+
+  $('a_urgent_reason').addEventListener('change', syncUrgentOtherField);
+
   $('btn_save_edit').addEventListener('click', async () => {
     if (!currentDetail) return;
     const isUrgent = currentDetail.submission.submission_type === 'urgent';
     const body = isUrgent
-      ? { sku: $('a_sku_urgent').value.trim(), qty: $('a_qty').value === '' ? null : Number($('a_qty').value) }
+      ? {
+          sku: $('a_sku_urgent').value.trim(),
+          qty: $('a_qty').value === '' ? null : Number($('a_qty').value),
+          urgent_reason: $('a_urgent_reason').value,
+          urgent_reason_other: $('a_urgent_reason_other').value.trim(),
+        }
       : {
           sku: $('a_sku_normal').value.trim(),
           rp_type: $('a_rp_type').value,
@@ -189,7 +209,16 @@
           nd_code: $('a_nd_code').value.trim(),
           remark: $('a_remark').value.trim(),
         };
-    if (!isUrgent) {
+    if (isUrgent) {
+      const urgentErrs = [];
+      if (!body.urgent_reason) urgentErrs.push('Urgent Reason 為必填');
+      else if (body.urgent_reason === '9' && !body.urgent_reason_other) urgentErrs.push('選擇「9. 其他」時必須填寫 Other Reason');
+      else if (body.urgent_reason !== '9' && body.urgent_reason_other) urgentErrs.push('僅選擇「9. 其他」時才可填寫 Other Reason');
+      if (urgentErrs.length) {
+        showAlert($('save_edit_error'), 'error', urgentErrs.map((e) => escapeHtml(e)).join('<br>'));
+        return;
+      }
+    } else {
       const clientErrs = validateBusinessFields(body, currentDetail.submission.site_code);
       if (clientErrs.length) {
         showAlert($('save_edit_error'), 'error', clientErrs.map((e) => escapeHtml(e.message)).join('<br>'));

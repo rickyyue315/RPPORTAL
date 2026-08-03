@@ -139,7 +139,7 @@
       <div class="dl" id="detail_header"></div>
 
       <h3>編輯業務欄位</h3>
-      <div id="urgent_note" style="display:none" class="alert info">Urgent Order：只可修改 SKU 及 QTY（1 至 1000），Site Code 不可修改。</div>
+      <div id="urgent_note" style="display:none" class="alert info">Urgent Order：可修改 SKU、QTY（1 至 1000）及 Urgent Reason，Site Code 不可修改。選擇「9. 其他」時必須填寫 Other Reason。</div>
       <form id="edit_form">
         <div id="normal_fields" class="form-grid">
           <div>
@@ -176,6 +176,25 @@
           <div>
             <label for="a_qty">QTY <span class="optional">（1 至 1000）</span></label>
             <input type="number" id="a_qty" min="1" max="1000" step="1">
+          </div>
+          <div class="full">
+            <label for="a_urgent_reason">Urgent Reason <span class="optional">（必填）</span></label>
+            <select id="a_urgent_reason">
+              <option value="">請選擇申請原因</option>
+              <option value="1">1. 客人訂購 (RP Tea定期隨機抽查核實)</option>
+              <option value="2">2. ROADSHOW</option>
+              <option value="3">3. 追數 (OM指定)</option>
+              <option value="4">4. Promotion</option>
+              <option value="5">5. 新舖落貨(只限開舖第一週)</option>
+              <option value="6">6. 新產品SAP無法落貨</option>
+              <option value="7">7. 大堆頭擺放</option>
+              <option value="8">8. 管理層要求(只限Portal落貨)(缺貨)</option>
+              <option value="9">9. 其他</option>
+            </select>
+          </div>
+          <div class="full" id="a_urgent_reason_other_wrap" style="display:none">
+            <label for="a_urgent_reason_other">Other Reason <span class="optional">（選擇「9. 其他」時必填）</span></label>
+            <input type="text" id="a_urgent_reason_other" maxlength="2000">
           </div>
         </div>
       </form>
@@ -222,7 +241,7 @@
 
     <div class="card">
       <h2>Urgent Order Excel 匯出</h2>
-      <div class="hint">只會匯出 Urgent Order（欄位：Application No. | Site Code | SKU | QTY）。匯出後該批 Urgent Order 會被鎖定，不能修改。匯出失敗不會鎖定。</div>
+      <div class="hint">只會匯出 Urgent Order（欄位：Application No. | Site Code | SKU | QTY | Urgent Reason | Other Reason）。匯出後該批 Urgent Order 會被鎖定，不能修改。匯出失敗不會鎖定。</div>
       <div class="toolbar">
         <div class="field">
           <label>由 (日期)</label>

@@ -11,10 +11,11 @@ import {
   URGENT_QTY_MIN,
   URGENT_QTY_MAX,
   BUSINESS_FIELD_LABELS,
+  resolveUrgentReasonCode,
   type SubmissionBusinessFields,
 } from '../lib/fields.js';
 import { normalizeSiteCode } from '../services/stores.js';
-import { validateBusinessFields } from './validation.js';
+import { validateBusinessFields, validateUrgentReason } from './validation.js';
 
 export interface ImportRowError {
   row: number;
@@ -190,6 +191,8 @@ export interface ParsedUrgentRow {
   siteCode: string;
   sku: string;
   qty: number;
+  urgentReason: string;
+  urgentReasonOther: string;
 }
 
 export interface ParsedUrgentImport {
@@ -206,6 +209,8 @@ const EXPECTED_URGENT_HEADERS: readonly string[] = URGENT_COLUMNS;
 const URGENT_SITE_COL = 1;
 const URGENT_SKU_COL = 2;
 const URGENT_QTY_COL = 3;
+const URGENT_REASON_COL = 4;
+const URGENT_REASON_OTHER_COL = 5;
 
 function parseQtyCell(raw: ExcelJS.CellValue): number {
   if (typeof raw === 'number') {
@@ -220,8 +225,8 @@ function parseQtyCell(raw: ExcelJS.CellValue): number {
 
 /**
  * Validates a Urgent Order workbook: sheet must be "Urgent Order" with headers
- * exactly "Site Code | SKU | QTY". The whole file is validated first; any error
- * means nothing is written.
+ * exactly "Site Code | SKU | QTY | Urgent Reason | Other Reason". The whole
+ * file is validated first; any error means nothing is written.
  */
 export async function parseUrgentImportWorkbook(
   buffer: Buffer,
@@ -324,7 +329,21 @@ export async function parseUrgentImportWorkbook(
       rowError('QTY', `QTY 必須為 ${URGENT_QTY_MIN} 至 ${URGENT_QTY_MAX} 的整數`);
     }
 
-    rows.push({ rowNumber, siteCode, sku, qty });
+    const urgentReason = cellValue(row.getCell(URGENT_REASON_COL));
+    const urgentReasonOther = cellValue(row.getCell(URGENT_REASON_OTHER_COL));
+    for (const err of validateUrgentReason(urgentReason, urgentReasonOther)) {
+      const label = err.field === 'urgent_reason' ? 'Urgent Reason' : 'Other Reason';
+      rowError(label, err.message);
+    }
+
+    rows.push({
+      rowNumber,
+      siteCode,
+      sku,
+      qty,
+      urgentReason: resolveUrgentReasonCode(urgentReason),
+      urgentReasonOther,
+    });
   });
 
   return {

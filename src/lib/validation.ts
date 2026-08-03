@@ -1,4 +1,10 @@
-import { normalizeText, type SubmissionBusinessFields } from './fields.js';
+import {
+  normalizeText,
+  resolveUrgentReasonCode,
+  URGENT_REASON_OTHER_CODE,
+  URGENT_REASON_OTHER_MAX,
+  type SubmissionBusinessFields,
+} from './fields.js';
 
 /** 轉 RF 時必須填寫 Remark 的店舖。 */
 export const RF_REMARK_REQUIRED_SITES: ReadonlySet<string> = new Set([
@@ -19,6 +25,11 @@ export const RF_REMARK_REQUIRED_SITES: ReadonlySet<string> = new Set([
 ]);
 
 export interface BusinessValidationError {
+  field: string;
+  message: string;
+}
+
+export interface UrgentReasonValidationError {
   field: string;
   message: string;
 }
@@ -61,6 +72,42 @@ export function validateBusinessFields(
     if (!ndCode) {
       errors.push({ field: 'nd_code', message: 'RP Type 為 ND 時必須填寫 ND Code' });
     }
+  }
+
+  return errors;
+}
+
+/**
+ * Validates the Urgent Order reason. Accepts either the stable code or the
+ * full display label; option 9 requires a non-blank supplement, while other
+ * options must not carry a supplement. Returns field-level errors (empty
+ * means valid).
+ */
+export function validateUrgentReason(
+  reason: string | null | undefined,
+  reasonOther: string | null | undefined,
+): UrgentReasonValidationError[] {
+  const errors: UrgentReasonValidationError[] = [];
+  const other = normalizeText(reasonOther);
+
+  if (!normalizeText(reason)) {
+    errors.push({ field: 'urgent_reason', message: 'Urgent Reason 為必填' });
+    return errors;
+  }
+  const code = resolveUrgentReasonCode(reason);
+  if (!code) {
+    errors.push({ field: 'urgent_reason', message: 'Urgent Reason 選項無效' });
+    return errors;
+  }
+
+  if (code === URGENT_REASON_OTHER_CODE) {
+    if (!other) {
+      errors.push({ field: 'urgent_reason_other', message: '選擇「9. 其他」時必須填寫 Other Reason' });
+    } else if (other.length > URGENT_REASON_OTHER_MAX) {
+      errors.push({ field: 'urgent_reason_other', message: `Other Reason 最多 ${URGENT_REASON_OTHER_MAX} 字元` });
+    }
+  } else if (other) {
+    errors.push({ field: 'urgent_reason_other', message: '僅選擇「9. 其他」時才可填寫 Other Reason' });
   }
 
   return errors;

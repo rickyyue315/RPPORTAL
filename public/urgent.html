@@ -22,7 +22,7 @@
   <main class="container">
     <div class="card">
       <h2>Urgent Order 單筆申報</h2>
-      <p class="hint">只有 <b>Site Code</b>、<b>SKU</b> 及 <b>QTY</b> 為必填。QTY 必須為 1 至 1000 的整數。</p>
+      <p class="hint">只有 <b>Site Code</b>、<b>SKU</b>、<b>QTY</b> 及 <b>Urgent Reason</b> 為必填。QTY 必須為 1 至 1000 的整數；選擇「9. 其他」時必須填寫 Other Reason。</p>
       <div class="alert warning" style="margin-top:0">
         每筆 Urgent Order 數量上限為 <b>1000 件</b>。超出 1000 件的需求，請改以電郵向相關 Buyer 申請，不在此平台處理。
       </div>
@@ -45,6 +45,25 @@
           <div>
             <label for="qty">QTY <span class="optional">（必填，1 至 1000）</span></label>
             <input type="number" id="qty" min="1" max="1000" step="1" inputmode="numeric" autocomplete="off">
+          </div>
+          <div class="full">
+            <label for="urgent_reason">Urgent Reason <span class="optional">（必填）</span></label>
+            <select id="urgent_reason">
+              <option value="">請選擇申請原因</option>
+              <option value="1">1. 客人訂購 (RP Tea定期隨機抽查核實)</option>
+              <option value="2">2. ROADSHOW</option>
+              <option value="3">3. 追數 (OM指定)</option>
+              <option value="4">4. Promotion</option>
+              <option value="5">5. 新舖落貨(只限開舖第一週)</option>
+              <option value="6">6. 新產品SAP無法落貨</option>
+              <option value="7">7. 大堆頭擺放</option>
+              <option value="8">8. 管理層要求(只限Portal落貨)(缺貨)</option>
+              <option value="9">9. 其他</option>
+            </select>
+          </div>
+          <div class="full" id="urgent_reason_other_wrap" style="display:none">
+            <label for="urgent_reason_other">Other Reason <span class="optional">（選擇「9. 其他」時必填）</span></label>
+            <input type="text" id="urgent_reason_other" autocomplete="off" maxlength="2000">
           </div>
         </div>
         <div class="btn-row">
@@ -82,7 +101,7 @@
 
     <div class="card">
       <h2>Urgent Order Excel 批量上載</h2>
-      <p class="hint">使用固定模板（工作表 <b>Urgent Order</b>），欄位為 <b>Site Code</b>、<b>SKU</b>、<b>QTY</b>。整份檔案會先完整驗證，任何錯誤都不會寫入資料。</p>
+      <p class="hint">使用固定模板（工作表 <b>Urgent Order</b>），欄位為 <b>Site Code</b>、<b>SKU</b>、<b>QTY</b>、<b>Urgent Reason</b>、<b>Other Reason</b>。每行必須選擇一個申請原因；選擇「9. 其他」時必須填寫 Other Reason。整份檔案會先完整驗證，任何錯誤都不會寫入資料。</p>
       <div class="btn-row" style="margin-top:0">
         <a class="btn ghost" href="/api/public/urgent/template">下載模板 (.xlsx)</a>
       </div>
@@ -107,15 +126,28 @@
         <li>輸入 <b>Site Code</b>（例如 HA02），輸入後系統會自動驗證門店；</li>
         <li>輸入 <b>SKU</b>；</li>
         <li>輸入 <b>QTY</b>（1 至 1000 的整數）；</li>
+        <li>選擇 <b>Urgent Reason</b>（申請原因）；選擇「9. 其他」時須填寫 <b>Other Reason</b>；</li>
         <li>按「預覽」核對資料，確認無誤後按「確認提交」。</li>
       </ol>
 
       <h3>二、欄位填寫規則</h3>
       <ul>
-        <li><b>Site Code</b>、<b>SKU</b> 及 <b>QTY</b> 均為必填；</li>
+        <li><b>Site Code</b>、<b>SKU</b>、<b>QTY</b> 及 <b>Urgent Reason</b> 均為必填；</li>
         <li><b>QTY</b> 必須為 1 至 1000 的整數；</li>
-        <li>每筆 Urgent Order 數量上限為 <b>1000 件</b>，超出上限的需求請改以電郵向相關 Buyer 申請，不在此平台處理。</li>
+        <li>每筆 Urgent Order 數量上限為 <b>1000 件</b>，超出上限的需求請改以電郵向相關 Buyer 申請，不在此平台處理；</li>
+        <li>申請 Urgent Order 必須註明以下指定原因：</li>
       </ul>
+      <ol class="reason-list">
+        <li>客人訂購 (RP Tea定期隨機抽查核實)</li>
+        <li>ROADSHOW</li>
+        <li>追數 (OM指定)</li>
+        <li>Promotion</li>
+        <li>新舖落貨(只限開舖第一週)</li>
+        <li>新產品SAP無法落貨</li>
+        <li>大堆頭擺放</li>
+        <li>管理層要求(只限Portal落貨)(缺貨)</li>
+        <li>其他（必須填寫相關原因）</li>
+      </ol>
 
       <h3>三、提交之後</h3>
       <ul>
@@ -125,7 +157,7 @@
 
       <h3>四、Excel 批量上載</h3>
       <p class="hint">
-        使用固定模板（工作表 <b>Urgent Order</b>），欄位為 <b>Site Code</b>、<b>SKU</b>、<b>QTY</b>。整份檔案會先完整驗證，任何錯誤都不會寫入資料；規則與單筆申報相同（QTY 必須為 1 至 1000 的整數）。
+        使用固定模板（工作表 <b>Urgent Order</b>），欄位為 <b>Site Code</b>、<b>SKU</b>、<b>QTY</b>、<b>Urgent Reason</b>、<b>Other Reason</b>。整份檔案會先完整驗證，任何錯誤都不會寫入資料；規則與單筆申報相同（QTY 必須為 1 至 1000 的整數，每行必須選擇原因，「9. 其他」時必須填寫 Other Reason）。
       </p>
     </div>
   </main>

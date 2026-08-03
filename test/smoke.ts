@@ -31,7 +31,7 @@ const originalMigrate = await import('../src/db/migrate.js');
 console.log('[smoke] PGlite ready');
 
 // Apply migrations manually without the pgcrypto extension line.
-for (const file of ['001_init.sql', '002_drop_rp_type_completed_at.sql', '003_add_submission_type_qty.sql']) {
+for (const file of ['001_init.sql', '002_drop_rp_type_completed_at.sql', '003_add_submission_type_qty.sql', '004_add_urgent_reason.sql']) {
   const sql = (await readFile(path.join(root, 'src', 'db', 'migrations', file), 'utf8')).replace(
     /CREATE EXTENSION IF NOT EXISTS pgcrypto;\s*/g,
     '',
@@ -97,10 +97,10 @@ const server = app.listen(0, async () => {
     const urgent = await fetch(`${base}/api/public/urgent/submit`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ site_code: 'HA06', sku: 'SMOKE-URGENT', qty: 8 }),
+      body: JSON.stringify({ site_code: 'HA06', sku: 'SMOKE-URGENT', qty: 8, urgent_reason: '1' }),
     });
     const urgentJson = await urgent.json();
-    check('urgent web submit', urgent.status === 201 && /^URGENT-/.test(urgentJson.submission.application_no) && urgentJson.submission.qty === 8);
+    check('urgent web submit', urgent.status === 201 && /^URGENT-/.test(urgentJson.submission.application_no) && urgentJson.submission.qty === 8 && urgentJson.submission.urgent_reason === '1');
 
     const csrf = await fetch(`${base}/api/csrf`);
     const csrfJson = await csrf.json();

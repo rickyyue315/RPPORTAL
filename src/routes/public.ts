@@ -23,8 +23,8 @@ import { writeAuditEvent } from '../lib/audit.js';
 import { toHKString, hkTodayForDateColumn } from '../lib/time.js';
 import { parseImportWorkbook, parseUrgentImportWorkbook, findDuplicateImportErrors } from '../lib/excelImport.js';
 import { generateTemplateWorkbook, generateUrgentTemplateWorkbook, buildImportRecordBuffer } from '../lib/excelExport.js';
-import { URGENT_QTY_MIN, URGENT_QTY_MAX } from '../lib/fields.js';
-import { RF_REMARK_REQUIRED_SITES, validateBusinessFields } from '../lib/validation.js';
+import { URGENT_QTY_MIN, URGENT_QTY_MAX, urgentReasonLabel } from '../lib/fields.js';
+import { RF_REMARK_REQUIRED_SITES, validateBusinessFields, validateUrgentReason } from '../lib/validation.js';
 import { query, withTransaction } from '../db/pool.js';
 import { config } from '../config.js';
 import { generateApplicationNo } from '../lib/applicationNo.js';
@@ -77,6 +77,9 @@ function serializeUrgentSubmission(row: SubmissionRow) {
     site_code: row.site_code,
     sku: row.sku,
     qty: row.qty,
+    urgent_reason: row.urgent_reason,
+    urgent_reason_label: urgentReasonLabel(row.urgent_reason),
+    urgent_reason_other: row.urgent_reason_other,
     submitted_at: toHKString(row.submitted_at),
     source: row.source,
     submission_type: row.submission_type,
@@ -217,6 +220,8 @@ const urgentSubmitSchema = z.object({
     .int('QTY 必須為整數')
     .min(URGENT_QTY_MIN, `QTY 最少為 ${URGENT_QTY_MIN}`)
     .max(URGENT_QTY_MAX, `QTY 最多為 ${URGENT_QTY_MAX}`),
+  urgent_reason: z.string().trim().max(20).optional().default(''),
+  urgent_reason_other: z.string().max(2000).optional().default(''),
 });
 
 /** POST /api/public/urgent/submit — single Urgent Order web submission. */
@@ -241,6 +246,16 @@ publicRouter.post(
       return;
     }
 
+    const reasonErrors = validateUrgentReason(data.urgent_reason, data.urgent_reason_other);
+    if (reasonErrors.length) {
+      res.status(400).json({
+        error: reasonErrors[0]!.message,
+        field: reasonErrors[0]!.field,
+        errors: reasonErrors,
+      });
+      return;
+    }
+
     const ip = getClientIp(req);
     let row: SubmissionRow;
     try {
@@ -250,6 +265,8 @@ publicRouter.post(
         submissionType: 'urgent',
         fields: { brand: '', sku: data.sku, rp_type: '', safety_stock: '', nd_code: '', remark: '' },
         qty: data.qty,
+        urgentReason: data.urgent_reason,
+        urgentReasonOther: data.urgent_reason_other,
         ip,
         changeSource: 'web_submit',
       });
@@ -356,7 +373,17 @@ publicRouter.post(
 
     const ip = getClientIp(req);
     const results = await withTransaction(async (client) => {
-      const rowsOut: Array<{ row: number; application_no: string; site_code: string; sku: string; qty: number; submitted_at: string }> = [];
+      const rowsOut: Array<{
+        row: number;
+        application_no: string;
+        site_code: string;
+        sku: string;
+        qty: number;
+        urgent_reason: string | null;
+        urgent_reason_label: string;
+        urgent_reason_other: string | null;
+        submitted_at: string;
+      }> = [];
       let successCount = 0;
       for (const r of parsed.rows!) {
         const appNo = generateApplicationNo('URGENT');
@@ -364,18 +391,28 @@ publicRouter.post(
         const insert = await client.query<SubmissionRow>(
           `INSERT INTO submissions (
              application_no, source, submission_type, site_code, requested_by_email, application_date,
-             brand, sku, qty, created_ip, created_ip_expires_at
+             brand, sku, qty, urgent_reason, urgent_reason_other, created_ip, created_ip_expires_at
            ) VALUES ($1,'excel','urgent',$2,$3,to_char(now() AT TIME ZONE 'Asia/Hong_Kong','YYYY-MM-DD')::date,
-             '',$4,$5,$6,$7)
+             '',$4,$5,$6,$7,$8,$9)
            RETURNING *`,
-          [appNo, r.siteCode, requestedByEmail, r.sku, r.qty, ip, ip ? ipExpiryIso() : null],
+          [appNo, r.siteCode, requestedByEmail, r.sku, r.qty, r.urgentReason || null, r.urgentReasonOther || null, ip, ip ? ipExpiryIso() : null],
         );
         const row = insert.rows[0]!;
         await client.query(
           `INSERT INTO submission_versions
              (submission_id, version, data_before, data_after, actor_role, actor, ip, change_source)
            VALUES ($1, 1, NULL, $2, 'applicant', NULL, $3, 'excel_import')`,
-          [row.id, JSON.stringify({ site_code: r.siteCode, sku: r.sku, qty: r.qty }), ip],
+          [
+            row.id,
+            JSON.stringify({
+              site_code: r.siteCode,
+              sku: r.sku,
+              qty: r.qty,
+              urgent_reason: r.urgentReason || null,
+              urgent_reason_other: r.urgentReasonOther || null,
+            }),
+            ip,
+          ],
         );
         successCount++;
         rowsOut.push({
@@ -384,6 +421,9 @@ publicRouter.post(
           site_code: row.site_code,
           sku: row.sku,
           qty: row.qty as number,
+          urgent_reason: row.urgent_reason,
+          urgent_reason_label: urgentReasonLabel(row.urgent_reason),
+          urgent_reason_other: row.urgent_reason_other,
           submitted_at: toHKString(row.submitted_at),
         });
       }

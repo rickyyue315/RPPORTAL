@@ -87,7 +87,7 @@ export const SHOP_CODE_HEADER = 'Shop Code';
 export const APPLICATION_DATE_HEADER = 'Application Date';
 export const RP_TEAM_SHEET = 'RP Team';
 
-export const URGENT_COLUMNS = ['Site Code', 'SKU', 'QTY'] as const;
+export const URGENT_COLUMNS = ['Site Code', 'SKU', 'QTY', 'Urgent Reason', 'Other Reason'] as const;
 export type UrgentColumn = (typeof URGENT_COLUMNS)[number];
 
 export const URGENT_SHEET = 'Urgent Order';
@@ -95,11 +95,47 @@ export const URGENT_SHEET = 'Urgent Order';
 export const URGENT_QTY_MIN = 1;
 export const URGENT_QTY_MAX = 1000;
 
+/** Approved Urgent Order reasons in display order. Codes are stable DB values. */
+export const URGENT_REASONS: ReadonlyArray<{ code: string; label: string }> = [
+  { code: '1', label: '1. 客人訂購 (RP Tea定期隨機抽查核實)' },
+  { code: '2', label: '2. ROADSHOW' },
+  { code: '3', label: '3. 追數 (OM指定)' },
+  { code: '4', label: '4. Promotion' },
+  { code: '5', label: '5. 新舖落貨(只限開舖第一週)' },
+  { code: '6', label: '6. 新產品SAP無法落貨' },
+  { code: '7', label: '7. 大堆頭擺放' },
+  { code: '8', label: '8. 管理層要求(只限Portal落貨)(缺貨)' },
+  { code: '9', label: '9. 其他' },
+] as const;
+
+export const URGENT_REASON_OPTIONS: ReadonlyArray<string> = URGENT_REASONS.map((r) => r.code);
+export const URGENT_REASON_OTHER_CODE = '9';
+export const URGENT_REASON_OTHER_MAX = 2000;
+
+export function urgentReasonLabel(code: string | null | undefined): string {
+  const found = URGENT_REASONS.find((r) => r.code === normalizeText(code));
+  return found ? found.label : '';
+}
+
+/**
+ * Resolves a user-provided Urgent Reason value to its stable code. Accepts the
+ * code itself ("1".."9") or the full display label (as picked from the Excel
+ * dropdown). Returns '' when the value matches neither.
+ */
+export function resolveUrgentReasonCode(value: string | null | undefined): string {
+  const trimmed = normalizeText(value);
+  if (URGENT_REASON_OPTIONS.includes(trimmed)) return trimmed;
+  const found = URGENT_REASONS.find((r) => r.label === trimmed);
+  return found ? found.code : '';
+}
+
 /** Business data of an Urgent Order submission (snapshot + API payload). */
 export interface UrgentFields {
   site_code: string;
   sku: string;
   qty: number;
+  urgent_reason: string | null;
+  urgent_reason_other: string | null;
 }
 
 export function isValidUrgentQty(value: unknown): value is number {

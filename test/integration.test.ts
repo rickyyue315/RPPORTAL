@@ -35,7 +35,7 @@ let db: PGlite;
 beforeAll(async () => {
   db = new PGlite();
   setPoolForTesting(makePglitePool(db));
-  const migrationFiles = ['001_init.sql', '002_drop_rp_type_completed_at.sql', '003_add_submission_type_qty.sql'];
+  const migrationFiles = ['001_init.sql', '002_drop_rp_type_completed_at.sql', '003_add_submission_type_qty.sql', '004_add_urgent_reason.sql'];
   for (const file of migrationFiles) {
     let sql = await readFile(path.join(__dirname, '..', 'src', 'db', 'migrations', file), 'utf8');
     // PGlite bundles gen_random_uuid; the pgcrypto extension may not be available in WASM builds.
@@ -155,24 +155,50 @@ describe('submissions (integration)', () => {
     expect(result.rows[0]?.cnt).toBeGreaterThanOrEqual(1);
   });
 
-  it('creates an urgent submission with URGENT prefix and qty', async () => {
+  it('creates an urgent submission with URGENT prefix, qty and reason', async () => {
     const row = await createSubmission({
       siteCode: 'HA02',
       source: 'web',
       submissionType: 'urgent',
       fields: { brand: '', sku: 'U-INT-1', rp_type: '', safety_stock: '', nd_code: '', remark: '' },
       qty: 42,
+      urgentReason: '9',
+      urgentReasonOther: '臨時原因',
       ip: '203.0.113.8',
       changeSource: 'web_submit',
     });
     expect(row.application_no).toMatch(/^URGENT-/);
     expect(row.submission_type).toBe('urgent');
     expect(row.qty).toBe(42);
+    expect(row.urgent_reason).toBe('9');
+    expect(row.urgent_reason_other).toBe('臨時原因');
 
     const version = await db.query('SELECT data_after FROM submission_versions WHERE submission_id = $1', [row.id]);
-    const snapshot = version.rows[0]?.data_after as { site_code: string; sku: string; qty: number };
+    const snapshot = version.rows[0]?.data_after as {
+      site_code: string;
+      sku: string;
+      qty: number;
+      urgent_reason: string | null;
+      urgent_reason_other: string | null;
+    };
     expect(snapshot.site_code).toBe('HA02');
     expect(snapshot.sku).toBe('U-INT-1');
     expect(snapshot.qty).toBe(42);
+    expect(snapshot.urgent_reason).toBe('9');
+    expect(snapshot.urgent_reason_other).toBe('臨時原因');
+  });
+
+  it('rejects an urgent submission without a reason', async () => {
+    await expect(
+      createSubmission({
+        siteCode: 'HA02',
+        source: 'web',
+        submissionType: 'urgent',
+        fields: { brand: '', sku: 'U-INT-2', rp_type: '', safety_stock: '', nd_code: '', remark: '' },
+        qty: 42,
+        ip: '203.0.113.9',
+        changeSource: 'web_submit',
+      }),
+    ).rejects.toThrowError('Urgent Reason 為必填');
   });
 });

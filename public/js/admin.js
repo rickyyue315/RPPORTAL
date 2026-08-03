@@ -374,7 +374,6 @@
       const data = await adminFetch('/api/admin/summary');
       setNum('s_total', data.total);
       setNum('s_today', data.today);
-      setNum('s_normal', data.normal);
       setNum('s_urgent', data.urgent);
       setNum('s_unexported', data.unexported);
       setNum('s_exported', data.exported);

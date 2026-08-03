@@ -56,6 +56,27 @@ const RF_REMARK_REQUIRED_SITES = new Set([
   'HC13', 'HC44', 'HC68', 'HC70',
 ]);
 
+async function loadRfRemarkRequiredStores() {
+  const container = document.getElementById('rf_remark_required_stores');
+  if (!container) return;
+  try {
+    const data = await api('/api/public/rf-remark-required-stores');
+    container.innerHTML = data.stores.map((store) => `
+      <div class="rf-store-row">
+        <span>${escapeHtml(store.site_code)}</span>
+        <span>${escapeHtml(store.shop || '—')}</span>
+      </div>
+    `).join('');
+  } catch {
+    container.innerHTML = [...RF_REMARK_REQUIRED_SITES].map((siteCode) => `
+      <div class="rf-store-row">
+        <span>${escapeHtml(siteCode)}</span>
+        <span>—</span>
+      </div>
+    `).join('');
+  }
+}
+
 function validateBusinessFields(fields, siteCode) {
   const errors = [];
   const rpType = (fields.rp_type || '').trim();
@@ -82,3 +103,5 @@ function validateBusinessFields(fields, siteCode) {
   }
   return errors;
 }
+
+loadRfRemarkRequiredStores();

@@ -70,6 +70,47 @@ a:hover {
   max-width: 1200px;
 }
 
+.apply-layout {
+  display: grid;
+  grid-template-columns: 280px minmax(0, 1fr);
+  gap: 20px;
+  align-items: start;
+}
+.apply-layout > .card {
+  margin-bottom: 20px;
+}
+.rf-remark-card {
+  position: sticky;
+  top: 20px;
+}
+.rf-remark-card h2 {
+  font-size: 15px;
+}
+.rf-store-list {
+  margin-top: 14px;
+  border-top: 1px solid var(--border);
+}
+.rf-store-row {
+  display: grid;
+  grid-template-columns: 72px minmax(0, 1fr);
+  gap: 8px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--border);
+  font-size: 13px;
+}
+.rf-store-row span:first-child {
+  font-weight: 700;
+  color: var(--brand-dark);
+}
+@media (max-width: 760px) {
+  .apply-layout {
+    grid-template-columns: 1fr;
+  }
+  .rf-remark-card {
+    position: static;
+  }
+}
+
 .card {
   background: var(--card);
   border: 1px solid var(--border);

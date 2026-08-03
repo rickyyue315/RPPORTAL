@@ -24,7 +24,7 @@ import { toHKString, hkTodayForDateColumn } from '../lib/time.js';
 import { parseImportWorkbook, parseUrgentImportWorkbook, findDuplicateImportErrors } from '../lib/excelImport.js';
 import { generateTemplateWorkbook, generateUrgentTemplateWorkbook, buildImportRecordBuffer } from '../lib/excelExport.js';
 import { URGENT_QTY_MIN, URGENT_QTY_MAX } from '../lib/fields.js';
-import { validateBusinessFields } from '../lib/validation.js';
+import { RF_REMARK_REQUIRED_SITES, validateBusinessFields } from '../lib/validation.js';
 import { query, withTransaction } from '../db/pool.js';
 import { config } from '../config.js';
 import { generateApplicationNo } from '../lib/applicationNo.js';
@@ -117,6 +117,23 @@ publicRouter.get(
         shop: store.shop,
         requested_by_email: `${store.site_code.toLowerCase()}@sasa.com`,
       },
+    });
+  }),
+);
+
+/** GET /api/public/rf-remark-required-stores — stores requiring Remark for RF. */
+publicRouter.get(
+  '/rf-remark-required-stores',
+  publicLookupLimiter,
+  asyncHandler(async (_req: Request, res: Response) => {
+    const siteCodes = [...RF_REMARK_REQUIRED_SITES];
+    const result = await query<{ site_code: string; shop: string }>(
+      `SELECT site_code, shop FROM stores WHERE site_code = ANY($1::text[])`,
+      [siteCodes],
+    );
+    const storesByCode = new Map(result.rows.map((store) => [store.site_code, store]));
+    res.json({
+      stores: siteCodes.map((siteCode) => storesByCode.get(siteCode) ?? { site_code: siteCode, shop: '' }),
     });
   }),
 );

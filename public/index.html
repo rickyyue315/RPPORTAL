@@ -20,12 +20,21 @@
   </header>
 
   <main class="container">
-    <div class="card">
-      <h2>單筆申報</h2>
-      <p class="hint">只有 <b>Site Code</b>、<b>SKU</b> 及 <b>RP Type</b> 為必填。RP Type 為 <b>RF</b> 時必須填寫 Safety stock（大於 0）；RP Type 為 <b>ND</b> 時必須填寫 ND Code。部分店舖轉 RF 時必須填寫 Remark。</p>
-      <div id="form_error"></div>
-      <form id="apply_form">
-        <div class="form-grid">
+    <div class="apply-layout">
+      <aside class="card rf-remark-card">
+        <h2>轉 RF 必須填寫 Remark</h2>
+        <div class="hint">以下店舖轉 RF 時，Remark 為必填。</div>
+        <div id="rf_remark_required_stores" class="rf-store-list" aria-live="polite">
+          <div class="loading">載入中…</div>
+        </div>
+      </aside>
+
+      <div class="card">
+        <h2>單筆申報</h2>
+        <p class="hint">只有 <b>Site Code</b>、<b>SKU</b> 及 <b>RP Type</b> 為必填。RP Type 為 <b>RF</b> 時必須填寫 Safety stock（大於 0）；RP Type 為 <b>ND</b> 時必須填寫 ND Code。部分店舖轉 RF 時必須填寫 Remark。</p>
+        <div id="form_error"></div>
+        <form id="apply_form">
+          <div class="form-grid">
           <div>
             <label for="site_code">Site Code <span class="optional">（必填）</span></label>
             <input type="text" id="site_code" autocomplete="off" placeholder="例如 HA02">
@@ -60,22 +69,23 @@
             <label for="remark">Remark</label>
             <input type="text" id="remark">
           </div>
-        </div>
-        <div class="btn-row">
-          <button type="submit" class="btn" id="btn_submit">提交</button>
-          <button type="button" class="btn secondary" id="btn_preview">預覽</button>
-        </div>
-      </form>
+          </div>
+          <div class="btn-row">
+            <button type="submit" class="btn" id="btn_submit">提交</button>
+            <button type="button" class="btn secondary" id="btn_preview">預覽</button>
+          </div>
+        </form>
 
-      <div id="preview_box" style="display:none">
-        <hr>
-        <h3>提交預覽</h3>
-        <div class="dl" id="preview_body"></div>
-        <div class="btn-row">
-          <button class="btn" id="btn_confirm">確認提交</button>
-          <button class="btn secondary" id="btn_cancel_preview">返回修改</button>
+        <div id="preview_box" style="display:none">
+          <hr>
+          <h3>提交預覽</h3>
+          <div class="dl" id="preview_body"></div>
+          <div class="btn-row">
+            <button class="btn" id="btn_confirm">確認提交</button>
+            <button class="btn secondary" id="btn_cancel_preview">返回修改</button>
+          </div>
+          <div id="confirm_error"></div>
         </div>
-        <div id="confirm_error"></div>
       </div>
     </div>
 

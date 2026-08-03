@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>使用說明 — NDRF 申報平台</title>
+  <link rel="stylesheet" href="/css/style.css">
+  <link rel="stylesheet" href="/css/help.css">
+</head>
+<body>
+  <header class="topbar">
+    <div>
+      <h1>NDRF 申報平台</h1>
+      <div class="subtitle">圖文使用說明</div>
+    </div>
+    <nav aria-label="主要導覽">
+      <a href="/">一般申報</a>
+      <a href="/urgent.html">Urgent Order</a>
+      <a href="/lookup.html">查詢／修改</a>
+      <a href="/help.html" class="active" aria-current="page">使用說明</a>
+    </nav>
+  </header>
+
+  <main class="container">
+    <section class="help-hero" aria-labelledby="help-title">
+      <h2 id="help-title">跟著圖示，一步一步完成申報</h2>
+      <p>第一次使用也不用擔心。先選擇你要做的申報類型，再按照圖示及步驟操作。圖片為介面示意圖，實際畫面可能因手機或電腦螢幕大小略有不同。</p>
+    </section>
+
+    <nav class="help-toc" aria-label="說明章節">
+      <a href="#normal">1. 一般申報<small>ND／RF 單筆申報</small></a>
+      <a href="#excel">2. Excel 批量<small>一次提交多間店舖</small></a>
+      <a href="#urgent">3. Urgent Order<small>緊急補貨申報</small></a>
+      <a href="#lookup">4. 查詢／修改<small>查看申請進度及資料</small></a>
+    </nav>
+
+    <section class="card help-section" id="normal" aria-labelledby="normal-title">
+      <h2 id="normal-title">1. 一般申報（ND／RF）</h2>
+      <p class="help-section-intro">適合提交一般 NDRF 申報。先填寫基本資料，再按 RP Type 填寫相應欄位。</p>
+
+      <div class="help-step">
+        <img src="/images/help/normal-site.svg" alt="輸入 Site Code 後顯示店舖資訊的示意圖" width="640" height="360">
+        <div>
+          <h3><span class="help-step-number">1</span>輸入並確認店舖</h3>
+          <p>在 <b>Site Code</b> 輸入店舖編號，例如 <b>HA02</b>。稍等片刻，系統會顯示店舖名稱；請先確認顯示的店舖正確。</p>
+        </div>
+      </div>
+
+      <div class="help-step">
+        <img src="/images/help/normal-rules.svg" alt="填寫 SKU、選擇 RP Type 及按規則填寫欄位的示意圖" width="640" height="360" loading="lazy" decoding="async">
+        <div>
+          <h3><span class="help-step-number">2</span>填寫 SKU 及 RP Type</h3>
+          <p><b>SKU</b> 及 <b>RP Type</b> 必須填寫。選擇 ND 或 RF 後，按下列規則填寫：</p>
+          <div class="help-rules">
+            <div class="help-rule"><strong>選擇 ND</strong><p>必須填寫 ND Code。可選項目只有：</p><div class="help-code-list"><span class="help-code">ND20</span><span class="help-code">ND21</span><span class="help-code">ND22</span><span class="help-code">ND23</span><span class="help-code">ND29</span></div></div>
+            <div class="help-rule"><strong>選擇 RF</strong><p>必須填寫大於 0 的 Safety stock；指定店舖另須填寫 Remark。</p></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="help-step">
+        <img src="/images/help/normal-submit.svg" alt="按預覽確認資料後提交的示意圖" width="640" height="360" loading="lazy" decoding="async">
+        <div>
+          <h3><span class="help-step-number">3</span>預覽、確認及記下申請編號</h3>
+          <p>按「預覽」後，逐項核對資料。確認正確後按「確認提交」。成功後會顯示申請編號，請立即記下，日後查詢或修改時需要使用。</p>
+        </div>
+      </div>
+
+      <div class="help-note"><b>小提示：</b>如果只想調整 Safety stock，也要將 RP Type 選擇為 RF，並填寫新的 Safety stock。</div>
+    </section>
+
+    <section class="card help-section" id="excel" aria-labelledby="excel-title">
+      <h2 id="excel-title">2. Excel 批量上載</h2>
+      <p class="help-section-intro">如果要一次提交多筆申報，可使用 Excel 模板。請不要更改工作表名稱及第一行欄名。</p>
+      <div class="help-step">
+        <img src="/images/help/excel.svg" alt="下載 Excel 模板、填寫資料並上載的示意圖" width="640" height="360" loading="lazy" decoding="async">
+        <div>
+          <h3><span class="help-step-number">1</span>下載模板並填寫</h3>
+          <p>按「下載模板 (.xlsx)」，在 <b>RP Team</b> 工作表逐行填寫資料。每一行代表一筆申報；保留第一行欄名，不要自行改名或刪除欄位。</p>
+        </div>
+      </div>
+      <div class="help-step">
+        <img src="/images/help/excel-upload.svg" alt="選擇 Excel 檔案後按上載並匯入的示意圖" width="640" height="360" loading="lazy" decoding="async">
+        <div>
+          <h3><span class="help-step-number">2</span>上載並核對結果</h3>
+          <p>將檔案拖到上載框，或按一下選擇檔案，再按「上載並匯入」。系統會先完整檢查整份檔案；如有任何錯誤，整份檔案都不會寫入。成功後請記下每筆申請編號。</p>
+          <div class="help-note">Excel 批量上載的欄位規則與一般單筆申報相同：ND 要填 ND Code；RF 要填大於 0 的 Safety stock，指定店舖轉 RF 要填 Remark。</div>
+        </div>
+      </div>
+    </section>
+
+    <section class="card help-section" id="urgent" aria-labelledby="urgent-title">
+      <h2 id="urgent-title">3. Urgent Order</h2>
+      <p class="help-section-intro">Urgent Order 用於緊急補貨，與一般 NDRF 申報分開處理。</p>
+      <div class="help-step">
+        <img src="/images/help/urgent.svg" alt="填寫 Urgent Order 的 Site Code、SKU、QTY 及原因的示意圖" width="640" height="360" loading="lazy" decoding="async">
+        <div>
+          <h3><span class="help-step-number">1</span>填寫緊急補貨資料</h3>
+          <p>按「Urgent Order」，填寫 <b>Site Code</b>、<b>SKU</b>、<b>QTY</b> 及 <b>Urgent Reason</b>。QTY 必須為 1 至 1000 的整數；選擇「9. 其他」時，必須填寫 Other Reason。</p>
+        </div>
+      </div>
+      <div class="help-step">
+        <img src="/images/help/urgent-excel.svg" alt="Urgent Order Excel 模板及上載的示意圖" width="640" height="360" loading="lazy" decoding="async">
+        <div>
+          <h3><span class="help-step-number">2</span>預覽或使用 Excel 批量上載</h3>
+          <p>單筆申報按「預覽」後確認提交；多筆申報可下載 Urgent Order 模板，上載前保持工作表及欄名不變。每日香港時間 14:30 後暫停收單，請於翌日 14:30 前提交。</p>
+        </div>
+      </div>
+    </section>
+
+    <section class="card help-section" id="lookup" aria-labelledby="lookup-title">
+      <h2 id="lookup-title">4. 查詢／修改</h2>
+      <p class="help-section-intro">提交成功後，可使用申請編號及 Site Code 找回申報資料。</p>
+      <div class="help-step">
+        <img src="/images/help/lookup.svg" alt="使用申請編號及 Site Code 查詢資料的示意圖" width="640" height="360" loading="lazy" decoding="async">
+        <div>
+          <h3><span class="help-step-number">1</span>輸入兩項資料查詢</h3>
+          <p>按「查詢／修改」，輸入提交後的 <b>申請編號</b> 及當時使用的 <b>Site Code</b>，再按「查詢」。兩項資料必須同時正確。</p>
+        </div>
+      </div>
+      <div class="help-step">
+        <img src="/images/help/lookup-edit.svg" alt="修改資料並儲存版本的示意圖" width="640" height="360" loading="lazy" decoding="async">
+        <div>
+          <h3><span class="help-step-number">2</span>匯出前可以修改</h3>
+          <p>資料顯示後，可在匯出前修改並按「儲存修改」。每次修改會新增版本紀錄；管理員匯出後，申報會被鎖定，不能再修改。</p>
+        </div>
+      </div>
+    </section>
+
+    <p class="help-footer">如需重新開始，按頁面上方的「一般申報」或「Urgent Order」即可返回。</p>
+  </main>
+</body>
+</html>

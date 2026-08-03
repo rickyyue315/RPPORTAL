@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 360" role="img" aria-labelledby="title desc">
+  <title id="title">修改申報</title>
+  <desc id="desc">匯出前修改資料及儲存版本的示意圖</desc>
+  <rect width="640" height="360" rx="16" fill="#f4f7fa"/>
+  <rect x="42" y="30" width="556" height="300" rx="12" fill="#fff" stroke="#d9dee3"/>
+  <text x="72" y="72" fill="#0a3d69" font-family="Arial, sans-serif" font-size="18" font-weight="700">申報詳情</text>
+  <rect x="72" y="96" width="238" height="42" rx="6" fill="#fff" stroke="#d9dee3" stroke-width="2"/>
+  <text x="90" y="123" fill="#1d2733" font-family="Arial, sans-serif" font-size="15">Safety stock：5</text>
+  <rect x="72" y="156" width="238" height="42" rx="6" fill="#fff" stroke="#d9dee3" stroke-width="2"/>
+  <text x="90" y="183" fill="#1d2733" font-family="Arial, sans-serif" font-size="15">Remark：補貨調整</text>
+  <rect x="72" y="230" width="190" height="46" rx="23" fill="#0f5c9c"/>
+  <text x="113" y="259" fill="#fff" font-family="Arial, sans-serif" font-size="15" font-weight="700">儲存修改</text>
+  <path d="M392 128h120M392 168h88M392 208h142" stroke="#d9dee3" stroke-width="9" stroke-linecap="round"/>
+  <circle cx="410" cy="272" r="25" fill="#fef9e7" stroke="#b9770e" stroke-width="3"/>
+  <rect x="400" y="269" width="20" height="16" rx="3" fill="none" stroke="#b9770e" stroke-width="3"/>
+  <path d="M404 269v-7a6 6 0 0 1 12 0v7" fill="none" stroke="#b9770e" stroke-width="3"/>
+  <text x="447" y="278" fill="#795b0b" font-family="Arial, sans-serif" font-size="14" font-weight="700">匯出後鎖定</text>
+</svg>

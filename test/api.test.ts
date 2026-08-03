@@ -201,6 +201,17 @@ describe('public API', () => {
     expect(res.headers['content-type']).toContain('spreadsheetml');
     expect(Number(res.headers['content-length'])).toBeGreaterThan(1000);
   });
+
+  it('serves the separate visual help page and its SVG assets', async () => {
+    const page = await request(app).get('/help.html');
+    expect(page.status).toBe(200);
+    expect(page.text).toContain('跟著圖示，一步一步完成申報');
+    expect(page.text).toContain('/images/help/normal-site.svg');
+
+    const image = await request(app).get('/images/help/normal-site.svg');
+    expect(image.status).toBe(200);
+    expect(image.headers['content-type']).toContain('image/svg+xml');
+  });
 });
 
 describe('admin API', () => {

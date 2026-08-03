@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 360" role="img" aria-labelledby="title desc">
+  <title id="title">Excel 模板</title>
+  <desc id="desc">下載模板並填寫 Excel 的示意圖</desc>
+  <rect width="640" height="360" rx="16" fill="#f4f7fa"/>
+  <rect x="38" y="28" width="564" height="304" rx="12" fill="#fff" stroke="#d9dee3"/>
+  <rect x="38" y="28" width="564" height="50" rx="12" fill="#217346"/>
+  <text x="64" y="60" fill="#fff" font-family="Arial, sans-serif" font-size="18" font-weight="700">RP Team.xlsx</text>
+  <g stroke="#c9d2d9" stroke-width="1">
+    <path d="M68 116h500M68 166h500M68 216h500M68 266h500M68 116v150M208 116v150M358 116v150M468 116v150M568 116v150"/>
+  </g>
+  <rect x="68" y="116" width="500" height="50" fill="#eaf2fb"/>
+  <text x="78" y="147" fill="#0a3d69" font-family="Arial, sans-serif" font-size="13" font-weight="700">Site Code</text>
+  <text x="220" y="147" fill="#0a3d69" font-family="Arial, sans-serif" font-size="13" font-weight="700">SKU</text>
+  <text x="370" y="147" fill="#0a3d69" font-family="Arial, sans-serif" font-size="13" font-weight="700">RP Type</text>
+  <text x="480" y="147" fill="#0a3d69" font-family="Arial, sans-serif" font-size="13" font-weight="700">Remark</text>
+  <path d="M286 288v-28" stroke="#0f5c9c" stroke-width="4"/>
+  <path d="m274 270 12-14 12 14" fill="none" stroke="#0f5c9c" stroke-width="4"/>
+  <text x="326" y="294" fill="#0f5c9c" font-family="Arial, sans-serif" font-size="15" font-weight="700">下載 → 填寫 → 上載</text>
+</svg>

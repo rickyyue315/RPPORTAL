@@ -44,6 +44,7 @@ npm run dev
 - 公開申請頁（一般 NDRF）：<http://localhost:3000/>
 - Urgent Order 申報：<http://localhost:3000/urgent.html>
 - 查詢／修改：<http://localhost:3000/lookup.html>
+- 圖文使用說明：<http://localhost:3000/help.html>
 - 管理後台：<http://localhost:3000/admin/index.html>（免登入）
 
 首次啟動時若 `stores` 主檔為空，會自動載入 `stores-template.csv`（預設路徑可由 `STORES_CSV_PATH` 覆寫）。

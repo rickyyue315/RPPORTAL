@@ -1,4 +1,4 @@
-import { describe, expect, it, beforeAll } from 'vitest';
+import { describe, expect, it, beforeAll, afterEach, vi } from 'vitest';
 import request from 'supertest';
 import { PGlite } from '@electric-sql/pglite';
 import ExcelJS from 'exceljs';
@@ -10,10 +10,12 @@ import { setPoolForTesting } from '../src/db/pool.js';
 import { createApp } from '../src/app.js';
 import { replaceStores } from '../src/services/stores.js';
 import { TEMPLATE_COLUMNS, RP_TEAM_SHEET, SHOP_CODE_HEADER, URGENT_COLUMNS, URGENT_SHEET } from '../src/lib/fields.js';
+import * as time from '../src/lib/time.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 let app: Express;
 let db: PGlite;
+let timeSpy: ReturnType<typeof vi.spyOn>;
 
 function makePglitePool(database: PGlite): never {
   return {
@@ -48,6 +50,9 @@ beforeAll(async () => {
     ],
   );
   app = createApp();
+  // Freeze the clock at 09:00 HK so tests are independent of the real wall-clock
+  // (the Urgent Order window closes at 14:30 HK). Window tests override this spy.
+  timeSpy = vi.spyOn(time, 'hkMinutesNow').mockReturnValue(9 * 60);
 });
 
 describe('public API', () => {
@@ -840,5 +845,102 @@ describe('daily duplicate rule', () => {
     );
     const res = await request(app).post('/api/public/submit').send({ site_code: 'HA02', sku: 'DUP-NEXT-1', ...ND });
     expect(res.status).toBe(201);
+  });
+});
+
+describe('urgent submission window (14:30 cutoff)', () => {
+  const DEFAULT_MINUTES = 9 * 60;
+  const ND = { rp_type: 'ND', nd_code: 'ND20-SO-Not displayed in small stores' };
+
+  afterEach(() => {
+    timeSpy.mockReturnValue(DEFAULT_MINUTES);
+  });
+
+  it('accepts urgent submit at 14:29', async () => {
+    timeSpy.mockReturnValue(14 * 60 + 29);
+    const res = await request(app).post('/api/public/urgent/submit').send({
+      site_code: 'HA02',
+      sku: 'U-WINDOW-OPEN',
+      qty: 5,
+      urgent_reason: '1',
+    });
+    expect(res.status).toBe(201);
+  });
+
+  it('rejects urgent submit at 14:30', async () => {
+    timeSpy.mockReturnValue(14 * 60 + 30);
+    const res = await request(app).post('/api/public/urgent/submit').send({
+      site_code: 'HA02',
+      sku: 'U-WINDOW-CLOSED',
+      qty: 5,
+      urgent_reason: '1',
+    });
+    expect(res.status).toBe(400);
+    expect(res.body.field).toBeNull();
+    expect(res.body.error).toContain('14:30');
+  });
+
+  it('rejects urgent submit at 23:59 and accepts it again the next morning', async () => {
+    timeSpy.mockReturnValue(23 * 60 + 59);
+    const closed = await request(app).post('/api/public/urgent/submit').send({
+      site_code: 'HA02',
+      sku: 'U-WINDOW-EOD',
+      qty: 5,
+      urgent_reason: '1',
+    });
+    expect(closed.status).toBe(400);
+
+    timeSpy.mockReturnValue(0);
+    const reopened = await request(app).post('/api/public/urgent/submit').send({
+      site_code: 'HA02',
+      sku: 'U-WINDOW-EOD',
+      qty: 5,
+      urgent_reason: '1',
+    });
+    expect(reopened.status).toBe(201);
+  });
+
+  it('rejects urgent import at 14:30 without writing rows', async () => {
+    const before = await request(app).get('/api/admin/submissions?page=1&page_size=1');
+    const beforeTotal = before.body.total;
+
+    const wb = new ExcelJS.Workbook();
+    const ws = wb.addWorksheet(URGENT_SHEET);
+    ws.addRow([...URGENT_COLUMNS]);
+    ws.addRow(['HA02', 'U-WINDOW-IMP', 2, '1', '']);
+    const buffer = Buffer.from(await wb.xlsx.writeBuffer());
+
+    timeSpy.mockReturnValue(14 * 60 + 30);
+    const res = await request(app)
+      .post('/api/public/urgent/import')
+      .attach('file', buffer, 'urgent-window.xlsx');
+    expect(res.status).toBe(400);
+    expect(res.body.error).toContain('14:30');
+
+    const after = await request(app).get('/api/admin/submissions?page=1&page_size=1');
+    expect(after.body.total).toBe(beforeTotal);
+  });
+
+  it('still accepts normal submissions after 14:30', async () => {
+    timeSpy.mockReturnValue(23 * 60 + 59);
+    const res = await request(app).post('/api/public/submit').send({
+      site_code: 'HA02',
+      sku: '110011',
+      ...ND,
+    });
+    expect(res.status).toBe(201);
+  });
+
+  it('reports the window status via /urgent/window', async () => {
+    timeSpy.mockReturnValue(23 * 60 + 59);
+    const closed = await request(app).get('/api/public/urgent/window');
+    expect(closed.status).toBe(200);
+    expect(closed.body.open).toBe(false);
+    expect(closed.body.cutoff).toBe('14:30');
+    expect(closed.body.message).toContain('14:30');
+
+    timeSpy.mockReturnValue(10 * 60);
+    const open = await request(app).get('/api/public/urgent/window');
+    expect(open.body.open).toBe(true);
   });
 });

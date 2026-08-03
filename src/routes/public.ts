@@ -20,7 +20,7 @@ import {
   type SubmissionRow,
 } from '../services/submissions.js';
 import { writeAuditEvent } from '../lib/audit.js';
-import { toHKString, hkTodayForDateColumn } from '../lib/time.js';
+import { toHKString, hkTodayForDateColumn, hkMinutesNow, hkHM } from '../lib/time.js';
 import { parseImportWorkbook, parseUrgentImportWorkbook, findDuplicateImportErrors } from '../lib/excelImport.js';
 import { generateTemplateWorkbook, generateUrgentTemplateWorkbook, buildImportRecordBuffer, buildUrgentImportRecordBuffer } from '../lib/excelExport.js';
 import { URGENT_QTY_MIN, URGENT_QTY_MAX, urgentReasonLabel } from '../lib/fields.js';
@@ -33,6 +33,14 @@ import { ipExpiryIso } from '../lib/ip.js';
 export const publicRouter = Router();
 
 const upload = multer({ storage: multer.memoryStorage() });
+
+const URGENT_SUBMIT_CUTOFF_MINUTES = 14 * 60 + 30; // 每日 14:30（香港時間）後暫停收單
+const URGENT_SUBMIT_CUTOFF_LABEL = '14:30';
+const URGENT_WINDOW_CLOSED_ERROR = `Urgent Order 提交時間已截止（每日 ${URGENT_SUBMIT_CUTOFF_LABEL} 後暫停收單），請於翌日 ${URGENT_SUBMIT_CUTOFF_LABEL} 前提交`;
+
+function isUrgentWindowOpen(): boolean {
+  return hkMinutesNow() < URGENT_SUBMIT_CUTOFF_MINUTES;
+}
 
 const businessFieldSchema = z.object({
   brand: z.string().max(500).optional().default(''),
@@ -229,6 +237,10 @@ publicRouter.post(
   '/urgent/submit',
   publicSubmitLimiter,
   asyncHandler(async (req: Request, res: Response) => {
+    if (!isUrgentWindowOpen()) {
+      res.status(400).json({ error: URGENT_WINDOW_CLOSED_ERROR, field: null });
+      return;
+    }
     const parsed = urgentSubmitSchema.safeParse(req.body);
     if (!parsed.success) {
       const first = parsed.error.issues[0];
@@ -291,6 +303,21 @@ publicRouter.post(
   }),
 );
 
+/** GET /api/public/urgent/window — current Urgent Order submission window status. */
+publicRouter.get(
+  '/urgent/window',
+  publicLookupLimiter,
+  asyncHandler(async (_req: Request, res: Response) => {
+    res.json({
+      open: isUrgentWindowOpen(),
+      cutoff: URGENT_SUBMIT_CUTOFF_LABEL,
+      timezone: config.timezone,
+      now: hkHM(),
+      message: URGENT_WINDOW_CLOSED_ERROR,
+    });
+  }),
+);
+
 /** GET /api/public/urgent/template — download Urgent import template. */
 publicRouter.get(
   '/urgent/template',
@@ -309,6 +336,10 @@ publicRouter.post(
   excelImportLimiter,
   upload.single('file'),
   asyncHandler(async (req: Request, res: Response) => {
+    if (!isUrgentWindowOpen()) {
+      res.status(400).json({ error: URGENT_WINDOW_CLOSED_ERROR, field: null });
+      return;
+    }
     const file = (req as Request & { file?: Express.Multer.File }).file;
     if (!file) {
       res.status(400).json({ error: '請上載 Excel 檔案' });

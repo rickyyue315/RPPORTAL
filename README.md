@@ -7,6 +7,7 @@ SASA RP Team 非正常補貨（NDRF）申報平台。申請端與管理端均免
 - 公開單筆申報（Site Code + SKU + RP Type 必填，Site Code 驗證門店主檔；RP Type 為 RF 時必須填寫 Safety stock（大於 0）及指定店舖的 Remark，為 ND 時必須填寫 ND Code）
 - 公開 Excel 批量上載（固定模板 `RP Team` 工作表，整檔驗證，錯誤不寫入任何行；上載成功後可下載匯入記錄 Excel，按店舖分頁）
 - Urgent Order 申報（`/urgent.html`）：需填寫 Site Code、SKU、QTY（1 至 1000 的整數）及 Urgent Reason（指定原因選項，選擇「9. 其他」時必須填寫 Other Reason），單筆提交或獨立 5 欄 Excel 批量上載（上載成功後同樣可下載匯入記錄 Excel，按店舖分頁）
+- Urgent Order 提交時段為每日 00:00 至 14:30（香港時間）：14:30 後單筆提交及 Excel 批量上載均會被拒絕（管理後台不受限），翌日 14:30 前恢復；狀態可經 `GET /api/public/urgent/window` 查詢
 - Urgent Order 申請編號使用 `URGENT-...` 前綴；超出 1000 件的需求改以電郵向相關 Buyer 申請，不在平台處理
 - 申請編號 + Site Code 查詢／修改（匯出前可修改，每次修改新增不可變版本；Urgent 不提供申請人查詢／修改）
 - 同一 Site Code + SKU 於同一日（香港日期）只可申報一次；一般 NDRF 與 Urgent 分開計算。被拒時可用查詢／修改更正，翌日可重新申報；管理後台操作不受此限

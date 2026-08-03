@@ -159,6 +159,31 @@
     showPreview();
   });
 
+  async function loadWindowStatus() {
+    try {
+      const data = await api('/api/public/urgent/window');
+      if (data && data.open === false) {
+        const banner = $('window_banner');
+        if (banner) {
+          banner.style.display = '';
+          banner.innerHTML = `<b>${escapeHtml(data.message || 'Urgent Order 提交時間已截止')}</b>`;
+        }
+        ['btn_submit', 'btn_preview', 'btn_confirm', 'btn_import'].forEach((id) => {
+          const el = $(id);
+          if (el) el.disabled = true;
+        });
+        const drop = $('file_drop');
+        if (drop) {
+          drop.style.pointerEvents = 'none';
+          drop.style.opacity = '0.5';
+        }
+      }
+    } catch {
+      // Server-side enforcement remains authoritative; ignore client errors here.
+    }
+  }
+  loadWindowStatus();
+
   const drop = $('file_drop');
   const fileInput = $('file_input');
   drop.addEventListener('click', () => fileInput.click());

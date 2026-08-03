@@ -24,8 +24,10 @@
       <h2>Urgent Order 單筆申報</h2>
       <p class="hint">只有 <b>Site Code</b>、<b>SKU</b>、<b>QTY</b> 及 <b>Urgent Reason</b> 為必填。QTY 必須為 1 至 1000 的整數；選擇「9. 其他」時必須填寫 Other Reason。</p>
       <div class="alert warning" style="margin-top:0">
-        每筆 Urgent Order 數量上限為 <b>1000 件</b>。超出 1000 件的需求，請改以電郵向相關 Buyer 申請，不在此平台處理。
+        每筆 Urgent Order 數量上限為 <b>1000 件</b>。超出 1000 件的需求，請改以電郵向相關 Buyer 申請，不在此平台處理。<br>
+        提交時段：每日 <b>00:00 至 14:30</b>（香港時間），<b>14:30 後暫停收單</b>。
       </div>
+      <div id="window_banner" class="alert error" style="display:none; margin-top:0"></div>
       <div id="form_error"></div>
       <form id="apply_form">
         <div class="form-grid">
@@ -134,6 +136,7 @@
       <ul>
         <li><b>Site Code</b>、<b>SKU</b>、<b>QTY</b> 及 <b>Urgent Reason</b> 均為必填；</li>
         <li><b>QTY</b> 必須為 1 至 1000 的整數；</li>
+        <li>提交時段為每日 <b>00:00 至 14:30</b>（香港時間），<b>14:30 後暫停收單</b>，請於翌日 14:30 前提交；</li>
         <li>每筆 Urgent Order 數量上限為 <b>1000 件</b>，超出上限的需求請改以電郵向相關 Buyer 申請，不在此平台處理；</li>
         <li>申請 Urgent Order 必須註明以下指定原因：</li>
       </ul>

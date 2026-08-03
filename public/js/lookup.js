@@ -2,6 +2,17 @@
   const $ = (id) => document.getElementById(id);
   let current = null;
 
+  function isUrgent() {
+    return current?.submission?.submission_type === 'urgent';
+  }
+
+  function syncOtherReasonWrap() {
+    const reason = $('f_u_urgent_reason').value;
+    $('f_u_other_wrap').style.display = reason === '9' ? '' : 'none';
+  }
+
+  $('f_u_urgent_reason').addEventListener('change', syncOtherReasonWrap);
+
   $('search_form').addEventListener('submit', async (e) => {
     e.preventDefault();
     const no = $('q_no').value.trim().toUpperCase();
@@ -35,25 +46,35 @@
       <dt>申請電郵</dt><dd>${escapeHtml(s.requested_by_email)}</dd>
       <dt>申請日期</dt><dd>${escapeHtml(s.application_date)}</dd>
       <dt>申請時間</dt><dd>${escapeHtml(s.submitted_at)}</dd>`;
+    if (isUrgent()) {
+      headerRows += `
+        <dt>QTY</dt><dd>${escapeHtml(s.qty)}</dd>
+        <dt>Urgent Reason</dt><dd>${escapeHtml(s.urgent_reason_label || s.urgent_reason)}${s.urgent_reason_other ? '（' + escapeHtml(s.urgent_reason_other) + '）' : ''}</dd>`;
+    }
     if (s.locked_at) {
       headerRows += `<dt>鎖定時間</dt><dd>${escapeHtml(s.locked_at)}</dd>`;
     }
     $('detail_header').innerHTML = headerRows;
 
-    if (s.locked) {
-      $('lock_banner').innerHTML = '<div class="alert warning">此申報已被匯出並鎖定，不能修改。</div>';
-      $('modify_box').style.display = 'none';
-    } else {
-      $('lock_banner').innerHTML = '';
-      $('modify_box').style.display = '';
-      $('save_note').textContent = '匯出前可修改，每次修改會新增一個版本紀錄。';
-    }
-
     $('f_sku').value = s.sku || '';
-    $('f_rp_type').value = s.rp_type || '';
-    $('f_safety_stock').value = s.safety_stock || '';
-    $('f_nd_code').value = s.nd_code || '';
-    $('f_remark').value = s.remark || '';
+
+    const normalFields = $('normal_fields');
+    const urgentFields = $('urgent_fields');
+    if (isUrgent()) {
+      normalFields.style.display = 'none';
+      urgentFields.style.display = '';
+      $('f_u_qty').value = s.qty ?? '';
+      $('f_u_urgent_reason').value = s.urgent_reason || '';
+      $('f_u_urgent_reason_other').value = s.urgent_reason_other || '';
+      syncOtherReasonWrap();
+    } else {
+      normalFields.style.display = '';
+      urgentFields.style.display = 'none';
+      $('f_rp_type').value = s.rp_type || '';
+      $('f_safety_stock').value = s.safety_stock || '';
+      $('f_nd_code').value = s.nd_code || '';
+      $('f_remark').value = s.remark || '';
+    }
 
     const tbody = $('versions_table').querySelector('tbody');
     tbody.innerHTML = '';
@@ -70,20 +91,77 @@
       tr.innerHTML = `<td>${v.version}</td><td>${escapeHtml(v.changed_at)}</td><td>${actor}</td><td>${escapeHtml(src)}</td>`;
       tbody.appendChild(tr);
     });
+
+    const btn = $('btn_save');
+    btn.disabled = false;
+    if (s.locked) {
+      $('lock_banner').innerHTML = '<div class="alert warning">此申報已被匯出並鎖定，不能修改。</div>';
+      $('modify_box').style.display = 'none';
+    } else if (isUrgent()) {
+      $('modify_box').style.display = '';
+      api('/api/public/urgent/window').then((w) => {
+        if (w?.open) {
+          $('lock_banner').innerHTML = '';
+          $('save_note').textContent = '每日 14:30 前可修改，每次修改會新增一個版本紀錄。';
+        } else {
+          $('lock_banner').innerHTML = '<div class="alert warning">提交時段已結束（每日 14:30 後暫停修改），現時只可查詢。</div>';
+          $('save_note').textContent = '';
+          btn.disabled = true;
+        }
+      }).catch(() => {});
+      $('save_note').textContent = '每日 14:30 前可修改，每次修改會新增一個版本紀錄。';
+    } else {
+      $('lock_banner').innerHTML = '';
+      $('modify_box').style.display = '';
+      $('save_note').textContent = '匯出前可修改，每次修改會新增一個版本紀錄。';
+    }
+  }
+
+  function validateUrgentFields(body) {
+    const errors = [];
+    if (!body.sku.trim()) {
+      errors.push({ field: 'sku', message: 'SKU 為必填' });
+    }
+    const qty = Number(body.qty);
+    if (!Number.isInteger(qty) || qty < 1 || qty > 1000) {
+      errors.push({ field: 'qty', message: 'QTY 必須為 1 至 1000 的整數' });
+    }
+    if (!body.urgent_reason) {
+      errors.push({ field: 'urgent_reason', message: 'Urgent Reason 為必填' });
+    } else if (body.urgent_reason === '9') {
+      if (!(body.urgent_reason_other || '').trim()) {
+        errors.push({ field: 'urgent_reason_other', message: '選擇「9. 其他」時必須填寫 Other Reason' });
+      }
+    } else if ((body.urgent_reason_other || '').trim()) {
+      errors.push({ field: 'urgent_reason_other', message: '僅選擇「9. 其他」時才可填寫 Other Reason' });
+    }
+    return errors;
   }
 
   $('btn_save').addEventListener('click', async () => {
     if (!current) return;
-    const body = {
+    const base = {
       application_no: current.submission.application_no,
       site_code: current.submission.site_code,
       sku: $('f_sku').value.trim(),
-      rp_type: $('f_rp_type').value,
-      safety_stock: $('f_safety_stock').value.trim(),
-      nd_code: $('f_nd_code').value.trim(),
-      remark: $('f_remark').value.trim(),
     };
-    const clientErrs = validateBusinessFields(body, current.submission.site_code);
+    const body = isUrgent()
+      ? {
+          ...base,
+          qty: Number($('f_u_qty').value),
+          urgent_reason: $('f_u_urgent_reason').value,
+          urgent_reason_other: $('f_u_urgent_reason_other').value.trim(),
+        }
+      : {
+          ...base,
+          rp_type: $('f_rp_type').value,
+          safety_stock: $('f_safety_stock').value.trim(),
+          nd_code: $('f_nd_code').value.trim(),
+          remark: $('f_remark').value.trim(),
+        };
+    const clientErrs = isUrgent()
+      ? validateUrgentFields(body)
+      : validateBusinessFields(body, current.submission.site_code);
     if (clientErrs.length) {
       showAlert($('save_error'), 'error', clientErrs.map((e) => escapeHtml(e.message)).join('<br>'));
       return;

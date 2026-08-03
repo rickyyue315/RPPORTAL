@@ -6,6 +6,7 @@ import {
   type SubmissionBusinessFields,
   URGENT_QTY_MIN,
   URGENT_QTY_MAX,
+  resolveUrgentReasonCode,
 } from '../lib/fields.js';
 import { validateUrgentReason } from '../lib/validation.js';
 import { toHKDateString, hkTodayForDateColumn } from '../lib/time.js';
@@ -343,6 +344,82 @@ export async function modifySubmission(
         input.ip,
         input.changeSource,
       ],
+    );
+
+    return newRow;
+  });
+}
+
+export interface ModifyUrgentSubmissionInput {
+  applicationNo: string;
+  siteCode: string;
+  sku: string;
+  qty: number;
+  urgentReason: string | null;
+  urgentReasonOther: string | null;
+  ip: string;
+  changeSource: string;
+}
+
+export async function modifyUrgentSubmission(
+  input: ModifyUrgentSubmissionInput,
+): Promise<SubmissionRow> {
+  const siteCode = normalizeSiteCode(input.siteCode);
+  if (!(Number.isInteger(input.qty) && input.qty >= URGENT_QTY_MIN && input.qty <= URGENT_QTY_MAX)) {
+    throw new Error(`QTY 必須為 ${URGENT_QTY_MIN} 至 ${URGENT_QTY_MAX} 的整數`);
+  }
+  const reasonErrors = validateUrgentReason(input.urgentReason, input.urgentReasonOther);
+  if (reasonErrors.length) {
+    throw new Error(reasonErrors[0]!.message);
+  }
+  const urgentReason = normalizeText(input.urgentReason) ? resolveUrgentReasonCode(input.urgentReason) : null;
+  const urgentReasonOther = normalizeText(input.urgentReasonOther) || null;
+  return withTransaction(async (client) => {
+    const rowResult = await client.query<SubmissionRow>(
+      'SELECT * FROM submissions WHERE application_no = $1 AND site_code = $2',
+      [input.applicationNo.trim().toUpperCase(), siteCode],
+    );
+    const row = rowResult.rows[0];
+    if (!row) {
+      throw new Error('找不到申報');
+    }
+    if (row.submission_type !== 'urgent') {
+      throw new NotSupportedError('此申報不是 Urgent Order');
+    }
+    if (row.locked_at || row.exported_at) {
+      throw new LockedError(row.locked_at ? new Date(row.locked_at) : null);
+    }
+
+    await assertNoDuplicate(client, {
+      siteCode,
+      sku: input.sku,
+      submissionType: row.submission_type,
+      date: row.application_date,
+      excludeId: row.id,
+    });
+
+    const before = urgentFieldsFromRow(row);
+    const updated = await client.query<SubmissionRow>(
+      `UPDATE submissions SET
+         sku = $1, qty = $2, urgent_reason = $3, urgent_reason_other = $4, updated_at = now()
+       WHERE id = $5
+       RETURNING *`,
+      [normalizeText(input.sku), input.qty, urgentReason, urgentReasonOther, row.id],
+    );
+    const newRow = updated.rows[0]!;
+
+    const versionResult = await client.query<{ max: number | null }>(
+      'SELECT max(version) AS max FROM submission_versions WHERE submission_id = $1',
+      [row.id],
+    );
+    const nextVersion = (versionResult.rows[0]?.max ?? 0) + 1;
+    const after = urgentFieldsFromRow(newRow);
+
+    await client.query(
+      `INSERT INTO submission_versions
+         (submission_id, version, data_before, data_after, actor_role, actor, ip, change_source)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+      [row.id, nextVersion, JSON.stringify(before), JSON.stringify(after), 'applicant', null, input.ip, input.changeSource],
     );
 
     return newRow;

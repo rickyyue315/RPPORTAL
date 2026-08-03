@@ -28,7 +28,7 @@
         <div class="form-grid">
           <div>
             <label for="q_no">申請編號</label>
-            <input type="text" id="q_no" placeholder="NDRF-XXXXXXXX-XXXXXXXX">
+            <input type="text" id="q_no" placeholder="NDRF-XXXXXXXX-XXXXXXXX 或 URGENT-XXXXXXXX-XXXXXXXX">
           </div>
           <div>
             <label for="q_site">Site Code</label>
@@ -53,26 +53,55 @@
           <label for="f_sku">SKU <span class="optional">（必填）</span></label>
           <input type="text" id="f_sku">
         </div>
-        <div>
-          <label for="f_rp_type">RP Type <span class="optional">（必填）</span></label>
-          <select id="f_rp_type">
-            <option value="">—</option>
-            <option value="ND">ND</option>
-            <option value="RF">RF</option>
-          </select>
-        </div>
-        <div>
-          <label for="f_safety_stock">Safety stock</label>
-          <input type="text" id="f_safety_stock">
-        </div>
-        <div>
-          <label for="f_nd_code">ND Code</label>
-          <input type="text" id="f_nd_code" list="nd_code_list">
-          <datalist id="nd_code_list"></datalist>
-        </div>
         <div class="full">
-          <label for="f_remark">Remark</label>
-          <input type="text" id="f_remark">
+          <div class="form-grid" id="normal_fields">
+            <div>
+              <label for="f_rp_type">RP Type <span class="optional">（必填）</span></label>
+              <select id="f_rp_type">
+                <option value="">—</option>
+                <option value="ND">ND</option>
+                <option value="RF">RF</option>
+              </select>
+            </div>
+            <div>
+              <label for="f_safety_stock">Safety stock</label>
+              <input type="text" id="f_safety_stock">
+            </div>
+            <div>
+              <label for="f_nd_code">ND Code</label>
+              <input type="text" id="f_nd_code" list="nd_code_list">
+              <datalist id="nd_code_list"></datalist>
+            </div>
+            <div class="full">
+              <label for="f_remark">Remark</label>
+              <input type="text" id="f_remark">
+            </div>
+          </div>
+          <div class="form-grid" id="urgent_fields" style="display:none">
+            <div>
+              <label for="f_u_qty">QTY <span class="optional">（必填，1 至 1000）</span></label>
+              <input type="number" id="f_u_qty" min="1" max="1000" step="1" inputmode="numeric" autocomplete="off">
+            </div>
+            <div class="full">
+              <label for="f_u_urgent_reason">Urgent Reason <span class="optional">（必填）</span></label>
+              <select id="f_u_urgent_reason">
+                <option value="">請選擇申請原因</option>
+                <option value="1">1. 客人訂購 (RP Team定期隨機抽查核實)</option>
+                <option value="2">2. ROADSHOW</option>
+                <option value="3">3. 追數 (OM指定)</option>
+                <option value="4">4. Promotion</option>
+                <option value="5">5. 新舖落貨(只限開舖第一週)</option>
+                <option value="6">6. 新產品SAP無法落貨</option>
+                <option value="7">7. 大堆頭擺放</option>
+                <option value="8">8. 管理層要求(只限Portal落貨)(缺貨)</option>
+                <option value="9">9. 其他</option>
+              </select>
+            </div>
+            <div class="full" id="f_u_other_wrap" style="display:none">
+              <label for="f_u_urgent_reason_other">Other Reason <span class="optional">（選擇「9. 其他」時必填）</span></label>
+              <input type="text" id="f_u_urgent_reason_other" autocomplete="off" maxlength="2000">
+            </div>
+          </div>
         </div>
       </form>
 

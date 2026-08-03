@@ -460,19 +460,40 @@ describe('urgent public API', () => {
     expect(res.body.field).toBe('site_code');
   });
 
-  it('does not expose urgent submissions to the public lookup', async () => {
+  it('exposes urgent submissions to the public lookup', async () => {
     const created = await request(app).post('/api/public/urgent/submit').send({
       site_code: 'HA02',
       sku: 'U-LOOKUP-1',
       qty: 4,
-      urgent_reason: '1',
+      urgent_reason: '9',
+      urgent_reason_other: 'roadshow 加單',
     });
     const no = created.body.submission.application_no;
     const res = await request(app).get(`/api/public/query?application_no=${no}&site_code=HA02`);
+    expect(res.status).toBe(200);
+    expect(res.body.submission.submission_type).toBe('urgent');
+    expect(res.body.submission.qty).toBe(4);
+    expect(res.body.submission.urgent_reason).toBe('9');
+    expect(res.body.submission.urgent_reason_label).toContain('其他');
+    expect(res.body.submission.urgent_reason_other).toBe('roadshow 加單');
+    expect(res.body.submission.requested_by_email).toBe('ha02@sasa.com');
+    expect(res.body.submission.application_date).toBeTruthy();
+    expect(res.body.versions).toHaveLength(1);
+  });
+
+  it('does not reveal urgent submissions to the public lookup without the matching site code', async () => {
+    const created = await request(app).post('/api/public/urgent/submit').send({
+      site_code: 'HA02',
+      sku: 'U-LOOKUP-WRONG-SITE',
+      qty: 4,
+      urgent_reason: '1',
+    });
+    const no = created.body.submission.application_no;
+    const res = await request(app).get(`/api/public/query?application_no=${no}&site_code=HA06`);
     expect(res.status).toBe(404);
   });
 
-  it('rejects public modify of an urgent submission', async () => {
+  it('modifies an urgent submission within the window', async () => {
     const created = await request(app).post('/api/public/urgent/submit').send({
       site_code: 'HA02',
       sku: 'U-MODIFY-1',
@@ -484,8 +505,138 @@ describe('urgent public API', () => {
       application_no: no,
       site_code: 'HA02',
       sku: 'U-MODIFY-2',
+      qty: 7,
+      urgent_reason: '9',
+      urgent_reason_other: '改單加量',
+    });
+    expect(res.status).toBe(200);
+    expect(res.body.submission.sku).toBe('U-MODIFY-2');
+    expect(res.body.submission.qty).toBe(7);
+    expect(res.body.submission.urgent_reason).toBe('9');
+    expect(res.body.submission.urgent_reason_other).toBe('改單加量');
+
+    const queried = await request(app).get(`/api/public/query?application_no=${no}&site_code=HA02`);
+    expect(queried.body.submission.qty).toBe(7);
+    expect(queried.body.versions).toHaveLength(2);
+  });
+
+  it('rejects public modify of an urgent submission when the window is closed', async () => {
+    const created = await request(app).post('/api/public/urgent/submit').send({
+      site_code: 'HA02',
+      sku: 'U-MODIFY-CLOSED',
+      qty: 4,
+      urgent_reason: '1',
+    });
+    const no = created.body.submission.application_no;
+    timeSpy.mockReturnValue(14 * 60 + 30);
+    const res = await request(app).post('/api/public/modify').send({
+      application_no: no,
+      site_code: 'HA02',
+      sku: 'U-MODIFY-CLOSED',
+      qty: 5,
+      urgent_reason: '1',
     });
     expect(res.status).toBe(400);
+    expect(res.body.error).toContain('14:30');
+    timeSpy.mockReturnValue(9 * 60);
+  });
+
+  it('still allows querying an urgent submission when the window is closed', async () => {
+    const created = await request(app).post('/api/public/urgent/submit').send({
+      site_code: 'HA02',
+      sku: 'U-QUERY-CLOSED',
+      qty: 4,
+      urgent_reason: '1',
+    });
+    const no = created.body.submission.application_no;
+    timeSpy.mockReturnValue(23 * 60 + 59);
+    const res = await request(app).get(`/api/public/query?application_no=${no}&site_code=HA02`);
+    expect(res.status).toBe(200);
+    expect(res.body.submission.qty).toBe(4);
+    timeSpy.mockReturnValue(9 * 60);
+  });
+
+  it('rejects urgent modify with invalid qty', async () => {
+    const created = await request(app).post('/api/public/urgent/submit').send({
+      site_code: 'HA02',
+      sku: 'U-MODIFY-BAD-QTY',
+      qty: 4,
+      urgent_reason: '1',
+    });
+    const no = created.body.submission.application_no;
+    const res = await request(app).post('/api/public/modify').send({
+      application_no: no,
+      site_code: 'HA02',
+      sku: 'U-MODIFY-BAD-QTY',
+      qty: 1001,
+      urgent_reason: '1',
+    });
+    expect(res.status).toBe(400);
+    expect(res.body.field).toBe('qty');
+  });
+
+  it('rejects urgent modify with reason 9 and no other reason', async () => {
+    const created = await request(app).post('/api/public/urgent/submit').send({
+      site_code: 'HA02',
+      sku: 'U-MODIFY-BAD-REASON',
+      qty: 4,
+      urgent_reason: '1',
+    });
+    const no = created.body.submission.application_no;
+    const res = await request(app).post('/api/public/modify').send({
+      application_no: no,
+      site_code: 'HA02',
+      sku: 'U-MODIFY-BAD-REASON',
+      qty: 5,
+      urgent_reason: '9',
+    });
+    expect(res.status).toBe(400);
+    expect(res.body.field).toBe('urgent_reason_other');
+  });
+
+  it('rejects urgent modify to a SKU already submitted today by the same site', async () => {
+    await request(app).post('/api/public/urgent/submit').send({
+      site_code: 'HA02',
+      sku: 'U-DUP-TARGET',
+      qty: 2,
+      urgent_reason: '1',
+    });
+    const created = await request(app).post('/api/public/urgent/submit').send({
+      site_code: 'HA02',
+      sku: 'U-DUP-SOURCE',
+      qty: 3,
+      urgent_reason: '2',
+    });
+    const no = created.body.submission.application_no;
+    const res = await request(app).post('/api/public/modify').send({
+      application_no: no,
+      site_code: 'HA02',
+      sku: 'U-DUP-TARGET',
+      qty: 3,
+      urgent_reason: '2',
+    });
+    expect(res.status).toBe(409);
+    expect(res.body.field).toBe('sku');
+  });
+
+  it('rejects urgent modify after the submission is locked', async () => {
+    const created = await request(app).post('/api/public/urgent/submit').send({
+      site_code: 'HA02',
+      sku: 'U-MODIFY-LOCKED',
+      qty: 4,
+      urgent_reason: '1',
+    });
+    const no = created.body.submission.application_no;
+    await db.query('UPDATE submissions SET locked_at = now(), exported_at = now() WHERE application_no = $1', [no]);
+    const res = await request(app).post('/api/public/modify').send({
+      application_no: no,
+      site_code: 'HA02',
+      sku: 'U-MODIFY-LOCKED',
+      qty: 5,
+      urgent_reason: '1',
+    });
+    expect(res.status).toBe(409);
+    expect(res.body.error).toContain('鎖定');
   });
 
   it('downloads the urgent template workbook', async () => {

@@ -14,6 +14,7 @@ import {
   getSubmissionByApplicationNo,
   listVersions,
   modifySubmission,
+  modifyUrgentSubmission,
   LockedError,
   NotSupportedError,
   DuplicateSubmissionError,
@@ -37,6 +38,7 @@ const upload = multer({ storage: multer.memoryStorage() });
 const URGENT_SUBMIT_CUTOFF_MINUTES = 14 * 60 + 30; // 每日 14:30（香港時間）後暫停收單
 const URGENT_SUBMIT_CUTOFF_LABEL = '14:30';
 const URGENT_WINDOW_CLOSED_ERROR = `Urgent Order 提交時間已截止（每日 ${URGENT_SUBMIT_CUTOFF_LABEL} 後暫停收單），請於翌日 ${URGENT_SUBMIT_CUTOFF_LABEL} 前提交`;
+const URGENT_MODIFY_CLOSED_ERROR = `Urgent Order 修改時間已截止（每日 ${URGENT_SUBMIT_CUTOFF_LABEL} 後暫停修改），請於翌日 ${URGENT_SUBMIT_CUTOFF_LABEL} 前修改`;
 
 function isUrgentWindowOpen(): boolean {
   return hkMinutesNow() < URGENT_SUBMIT_CUTOFF_MINUTES;
@@ -83,16 +85,20 @@ function serializeUrgentSubmission(row: SubmissionRow) {
   return {
     application_no: row.application_no,
     site_code: row.site_code,
-    sku: row.sku,
-    qty: row.qty,
-    urgent_reason: row.urgent_reason,
-    urgent_reason_label: urgentReasonLabel(row.urgent_reason),
-    urgent_reason_other: row.urgent_reason_other,
+    requested_by_email: row.requested_by_email,
+    application_date: row.application_date,
     submitted_at: toHKString(row.submitted_at),
     source: row.source,
     submission_type: row.submission_type,
     status: row.status,
     locked: Boolean(row.locked_at || row.exported_at),
+    locked_at: row.locked_at ? toHKString(row.locked_at) : null,
+    exported_at: row.exported_at ? toHKString(row.exported_at) : null,
+    sku: row.sku,
+    qty: row.qty,
+    urgent_reason: row.urgent_reason,
+    urgent_reason_label: urgentReasonLabel(row.urgent_reason),
+    urgent_reason_other: row.urgent_reason_other,
   };
 }
 
@@ -757,9 +763,8 @@ publicRouter.get(
     }
 
     const row = await getSubmissionByApplicationNo(applicationNo, siteCode);
-    if (!row || row.submission_type !== 'normal') {
-      // Do not reveal whether an application number exists, and do not expose
-      // Urgent Order submissions to the public lookup.
+    if (!row) {
+      // Do not reveal whether an application number exists.
       await writeAuditEvent({
         eventType: 'submission_queried',
         actorRole: 'applicant',
@@ -778,11 +783,12 @@ publicRouter.get(
       submissionId: row.id,
       applicationNo: row.application_no,
       ip: getClientIp(req),
-      metadata: { found: true },
+      metadata: { found: true, submission_type: row.submission_type },
     });
 
     res.json({
-      submission: serializeSubmission(row),
+      submission:
+        row.submission_type === 'urgent' ? serializeUrgentSubmission(row) : serializeSubmission(row),
       store: { shop: store?.shop ?? '', requested_by_email: row.requested_by_email },
       versions: versions.map((v) => ({
         version: v.version,
@@ -800,6 +806,14 @@ const modifySchema = z.object({
   application_no: z.string().trim().min(1).max(40),
   site_code: z.string().trim().min(1).max(20),
   ...businessFieldSchema.shape,
+  qty: z
+    .number({ invalid_type_error: 'QTY 必須為整數' })
+    .int('QTY 必須為整數')
+    .min(URGENT_QTY_MIN, `QTY 最少為 ${URGENT_QTY_MIN}`)
+    .max(URGENT_QTY_MAX, `QTY 最多為 ${URGENT_QTY_MAX}`)
+    .optional(),
+  urgent_reason: z.string().trim().max(20).optional().default(''),
+  urgent_reason_other: z.string().max(2000).optional().default(''),
 });
 
 /** POST /api/public/modify — modify before export lock. */
@@ -834,14 +848,71 @@ publicRouter.post(
       res.status(404).json({ error: '找不到相符申報' });
       return;
     }
-    if (existing.submission_type !== 'normal') {
-      res.status(400).json({ error: '此申報不支援網頁查詢／修改' });
-      return;
-    }
     if (existing.locked_at || existing.exported_at) {
       res.status(409).json({ error: '此申報已匯出並鎖定，不能修改' });
       return;
     }
+
+    const ip = getClientIp(req);
+
+    if (existing.submission_type === 'urgent') {
+      if (!isUrgentWindowOpen()) {
+        res.status(400).json({ error: URGENT_MODIFY_CLOSED_ERROR, field: null });
+        return;
+      }
+      if (typeof data.qty !== 'number' || !Number.isInteger(data.qty)) {
+        res.status(400).json({ error: 'QTY 必須為整數', field: 'qty' });
+        return;
+      }
+      const reasonErrors = validateUrgentReason(data.urgent_reason, data.urgent_reason_other);
+      if (reasonErrors.length) {
+        res.status(400).json({
+          error: reasonErrors[0]!.message,
+          field: reasonErrors[0]!.field,
+          errors: reasonErrors,
+        });
+        return;
+      }
+      try {
+        const row = await modifyUrgentSubmission({
+          applicationNo: data.application_no,
+          siteCode,
+          sku: data.sku,
+          qty: data.qty,
+          urgentReason: data.urgent_reason,
+          urgentReasonOther: data.urgent_reason_other,
+          ip,
+          changeSource: 'web_modify',
+        });
+
+        await writeAuditEvent({
+          eventType: 'submission_modified',
+          actorRole: 'applicant',
+          submissionId: row.id,
+          applicationNo: row.application_no,
+          ip,
+          metadata: { submission_type: 'urgent' },
+        });
+
+        res.json({ submission: serializeUrgentSubmission(row) });
+      } catch (err) {
+        if (err instanceof LockedError) {
+          res.status(409).json({ error: err.message });
+          return;
+        }
+        if (err instanceof DuplicateSubmissionError) {
+          res.status(409).json({ error: err.message, field: 'sku' });
+          return;
+        }
+        if (err instanceof Error && err.message === '找不到申報') {
+          res.status(404).json({ error: '找不到相符申報' });
+          return;
+        }
+        throw err;
+      }
+      return;
+    }
+
     const businessErrors = validateBusinessFields(businessFields, siteCode);
     if (businessErrors.length) {
       res.status(400).json({
@@ -852,7 +923,6 @@ publicRouter.post(
       return;
     }
 
-    const ip = getClientIp(req);
     try {
       const row = await modifySubmission({
         applicationNo: data.application_no,

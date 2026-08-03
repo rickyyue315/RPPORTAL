@@ -20,26 +20,46 @@
   <main class="container wide">
     <div class="dash-stats">
       <div id="summary_note" class="dash-status">載入中…</div>
-      <div class="dash-grid">
-        <div class="dash-stat dash-stat--primary">
-          <div class="dash-val" id="s_total">—</div>
-          <div class="dash-lbl">總提交</div>
+      <div class="dash-group">
+        <div class="dash-group-title">一般 NDRF</div>
+        <div class="dash-grid">
+          <div class="dash-stat dash-stat--primary">
+            <div class="dash-val" id="s_normal_total">—</div>
+            <div class="dash-lbl">總提交</div>
+          </div>
+          <div class="dash-stat dash-stat--ok">
+            <div class="dash-val" id="s_normal_exported">—</div>
+            <div class="dash-lbl">已匯出總數</div>
+          </div>
+          <div class="dash-stat dash-stat--info">
+            <div class="dash-val" id="s_normal_today">—</div>
+            <div class="dash-lbl">今日提交</div>
+          </div>
+          <div class="dash-stat dash-stat--info">
+            <div class="dash-val" id="s_normal_today_exported">—</div>
+            <div class="dash-lbl">今日已匯出</div>
+          </div>
         </div>
-        <div class="dash-stat dash-stat--info">
-          <div class="dash-val" id="s_today">—</div>
-          <div class="dash-lbl">今日提交</div>
-        </div>
-        <div class="dash-stat dash-stat--ok">
-          <div class="dash-val" id="s_exported">—</div>
-          <div class="dash-lbl">已匯出</div>
-        </div>
-        <div class="dash-stat dash-stat--urgent">
-          <div class="dash-val" id="s_urgent">—</div>
-          <div class="dash-lbl">Urgent Order</div>
-        </div>
-        <div class="dash-stat dash-stat--warn">
-          <div class="dash-val" id="s_unexported">—</div>
-          <div class="dash-lbl">未匯出</div>
+      </div>
+      <div class="dash-group">
+        <div class="dash-group-title">Urgent Order</div>
+        <div class="dash-grid">
+          <div class="dash-stat dash-stat--urgent">
+            <div class="dash-val" id="s_urgent_total">—</div>
+            <div class="dash-lbl">總提交</div>
+          </div>
+          <div class="dash-stat dash-stat--urgent">
+            <div class="dash-val" id="s_urgent_exported">—</div>
+            <div class="dash-lbl">已匯出總數</div>
+          </div>
+          <div class="dash-stat dash-stat--urgent">
+            <div class="dash-val" id="s_urgent_today">—</div>
+            <div class="dash-lbl">今日提交</div>
+          </div>
+          <div class="dash-stat dash-stat--urgent">
+            <div class="dash-val" id="s_urgent_today_exported">—</div>
+            <div class="dash-lbl">今日已匯出</div>
+          </div>
         </div>
       </div>
     </div>

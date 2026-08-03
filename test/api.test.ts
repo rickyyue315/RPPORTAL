@@ -240,14 +240,21 @@ describe('admin API', () => {
     expect(res.status).toBe(200);
     expect(res.body).toMatchObject({
       total: expect.any(Number),
-      today: expect.any(Number),
-      normal: expect.any(Number),
-      urgent: expect.any(Number),
-      exported: expect.any(Number),
-      unexported: expect.any(Number),
+      normal: {
+        total: expect.any(Number),
+        exported: expect.any(Number),
+        today: expect.any(Number),
+        today_exported: expect.any(Number),
+      },
+      urgent: {
+        total: expect.any(Number),
+        exported: expect.any(Number),
+        today: expect.any(Number),
+        today_exported: expect.any(Number),
+      },
     });
     expect(res.body.total).toBeGreaterThanOrEqual(1);
-    expect(res.body.total).toBe(res.body.normal + res.body.urgent);
+    expect(res.body.total).toBe(res.body.normal.total + res.body.urgent.total);
   });
 
   it('requires CSRF token for admin mutations', async () => {

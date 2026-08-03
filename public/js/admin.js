@@ -372,11 +372,15 @@
     };
     try {
       const data = await adminFetch('/api/admin/summary');
-      setNum('s_total', data.total);
-      setNum('s_today', data.today);
-      setNum('s_urgent', data.urgent);
-      setNum('s_unexported', data.unexported);
-      setNum('s_exported', data.exported);
+      const setStat = (type, key, id) => setNum(id, data[type][key]);
+      setStat('normal', 'total', 's_normal_total');
+      setStat('normal', 'exported', 's_normal_exported');
+      setStat('normal', 'today', 's_normal_today');
+      setStat('normal', 'today_exported', 's_normal_today_exported');
+      setStat('urgent', 'total', 's_urgent_total');
+      setStat('urgent', 'exported', 's_urgent_exported');
+      setStat('urgent', 'today', 's_urgent_today');
+      setStat('urgent', 'today_exported', 's_urgent_today_exported');
       const note = $('summary_note');
       if (note) {
         if (data.total > 0) {

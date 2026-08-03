@@ -425,9 +425,18 @@ hr {
   color: var(--muted);
   margin-bottom: 8px;
 }
+.dash-group {
+  margin-bottom: 14px;
+}
+.dash-group-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--brand-dark);
+  margin-bottom: 8px;
+}
 .dash-grid {
   display: grid;
-  grid-template-columns: repeat(6, 1fr);
+  grid-template-columns: repeat(4, 1fr);
   gap: 10px;
 }
 .dash-stat {
@@ -471,10 +480,10 @@ hr {
   font-weight: 500;
 }
 @media (max-width: 900px) {
-  .dash-grid { grid-template-columns: repeat(3, 1fr); }
+  .dash-grid { grid-template-columns: repeat(2, 1fr); }
 }
 @media (max-width: 520px) {
-  .dash-grid { grid-template-columns: repeat(2, 1fr); }
+  .dash-grid { grid-template-columns: 1fr; }
 }
 .dash-dot {
   display: inline-block;

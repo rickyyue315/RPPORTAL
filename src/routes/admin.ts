@@ -168,29 +168,42 @@ adminRouter.get(
     const today = hkTodayForDateColumn();
     const rows = await query<{
       total: string;
-      today: string;
-      normal: string;
-      urgent: string;
-      exported: string;
-      unexported: string;
+      normal_total: string;
+      normal_exported: string;
+      normal_today: string;
+      normal_today_exported: string;
+      urgent_total: string;
+      urgent_exported: string;
+      urgent_today: string;
+      urgent_today_exported: string;
     }>(
       `SELECT
          (SELECT count(*)::text FROM submissions) AS total,
-         (SELECT count(*)::text FROM submissions WHERE application_date = $1::date) AS today,
-         (SELECT count(*)::text FROM submissions WHERE submission_type = 'normal') AS normal,
-         (SELECT count(*)::text FROM submissions WHERE submission_type = 'urgent') AS urgent,
-         (SELECT count(*)::text FROM submissions WHERE exported_at IS NOT NULL) AS exported,
-         (SELECT count(*)::text FROM submissions WHERE exported_at IS NULL) AS unexported`,
+         (SELECT count(*)::text FROM submissions WHERE submission_type = 'normal') AS normal_total,
+         (SELECT count(*)::text FROM submissions WHERE submission_type = 'normal' AND exported_at IS NOT NULL) AS normal_exported,
+         (SELECT count(*)::text FROM submissions WHERE submission_type = 'normal' AND application_date = $1::date) AS normal_today,
+         (SELECT count(*)::text FROM submissions WHERE submission_type = 'normal' AND application_date = $1::date AND exported_at IS NOT NULL) AS normal_today_exported,
+         (SELECT count(*)::text FROM submissions WHERE submission_type = 'urgent') AS urgent_total,
+         (SELECT count(*)::text FROM submissions WHERE submission_type = 'urgent' AND exported_at IS NOT NULL) AS urgent_exported,
+         (SELECT count(*)::text FROM submissions WHERE submission_type = 'urgent' AND application_date = $1::date) AS urgent_today,
+         (SELECT count(*)::text FROM submissions WHERE submission_type = 'urgent' AND application_date = $1::date AND exported_at IS NOT NULL) AS urgent_today_exported`,
       [today],
     );
     const r = rows.rows[0]!;
     res.json({
       total: Number(r.total),
-      today: Number(r.today),
-      normal: Number(r.normal),
-      urgent: Number(r.urgent),
-      exported: Number(r.exported),
-      unexported: Number(r.unexported),
+      normal: {
+        total: Number(r.normal_total),
+        exported: Number(r.normal_exported),
+        today: Number(r.normal_today),
+        today_exported: Number(r.normal_today_exported),
+      },
+      urgent: {
+        total: Number(r.urgent_total),
+        exported: Number(r.urgent_exported),
+        today: Number(r.urgent_today),
+        today_exported: Number(r.urgent_today_exported),
+      },
     });
   }),
 );

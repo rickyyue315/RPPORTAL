@@ -20,6 +20,7 @@ export interface ImportRowError {
   row: number;
   field: string;
   reason: string;
+  siteCode?: string;
 }
 
 export interface ParsedImportRow {
@@ -128,21 +129,21 @@ export async function parseImportWorkbook(
     if (!hasAny) return;
 
     totalRows++;
-    if (totalRows > maxRows) {
-      errors.push({
-        row: rowNumber,
-        field: 'file',
-        reason: `超出單次最多 ${maxRows} 行限制`,
-      });
-      return;
-    }
 
     const siteCodeRaw = cellValue(row.getCell(EXPECTED_HEADERS.indexOf(SHOP_CODE_HEADER) + 1));
     const siteCode = normalizeSiteCode(siteCodeRaw);
+    const rowError = (field: string, reason: string) =>
+      errors.push({ row: rowNumber, field, reason, siteCode: siteCode || undefined });
+
+    if (totalRows > maxRows) {
+      rowError('file', `超出單次最多 ${maxRows} 行限制`);
+      return;
+    }
+
     if (!siteCode) {
-      errors.push({ row: rowNumber, field: SHOP_CODE_HEADER, reason: 'Site Code 為必填' });
+      rowError(SHOP_CODE_HEADER, 'Site Code 為必填');
     } else if (!storeCodes.has(siteCode)) {
-      errors.push({ row: rowNumber, field: SHOP_CODE_HEADER, reason: `Site Code「${siteCode}」不存在於門店主檔` });
+      rowError(SHOP_CODE_HEADER, `Site Code「${siteCode}」不存在於門店主檔`);
     }
 
     const fields: SubmissionBusinessFields = {
@@ -164,11 +165,10 @@ export async function parseImportWorkbook(
     }
 
     for (const err of validateBusinessFields(fields, siteCode)) {
-      errors.push({
-        row: rowNumber,
-        field: BUSINESS_FIELD_LABELS[err.field as keyof typeof BUSINESS_FIELD_LABELS] ?? err.field,
-        reason: err.message,
-      });
+      rowError(
+        BUSINESS_FIELD_LABELS[err.field as keyof typeof BUSINESS_FIELD_LABELS] ?? err.field,
+        err.message,
+      );
     }
 
     rows.push({ rowNumber, siteCode, fields });
@@ -298,34 +298,30 @@ export async function parseUrgentImportWorkbook(
     if (!hasAny) return;
 
     totalRows++;
+
+    const siteCode = normalizeSiteCode(cellValue(row.getCell(URGENT_SITE_COL)));
+    const rowError = (field: string, reason: string) =>
+      errors.push({ row: rowNumber, field, reason, siteCode: siteCode || undefined });
+
     if (totalRows > maxRows) {
-      errors.push({
-        row: rowNumber,
-        field: 'file',
-        reason: `超出單次最多 ${maxRows} 行限制`,
-      });
+      rowError('file', `超出單次最多 ${maxRows} 行限制`);
       return;
     }
 
-    const siteCode = normalizeSiteCode(cellValue(row.getCell(URGENT_SITE_COL)));
     if (!siteCode) {
-      errors.push({ row: rowNumber, field: 'Site Code', reason: 'Site Code 為必填' });
+      rowError('Site Code', 'Site Code 為必填');
     } else if (!storeCodes.has(siteCode)) {
-      errors.push({ row: rowNumber, field: 'Site Code', reason: `Site Code「${siteCode}」不存在於門店主檔` });
+      rowError('Site Code', `Site Code「${siteCode}」不存在於門店主檔`);
     }
 
     const sku = cellValue(row.getCell(URGENT_SKU_COL));
     if (!sku) {
-      errors.push({ row: rowNumber, field: 'SKU', reason: 'SKU 為必填' });
+      rowError('SKU', 'SKU 為必填');
     }
 
     const qty = parseQtyCell(row.getCell(URGENT_QTY_COL).value);
     if (!(Number.isInteger(qty) && qty >= URGENT_QTY_MIN && qty <= URGENT_QTY_MAX)) {
-      errors.push({
-        row: rowNumber,
-        field: 'QTY',
-        reason: `QTY 必須為 ${URGENT_QTY_MIN} 至 ${URGENT_QTY_MAX} 的整數`,
-      });
+      rowError('QTY', `QTY 必須為 ${URGENT_QTY_MIN} 至 ${URGENT_QTY_MAX} 的整數`);
     }
 
     rows.push({ rowNumber, siteCode, sku, qty });

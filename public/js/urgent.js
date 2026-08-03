@@ -169,9 +169,9 @@
     } catch (err) {
       let html = `<div class="alert error"><b>${escapeHtml(err.message)}</b></div>`;
       if (err.data?.errors?.length) {
-        html += '<table><thead><tr><th>行</th><th>欄位</th><th>原因</th></tr></thead><tbody>';
+        html += '<table><thead><tr><th>行</th><th>Site Code</th><th>欄位</th><th>原因</th></tr></thead><tbody>';
         err.data.errors.forEach((e) => {
-          html += `<tr><td>${e.row || '—'}</td><td>${escapeHtml(e.field)}</td><td>${escapeHtml(e.reason)}</td></tr>`;
+          html += `<tr><td>${e.row || '—'}</td><td>${escapeHtml(e.siteCode || '—')}</td><td>${escapeHtml(e.field)}</td><td>${escapeHtml(e.reason)}</td></tr>`;
         });
         html += '</tbody></table>';
       }

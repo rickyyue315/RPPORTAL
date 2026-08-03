@@ -306,7 +306,7 @@ adminRouter.get(
   asyncHandler(async (_req: Request, res: Response) => {
     const buffer = await generateTemplateWorkbook();
     res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
-    res.setHeader('Content-Disposition', `attachment; filename="00.RP Team_NDRF Request.xlsx"`);
+    res.setHeader('Content-Disposition', `attachment; filename="Safety Request.xlsx"`);
     res.send(buffer);
   }),
 );

@@ -54,6 +54,15 @@ export const SAP_INDEX_TO_FIELD: Record<number, keyof SubmissionBusinessFields> 
   8: 'remark',
 };
 
+/** Map template column index (0-based into TEMPLATE_COLUMNS) -> internal field. Shop Code is handled separately. */
+export const TEMPLATE_INDEX_TO_FIELD: Record<number, keyof SubmissionBusinessFields> = {
+  1: 'sku',
+  2: 'rp_type',
+  3: 'safety_stock',
+  4: 'nd_code',
+  5: 'remark',
+};
+
 export const RP_TYPE_OPTIONS = ['ND', 'RF'];
 export const REQUESTED_BY_OPTIONS = [
   'Cora Lai ',

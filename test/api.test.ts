@@ -9,7 +9,7 @@ import { fileURLToPath } from 'node:url';
 import { setPoolForTesting } from '../src/db/pool.js';
 import { createApp } from '../src/app.js';
 import { replaceStores } from '../src/services/stores.js';
-import { SAP_COLUMNS, RP_TEAM_SHEET, SHOP_CODE_HEADER, URGENT_COLUMNS, URGENT_SHEET } from '../src/lib/fields.js';
+import { TEMPLATE_COLUMNS, RP_TEAM_SHEET, SHOP_CODE_HEADER, URGENT_COLUMNS, URGENT_SHEET } from '../src/lib/fields.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 let app: Express;
@@ -277,9 +277,9 @@ describe('admin API', () => {
 
     const wb = new ExcelJS.Workbook();
     const ws = wb.addWorksheet(RP_TEAM_SHEET);
-    ws.addRow([...SAP_COLUMNS]);
-    ws.addRow(['', '', 'HA02', 'NEG - NEOGENCE', '110001', 'ND', '', 'ND20-SO-Not displayed in small stores', '']);
-    ws.addRow(['', '', 'HA06', 'NEG - NEOGENCE', '110002', 'RF', '5', '', '']);
+    ws.addRow([...TEMPLATE_COLUMNS]);
+    ws.addRow(['HA02', '110001', 'ND', '', 'ND20-SO-Not displayed in small stores', '']);
+    ws.addRow(['HA06', '110002', 'RF', '5', '', '']);
     const buffer = Buffer.from(await wb.xlsx.writeBuffer());
 
     const res = await agent
@@ -303,8 +303,8 @@ describe('admin API', () => {
 
     const wb = new ExcelJS.Workbook();
     const ws = wb.addWorksheet(RP_TEAM_SHEET);
-    ws.addRow([...SAP_COLUMNS]);
-    ws.addRow(['', '', 'ZZ99', 'NEG - NEOGENCE', '110003', '', '', '', '']);
+    ws.addRow([...TEMPLATE_COLUMNS]);
+    ws.addRow(['ZZ99', '110003', '', '', '', '']);
     const buffer = Buffer.from(await wb.xlsx.writeBuffer());
 
     const res = await agent

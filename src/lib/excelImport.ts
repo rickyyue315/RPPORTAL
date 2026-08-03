@@ -1,9 +1,9 @@
 import ExcelJS from 'exceljs';
 import { createHash } from 'node:crypto';
 import {
-  SAP_COLUMNS,
+  TEMPLATE_COLUMNS,
+  TEMPLATE_INDEX_TO_FIELD,
   RP_TEAM_SHEET,
-  SAP_INDEX_TO_FIELD,
   normalizeText,
   SHOP_CODE_HEADER,
   URGENT_COLUMNS,
@@ -38,7 +38,7 @@ export interface ParsedImport {
   contentHash?: string;
 }
 
-const EXPECTED_HEADERS: readonly string[] = SAP_COLUMNS;
+const EXPECTED_HEADERS: readonly string[] = TEMPLATE_COLUMNS;
 
 export function hashFileContent(buffer: Buffer): string {
   return createHash('sha256').update(buffer).digest('hex');
@@ -154,8 +154,8 @@ export async function parseImportWorkbook(
       remark: '',
     };
 
-    for (const [sapIdx, fieldName] of Object.entries(SAP_INDEX_TO_FIELD)) {
-      const col = Number(sapIdx) + 1;
+    for (const [templateIdx, fieldName] of Object.entries(TEMPLATE_INDEX_TO_FIELD)) {
+      const col = Number(templateIdx) + 1;
       fields[fieldName] = cellValue(row.getCell(col));
     }
 

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import ExcelJS from 'exceljs';
 import {
-  SAP_COLUMNS,
+  TEMPLATE_COLUMNS,
   RP_TEAM_SHEET,
   SHOP_CODE_HEADER,
   URGENT_COLUMNS,
@@ -20,23 +20,22 @@ const storeCodes = new Set(['HA02', 'HA06', 'HB11', 'HA19']);
 async function makeWorkbookBuffer(rows: string[][]): Promise<Buffer> {
   const wb = new ExcelJS.Workbook();
   const ws = wb.addWorksheet(RP_TEAM_SHEET);
-  ws.addRow([...SAP_COLUMNS]);
+  ws.addRow([...TEMPLATE_COLUMNS]);
   rows.forEach((r) => ws.addRow(r));
   return Buffer.from(await wb.xlsx.writeBuffer());
 }
 
 function blankRow(): string[] {
-  return Array(SAP_COLUMNS.length).fill('');
+  return Array(TEMPLATE_COLUMNS.length).fill('');
 }
 
 function dataRow(overrides: Partial<Record<string, string>> = {}): string[] {
   const row = blankRow();
   const put = (name: string, val: string) => {
-    row[SAP_COLUMNS.indexOf(name)] = val;
+    row[TEMPLATE_COLUMNS.indexOf(name)] = val;
   };
   put(SHOP_CODE_HEADER, 'HA02');
   put('SKU', '110079623001');
-  put('Brand', 'NEG - NEOGENCE');
   put('RP Type', 'ND');
   put('ND Code', 'ND20-SO-Not displayed in small stores');
   Object.entries(overrides).forEach(([k, v]) => put(k, v));
@@ -57,7 +56,7 @@ describe('parseImportWorkbook', () => {
   it('rejects wrong sheet name', async () => {
     const wb = new ExcelJS.Workbook();
     const ws = wb.addWorksheet('Other');
-    ws.addRow([...SAP_COLUMNS]);
+    ws.addRow([...TEMPLATE_COLUMNS]);
     ws.addRow(dataRow());
     const buffer = Buffer.from(await wb.xlsx.writeBuffer());
     const result = await parseImportWorkbook(buffer, storeCodes, 1000);
@@ -68,7 +67,7 @@ describe('parseImportWorkbook', () => {
   it('rejects wrong headers', async () => {
     const wb = new ExcelJS.Workbook();
     const ws = wb.addWorksheet(RP_TEAM_SHEET);
-    ws.addRow(['Application Date', 'Requested by', 'Shop Code']);
+    ws.addRow(['Shop Code', 'SKU', 'RP Type']);
     const buffer = Buffer.from(await wb.xlsx.writeBuffer());
     const result = await parseImportWorkbook(buffer, storeCodes, 1000);
     expect(result.ok).toBe(false);

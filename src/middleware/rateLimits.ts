@@ -33,6 +33,15 @@ export const excelImportLimiter = rateLimit({
   message: { error: '匯入次數過多，請稍後再試' },
 });
 
+export const adminLoginLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 20,
+  standardHeaders: 'draft-7',
+  legacyHeaders: false,
+  keyGenerator,
+  message: { error: '登入嘗試次數過多，請稍後再試' },
+});
+
 export const adminActionLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   limit: 200,

@@ -2,12 +2,13 @@ import { Router, type Request, type Response } from 'express';
 import { z } from 'zod';
 import multer from 'multer';
 import {
+  adminLoginLimiter,
   adminActionLimiter,
   excelImportLimiter,
   excelExportLimiter,
 } from '../middleware/rateLimits.js';
 import { asyncHandler, getClientIp } from '../middleware/helpers.js';
-import { requireAdmin } from '../middleware/auth.js';
+import { login, requireAdmin, destroySession, SESSION_COOKIE } from '../middleware/auth.js';
 import { writeAuditEvent } from '../lib/audit.js';
 import { config } from '../config.js';
 import {
@@ -36,6 +37,50 @@ import { validateBusinessFields, validateUrgentReason } from '../lib/validation.
 export const adminRouter = Router();
 
 const upload = multer({ storage: multer.memoryStorage() });
+
+const loginSchema = z.object({
+  username: z.string().trim().min(1),
+  password: z.string().min(1),
+});
+
+adminRouter.post(
+  '/login',
+  adminLoginLimiter,
+  asyncHandler(async (req: Request, res: Response) => {
+    const parsed = loginSchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ error: '請輸入使用者名稱及密碼' });
+      return;
+    }
+    const result = await login(parsed.data.username, parsed.data.password, getClientIp(req));
+    if (!result.ok || !result.token) {
+      res.status(401).json({ error: result.reason ?? '登入失敗' });
+      return;
+    }
+    res.cookie(SESSION_COOKIE, result.token, {
+      httpOnly: true,
+      secure: config.env === 'production',
+      sameSite: 'lax',
+      path: '/',
+      maxAge: config.sessionTtlHours * 3600 * 1000,
+    });
+    res.json({ ok: true });
+  }),
+);
+
+adminRouter.post(
+  '/logout',
+  adminActionLimiter,
+  asyncHandler(async (req: Request, res: Response) => {
+    const token = req.cookies?.[SESSION_COOKIE];
+    if (token) {
+      await destroySession(token);
+      await writeAuditEvent({ eventType: 'logout', actorRole: 'admin', actor: req.adminUsername, ip: getClientIp(req) });
+    }
+    res.clearCookie(SESSION_COOKIE);
+    res.json({ ok: true });
+  }),
+);
 
 adminRouter.get('/me', requireAdmin, (req: Request, res: Response) => {
   res.json({ username: req.adminUsername });

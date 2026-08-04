@@ -4,14 +4,20 @@
  * exercises the full public + admin flows over HTTP.
  *
  * Run with: npx tsx test/smoke.ts
+ *
+ * Note: config is read at import time, so app modules are imported
+ * dynamically AFTER the test credentials are set in process.env.
  */
-import { PGlite } from '@electric-sql/pglite';
-import { readFile } from 'node:fs/promises';
-import path from 'node:path';
-import { fileURLToPath } from 'node:url';
-import { setPoolForTesting } from '../src/db/pool.js';
-import { migrate } from '../src/db/migrate.js';
-import { seedStoresFromFile } from '../src/services/stores.js';
+process.env.ADMIN_USERNAME = process.env.ADMIN_USERNAME ?? 'admin';
+process.env.ADMIN_PASSWORD = process.env.ADMIN_PASSWORD ?? 'smoke-password';
+
+const { PGlite } = await import('@electric-sql/pglite');
+const { readFile } = await import('node:fs/promises');
+const { default: path } = await import('node:path');
+const { fileURLToPath } = await import('node:url');
+const { setPoolForTesting } = await import('../src/db/pool.js');
+const { seedStoresFromFile } = await import('../src/services/stores.js');
+const { createApp } = await import('../src/app.js');
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const root = path.join(__dirname, '..');
@@ -25,9 +31,6 @@ setPoolForTesting({
   }),
 } as never);
 
-// Override migrate to strip pgcrypto (not available in PGlite WASM build).
-import { pool } from '../src/db/pool.js';
-const originalMigrate = await import('../src/db/migrate.js');
 console.log('[smoke] PGlite ready');
 
 // Apply migrations manually without the pgcrypto extension line.
@@ -45,7 +48,6 @@ const csvPath = path.join(root, 'stores-template.csv');
 await seedStoresFromFile(csvPath);
 console.log('[smoke] stores seeded');
 
-import { createApp } from '../src/app.js';
 const app = createApp();
 const server = app.listen(0, async () => {
   const addr = server.address();
@@ -106,9 +108,35 @@ const server = app.listen(0, async () => {
     const csrfJson = await csrf.json();
     collectCookie(csrf);
 
+    const meAnon = await fetch(`${base}/api/admin/me`);
+    check('admin requires login', meAnon.status === 401);
+
+    const badLogin = await fetch(`${base}/api/admin/login`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        cookie: cookieJar,
+        'x-csrf-token': csrfJson.token,
+      },
+      body: JSON.stringify({ username: 'admin', password: 'wrong-password' }),
+    });
+    check('admin login rejects wrong password', badLogin.status === 401);
+
+    const login = await fetch(`${base}/api/admin/login`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        cookie: cookieJar,
+        'x-csrf-token': csrfJson.token,
+      },
+      body: JSON.stringify({ username: 'admin', password: 'smoke-password' }),
+    });
+    collectCookie(login);
+    check('admin login', login.status === 200);
+
     const me = await fetch(`${base}/api/admin/me`, { headers: { cookie: cookieJar } });
     const meJson = await me.json();
-    check('admin me (no login)', me.status === 200 && meJson.username === 'admin');
+    check('admin me after login', me.status === 200 && meJson.username === 'admin');
 
     const list = await fetch(`${base}/api/admin/submissions?page=1&page_size=10`, {
       headers: { cookie: cookieJar },

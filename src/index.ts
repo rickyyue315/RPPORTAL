@@ -38,6 +38,10 @@ async function runIpCleanup(): Promise<void> {
 async function main(): Promise<void> {
   console.log(`[boot] NDRF Portal (${config.env})`);
 
+  if (!config.adminPassword) {
+    console.warn('[boot] ADMIN_PASSWORD 未設定 — 管理員登入已停用，後台將拒絕存取');
+  }
+
   await migrate();
 
   const storeCount = await countStores();

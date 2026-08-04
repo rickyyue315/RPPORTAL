@@ -449,7 +449,20 @@
     }
   });
 
-  ensureAuth().then(() => {
+  $('btn_logout').addEventListener('click', async (e) => {
+    e.preventDefault();
+    try {
+      const token = await getCsrf();
+      await fetch('/api/admin/logout', { method: 'POST', headers: { 'x-csrf-token': token } });
+    } catch {}
+    window.location.href = '/admin/login.html';
+  });
+
+  ensureAuth().then((username) => {
+    if (!username) {
+      window.location.replace('/admin/login.html');
+      return;
+    }
     loadList();
     loadSummary();
     loadStoreCount();

@@ -32,6 +32,20 @@ async function csrf(agent: ReturnType<typeof request.agent>): Promise<string> {
   return res.body.token;
 }
 
+async function adminLogin(agent: ReturnType<typeof request.agent>): Promise<void> {
+  const token = await csrf(agent);
+  const res = await agent
+    .post('/api/admin/login')
+    .set('x-csrf-token', token)
+    .send({ username: 'admin', password: 'test-password' });
+  expect(res.status).toBe(200);
+}
+
+async function countSubmissions(where = ''): Promise<number> {
+  const res = await db.query<{ count: string }>(`SELECT count(*)::text AS count FROM submissions ${where}`);
+  return Number(res.rows[0]?.count ?? 0);
+}
+
 beforeAll(async () => {
   db = new PGlite();
   setPoolForTesting(makePglitePool(db));
@@ -215,8 +229,35 @@ describe('public API', () => {
 });
 
 describe('admin API', () => {
-  it('lists, exports and locks submissions without login', async () => {
+  it('rejects admin API access without login', async () => {
+    const res = await request(app).get('/api/admin/submissions');
+    expect(res.status).toBe(401);
+  });
+
+  it('rejects wrong login credentials', async () => {
     const agent = request.agent(app);
+    const token = await csrf(agent);
+    const res = await agent
+      .post('/api/admin/login')
+      .set('x-csrf-token', token)
+      .send({ username: 'admin', password: 'wrong-password' });
+    expect(res.status).toBe(401);
+    expect(res.body.error).toContain('不正確');
+  });
+
+  it('logs out and invalidates the session', async () => {
+    const agent = request.agent(app);
+    await adminLogin(agent);
+    const token = await csrf(agent);
+    const logout = await agent.post('/api/admin/logout').set('x-csrf-token', token);
+    expect(logout.status).toBe(200);
+    const me = await agent.get('/api/admin/me');
+    expect(me.status).toBe(401);
+  });
+
+  it('lists, exports and locks submissions after login', async () => {
+    const agent = request.agent(app);
+    await adminLogin(agent);
 
     // Create two submissions to export
     for (const site of ['HA02', 'HA06']) {
@@ -252,6 +293,7 @@ describe('admin API', () => {
 
   it('returns submission summary counts', async () => {
     const agent = request.agent(app);
+    await adminLogin(agent);
     const res = await agent.get('/api/admin/summary');
     expect(res.status).toBe(200);
     expect(res.body).toMatchObject({
@@ -275,19 +317,14 @@ describe('admin API', () => {
 
   it('requires CSRF token for admin mutations', async () => {
     const agent = request.agent(app);
-    await csrf(agent);
+    await adminLogin(agent);
     const res = await agent.post('/api/admin/export').send({});
     expect(res.status).toBe(403);
   });
 
-  it('allows access to the admin API without login', async () => {
-    const res = await request(app).get('/api/admin/submissions');
-    expect(res.status).toBe(200);
-  });
-
   it('downloads the template workbook', async () => {
     const agent = request.agent(app);
-    await csrf(agent);
+    await adminLogin(agent);
     const res = await agent.get('/api/admin/template');
     expect(res.status).toBe(200);
     expect(res.headers['content-type']).toContain('spreadsheetml');
@@ -296,6 +333,7 @@ describe('admin API', () => {
 
   it('imports a valid xlsx and creates per-row application numbers', async () => {
     const agent = request.agent(app);
+    await adminLogin(agent);
     const token = await csrf(agent);
 
     const wb = new ExcelJS.Workbook();
@@ -319,10 +357,10 @@ describe('admin API', () => {
 
   it('rejects an import with an invalid site code without writing anything', async () => {
     const agent = request.agent(app);
+    await adminLogin(agent);
     const token = await csrf(agent);
 
-    const before = await agent.get('/api/admin/submissions?page=1&page_size=1');
-    const beforeTotal = before.body.total;
+    const beforeTotal = await countSubmissions();
 
     const wb = new ExcelJS.Workbook();
     const ws = wb.addWorksheet(RP_TEAM_SHEET);
@@ -337,12 +375,12 @@ describe('admin API', () => {
     expect(res.status).toBe(400);
     expect(res.body.errors?.length).toBeGreaterThan(0);
 
-    const after = await agent.get('/api/admin/submissions?page=1&page_size=1');
-    expect(after.body.total).toBe(beforeTotal);
+    expect(await countSubmissions()).toBe(beforeTotal);
   });
 
   it('rejects non-xlsx uploads', async () => {
     const agent = request.agent(app);
+    await adminLogin(agent);
     const token = await csrf(agent);
     const res = await agent
       .post('/api/admin/import')
@@ -729,8 +767,7 @@ describe('urgent public API', () => {
   });
 
   it('rejects an urgent import with invalid qty without writing anything', async () => {
-    const before = await request(app).get('/api/admin/submissions?submission_type=urgent&page=1&page_size=1');
-    const beforeTotal = before.body.total;
+    const beforeTotal = await countSubmissions(`WHERE submission_type = 'urgent'`);
 
     const wb = new ExcelJS.Workbook();
     const ws = wb.addWorksheet(URGENT_SHEET);
@@ -744,13 +781,11 @@ describe('urgent public API', () => {
     expect(res.status).toBe(400);
     expect(res.body.errors?.length).toBeGreaterThan(0);
 
-    const after = await request(app).get('/api/admin/submissions?submission_type=urgent&page=1&page_size=1');
-    expect(after.body.total).toBe(beforeTotal);
+    expect(await countSubmissions(`WHERE submission_type = 'urgent'`)).toBe(beforeTotal);
   });
 
   it('rejects an urgent import with missing reason without writing anything', async () => {
-    const before = await request(app).get('/api/admin/submissions?submission_type=urgent&page=1&page_size=1');
-    const beforeTotal = before.body.total;
+    const beforeTotal = await countSubmissions(`WHERE submission_type = 'urgent'`);
 
     const wb = new ExcelJS.Workbook();
     const ws = wb.addWorksheet(URGENT_SHEET);
@@ -764,8 +799,7 @@ describe('urgent public API', () => {
     expect(res.status).toBe(400);
     expect(res.body.errors?.some((e: { field: string }) => e.field === 'Urgent Reason')).toBe(true);
 
-    const after = await request(app).get('/api/admin/submissions?submission_type=urgent&page=1&page_size=1');
-    expect(after.body.total).toBe(beforeTotal);
+    expect(await countSubmissions(`WHERE submission_type = 'urgent'`)).toBe(beforeTotal);
   });
 
   it('rejects an urgent import using the wrong sheet', async () => {
@@ -785,6 +819,7 @@ describe('urgent public API', () => {
 describe('urgent admin API', () => {
   async function urgentAdminAgent() {
     const agent = request.agent(app);
+    await adminLogin(agent);
     const token = await csrf(agent);
     return { agent, token };
   }
@@ -927,8 +962,7 @@ describe('daily duplicate rule', () => {
 
   it('rejects a public import row duplicating an existing today submission without writing', async () => {
     await request(app).post('/api/public/submit').send({ site_code: 'HA02', sku: 'DUP-IMP-1', ...ND });
-    const before = await request(app).get('/api/admin/submissions?page=1&page_size=1');
-    const beforeTotal = before.body.total;
+    const beforeTotal = await countSubmissions();
 
     const wb = new ExcelJS.Workbook();
     const ws = wb.addWorksheet(RP_TEAM_SHEET);
@@ -940,13 +974,11 @@ describe('daily duplicate rule', () => {
     expect(res.status).toBe(400);
     expect(res.body.errors?.some((e: { field: string }) => e.field === 'SKU')).toBe(true);
 
-    const after = await request(app).get('/api/admin/submissions?page=1&page_size=1');
-    expect(after.body.total).toBe(beforeTotal);
+    expect(await countSubmissions()).toBe(beforeTotal);
   });
 
   it('rejects a public import file with duplicate rows inside the file without writing', async () => {
-    const before = await request(app).get('/api/admin/submissions?page=1&page_size=1');
-    const beforeTotal = before.body.total;
+    const beforeTotal = await countSubmissions();
 
     const wb = new ExcelJS.Workbook();
     const ws = wb.addWorksheet(RP_TEAM_SHEET);
@@ -959,12 +991,12 @@ describe('daily duplicate rule', () => {
     expect(res.status).toBe(400);
     expect(res.body.errors?.length).toBeGreaterThan(0);
 
-    const after = await request(app).get('/api/admin/submissions?page=1&page_size=1');
-    expect(after.body.total).toBe(beforeTotal);
+    expect(await countSubmissions()).toBe(beforeTotal);
   });
 
   it('allows admin import of rows duplicating existing today submissions (exempt)', async () => {
     const agent = request.agent(app);
+    await adminLogin(agent);
     const token = await csrf(agent);
 
     const wb = new ExcelJS.Workbook();
@@ -990,6 +1022,7 @@ describe('daily duplicate rule', () => {
     const id = idRes.rows[0]!.id;
 
     const agent = request.agent(app);
+    await adminLogin(agent);
     const token = await csrf(agent);
     const res = await agent
       .put(`/api/admin/submissions/${id}`)
@@ -1063,8 +1096,7 @@ describe('urgent submission window (14:30 cutoff)', () => {
   });
 
   it('rejects urgent import at 14:30 without writing rows', async () => {
-    const before = await request(app).get('/api/admin/submissions?page=1&page_size=1');
-    const beforeTotal = before.body.total;
+    const beforeTotal = await countSubmissions();
 
     const wb = new ExcelJS.Workbook();
     const ws = wb.addWorksheet(URGENT_SHEET);
@@ -1079,8 +1111,7 @@ describe('urgent submission window (14:30 cutoff)', () => {
     expect(res.status).toBe(400);
     expect(res.body.error).toContain('14:30');
 
-    const after = await request(app).get('/api/admin/submissions?page=1&page_size=1');
-    expect(after.body.total).toBe(beforeTotal);
+    expect(await countSubmissions()).toBe(beforeTotal);
   });
 
   it('still accepts normal submissions after 14:30', async () => {

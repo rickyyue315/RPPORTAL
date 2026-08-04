@@ -1,6 +1,6 @@
 # NDRF 申報平台
 
-SASA RP Team 非正常補貨（NDRF）申報平台。申請端與管理端均免登入，部署於 Zeabur（Web/API 服務 + PostgreSQL）。
+SASA RP Team 非正常補貨（NDRF）申報平台。申請端免登入，管理端需密碼登入，部署於 Zeabur（Web/API 服務 + PostgreSQL）。
 
 ## 功能
 
@@ -14,7 +14,7 @@ SASA RP Team 非正常補貨（NDRF）申報平台。申請端與管理端均免
 - 管理後台：清單篩選（含申報類型）、詳情編輯、版本歷史、模板下載、批量匯入、SAP 9 欄匯出、獨立 Urgent 匯出、完整審計報表、門店主檔管理
 - SAP 匯出只包含一般 NDRF，Urgent Order 使用獨立 6 欄匯出（Application No. | Site Code | SKU | QTY | Urgent Reason | Other Reason）；匯出成功後鎖定該批申報，申請人不能再修改；匯出失敗不鎖定。管理員於 14:30 後開始匯出處理，期間 Urgent Order 申請人不可修改（查詢不受限）
 - IP 審計保留 12 個月後自動匿名化
-- 管理端免登入（已取消密碼登入），仍保留 CSRF 防護、速率限制、安全 headers
+- 管理端需密碼登入：密碼存於環境變數 `ADMIN_PASSWORD`（直接常數時間比對，不需 bcrypt hash，避免 `$` 字元在部署平台被展開的問題）；登入後發 httpOnly session cookie（伺服器端 `admin_sessions` 資料表，SHA-256 hash 儲存 token），連線失敗達 `LOGIN_LOCK_THRESHOLD` 次即鎖定 `LOGIN_LOCK_MINUTES` 分鐘；另保留 CSRF 防護、速率限制、安全 headers
 
 ## 技術
 
@@ -45,7 +45,7 @@ npm run dev
 - Urgent Order 申報：<http://localhost:3000/urgent.html>
 - 查詢／修改：<http://localhost:3000/lookup.html>
 - 圖文使用說明：<http://localhost:3000/help.html>
-- 管理後台：<http://localhost:3000/admin/index.html>（免登入）
+- 管理後台：<http://localhost:3000/admin/login.html>（需登入，成功後進入 `/admin/index.html`）
 
 首次啟動時若 `stores` 主檔為空，會自動載入 `stores-template.csv`（預設路徑可由 `STORES_CSV_PATH` 覆寫）。
 
@@ -67,6 +67,11 @@ npm run smoke     # 端到端 smoke test（真實 HTTP + PGlite）
 | `DATABASE_URL` | PostgreSQL 連線字串（Zeabur PostgreSQL 提供） |
 | `NODE_ENV` | `production` |
 | `PORT` | `3000` |
+| `ADMIN_USERNAME` | 管理員使用者名稱（預設 `admin`） |
+| `ADMIN_PASSWORD` | 管理員密碼（重要：於 Zeabur Secrets 直接填寫密碼字串，不需要 bcrypt hash） |
+| `SESSION_TTL_HOURS` | 登入 session 有效期（小時，預設 8） |
+| `LOGIN_LOCK_THRESHOLD` | 失敗登入鎖定次數（預設 5） |
+| `LOGIN_LOCK_MINUTES` | 鎖定分鐘數（預設 15） |
 | `TRUST_PROXY` | `true`（Zeabur 反向代理後） |
 | `APP_TIMEZONE` | `Asia/Hong_Kong` |
 | `IP_RETENTION_DAYS` | `365` |
@@ -84,7 +89,9 @@ npm run smoke     # 端到端 smoke test（真實 HTTP + PGlite）
 - `submission_versions`：不可變版本歷史（前後資料快照、操作者角色、IP、時間）
 - `import_batches`：Excel 匯入批次
 - `export_batches`：SAP／Urgent 匯出批次（建立即鎖定該批申報）
-- `audit_events`：提交／查詢／修改／匯入／匯出／鎖定／IP 清理審計
+- `admin_sessions`：管理員登入 session（token 以 SHA-256 hash 儲存，過期自動清理）
+- `admin_login_attempts`：登入嘗試紀錄（失敗鎖定用）
+- `audit_events`：提交／查詢／修改／匯入／匯出／鎖定／登入／IP 清理審計
 
 ## 注意事項
 

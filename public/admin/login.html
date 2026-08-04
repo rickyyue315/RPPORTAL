@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>管理員登入 — NDRF 申報平台</title>
+  <link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+  <header class="topbar">
+    <div>
+      <h1>NDRF 管理後台</h1>
+      <div class="subtitle">管理員登入</div>
+    </div>
+    <nav>
+      <a href="/">公開申請頁</a>
+      <a href="/help.html">使用說明</a>
+    </nav>
+  </header>
+
+  <main class="container">
+    <div class="card" style="max-width:420px;margin:40px auto">
+      <h2>管理員登入</h2>
+      <form id="login_form">
+        <div>
+          <label for="login_username">使用者名稱</label>
+          <input type="text" id="login_username" autocomplete="username" required>
+        </div>
+        <div>
+          <label for="login_password">密碼</label>
+          <input type="password" id="login_password" autocomplete="current-password" required>
+        </div>
+        <div id="login_error"></div>
+        <div class="btn-row">
+          <button class="btn" type="submit" id="btn_login">登入</button>
+        </div>
+      </form>
+    </div>
+  </main>
+
+  <script src="/js/api.js"></script>
+  <script src="/js/login.js"></script>
+</body>
+</html>

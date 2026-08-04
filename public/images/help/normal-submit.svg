@@ -6,7 +6,7 @@
   <text x="70" y="70" fill="#0a3d69" font-family="Arial, sans-serif" font-size="19" font-weight="700">提交預覽</text>
   <line x1="70" y1="88" x2="570" y2="88" stroke="#d9dee3" stroke-width="2"/>
   <text x="72" y="123" fill="#66727f" font-family="Arial, sans-serif" font-size="14">Site Code</text>
-  <text x="260" y="123" fill="#1d2733" font-family="Arial, sans-serif" font-size="15" font-weight="700">HA02（康山）</text>
+  <text x="260" y="123" fill="#1d2733" font-family="Arial, sans-serif" font-size="15" font-weight="700">HA02（駱克）</text>
   <text x="72" y="156" fill="#66727f" font-family="Arial, sans-serif" font-size="14">SKU</text>
   <text x="260" y="156" fill="#1d2733" font-family="Arial, sans-serif" font-size="15">123456789</text>
   <text x="72" y="189" fill="#66727f" font-family="Arial, sans-serif" font-size="14">RP Type</text>

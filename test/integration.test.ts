@@ -188,6 +188,22 @@ describe('submissions (integration)', () => {
     expect(snapshot.urgent_reason_other).toBe('臨時原因');
   });
 
+  it('resolves a full Urgent Reason label to its DB code on create', async () => {
+    const row = await createSubmission({
+      siteCode: 'HA02',
+      source: 'web',
+      submissionType: 'urgent',
+      fields: { brand: '', sku: '1009116', rp_type: '', safety_stock: '', nd_code: '', remark: '' },
+      qty: 8,
+      urgentReason: '2. ROADSHOW',
+      urgentReasonOther: null,
+      ip: '203.0.113.11',
+      changeSource: 'web_submit',
+    });
+    expect(row.urgent_reason).toBe('2');
+    const stored = await db.query<{ urgent_reason: string }>('SELECT urgent_reason FROM submissions WHERE id = $1', [row.id]);
+    expect(stored.rows[0]!.urgent_reason).toBe('2');
+  });
   it('rejects an urgent submission without a reason', async () => {
     await expect(
       createSubmission({

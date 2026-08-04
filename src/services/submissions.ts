@@ -114,17 +114,47 @@ function toBusinessParams(fields: SubmissionBusinessFields): unknown[] {
   ];
 }
 
-async function nextApplicationNo(prefix: string): Promise<string> {
+async function nextApplicationNo(client: DuplicateCheckClient, prefix: string): Promise<string> {
   for (let attempt = 0; attempt < 10; attempt++) {
     const no = generateApplicationNo(prefix);
-    const existing = await query('SELECT 1 FROM submissions WHERE application_no = $1', [no]);
-    if (!existing.rowCount) return no;
+    const existing = await client.query('SELECT 1 FROM submissions WHERE application_no = $1', [no]);
+    if (existing.rows.length === 0) return no;
   }
   throw new Error('無法產生唯一申請編號');
 }
 
-interface DuplicateCheckClient {
+export interface DuplicateCheckClient {
   query: (text: string, params?: unknown[]) => Promise<{ rows: unknown[] }>;
+}
+
+export interface DuplicateSubmissionKey {
+  siteCode: string;
+  sku: string;
+  submissionType: SubmissionType;
+  date: string;
+}
+
+function duplicateKeyValue(key: DuplicateSubmissionKey): string {
+  return [
+    normalizeSiteCode(key.siteCode),
+    normalizeText(key.sku),
+    key.submissionType,
+    key.date,
+  ].join('|');
+}
+
+/** Serializes public duplicate checks for the lifetime of the current DB transaction. */
+export async function lockDuplicateSubmissionKeys(
+  client: DuplicateCheckClient,
+  keys: DuplicateSubmissionKey[],
+): Promise<void> {
+  const uniqueKeys = [...new Set(keys.map(duplicateKeyValue))].sort();
+  for (const key of uniqueKeys) {
+    await client.query(
+      'SELECT pg_advisory_xact_lock(hashtextextended($1, 0)::bigint)',
+      [key],
+    );
+  }
 }
 
 /**
@@ -133,7 +163,7 @@ interface DuplicateCheckClient {
  * (HK date) within the same submission type. Re-application is allowed from
  * the next day because application_date changes.
  */
-async function assertNoDuplicate(
+export async function assertNoDuplicate(
   client: DuplicateCheckClient,
   params: { siteCode: string; sku: string; submissionType: SubmissionType; date: string; excludeId?: string },
 ): Promise<void> {
@@ -157,8 +187,11 @@ export async function createSubmission(
   const siteCode = normalizeSiteCode(input.siteCode);
   const fields = input.fields;
   const submissionType: SubmissionType = input.submissionType ?? 'normal';
-   const isUrgent = submissionType === 'urgent';
+  const isUrgent = submissionType === 'urgent';
   const qty = isUrgent ? (input.qty ?? null) : null;
+  const urgentReason = isUrgent && normalizeText(input.urgentReason)
+    ? resolveUrgentReasonCode(input.urgentReason)
+    : null;
   if (isUrgent) {
     if (!(typeof qty === 'number' && Number.isInteger(qty) && qty >= URGENT_QTY_MIN && qty <= URGENT_QTY_MAX)) {
       throw new Error(`QTY 必須為 ${URGENT_QTY_MIN} 至 ${URGENT_QTY_MAX} 的整數`);
@@ -170,11 +203,17 @@ export async function createSubmission(
   }
   const requestedByEmail = `${siteCode.toLowerCase()}@sasa.com`;
   const applicationDate = input.applicationDateOverride ?? hkTodayForDateColumn();
-   const appNoPrefix = isUrgent ? 'URGENT' : submissionType === 'sales' ? 'SALES' : 'NDRF';
+  const appNoPrefix = isUrgent ? 'URGENT' : submissionType === 'sales' ? 'SALES' : 'NDRF';
 
   return withTransaction(async (client) => {
+    await lockDuplicateSubmissionKeys(client, [{
+      siteCode,
+      sku: fields.sku,
+      submissionType,
+      date: applicationDate,
+    }]);
     await assertNoDuplicate(client, { siteCode, sku: fields.sku, submissionType, date: applicationDate });
-    const applicationNo = await nextApplicationNo(appNoPrefix);
+    const applicationNo = await nextApplicationNo(client, appNoPrefix);
     const values = [
       applicationNo,
       input.source,
@@ -184,7 +223,7 @@ export async function createSubmission(
       applicationDate,
       ...toBusinessParams(fields),
       qty,
-      isUrgent ? (normalizeText(input.urgentReason) || null) : null,
+      urgentReason,
       isUrgent ? (normalizeText(input.urgentReasonOther) || null) : null,
       input.ip,
       input.ip ? ipExpiryIso() : null,
@@ -206,7 +245,7 @@ export async function createSubmission(
            site_code: siteCode,
            sku: normalizeText(fields.sku),
            qty,
-           urgent_reason: normalizeText(input.urgentReason) || null,
+           urgent_reason: urgentReason,
            urgent_reason_other: normalizeText(input.urgentReasonOther) || null,
          }
        : submissionType === 'sales'
@@ -300,7 +339,7 @@ export async function modifySubmission(
   const fields = input.fields;
   return withTransaction(async (client) => {
     const rowResult = await client.query<SubmissionRow>(
-      'SELECT * FROM submissions WHERE application_no = $1 AND site_code = $2',
+      'SELECT * FROM submissions WHERE application_no = $1 AND site_code = $2 FOR UPDATE',
       [input.applicationNo.trim().toUpperCase(), siteCode],
     );
     const row = rowResult.rows[0];
@@ -314,6 +353,12 @@ export async function modifySubmission(
       throw new LockedError(row.locked_at ? new Date(row.locked_at) : null);
     }
 
+    await lockDuplicateSubmissionKeys(client, [{
+      siteCode,
+      sku: fields.sku,
+      submissionType: row.submission_type,
+      date: row.application_date,
+    }]);
     await assertNoDuplicate(client, {
       siteCode,
       sku: fields.sku,
@@ -371,7 +416,7 @@ export async function modifySalesSubmission(input: ModifySalesSubmissionInput): 
   const siteCode = normalizeSiteCode(input.siteCode);
   return withTransaction(async (client) => {
     const rowResult = await client.query<SubmissionRow>(
-      'SELECT * FROM submissions WHERE application_no = $1 AND site_code = $2',
+      'SELECT * FROM submissions WHERE application_no = $1 AND site_code = $2 FOR UPDATE',
       [input.applicationNo.trim().toUpperCase(), siteCode],
     );
     const row = rowResult.rows[0];
@@ -381,6 +426,12 @@ export async function modifySalesSubmission(input: ModifySalesSubmissionInput): 
       throw new LockedError(row.locked_at ? new Date(row.locked_at) : null);
     }
 
+    await lockDuplicateSubmissionKeys(client, [{
+      siteCode,
+      sku: input.sku,
+      submissionType: row.submission_type,
+      date: row.application_date,
+    }]);
     await assertNoDuplicate(client, {
       siteCode,
       sku: input.sku,
@@ -438,7 +489,7 @@ export async function modifyUrgentSubmission(
   const urgentReasonOther = normalizeText(input.urgentReasonOther) || null;
   return withTransaction(async (client) => {
     const rowResult = await client.query<SubmissionRow>(
-      'SELECT * FROM submissions WHERE application_no = $1 AND site_code = $2',
+      'SELECT * FROM submissions WHERE application_no = $1 AND site_code = $2 FOR UPDATE',
       [input.applicationNo.trim().toUpperCase(), siteCode],
     );
     const row = rowResult.rows[0];
@@ -452,6 +503,12 @@ export async function modifyUrgentSubmission(
       throw new LockedError(row.locked_at ? new Date(row.locked_at) : null);
     }
 
+    await lockDuplicateSubmissionKeys(client, [{
+      siteCode,
+      sku: input.sku,
+      submissionType: row.submission_type,
+      date: row.application_date,
+    }]);
     await assertNoDuplicate(client, {
       siteCode,
       sku: input.sku,
@@ -496,11 +553,14 @@ export async function adminUpdateSubmission(
 ): Promise<SubmissionRow> {
   return withTransaction(async (client) => {
     const rowResult = await client.query<SubmissionRow>(
-      'SELECT * FROM submissions WHERE id = $1',
+      'SELECT * FROM submissions WHERE id = $1 FOR UPDATE',
       [id],
     );
     const row = rowResult.rows[0];
     if (!row) throw new Error('找不到申報');
+    if (row.locked_at || row.exported_at) {
+      throw new LockedError(row.locked_at ? new Date(row.locked_at) : null);
+    }
 
     const before = businessFieldsFromRow(row);
     const updated = await client.query<SubmissionRow>(
@@ -546,16 +606,19 @@ export async function adminUpdateUrgentSubmission(input: {
   if (reasonErrors.length) {
     throw new Error(reasonErrors[0]!.message);
   }
-  const urgentReason = normalizeText(input.urgentReason) || null;
+  const urgentReason = normalizeText(input.urgentReason) ? resolveUrgentReasonCode(input.urgentReason) : null;
   const urgentReasonOther = normalizeText(input.urgentReasonOther) || null;
   return withTransaction(async (client) => {
     const rowResult = await client.query<SubmissionRow>(
-      'SELECT * FROM submissions WHERE id = $1',
+      'SELECT * FROM submissions WHERE id = $1 FOR UPDATE',
       [input.id],
     );
     const row = rowResult.rows[0];
     if (!row) throw new Error('找不到申報');
     if (row.submission_type !== 'urgent') throw new Error('此申報不是 Urgent Order');
+    if (row.locked_at || row.exported_at) {
+      throw new LockedError(row.locked_at ? new Date(row.locked_at) : null);
+    }
 
     const before = urgentFieldsFromRow(row);
     const updated = await client.query<SubmissionRow>(
@@ -592,10 +655,13 @@ export async function adminUpdateSalesSubmission(input: {
   username: string;
 }): Promise<SubmissionRow> {
   return withTransaction(async (client) => {
-    const rowResult = await client.query<SubmissionRow>('SELECT * FROM submissions WHERE id = $1', [input.id]);
+    const rowResult = await client.query<SubmissionRow>('SELECT * FROM submissions WHERE id = $1 FOR UPDATE', [input.id]);
     const row = rowResult.rows[0];
     if (!row) throw new Error('找不到申報');
     if (row.submission_type !== 'sales') throw new Error('此申報不是突發性銷售申報');
+    if (row.locked_at || row.exported_at) {
+      throw new LockedError(row.locked_at ? new Date(row.locked_at) : null);
+    }
 
     const before = salesFieldsFromRow(row);
     const updated = await client.query<SubmissionRow>(

@@ -19,11 +19,19 @@ import {
   LockedError,
   NotSupportedError,
   DuplicateSubmissionError,
+  lockDuplicateSubmissionKeys,
+  assertNoDuplicate,
   type SubmissionRow,
 } from '../services/submissions.js';
 import { writeAuditEvent } from '../lib/audit.js';
 import { toHKString, hkTodayForDateColumn, hkMinutesNow, hkHM } from '../lib/time.js';
-import { parseImportWorkbook, parseUrgentImportWorkbook, parseSalesImportWorkbook, findDuplicateImportErrors } from '../lib/excelImport.js';
+import {
+  parseImportWorkbook,
+  parseUrgentImportWorkbook,
+  parseSalesImportWorkbook,
+  findDuplicateImportErrors,
+  EXCEL_UPLOAD_EXTENSION_ERROR,
+} from '../lib/excelImport.js';
 import { generateTemplateWorkbook, generateUrgentTemplateWorkbook, generateSalesTemplateWorkbook, buildImportRecordBuffer, buildUrgentImportRecordBuffer, buildSalesImportRecordBuffer } from '../lib/excelExport.js';
 import { URGENT_QTY_MIN, URGENT_QTY_MAX, urgentReasonLabel } from '../lib/fields.js';
 import { RF_REMARK_REQUIRED_SITES, SKU_PATTERN, SKU_ERROR, validateBusinessFields, validateUrgentReason } from '../lib/validation.js';
@@ -34,7 +42,18 @@ import { ipExpiryIso } from '../lib/ip.js';
 
 export const publicRouter = Router();
 
-const upload = multer({ storage: multer.memoryStorage() });
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: {
+    fileSize: config.maxUploadBytes,
+    files: 1,
+    parts: 12,
+    fields: 10,
+    fieldSize: 64 * 1024,
+    fieldNameSize: 100,
+    headerPairs: 200,
+  },
+});
 
 const URGENT_SUBMIT_CUTOFF_MINUTES = 14 * 60 + 30; // 每日 14:30（香港時間）後暫停收單
 const URGENT_SUBMIT_CUTOFF_LABEL = '14:30';
@@ -323,7 +342,7 @@ publicRouter.post(
       return;
     }
     if (!/\.xlsx$/i.test(file.originalname)) {
-      res.status(400).json({ error: '只接受 .xlsx 檔案' });
+      res.status(400).json({ error: EXCEL_UPLOAD_EXTENSION_ERROR });
       return;
     }
     if (file.size > config.maxUploadBytes) {
@@ -367,49 +386,75 @@ publicRouter.post(
     }
 
     const ip = getClientIp(req);
-    const results = await withTransaction(async (client) => {
-      const rowsOut: Array<{
-        row: number;
-        application_no: string;
-        site_code: string;
-        sku: string;
-        submitted_at: string;
-      }> = [];
-      for (const item of parsed.rows!) {
-        const appNo = generateApplicationNo('SALES');
-        const requestedByEmail = `${item.siteCode.toLowerCase()}@sasa.com`;
-        const insert = await client.query<SubmissionRow>(
-          `INSERT INTO submissions (
-             application_no, source, submission_type, site_code, requested_by_email, application_date,
-             brand, sku, rp_type, safety_stock, nd_code, remark, qty, created_ip, created_ip_expires_at
-           ) VALUES ($1, 'excel', 'sales', $2, $3, to_char(now() AT TIME ZONE 'Asia/Hong_Kong', 'YYYY-MM-DD')::date,
-             '', $4, NULL, NULL, NULL, NULL, NULL, $5, $6)
-           RETURNING *`,
-          [appNo, item.siteCode, requestedByEmail, item.sku, ip, ip ? ipExpiryIso() : null],
+    const applicationDate = hkTodayForDateColumn();
+    let results;
+    try {
+      results = await withTransaction(async (client) => {
+        await lockDuplicateSubmissionKeys(client, parsed.rows!.map((r) => ({
+          siteCode: r.siteCode,
+          sku: r.sku,
+          submissionType: 'sales' as const,
+          date: applicationDate,
+        })));
+        const seen = new Set<string>();
+        const rowsOut: Array<{
+          row: number;
+          application_no: string;
+          site_code: string;
+          sku: string;
+          submitted_at: string;
+        }> = [];
+        for (const item of parsed.rows!) {
+          const duplicateKey = `${item.siteCode}|${item.sku}`;
+          if (seen.has(duplicateKey)) throw new DuplicateSubmissionError();
+          seen.add(duplicateKey);
+          await assertNoDuplicate(client, {
+            siteCode: item.siteCode,
+            sku: item.sku,
+            submissionType: 'sales',
+            date: applicationDate,
+          });
+          const appNo = generateApplicationNo('SALES');
+          const requestedByEmail = `${item.siteCode.toLowerCase()}@sasa.com`;
+          const insert = await client.query<SubmissionRow>(
+            `INSERT INTO submissions (
+               application_no, source, submission_type, site_code, requested_by_email, application_date,
+               brand, sku, rp_type, safety_stock, nd_code, remark, qty, created_ip, created_ip_expires_at
+             ) VALUES ($1, 'excel', 'sales', $2, $3, $4,
+               '', $5, NULL, NULL, NULL, NULL, NULL, $6, $7)
+             RETURNING *`,
+            [appNo, item.siteCode, requestedByEmail, applicationDate, item.sku, ip, ip ? ipExpiryIso() : null],
+          );
+          const row = insert.rows[0]!;
+          await client.query(
+            `INSERT INTO submission_versions
+               (submission_id, version, data_before, data_after, actor_role, actor, ip, change_source)
+             VALUES ($1, 1, NULL, $2, 'applicant', NULL, $3, 'excel_import')`,
+            [row.id, JSON.stringify({ site_code: item.siteCode, sku: item.sku }), ip],
+          );
+          rowsOut.push({
+            row: item.rowNumber,
+            application_no: row.application_no,
+            site_code: row.site_code,
+            sku: row.sku,
+            submitted_at: toHKString(row.submitted_at),
+          });
+        }
+        const batch = await client.query<{ id: string }>(
+          `INSERT INTO import_batches (filename, sheet_name, row_count, success_count, failed_count, results, content_hash, created_by)
+           VALUES ($1, $2, $3, $4, 0, $5::jsonb, $6, 'applicant')
+           RETURNING id`,
+          [file.originalname, parsed.sheetName ?? '', parsed.totalRows, rowsOut.length, JSON.stringify(rowsOut), parsed.contentHash],
         );
-        const row = insert.rows[0]!;
-        await client.query(
-          `INSERT INTO submission_versions
-             (submission_id, version, data_before, data_after, actor_role, actor, ip, change_source)
-           VALUES ($1, 1, NULL, $2, 'applicant', NULL, $3, 'excel_import')`,
-          [row.id, JSON.stringify({ site_code: item.siteCode, sku: item.sku }), ip],
-        );
-        rowsOut.push({
-          row: item.rowNumber,
-          application_no: row.application_no,
-          site_code: row.site_code,
-          sku: row.sku,
-          submitted_at: toHKString(row.submitted_at),
-        });
+        return { batchId: batch.rows[0]!.id, rows: rowsOut, successCount: rowsOut.length };
+      });
+    } catch (err) {
+      if (err instanceof DuplicateSubmissionError) {
+        res.status(409).json({ error: err.message, field: 'sku' });
+        return;
       }
-      const batch = await client.query<{ id: string }>(
-        `INSERT INTO import_batches (filename, sheet_name, row_count, success_count, failed_count, results, content_hash, created_by)
-         VALUES ($1, $2, $3, $4, 0, $5::jsonb, $6, 'applicant')
-         RETURNING id`,
-        [file.originalname, parsed.sheetName ?? '', parsed.totalRows, rowsOut.length, JSON.stringify(rowsOut), parsed.contentHash],
-      );
-      return { batchId: batch.rows[0]!.id, rows: rowsOut, successCount: rowsOut.length };
-    });
+      throw err;
+    }
 
     await writeAuditEvent({
       eventType: 'excel_import',
@@ -468,7 +513,7 @@ const urgentSubmitSchema = z.object({
     .int('QTY 必須為整數')
     .min(URGENT_QTY_MIN, `QTY 最少為 ${URGENT_QTY_MIN}`)
     .max(URGENT_QTY_MAX, `QTY 最多為 ${URGENT_QTY_MAX}`),
-  urgent_reason: z.string().trim().max(20).optional().default(''),
+  urgent_reason: z.string().trim().max(100).optional().default(''),
   urgent_reason_other: z.string().max(2000).optional().default(''),
 });
 
@@ -586,7 +631,7 @@ publicRouter.post(
       return;
     }
     if (!/\.xlsx$/i.test(file.originalname)) {
-      res.status(400).json({ error: '只接受 .xlsx 檔案' });
+      res.status(400).json({ error: EXCEL_UPLOAD_EXTENSION_ERROR });
       return;
     }
     if (file.size > config.maxUploadBytes) {
@@ -643,76 +688,94 @@ publicRouter.post(
     }
 
     const ip = getClientIp(req);
-    const results = await withTransaction(async (client) => {
-      const rowsOut: Array<{
-        row: number;
-        application_no: string;
-        site_code: string;
-        sku: string;
-        qty: number;
-        urgent_reason: string | null;
-        urgent_reason_label: string;
-        urgent_reason_other: string | null;
-        submitted_at: string;
-      }> = [];
-      let successCount = 0;
-      for (const r of parsed.rows!) {
-        const appNo = generateApplicationNo('URGENT');
-        const requestedByEmail = `${r.siteCode.toLowerCase()}@sasa.com`;
-        const insert = await client.query<SubmissionRow>(
-          `INSERT INTO submissions (
-             application_no, source, submission_type, site_code, requested_by_email, application_date,
-             brand, sku, qty, urgent_reason, urgent_reason_other, created_ip, created_ip_expires_at
-           ) VALUES ($1,'excel','urgent',$2,$3,to_char(now() AT TIME ZONE 'Asia/Hong_Kong','YYYY-MM-DD')::date,
-             '',$4,$5,$6,$7,$8,$9)
-           RETURNING *`,
-          [appNo, r.siteCode, requestedByEmail, r.sku, r.qty, r.urgentReason || null, r.urgentReasonOther || null, ip, ip ? ipExpiryIso() : null],
+    const applicationDate = hkTodayForDateColumn();
+    let results;
+    try {
+      results = await withTransaction(async (client) => {
+        await lockDuplicateSubmissionKeys(client, parsed.rows!.map((r) => ({
+          siteCode: r.siteCode,
+          sku: r.sku,
+          submissionType: 'urgent' as const,
+          date: applicationDate,
+        })));
+        const seen = new Set<string>();
+        const rowsOut: Array<{
+          row: number;
+          application_no: string;
+          site_code: string;
+          sku: string;
+          qty: number;
+          urgent_reason: string | null;
+          urgent_reason_label: string;
+          urgent_reason_other: string | null;
+          submitted_at: string;
+        }> = [];
+        let successCount = 0;
+        for (const r of parsed.rows!) {
+          const duplicateKey = `${r.siteCode}|${r.sku}`;
+          if (seen.has(duplicateKey)) throw new DuplicateSubmissionError();
+          seen.add(duplicateKey);
+          await assertNoDuplicate(client, {
+            siteCode: r.siteCode,
+            sku: r.sku,
+            submissionType: 'urgent',
+            date: applicationDate,
+          });
+          const appNo = generateApplicationNo('URGENT');
+          const requestedByEmail = `${r.siteCode.toLowerCase()}@sasa.com`;
+          const insert = await client.query<SubmissionRow>(
+            `INSERT INTO submissions (
+               application_no, source, submission_type, site_code, requested_by_email, application_date,
+               brand, sku, qty, urgent_reason, urgent_reason_other, created_ip, created_ip_expires_at
+             ) VALUES ($1,'excel','urgent',$2,$3,$4,'',$5,$6,$7,$8,$9,$10)
+             RETURNING *`,
+            [appNo, r.siteCode, requestedByEmail, applicationDate, r.sku, r.qty, r.urgentReason || null, r.urgentReasonOther || null, ip, ip ? ipExpiryIso() : null],
+          );
+          const row = insert.rows[0]!;
+          await client.query(
+            `INSERT INTO submission_versions
+               (submission_id, version, data_before, data_after, actor_role, actor, ip, change_source)
+             VALUES ($1, 1, NULL, $2, 'applicant', NULL, $3, 'excel_import')`,
+            [
+              row.id,
+              JSON.stringify({
+                site_code: r.siteCode,
+                sku: r.sku,
+                qty: r.qty,
+                urgent_reason: r.urgentReason || null,
+                urgent_reason_other: r.urgentReasonOther || null,
+              }),
+              ip,
+            ],
+          );
+          successCount++;
+          rowsOut.push({
+            row: r.rowNumber,
+            application_no: row.application_no,
+            site_code: row.site_code,
+            sku: row.sku,
+            qty: row.qty as number,
+            urgent_reason: row.urgent_reason,
+            urgent_reason_label: urgentReasonLabel(row.urgent_reason),
+            urgent_reason_other: row.urgent_reason_other,
+            submitted_at: toHKString(row.submitted_at),
+          });
+        }
+        const batchId = await client.query<{ id: string }>(
+          `INSERT INTO import_batches (filename, sheet_name, row_count, success_count, failed_count, results, content_hash, created_by)
+           VALUES ($1, $2, $3, $4, 0, $5::jsonb, $6, 'applicant')
+           RETURNING id`,
+          [file.originalname, parsed.sheetName ?? '', parsed.totalRows, successCount, JSON.stringify(rowsOut), parsed.contentHash],
         );
-        const row = insert.rows[0]!;
-        await client.query(
-          `INSERT INTO submission_versions
-             (submission_id, version, data_before, data_after, actor_role, actor, ip, change_source)
-           VALUES ($1, 1, NULL, $2, 'applicant', NULL, $3, 'excel_import')`,
-          [
-            row.id,
-            JSON.stringify({
-              site_code: r.siteCode,
-              sku: r.sku,
-              qty: r.qty,
-              urgent_reason: r.urgentReason || null,
-              urgent_reason_other: r.urgentReasonOther || null,
-            }),
-            ip,
-          ],
-        );
-        successCount++;
-        rowsOut.push({
-          row: r.rowNumber,
-          application_no: row.application_no,
-          site_code: row.site_code,
-          sku: row.sku,
-          qty: row.qty as number,
-          urgent_reason: row.urgent_reason,
-          urgent_reason_label: urgentReasonLabel(row.urgent_reason),
-          urgent_reason_other: row.urgent_reason_other,
-          submitted_at: toHKString(row.submitted_at),
-        });
+        return { batchId: batchId.rows[0]!.id, rows: rowsOut, successCount };
+      });
+    } catch (err) {
+      if (err instanceof DuplicateSubmissionError) {
+        res.status(409).json({ error: err.message, field: 'sku' });
+        return;
       }
-      const batchId = await client.query<{ id: string }>(
-        `INSERT INTO import_batches (filename, sheet_name, row_count, success_count, failed_count, results, content_hash, created_by)
-         VALUES ($1, $2, $3, $4, 0, $5::jsonb, $6, 'applicant')
-         RETURNING id`,
-        [
-          file.originalname,
-          parsed.sheetName ?? '',
-          parsed.totalRows,
-          successCount,
-          JSON.stringify(rowsOut),
-          parsed.contentHash,
-        ],
-      );
-      return { batchId: batchId.rows[0]!.id, rows: rowsOut, successCount };
-    });
+      throw err;
+    }
 
     await writeAuditEvent({
       eventType: 'excel_import',
@@ -796,7 +859,7 @@ publicRouter.post(
       return;
     }
     if (!/\.xlsx$/i.test(file.originalname)) {
-      res.status(400).json({ error: '只接受 .xlsx 檔案' });
+      res.status(400).json({ error: EXCEL_UPLOAD_EXTENSION_ERROR });
       return;
     }
     if (file.size > config.maxUploadBytes) {
@@ -852,78 +915,104 @@ publicRouter.post(
     }
 
     const ip = getClientIp(req);
-    const results = await withTransaction(async (client) => {
-      const rowsOut: Array<{
-        row: number;
-        application_no: string;
-        site_code: string;
-        sku: string;
-        rp_type: string;
-        safety_stock: string;
-        nd_code: string;
-        remark: string;
-        submitted_at: string;
-      }> = [];
-      let successCount = 0;
-      for (const r of parsed.rows!) {
-        const appNo = generateApplicationNo();
-        const requestedByEmail = `${r.siteCode.toLowerCase()}@sasa.com`;
-        const insert = await client.query<SubmissionRow>(
-          `INSERT INTO submissions (
-             application_no, source, site_code, requested_by_email, application_date,
-             brand, sku, rp_type, safety_stock, nd_code, remark, created_ip, created_ip_expires_at
-           ) VALUES ($1,'excel',$2,$3,to_char(now() AT TIME ZONE 'Asia/Hong_Kong','YYYY-MM-DD')::date,
-             $4,$5,$6,$7,$8,$9,$10,$11)
-           RETURNING *`,
+    const applicationDate = hkTodayForDateColumn();
+    let results;
+    try {
+      results = await withTransaction(async (client) => {
+        await lockDuplicateSubmissionKeys(client, parsed.rows!.map((r) => ({
+          siteCode: r.siteCode,
+          sku: r.fields.sku,
+          submissionType: 'normal' as const,
+          date: applicationDate,
+        })));
+        const seen = new Set<string>();
+        const rowsOut: Array<{
+          row: number;
+          application_no: string;
+          site_code: string;
+          sku: string;
+          rp_type: string;
+          safety_stock: string;
+          nd_code: string;
+          remark: string;
+          submitted_at: string;
+        }> = [];
+        let successCount = 0;
+        for (const r of parsed.rows!) {
+          const duplicateKey = `${r.siteCode}|${r.fields.sku}`;
+          if (seen.has(duplicateKey)) throw new DuplicateSubmissionError();
+          seen.add(duplicateKey);
+          await assertNoDuplicate(client, {
+            siteCode: r.siteCode,
+            sku: r.fields.sku,
+            submissionType: 'normal',
+            date: applicationDate,
+          });
+          const appNo = generateApplicationNo();
+          const requestedByEmail = `${r.siteCode.toLowerCase()}@sasa.com`;
+          const insert = await client.query<SubmissionRow>(
+            `INSERT INTO submissions (
+               application_no, source, site_code, requested_by_email, application_date,
+               brand, sku, rp_type, safety_stock, nd_code, remark, created_ip, created_ip_expires_at
+             ) VALUES ($1,'excel',$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
+             RETURNING *`,
+            [
+              appNo,
+              r.siteCode,
+              requestedByEmail,
+              applicationDate,
+              r.fields.brand,
+              r.fields.sku,
+              r.fields.rp_type,
+              r.fields.safety_stock,
+              r.fields.nd_code,
+              r.fields.remark,
+              ip,
+              ip ? ipExpiryIso() : null,
+            ],
+          );
+          const row = insert.rows[0]!;
+          await client.query(
+            `INSERT INTO submission_versions
+               (submission_id, version, data_before, data_after, actor_role, actor, ip, change_source)
+             VALUES ($1, 1, NULL, $2, 'applicant', NULL, $3, 'excel_import')`,
+            [row.id, JSON.stringify(r.fields), ip],
+          );
+          successCount++;
+          rowsOut.push({
+            row: r.rowNumber,
+            application_no: row.application_no,
+            site_code: row.site_code,
+            sku: row.sku,
+            rp_type: r.fields.rp_type,
+            safety_stock: r.fields.safety_stock,
+            nd_code: r.fields.nd_code,
+            remark: r.fields.remark,
+            submitted_at: toHKString(row.submitted_at),
+          });
+        }
+        const batchId = await client.query<{ id: string }>(
+          `INSERT INTO import_batches (filename, sheet_name, row_count, success_count, failed_count, results, content_hash, created_by)
+           VALUES ($1, $2, $3, $4, 0, $5::jsonb, $6, 'applicant')
+           RETURNING id`,
           [
-            appNo,
-            r.siteCode,
-            requestedByEmail,
-            r.fields.brand,
-            r.fields.sku,
-            r.fields.rp_type,
-            r.fields.safety_stock,
-            r.fields.nd_code,
-            r.fields.remark,
-            ip,
-            ip ? ipExpiryIso() : null,
+            file.originalname,
+            parsed.sheetName ?? '',
+            parsed.totalRows,
+            successCount,
+            JSON.stringify(rowsOut),
+            parsed.contentHash,
           ],
         );
-        const row = insert.rows[0]!;
-        await client.query(
-          `INSERT INTO submission_versions
-             (submission_id, version, data_before, data_after, actor_role, actor, ip, change_source)
-           VALUES ($1, 1, NULL, $2, 'applicant', NULL, $3, 'excel_import')`,
-          [row.id, JSON.stringify(r.fields), ip],
-        );
-        successCount++;
-        rowsOut.push({
-          row: r.rowNumber,
-          application_no: row.application_no,
-          site_code: row.site_code,
-          sku: row.sku,
-          rp_type: r.fields.rp_type,
-          safety_stock: r.fields.safety_stock,
-          nd_code: r.fields.nd_code,
-          remark: r.fields.remark,
-          submitted_at: toHKString(row.submitted_at),
-        });
+        return { batchId: batchId.rows[0]!.id, rows: rowsOut, successCount };
+      });
+    } catch (err) {
+      if (err instanceof DuplicateSubmissionError) {
+        res.status(409).json({ error: err.message, field: 'sku' });
+        return;
       }
-      const batchId = await client.query<{ id: string }>(
-        `INSERT INTO import_batches (filename, sheet_name, row_count, success_count, failed_count, results, content_hash, created_by)
-         VALUES ($1, $2, $3, $4, 0, $5::jsonb, $6, 'applicant')
-         RETURNING id`,
-        [
-          file.originalname,
-          parsed.sheetName ?? '',
-          parsed.totalRows,
-          successCount,
-          JSON.stringify(rowsOut),
-          parsed.contentHash,
-        ],
-      );
-      return { batchId: batchId.rows[0]!.id, rows: rowsOut, successCount };
-    });
+      throw err;
+    }
 
     await writeAuditEvent({
       eventType: 'excel_import',
@@ -1050,7 +1139,7 @@ const modifySchema = z.object({
     .min(URGENT_QTY_MIN, `QTY 最少為 ${URGENT_QTY_MIN}`)
     .max(URGENT_QTY_MAX, `QTY 最多為 ${URGENT_QTY_MAX}`)
     .optional(),
-  urgent_reason: z.string().trim().max(20).optional().default(''),
+  urgent_reason: z.string().trim().max(100).optional().default(''),
   urgent_reason_other: z.string().max(2000).optional().default(''),
 });
 

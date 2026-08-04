@@ -273,6 +273,14 @@ describe('public API', () => {
   });
 });
 
+  it('rejects oversized Excel uploads with 413 instead of 500', async () => {
+    const oversized = Buffer.alloc(5 * 1024 * 1024 + 1, 0x41);
+    const res = await request(app)
+      .post('/api/public/import')
+      .attach('file', oversized, 'oversized.xlsx');
+    expect(res.status).toBe(413);
+    expect(res.body.error).toContain('上載大小');
+  });
 describe('admin API', () => {
   it('rejects admin API access without login', async () => {
     const res = await request(app).get('/api/admin/submissions');
@@ -334,6 +342,13 @@ describe('admin API', () => {
     // Submissions should now be locked
     const listAfter = await agent.get('/api/admin/submissions?exported=yes&page=1');
     expect(Number(listAfter.body.total)).toBeGreaterThanOrEqual(2);
+    const locked = listAfter.body.submissions.find((submission: { submission_type: string; locked: boolean }) => submission.submission_type === 'normal' && submission.locked);
+    expect(locked).toBeDefined();
+    const lockedEdit = await agent
+      .put(`/api/admin/submissions/${locked.id}`)
+      .set('x-csrf-token', token)
+      .send({ sku: '1009120', rp_type: 'ND', nd_code: 'ND20-SO-Not displayed in small stores' });
+    expect(lockedEdit.status).toBe(409);
   });
 
   describe('preview export & last_modified_at (shared admin session)', () => {
@@ -539,6 +554,13 @@ describe('admin API', () => {
       .attach('file', Buffer.from('not an excel'), 'bad.txt');
     expect(res.status).toBe(400);
     expect(res.body.error).toContain('.xlsx');
+
+    const stores = await agent
+      .put('/api/admin/stores')
+      .set('x-csrf-token', token)
+      .attach('file', Buffer.from('not csv'), 'stores.txt');
+    expect(stores.status).toBe(400);
+    expect(stores.body.error).toContain('.csv');
   });
 });
 
@@ -1010,7 +1032,7 @@ describe('urgent admin API', () => {
     const res = await agent
       .put(`/api/admin/submissions/${id}`)
       .set('x-csrf-token', token)
-      .send({ sku: '1006008', qty: 12, urgent_reason: '2' });
+      .send({ sku: '1006008', qty: 12, urgent_reason: '2. ROADSHOW' });
     expect(res.status).toBe(200);
     expect(res.body.submission.sku).toBe('1006008');
     expect(res.body.submission.qty).toBe(12);
@@ -1495,6 +1517,17 @@ describe('daily duplicate rule', () => {
   });
 });
 
+  it('serializes concurrent public submissions for the same duplicate key', async () => {
+    const responses = await Promise.all([
+      request(app).post('/api/public/submit').send({ site_code: 'HA19', sku: '1009115', rp_type: 'RF', safety_stock: '5', remark: '同鍵測試' }),
+      request(app).post('/api/public/submit').send({ site_code: 'HA19', sku: '1009115', rp_type: 'RF', safety_stock: '5', remark: '同鍵測試' }),
+    ]);
+    expect(responses.map((response) => response.status).sort()).toEqual([201, 409]);
+    const count = await db.query<{ count: string }>(
+      `SELECT count(*)::text AS count FROM submissions WHERE site_code = 'HA19' AND sku = '1009115' AND submission_type = 'normal'`,
+    );
+    expect(count.rows[0]!.count).toBe('1');
+  });
 describe('urgent submission window (14:30 cutoff)', () => {
   const DEFAULT_MINUTES = 9 * 60;
   const ND = { rp_type: 'ND', nd_code: 'ND20-SO-Not displayed in small stores' };

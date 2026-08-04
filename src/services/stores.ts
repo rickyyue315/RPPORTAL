@@ -38,11 +38,26 @@ export async function countStores(): Promise<number> {
   return Number(result.rows[0]?.count ?? 0);
 }
 
-function parseCsv(text: string): string[][] {
+interface ParsedCsv {
+  rows?: string[][];
+  error?: string;
+}
+
+function parseCsv(text: string): ParsedCsv {
   const rows: string[][] = [];
   let row: string[] = [];
   let field = '';
   let inQuotes = false;
+  let fieldClosed = false;
+
+  const finishRow = () => {
+    row.push(field);
+    rows.push(row);
+    row = [];
+    field = '';
+    fieldClosed = false;
+  };
+
   for (let i = 0; i < text.length; i++) {
     const ch = text[i];
     if (inQuotes) {
@@ -52,31 +67,49 @@ function parseCsv(text: string): string[][] {
           i++;
         } else {
           inQuotes = false;
+          fieldClosed = true;
         }
       } else {
         field += ch;
       }
-    } else if (ch === '"') {
+      continue;
+    }
+
+    if (ch === '"') {
+      if (field !== '') return { error: 'CSV 格式錯誤: 引號只能包住完整欄位' };
       inQuotes = true;
+    } else if (fieldClosed) {
+      if (ch === ',') {
+        row.push(field);
+        field = '';
+        fieldClosed = false;
+      } else if (ch === '\n') {
+        finishRow();
+      } else if (ch === '\r') {
+        if (text[i + 1] === '\n') i++;
+        finishRow();
+      } else {
+        return { error: 'CSV 格式錯誤: 關閉引號後出現額外內容' };
+      }
     } else if (ch === ',') {
       row.push(field);
       field = '';
     } else if (ch === '\n') {
-      row.push(field);
-      rows.push(row);
-      row = [];
-      field = '';
+      finishRow();
     } else if (ch === '\r') {
-      // skip
+      if (text[i + 1] === '\n') i++;
+      finishRow();
     } else {
       field += ch;
     }
   }
-  if (field !== '' || row.length > 0) {
+
+  if (inQuotes) return { error: 'CSV 格式錯誤: 引號未關閉' };
+  if (field !== '' || row.length > 0 || fieldClosed) {
     row.push(field);
     rows.push(row);
   }
-  return rows;
+  return { rows };
 }
 
 /**
@@ -88,14 +121,21 @@ export function parseStoresCsv(content: string): {
   stores?: Store[];
   errors?: string[];
 } {
-  const rows = parseCsv(content).filter((r) => r.some((c) => c.trim() !== ''));
+  const parsedCsv = parseCsv(content);
+  if (parsedCsv.error) return { ok: false, errors: [parsedCsv.error] };
+  const rows = (parsedCsv.rows ?? []).filter((r) => r.some((c) => c.trim() !== ''));
   if (rows.length < 2) return { ok: false, errors: ['CSV 沒有資料列'] };
 
-  const header = rows[0]!.map((h) => h.trim());
   const expected = ['Site', 'Shop', 'Regional', 'Class 1', 'Class 2', 'Size', 'OM', 'Type'];
+  const header = rows[0]!.map((h, index) => (index === 0 ? h.replace(/^\uFEFF/, '') : h).trim());
   const missing = expected.filter((h) => !header.includes(h));
   if (missing.length > 0) {
     return { ok: false, errors: [`CSV 欄名缺少: ${missing.join(', ')}`] };
+  }
+  const duplicateHeaders = header.filter((h, index) => header.indexOf(h) !== index);
+  const extraHeaders = header.filter((h) => !expected.includes(h));
+  if (header.length !== expected.length || duplicateHeaders.length > 0 || extraHeaders.length > 0) {
+    return { ok: false, errors: ['CSV 欄名有重複或額外欄位，必須與模板完全一致'] };
   }
 
   const idx = (name: string) => header.indexOf(name);
@@ -105,19 +145,30 @@ export function parseStoresCsv(content: string): {
 
   for (let r = 1; r < rows.length; r++) {
     const cells = rows[r]!;
+    if (cells.length !== expected.length) {
+      errors.push(`列 ${r + 1}: 欄數必須為 ${expected.length}`);
+      continue;
+    }
     const site = normalizeSiteCode(cells[idx('Site')]);
+    const shop = (cells[idx('Shop')] ?? '').trim();
+    let invalid = false;
     if (!site) {
       errors.push(`列 ${r + 1}: Site Code 為空`);
-      continue;
+      invalid = true;
     }
-    if (seen.has(site)) {
+    if (!shop) {
+      errors.push(`列 ${r + 1}: Shop 為空`);
+      invalid = true;
+    }
+    if (site && seen.has(site)) {
       errors.push(`列 ${r + 1}: Site Code ${site} 重複`);
-      continue;
+      invalid = true;
     }
+    if (invalid) continue;
     seen.add(site);
     stores.push({
       site_code: site,
-      shop: (cells[idx('Shop')] ?? '').trim(),
+      shop,
       regional: (cells[idx('Regional')] ?? '').trim(),
       class1: (cells[idx('Class 1')] ?? '').trim(),
       class2: (cells[idx('Class 2')] ?? '').trim(),
@@ -131,7 +182,6 @@ export function parseStoresCsv(content: string): {
   if (stores.length === 0) return { ok: false, errors: ['CSV 沒有有效門店'] };
   return { ok: true, stores };
 }
-
 export async function replaceStores(stores: Store[]): Promise<number> {
   return withTransaction(async (client) => {
     await client.query('DELETE FROM stores');

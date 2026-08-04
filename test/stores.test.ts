@@ -35,6 +35,37 @@ describe('parseStoresCsv', () => {
     expect(result.ok).toBe(false);
     expect(result.errors?.[0]).toContain('Site Code 為空');
   });
+
+  it('rejects empty shop', () => {
+    const bad = 'Site,Shop,Regional,Class 1,Class 2,Size,OM,Type\nHA02,,HK,B,B2,S,Ivy,T';
+    const result = parseStoresCsv(bad);
+    expect(result.ok).toBe(false);
+    expect(result.errors?.some((error) => error.includes('Shop 為空'))).toBe(true);
+  });
+
+  it('rejects extra or duplicate headers and wrong data column counts', () => {
+    const extraHeader = parseStoresCsv('Site,Shop,Regional,Class 1,Class 2,Size,OM,Type,Extra\nHA02,駱克,HK,B,B2,S,Ivy,T,ignored');
+    expect(extraHeader.ok).toBe(false);
+    expect(extraHeader.errors?.[0]).toContain('額外');
+
+    const duplicateHeader = parseStoresCsv('Site,Shop,Regional,Class 1,Class 2,Size,OM,Type,OM\nHA02,駱克,HK,B,B2,S,Ivy,T,extra');
+    expect(duplicateHeader.ok).toBe(false);
+    expect(duplicateHeader.errors?.[0]).toContain('重複');
+
+    const wrongRow = parseStoresCsv('Site,Shop,Regional,Class 1,Class 2,Size,OM,Type\nHA02,駱克,HK,B,B2,S,Ivy');
+    expect(wrongRow.ok).toBe(false);
+    expect(wrongRow.errors?.[0]).toContain('欄數');
+  });
+
+  it('rejects malformed and unclosed quoted fields', () => {
+    const unclosed = parseStoresCsv('Site,Shop,Regional,Class 1,Class 2,Size,OM,Type\n"HA02,駱克,HK,B,B2,S,Ivy,T');
+    expect(unclosed.ok).toBe(false);
+    expect(unclosed.errors?.[0]).toContain('引號未關閉');
+
+    const malformed = parseStoresCsv('Site,Shop,Regional,Class 1,Class 2,Size,OM,Type\n"HA02"extra,駱克,HK,B,B2,S,Ivy,T');
+    expect(malformed.ok).toBe(false);
+    expect(malformed.errors?.[0]).toContain('額外內容');
+  });
 });
 
 describe('normalizeSiteCode', () => {

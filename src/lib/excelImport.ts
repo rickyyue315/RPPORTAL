@@ -44,6 +44,13 @@ export interface ParsedImport {
 
 const EXPECTED_HEADERS: readonly string[] = TEMPLATE_COLUMNS;
 
+export const EXCEL_UPLOAD_FORMAT_HINT =
+  '請上載 Excel 活頁簿（.xlsx）。支援 Excel 2007 或更新版本，例如 Excel 2019、Excel 2021、Excel 2024 或 Microsoft 365；不支援舊式 .xls。';
+
+export const EXCEL_UPLOAD_EXTENSION_ERROR = `檔案格式不適合。${EXCEL_UPLOAD_FORMAT_HINT}`;
+
+export const EXCEL_UPLOAD_PARSE_ERROR = `無法讀取此檔案。${EXCEL_UPLOAD_FORMAT_HINT}如目前是 .xls，請在 Excel 使用「另存新檔」轉換為 .xlsx。`;
+
 export function hashFileContent(buffer: Buffer): string {
   return createHash('sha256').update(buffer).digest('hex');
 }
@@ -71,7 +78,7 @@ export async function parseImportWorkbook(
     return {
       ok: false,
       totalRows: 0,
-      errors: [{ row: 0, field: 'file', reason: '無法解析 Excel 檔案' }],
+      errors: [{ row: 0, field: 'file', reason: EXCEL_UPLOAD_PARSE_ERROR }],
       contentHash,
     };
   }
@@ -249,7 +256,7 @@ export async function parseUrgentImportWorkbook(
     return {
       ok: false,
       totalRows: 0,
-      errors: [{ row: 0, field: 'file', reason: '無法解析 Excel 檔案' }],
+      errors: [{ row: 0, field: 'file', reason: EXCEL_UPLOAD_PARSE_ERROR }],
       contentHash,
     };
   }
@@ -424,7 +431,7 @@ export async function parseSalesImportWorkbook(
   try {
     await workbook.xlsx.load(buffer as never);
   } catch {
-    return { ok: false, totalRows: 0, errors: [{ row: 0, field: 'file', reason: '無法解析 Excel 檔案' }], contentHash };
+    return { ok: false, totalRows: 0, errors: [{ row: 0, field: 'file', reason: EXCEL_UPLOAD_PARSE_ERROR }], contentHash };
   }
 
   const sheet = workbook.getWorksheet(SALES_SHEET);

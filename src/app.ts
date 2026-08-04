@@ -1,4 +1,5 @@
 import express, { type NextFunction, type Request, type Response } from 'express';
+import multer from 'multer';
 import helmet from 'helmet';
 import cookieParser from 'cookie-parser';
 import cors from 'cors';
@@ -82,6 +83,14 @@ export function createApp() {
   // Central error handler — never leaks DB/config details.
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   app.use((err: Error, req: Request, res: Response, _next: NextFunction) => {
+    if (err instanceof multer.MulterError) {
+      const status = err.code === 'LIMIT_FILE_SIZE' ? 413 : 400;
+      const message = err.code === 'LIMIT_FILE_SIZE'
+        ? '檔案超過上載大小限制'
+        : '上載表單格式或欄位數量超出限制';
+      res.status(status).json({ error: message });
+      return;
+    }
     const status = (err as { status?: number }).status ?? 500;
     if (status >= 500) {
       console.error('[error]', req.method, req.originalUrl, err.message);

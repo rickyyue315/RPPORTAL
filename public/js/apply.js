@@ -53,6 +53,7 @@
     const errs = [];
     if (!d.site_code) errs.push('Site Code 為必填');
     if (!d.sku) errs.push('SKU 為必填');
+    else if (!/^(?:\d{7}|\d{12})$/.test(d.sku)) errs.push('SKU 只容許 7 位或 12 位數字，每個申請只能輸入一個 SKU');
     validateBusinessFields(d, d.site_code).forEach((e) => errs.push(e.message));
     return errs;
   }

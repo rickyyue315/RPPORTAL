@@ -179,6 +179,9 @@
       : isSales()
         ? (body.sku.trim() ? [] : [{ message: 'SKU 為必填' }])
         : validateBusinessFields(body, current.submission.site_code);
+    if (body.sku.trim() && !/^(?:\d{7}|\d{12})$/.test(body.sku.trim())) {
+      clientErrs.push({ message: 'SKU 只容許 7 位或 12 位數字，每個申請只能輸入一個 SKU' });
+    }
     if (clientErrs.length) {
       showAlert($('save_error'), 'error', clientErrs.map((e) => escapeHtml(e.message)).join('<br>'));
       return;

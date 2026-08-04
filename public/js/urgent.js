@@ -69,6 +69,7 @@
     const errs = [];
     if (!d.site_code) errs.push('Site Code 為必填');
     if (!d.sku) errs.push('SKU 為必填');
+    else if (!/^(?:\d{7}|\d{12})$/.test(d.sku)) errs.push('SKU 只容許 7 位或 12 位數字，每個申請只能輸入一個 SKU');
     if (d.qty === '' || !Number.isInteger(d.qty)) {
       errs.push(`QTY 必須為 ${QTY_MIN} 至 ${QTY_MAX} 的整數`);
     } else if (d.qty < QTY_MIN || d.qty > QTY_MAX) {

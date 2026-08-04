@@ -79,6 +79,20 @@ a:hover {
   font-weight: 600;
 }
 
+.announce-banner {
+  background: #fff7e0;
+  border-bottom: 3px solid var(--warning);
+  color: #7a4d00;
+  font-size: 20px;
+  font-weight: 700;
+  line-height: 1.6;
+  text-align: center;
+  padding: 16px 24px;
+}
+.announce-banner strong {
+  color: #b9770e;
+}
+
 @media (max-width: 640px) {
   .topbar {
     flex-wrap: wrap;
@@ -87,6 +101,10 @@ a:hover {
   .topbar nav a {
     padding: 6px 12px;
     font-size: 13px;
+  }
+  .announce-banner {
+    font-size: 16px;
+    padding: 12px 16px;
   }
 }
 

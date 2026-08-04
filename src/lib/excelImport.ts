@@ -17,7 +17,7 @@ import {
   type SubmissionBusinessFields,
 } from '../lib/fields.js';
 import { normalizeSiteCode } from '../services/stores.js';
-import { validateBusinessFields, validateUrgentReason } from './validation.js';
+import { validateBusinessFields, validateUrgentReason, isValidSku, SKU_ERROR } from './validation.js';
 
 export interface ImportRowError {
   row: number;
@@ -60,7 +60,9 @@ export async function parseImportWorkbook(
   buffer: Buffer,
   storeCodes: Set<string>,
   maxRows: number,
+  options: { validateSku?: boolean } = {},
 ): Promise<ParsedImport> {
+  const { validateSku = true } = options;
   const contentHash = hashFileContent(buffer);
   const workbook = new ExcelJS.Workbook();
   try {
@@ -165,6 +167,8 @@ export async function parseImportWorkbook(
 
     if (!fields.sku) {
       errors.push({ row: rowNumber, field: 'SKU', reason: 'SKU 為必填' });
+    } else if (validateSku && !isValidSku(fields.sku)) {
+      errors.push({ row: rowNumber, field: 'SKU', reason: SKU_ERROR });
     }
 
     for (const err of validateBusinessFields(fields, siteCode)) {
@@ -234,7 +238,9 @@ export async function parseUrgentImportWorkbook(
   buffer: Buffer,
   storeCodes: Set<string>,
   maxRows: number,
+  options: { validateSku?: boolean } = {},
 ): Promise<ParsedUrgentImport> {
+  const { validateSku = true } = options;
   const contentHash = hashFileContent(buffer);
   const workbook = new ExcelJS.Workbook();
   try {
@@ -324,6 +330,8 @@ export async function parseUrgentImportWorkbook(
     const sku = cellValue(row.getCell(URGENT_SKU_COL));
     if (!sku) {
       rowError('SKU', 'SKU 為必填');
+    } else if (validateSku && !isValidSku(sku)) {
+      rowError('SKU', SKU_ERROR);
     }
 
     const qty = parseQtyCell(row.getCell(URGENT_QTY_COL).value);
@@ -408,7 +416,9 @@ export async function parseSalesImportWorkbook(
   buffer: Buffer,
   storeCodes: Set<string>,
   maxRows: number,
+  options: { validateSku?: boolean } = {},
 ): Promise<ParsedSalesImport> {
+  const { validateSku = true } = options;
   const contentHash = hashFileContent(buffer);
   const workbook = new ExcelJS.Workbook();
   try {
@@ -468,6 +478,7 @@ export async function parseSalesImportWorkbook(
     if (!siteCode) rowError('Site Code', 'Site Code 為必填');
     else if (!storeCodes.has(siteCode)) rowError('Site Code', `Site Code「${siteCode}」不存在於門店主檔`);
     if (!sku) rowError('SKU', 'SKU 為必填');
+    else if (validateSku && !isValidSku(sku)) rowError('SKU', SKU_ERROR);
     rows.push({ rowNumber, siteCode, sku });
   });
 

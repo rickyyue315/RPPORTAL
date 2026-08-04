@@ -26,7 +26,7 @@ import { toHKString, hkTodayForDateColumn, hkMinutesNow, hkHM } from '../lib/tim
 import { parseImportWorkbook, parseUrgentImportWorkbook, parseSalesImportWorkbook, findDuplicateImportErrors } from '../lib/excelImport.js';
 import { generateTemplateWorkbook, generateUrgentTemplateWorkbook, generateSalesTemplateWorkbook, buildImportRecordBuffer, buildUrgentImportRecordBuffer, buildSalesImportRecordBuffer } from '../lib/excelExport.js';
 import { URGENT_QTY_MIN, URGENT_QTY_MAX, urgentReasonLabel } from '../lib/fields.js';
-import { RF_REMARK_REQUIRED_SITES, validateBusinessFields, validateUrgentReason } from '../lib/validation.js';
+import { RF_REMARK_REQUIRED_SITES, SKU_PATTERN, SKU_ERROR, validateBusinessFields, validateUrgentReason } from '../lib/validation.js';
 import { query, withTransaction } from '../db/pool.js';
 import { config } from '../config.js';
 import { generateApplicationNo } from '../lib/applicationNo.js';
@@ -47,7 +47,7 @@ function isUrgentWindowOpen(): boolean {
 
 const businessFieldSchema = z.object({
   brand: z.string().max(500).optional().default(''),
-  sku: z.string().trim().min(1, 'SKU 為必填').max(100),
+  sku: z.string().trim().min(1, 'SKU 為必填').regex(SKU_PATTERN, SKU_ERROR),
   rp_type: z.string().max(100).optional().default(''),
   safety_stock: z.string().max(100).optional().default(''),
   nd_code: z.string().max(300).optional().default(''),
@@ -247,7 +247,7 @@ publicRouter.post(
 
 const salesSubmitSchema = z.object({
   site_code: z.string().trim().min(1, 'Site Code 為必填').max(20),
-  sku: z.string().trim().min(1, 'SKU 為必填').max(100),
+  sku: z.string().trim().min(1, 'SKU 為必填').regex(SKU_PATTERN, SKU_ERROR),
 });
 
 /** POST /api/public/sales/submit — sudden sales single web submission. */
@@ -462,7 +462,7 @@ publicRouter.post(
 
 const urgentSubmitSchema = z.object({
   site_code: z.string().trim().min(1, 'Site Code 為必填').max(20),
-  sku: z.string().trim().min(1, 'SKU 為必填').max(100),
+  sku: z.string().trim().min(1, 'SKU 為必填').regex(SKU_PATTERN, SKU_ERROR),
   qty: z
     .number({ invalid_type_error: 'QTY 必須為整數' })
     .int('QTY 必須為整數')

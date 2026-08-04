@@ -87,7 +87,7 @@ const server = app.listen(0, async () => {
     const submit = await fetch(`${base}/api/public/submit`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ site_code: 'HA02', sku: 'SMOKE-001', brand: 'Test', rp_type: 'ND', nd_code: 'ND20-SO-Not displayed in small stores' }),
+      body: JSON.stringify({ site_code: 'HA02', sku: '1005020', brand: 'Test', rp_type: 'ND', nd_code: 'ND20-SO-Not displayed in small stores' }),
     });
     const submitJson = await submit.json();
     check('web submit', submit.status === 201 && /^NDRF-/.test(submitJson.submission.application_no));
@@ -99,7 +99,7 @@ const server = app.listen(0, async () => {
     const urgent = await fetch(`${base}/api/public/urgent/submit`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ site_code: 'HA06', sku: 'SMOKE-URGENT', qty: 8, urgent_reason: '1' }),
+      body: JSON.stringify({ site_code: 'HA06', sku: '1005022', qty: 8, urgent_reason: '1' }),
     });
     const urgentJson = await urgent.json();
     check('urgent web submit', urgent.status === 201 && /^URGENT-/.test(urgentJson.submission.application_no) && urgentJson.submission.qty === 8 && urgentJson.submission.urgent_reason === '1');
@@ -107,7 +107,7 @@ const server = app.listen(0, async () => {
     const sales = await fetch(`${base}/api/public/sales/submit`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ site_code: 'HA06', sku: 'SMOKE-SALES' }),
+      body: JSON.stringify({ site_code: 'HA06', sku: '1005021' }),
     });
     const salesJson = await sales.json();
     check('sales web submit', sales.status === 201 && /^SALES-/.test(salesJson.submission.application_no));
@@ -188,7 +188,7 @@ const server = app.listen(0, async () => {
     const locked = await fetch(`${base}/api/public/modify`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ application_no: appNo, site_code: 'HA02', sku: 'CHANGED' }),
+      body: JSON.stringify({ application_no: appNo, site_code: 'HA02', sku: '1002001' }),
     });
     check('locked submission rejects modify', locked.status === 409);
 

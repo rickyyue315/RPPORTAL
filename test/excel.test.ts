@@ -95,8 +95,23 @@ describe('parseImportWorkbook', () => {
     expect(result.errors?.[0]?.reason).toContain('SKU 為必填');
   });
 
+  it('rejects SKUs that are not 7 or 12 digits', async () => {
+    const buffer = await makeWorkbookBuffer([dataRow({ SKU: '123456789012 , 123456789011' })]);
+    const result = await parseImportWorkbook(buffer, storeCodes, 1000);
+    expect(result.ok).toBe(false);
+    expect(result.errors?.[0]?.field).toBe('SKU');
+    expect(result.errors?.[0]?.reason).toContain('7 位或 12 位');
+  });
+
+  it('skips SKU format validation when validateSku is false (admin)', async () => {
+    const buffer = await makeWorkbookBuffer([dataRow({ SKU: 'NOT-SKU-123' })]);
+    const result = await parseImportWorkbook(buffer, storeCodes, 1000, { validateSku: false });
+    expect(result.ok).toBe(true);
+    expect(result.rows![0].fields.sku).toBe('NOT-SKU-123');
+  });
+
   it('rejects rows over maxRows limit', async () => {
-    const rows = Array.from({ length: 5 }, () => dataRow({ SKU: `sku${Math.random()}` }));
+    const rows = Array.from({ length: 5 }, () => dataRow({ SKU: `${1000000 + Math.floor(Math.random() * 9000000)}` }));
     const buffer = await makeWorkbookBuffer(rows);
     const result = await parseImportWorkbook(buffer, storeCodes, 3);
     expect(result.ok).toBe(false);
@@ -242,12 +257,12 @@ describe('parseUrgentImportWorkbook', () => {
   }
 
   it('accepts a valid urgent workbook', async () => {
-    const buffer = await urgentBuffer([['HA02', 'U-1', 5, '1', '']]);
+    const buffer = await urgentBuffer([['HA02', '1006001', 5, '1', '']]);
     const result = await parseUrgentImportWorkbook(buffer, storeCodes, 1000);
     expect(result.ok).toBe(true);
     expect(result.totalRows).toBe(1);
     expect(result.rows![0].siteCode).toBe('HA02');
-    expect(result.rows![0].sku).toBe('U-1');
+    expect(result.rows![0].sku).toBe('1006001');
     expect(result.rows![0].qty).toBe(5);
     expect(result.rows![0].urgentReason).toBe('1');
     expect(result.rows![0].urgentReasonOther).toBe('');
@@ -257,7 +272,7 @@ describe('parseUrgentImportWorkbook', () => {
     const wb = new ExcelJS.Workbook();
     const ws = wb.addWorksheet('Other');
     ws.addRow([...URGENT_COLUMNS]);
-    ws.addRow(['HA02', 'U-1', 5, '1', '']);
+    ws.addRow(['HA02', '1006001', 5, '1', '']);
     const buffer = Buffer.from(await wb.xlsx.writeBuffer());
     const result = await parseUrgentImportWorkbook(buffer, storeCodes, 1000);
     expect(result.ok).toBe(false);
@@ -278,7 +293,7 @@ describe('parseUrgentImportWorkbook', () => {
     const wb = new ExcelJS.Workbook();
     const ws = wb.addWorksheet(URGENT_SHEET);
     ws.addRow(['Site Code', 'SKU', 'QTY']);
-    ws.addRow(['HA02', 'U-OLD', 5]);
+    ws.addRow(['HA02', '1006101', 5]);
     const buffer = Buffer.from(await wb.xlsx.writeBuffer());
     const result = await parseUrgentImportWorkbook(buffer, storeCodes, 1000);
     expect(result.ok).toBe(false);
@@ -287,10 +302,10 @@ describe('parseUrgentImportWorkbook', () => {
 
   it('rejects qty 0, 1001, decimals and text', async () => {
     const buffer = await urgentBuffer([
-      ['HA02', 'U-A', 0, '1', ''],
-      ['HA02', 'U-B', 1001, '1', ''],
-      ['HA02', 'U-C', 1.5, '1', ''],
-      ['HA02', 'U-D', 'abc', '1', ''],
+      ['HA02', '1006102', 0, '1', ''],
+      ['HA02', '1006103', 1001, '1', ''],
+      ['HA02', '1006104', 1.5, '1', ''],
+      ['HA02', '1006105', 'abc', '1', ''],
     ]);
     const result = await parseUrgentImportWorkbook(buffer, storeCodes, 1000);
     expect(result.ok).toBe(false);
@@ -299,7 +314,7 @@ describe('parseUrgentImportWorkbook', () => {
 
   it('rejects unknown site code and empty sku', async () => {
     const buffer = await urgentBuffer([
-      ['ZZ99', 'U-E', 2, '1', ''],
+      ['ZZ99', '1006106', 2, '1', ''],
       ['HA02', '', 3, '1', ''],
     ]);
     const result = await parseUrgentImportWorkbook(buffer, storeCodes, 1000);
@@ -308,29 +323,36 @@ describe('parseUrgentImportWorkbook', () => {
     expect(result.errors?.some((e) => e.field === 'SKU')).toBe(true);
   });
 
+  it('rejects a multi-SKU cell', async () => {
+    const buffer = await urgentBuffer([['HA02', '123456789012,123456789011', 2, '1', '']]);
+    const result = await parseUrgentImportWorkbook(buffer, storeCodes, 1000);
+    expect(result.ok).toBe(false);
+    expect(result.errors?.some((e) => e.field === 'SKU')).toBe(true);
+  });
+
   it('rejects missing reason', async () => {
-    const buffer = await urgentBuffer([['HA02', 'U-G', 4, '', '']]);
+    const buffer = await urgentBuffer([['HA02', '1006108', 4, '', '']]);
     const result = await parseUrgentImportWorkbook(buffer, storeCodes, 1000);
     expect(result.ok).toBe(false);
     expect(result.errors?.some((e) => e.field === 'Urgent Reason')).toBe(true);
   });
 
   it('rejects option 9 without other reason', async () => {
-    const buffer = await urgentBuffer([['HA02', 'U-H', 4, '9', '']]);
+    const buffer = await urgentBuffer([['HA02', '1006109', 4, '9', '']]);
     const result = await parseUrgentImportWorkbook(buffer, storeCodes, 1000);
     expect(result.ok).toBe(false);
     expect(result.errors?.some((e) => e.field === 'Other Reason')).toBe(true);
   });
 
   it('rejects non-9 option with other reason', async () => {
-    const buffer = await urgentBuffer([['HA02', 'U-I', 4, '1', '補充']]);
+    const buffer = await urgentBuffer([['HA02', '1006110', 4, '1', '補充']]);
     const result = await parseUrgentImportWorkbook(buffer, storeCodes, 1000);
     expect(result.ok).toBe(false);
     expect(result.errors?.some((e) => e.field === 'Other Reason')).toBe(true);
   });
 
   it('accepts option 9 with other reason', async () => {
-    const buffer = await urgentBuffer([['HA02', 'U-J', 4, '9', '詳細原因']]);
+    const buffer = await urgentBuffer([['HA02', '1006111', 4, '9', '詳細原因']]);
     const result = await parseUrgentImportWorkbook(buffer, storeCodes, 1000);
     expect(result.ok).toBe(true);
     expect(result.rows![0].urgentReason).toBe('9');
@@ -338,14 +360,14 @@ describe('parseUrgentImportWorkbook', () => {
   });
 
   it('accepts the full reason label from the template dropdown and stores its code', async () => {
-    const buffer = await urgentBuffer([['HA02', 'U-K', 4, '2. ROADSHOW', '']]);
+    const buffer = await urgentBuffer([['HA02', '1006112', 4, '2. ROADSHOW', '']]);
     const result = await parseUrgentImportWorkbook(buffer, storeCodes, 1000);
     expect(result.ok).toBe(true);
     expect(result.rows![0].urgentReason).toBe('2');
   });
 
   it('rejects an invalid reason value', async () => {
-    const buffer = await urgentBuffer([['HA02', 'U-L', 4, '99', '']]);
+    const buffer = await urgentBuffer([['HA02', '1006113', 4, '99', '']]);
     const result = await parseUrgentImportWorkbook(buffer, storeCodes, 1000);
     expect(result.ok).toBe(false);
     expect(result.errors?.some((e) => e.field === 'Urgent Reason')).toBe(true);
@@ -355,7 +377,7 @@ describe('parseUrgentImportWorkbook', () => {
     const wb = new ExcelJS.Workbook();
     const ws = wb.addWorksheet(URGENT_SHEET);
     ws.addRow([...URGENT_COLUMNS]);
-    ws.addRow(['HA02', 'U-F', 4, '1', '']);
+    ws.addRow(['HA02', '1006107', 4, '1', '']);
     ws.addRow([]);
     const buffer = Buffer.from(await wb.xlsx.writeBuffer());
     const result = await parseUrgentImportWorkbook(buffer, storeCodes, 1000);
@@ -379,7 +401,7 @@ describe('generateUrgentTemplateWorkbook / buildUrgentExportBuffer', () => {
 
   it('writes urgent export with Application No. | Site Code | SKU | QTY | Urgent Reason | Other Reason', async () => {
     const buffer = await buildUrgentExportBuffer([
-      { application_no: 'URGENT-TEST', site_code: 'HA02', sku: 'U-1', qty: 9, urgent_reason: '9', urgent_reason_other: '備註原因' },
+      { application_no: 'URGENT-TEST', site_code: 'HA02', sku: '1006001', qty: 9, urgent_reason: '9', urgent_reason_other: '備註原因' },
     ]);
     const wb = new ExcelJS.Workbook();
     await wb.xlsx.load(buffer as never);
@@ -407,19 +429,19 @@ describe('sales Excel', () => {
   }
 
   it('accepts a valid sales workbook', async () => {
-    const buffer = await salesBuffer([['HA02', 'S-1']]);
+    const buffer = await salesBuffer([['HA02', '1007001']]);
     const result = await parseSalesImportWorkbook(buffer, storeCodes, 1000);
     expect(result.ok).toBe(true);
     expect(result.totalRows).toBe(1);
     expect(result.rows![0].siteCode).toBe('HA02');
-    expect(result.rows![0].sku).toBe('S-1');
+    expect(result.rows![0].sku).toBe('1007001');
   });
 
   it('rejects wrong sheet name', async () => {
     const wb = new ExcelJS.Workbook();
     const ws = wb.addWorksheet('Other');
     ws.addRow(['Site Code', 'SKU']);
-    ws.addRow(['HA02', 'S-2']);
+    ws.addRow(['HA02', '1007002']);
     const buffer = Buffer.from(await wb.xlsx.writeBuffer());
     const result = await parseSalesImportWorkbook(buffer, storeCodes, 1000);
     expect(result.ok).toBe(false);
@@ -437,15 +459,22 @@ describe('sales Excel', () => {
   });
 
   it('rejects unknown site code and missing sku', async () => {
-    const buffer = await salesBuffer([['ZZ99', 'S-3'], ['HA02', '']]);
+    const buffer = await salesBuffer([['ZZ99', '1007003'], ['HA02', '']]);
     const result = await parseSalesImportWorkbook(buffer, storeCodes, 1000);
     expect(result.ok).toBe(false);
     expect(result.errors?.some((e) => e.field === 'Site Code')).toBe(true);
     expect(result.errors?.some((e) => e.field === 'SKU')).toBe(true);
   });
 
+  it('rejects a multi-SKU cell', async () => {
+    const buffer = await salesBuffer([['HA02', '123456789012 123456789011']]);
+    const result = await parseSalesImportWorkbook(buffer, storeCodes, 1000);
+    expect(result.ok).toBe(false);
+    expect(result.errors?.some((e) => e.field === 'SKU')).toBe(true);
+  });
+
   it('rejects rows over maxRows limit', async () => {
-    const rows = Array.from({ length: 4 }, (_, i) => ['HA02', `S-ROW-${i}`]);
+    const rows = Array.from({ length: 4 }, (_, i) => ['HA02', `${1007000 + i}`]);
     const buffer = await salesBuffer(rows);
     const result = await parseSalesImportWorkbook(buffer, storeCodes, 2);
     expect(result.ok).toBe(false);
@@ -456,7 +485,7 @@ describe('sales Excel', () => {
     const wb = new ExcelJS.Workbook();
     const ws = wb.addWorksheet(SALES_SHEET);
     ws.addRow([...SALES_COLUMNS]);
-    ws.addRow(['HA02', 'S-4']);
+    ws.addRow(['HA02', '1007004']);
     ws.addRow([]);
     const buffer = Buffer.from(await wb.xlsx.writeBuffer());
     const result = await parseSalesImportWorkbook(buffer, storeCodes, 1000);
@@ -475,8 +504,8 @@ describe('sales Excel', () => {
 
   it('builds a sales import record workbook grouped by site', async () => {
     const buffer = await buildSalesImportRecordBuffer([
-      { row: 2, application_no: 'SALES-A', site_code: 'HA02', sku: 'S-5', submitted_at: '2026-08-03 09:00:00' },
-      { row: 3, application_no: 'SALES-B', site_code: 'HA06', sku: 'S-6', submitted_at: '2026-08-03 09:00:01' },
+      { row: 2, application_no: 'SALES-A', site_code: 'HA02', sku: '1005005', submitted_at: '2026-08-03 09:00:00' },
+      { row: 3, application_no: 'SALES-B', site_code: 'HA06', sku: '1005006', submitted_at: '2026-08-03 09:00:01' },
     ]);
     const wb = new ExcelJS.Workbook();
     await wb.xlsx.load(buffer as never);
@@ -489,7 +518,7 @@ describe('sales Excel', () => {
 
   it('builds the four-column sales export with RP Team sheet', async () => {
     const buffer = await buildSalesExportBuffer([
-      { application_date: '2026-08-03', requested_by_email: 'ha02@sasa.com', site_code: 'HA02', sku: 'S-7' },
+      { application_date: '2026-08-03', requested_by_email: 'ha02@sasa.com', site_code: 'HA02', sku: '1005007' },
     ]);
     const wb = new ExcelJS.Workbook();
     await wb.xlsx.load(buffer as never);
@@ -501,6 +530,6 @@ describe('sales Excel', () => {
     expect(data.getCell(1).value).toBe('2026-08-03');
     expect(data.getCell(2).value).toBe('ha02@sasa.com');
     expect(data.getCell(3).value).toBe('HA02');
-    expect(data.getCell(4).value).toBe('S-7');
+    expect(data.getCell(4).value).toBe('1005007');
   });
 });

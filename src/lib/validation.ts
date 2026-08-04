@@ -6,6 +6,14 @@ import {
   type SubmissionBusinessFields,
 } from './fields.js';
 
+/** SKU 只容許 7 位或 12 位數字（一個 SKU）。 */
+export const SKU_PATTERN = /^(?:\d{7}|\d{12})$/;
+export const SKU_ERROR = 'SKU 只容許 7 位或 12 位數字，每個申請只能輸入一個 SKU';
+
+export function isValidSku(value: string | null | undefined): boolean {
+  return SKU_PATTERN.test(normalizeText(value));
+}
+
 /** 轉 RF 時必須填寫 Remark 的店舖。 */
 export const RF_REMARK_REQUIRED_SITES: ReadonlySet<string> = new Set([
   'HA19',

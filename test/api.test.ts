@@ -84,7 +84,7 @@ describe('public API', () => {
   it('rejects submit with unknown site code', async () => {
     const res = await request(app).post('/api/public/submit').send({
       site_code: 'ZZ99',
-      sku: '123456',
+      sku: '1000123',
     });
     expect(res.status).toBe(400);
     expect(res.body.field).toBe('site_code');
@@ -99,10 +99,55 @@ describe('public API', () => {
     expect(res.body.field).toBe('sku');
   });
 
+  it('rejects submit with multiple comma-separated SKUs', async () => {
+    const res = await request(app).post('/api/public/submit').send({
+      site_code: 'HA02',
+      sku: '123456789012 , 123456789011',
+      rp_type: 'ND',
+      nd_code: 'ND20-SO-Not displayed in small stores',
+    });
+    expect(res.status).toBe(400);
+    expect(res.body.field).toBe('sku');
+    expect(res.body.error).toContain('7 位或 12 位');
+  });
+
+  it('rejects submit with SKU of invalid length or characters', async () => {
+    for (const sku of ['123456', '1234567890', 'ABC1234567', '1234567890123']) {
+      const res = await request(app).post('/api/public/submit').send({
+        site_code: 'HA02',
+        sku,
+        rp_type: 'ND',
+        nd_code: 'ND20-SO-Not displayed in small stores',
+      });
+      expect(res.status).toBe(400);
+      expect(res.body.field).toBe('sku');
+    }
+  });
+
+  it('accepts submit with 7-digit and 12-digit SKUs', async () => {
+    const seven = await request(app).post('/api/public/submit').send({
+      site_code: 'HA06',
+      sku: '1008001',
+      rp_type: 'ND',
+      nd_code: 'ND20-SO-Not displayed in small stores',
+    });
+    expect(seven.status).toBe(201);
+    expect(seven.body.submission.sku).toBe('1008001');
+
+    const twelve = await request(app).post('/api/public/submit').send({
+      site_code: 'HA06',
+      sku: '110079623001',
+      rp_type: 'ND',
+      nd_code: 'ND20-SO-Not displayed in small stores',
+    });
+    expect(twelve.status).toBe(201);
+    expect(twelve.body.submission.sku).toBe('110079623001');
+  });
+
   it('rejects submit with missing RP Type', async () => {
     const res = await request(app).post('/api/public/submit').send({
       site_code: 'HA02',
-      sku: '110001',
+      sku: '1000001',
     });
     expect(res.status).toBe(400);
     expect(res.body.field).toBe('rp_type');
@@ -111,7 +156,7 @@ describe('public API', () => {
   it('rejects ND submit without ND Code', async () => {
     const res = await request(app).post('/api/public/submit').send({
       site_code: 'HA02',
-      sku: '110002',
+      sku: '1000002',
       rp_type: 'ND',
     });
     expect(res.status).toBe(400);
@@ -121,7 +166,7 @@ describe('public API', () => {
   it('rejects RF submit without Safety stock', async () => {
     const res = await request(app).post('/api/public/submit').send({
       site_code: 'HA02',
-      sku: '110003',
+      sku: '1000003',
       rp_type: 'RF',
     });
     expect(res.status).toBe(400);
@@ -132,7 +177,7 @@ describe('public API', () => {
     for (const safetyStock of ['0', '-5', 'abc']) {
       const res = await request(app).post('/api/public/submit').send({
         site_code: 'HA02',
-        sku: '110004',
+        sku: '1000004',
         rp_type: 'RF',
         safety_stock: safetyStock,
       });
@@ -144,7 +189,7 @@ describe('public API', () => {
   it('accepts RF submit with positive Safety stock for a non-listed store', async () => {
     const res = await request(app).post('/api/public/submit').send({
       site_code: 'HA02',
-      sku: '110005',
+      sku: '1000005',
       rp_type: 'RF',
       safety_stock: '3.5',
     });
@@ -154,7 +199,7 @@ describe('public API', () => {
   it('rejects RF submit for a listed store without Remark', async () => {
     const res = await request(app).post('/api/public/submit').send({
       site_code: 'HA19',
-      sku: '110006',
+      sku: '1000006',
       rp_type: 'RF',
       safety_stock: '5',
     });
@@ -165,7 +210,7 @@ describe('public API', () => {
   it('accepts RF submit for a listed store with Remark', async () => {
     const res = await request(app).post('/api/public/submit').send({
       site_code: 'HBA7',
-      sku: '110007',
+      sku: '1000007',
       rp_type: 'RF',
       safety_stock: '8',
       remark: '轉 RF 原因',
@@ -191,7 +236,7 @@ describe('public API', () => {
   it('queries a submission with application_no + site_code', async () => {
     const created = await request(app).post('/api/public/submit').send({
       site_code: 'HA06',
-      sku: '999001',
+      sku: '1000999',
       rp_type: 'ND',
       nd_code: 'ND20-SO-Not displayed in small stores',
       remark: 'test',
@@ -260,10 +305,10 @@ describe('admin API', () => {
     await adminLogin(agent);
 
     // Create two submissions to export
-    for (const site of ['HA02', 'HA06']) {
+    for (const [index, site] of ['HA02', 'HA06'].entries()) {
       await request(app).post('/api/public/submit').send({
         site_code: site,
-        sku: `EXP-${site}`,
+        sku: `100400${index + 1}`,
         rp_type: 'ND',
         nd_code: 'ND20-SO-Not displayed in small stores',
       });
@@ -345,8 +390,8 @@ describe('admin API', () => {
     const wb = new ExcelJS.Workbook();
     const ws = wb.addWorksheet(RP_TEAM_SHEET);
     ws.addRow([...TEMPLATE_COLUMNS]);
-    ws.addRow(['HA02', '110001', 'ND', '', 'ND20-SO-Not displayed in small stores', '']);
-    ws.addRow(['HA06', '110002', 'RF', '5', '', '']);
+    ws.addRow(['HA02', '1000001', 'ND', '', 'ND20-SO-Not displayed in small stores', '']);
+    ws.addRow(['HA06', '1000002', 'RF', '5', '', '']);
     const buffer = Buffer.from(await wb.xlsx.writeBuffer());
 
     const res = await agent
@@ -371,7 +416,7 @@ describe('admin API', () => {
     const wb = new ExcelJS.Workbook();
     const ws = wb.addWorksheet(RP_TEAM_SHEET);
     ws.addRow([...TEMPLATE_COLUMNS]);
-    ws.addRow(['ZZ99', '110003', '', '', '', '']);
+    ws.addRow(['ZZ99', '1000003', '', '', '', '']);
     const buffer = Buffer.from(await wb.xlsx.writeBuffer());
 
     const res = await agent
@@ -401,7 +446,7 @@ describe('urgent public API', () => {
   it('accepts a valid urgent submission', async () => {
     const res = await request(app).post('/api/public/urgent/submit').send({
       site_code: 'HA02',
-      sku: 'U-VALID-1',
+      sku: '1006029',
       qty: 10,
       urgent_reason: '1',
     });
@@ -417,7 +462,7 @@ describe('urgent public API', () => {
   it('accepts option 9 with other reason', async () => {
     const res = await request(app).post('/api/public/urgent/submit').send({
       site_code: 'HA02',
-      sku: 'U-OTHER-1',
+      sku: '1006026',
       qty: 5,
       urgent_reason: '9',
       urgent_reason_other: '臨時加單',
@@ -430,7 +475,7 @@ describe('urgent public API', () => {
   it('rejects urgent submit without reason', async () => {
     const res = await request(app).post('/api/public/urgent/submit').send({
       site_code: 'HA02',
-      sku: 'U-NOREASON',
+      sku: '1006025',
       qty: 5,
     });
     expect(res.status).toBe(400);
@@ -440,7 +485,7 @@ describe('urgent public API', () => {
   it('rejects urgent option 9 without other reason', async () => {
     const res = await request(app).post('/api/public/urgent/submit').send({
       site_code: 'HA02',
-      sku: 'U-NOOTHER',
+      sku: '1006024',
       qty: 5,
       urgent_reason: '9',
     });
@@ -451,7 +496,7 @@ describe('urgent public API', () => {
   it('rejects urgent non-9 with other reason', async () => {
     const res = await request(app).post('/api/public/urgent/submit').send({
       site_code: 'HA02',
-      sku: 'U-BADOTHER',
+      sku: '1006003',
       qty: 5,
       urgent_reason: '2',
       urgent_reason_other: '不應填寫',
@@ -463,7 +508,7 @@ describe('urgent public API', () => {
   it('rejects urgent qty 0', async () => {
     const res = await request(app).post('/api/public/urgent/submit').send({
       site_code: 'HA02',
-      sku: 'U-ZERO',
+      sku: '1006033',
       qty: 0,
       urgent_reason: '1',
     });
@@ -474,7 +519,7 @@ describe('urgent public API', () => {
   it('rejects urgent qty over 1000', async () => {
     const res = await request(app).post('/api/public/urgent/submit').send({
       site_code: 'HA02',
-      sku: 'U-OVER',
+      sku: '1006027',
       qty: 1001,
       urgent_reason: '1',
     });
@@ -485,7 +530,7 @@ describe('urgent public API', () => {
   it('rejects decimal urgent qty', async () => {
     const res = await request(app).post('/api/public/urgent/submit').send({
       site_code: 'HA02',
-      sku: 'U-DEC',
+      sku: '1006004',
       qty: 1.5,
       urgent_reason: '1',
     });
@@ -504,10 +549,21 @@ describe('urgent public API', () => {
     expect(res.body.field).toBe('sku');
   });
 
+  it('rejects urgent submit with an invalid SKU format', async () => {
+    const res = await request(app).post('/api/public/urgent/submit').send({
+      site_code: 'HA02',
+      sku: '123456789012 , 123456789011',
+      qty: 5,
+      urgent_reason: '1',
+    });
+    expect(res.status).toBe(400);
+    expect(res.body.field).toBe('sku');
+  });
+
   it('rejects urgent submit with unknown site code', async () => {
     const res = await request(app).post('/api/public/urgent/submit').send({
       site_code: 'ZZ99',
-      sku: 'U-BAD',
+      sku: '1006002',
       qty: 5,
       urgent_reason: '1',
     });
@@ -518,7 +574,7 @@ describe('urgent public API', () => {
   it('exposes urgent submissions to the public lookup', async () => {
     const created = await request(app).post('/api/public/urgent/submit').send({
       site_code: 'HA02',
-      sku: 'U-LOOKUP-1',
+      sku: '1006016',
       qty: 4,
       urgent_reason: '9',
       urgent_reason_other: 'roadshow 加單',
@@ -539,7 +595,7 @@ describe('urgent public API', () => {
   it('does not reveal urgent submissions to the public lookup without the matching site code', async () => {
     const created = await request(app).post('/api/public/urgent/submit').send({
       site_code: 'HA02',
-      sku: 'U-LOOKUP-WRONG-SITE',
+      sku: '1006017',
       qty: 4,
       urgent_reason: '1',
     });
@@ -551,7 +607,7 @@ describe('urgent public API', () => {
   it('modifies an urgent submission within the window', async () => {
     const created = await request(app).post('/api/public/urgent/submit').send({
       site_code: 'HA02',
-      sku: 'U-MODIFY-1',
+      sku: '1006018',
       qty: 4,
       urgent_reason: '1',
     });
@@ -559,13 +615,13 @@ describe('urgent public API', () => {
     const res = await request(app).post('/api/public/modify').send({
       application_no: no,
       site_code: 'HA02',
-      sku: 'U-MODIFY-2',
+      sku: '1006019',
       qty: 7,
       urgent_reason: '9',
       urgent_reason_other: '改單加量',
     });
     expect(res.status).toBe(200);
-    expect(res.body.submission.sku).toBe('U-MODIFY-2');
+    expect(res.body.submission.sku).toBe('1006019');
     expect(res.body.submission.qty).toBe(7);
     expect(res.body.submission.urgent_reason).toBe('9');
     expect(res.body.submission.urgent_reason_other).toBe('改單加量');
@@ -578,7 +634,7 @@ describe('urgent public API', () => {
   it('rejects public modify of an urgent submission when the window is closed', async () => {
     const created = await request(app).post('/api/public/urgent/submit').send({
       site_code: 'HA02',
-      sku: 'U-MODIFY-CLOSED',
+      sku: '1006022',
       qty: 4,
       urgent_reason: '1',
     });
@@ -587,7 +643,7 @@ describe('urgent public API', () => {
     const res = await request(app).post('/api/public/modify').send({
       application_no: no,
       site_code: 'HA02',
-      sku: 'U-MODIFY-CLOSED',
+      sku: '1006022',
       qty: 5,
       urgent_reason: '1',
     });
@@ -599,7 +655,7 @@ describe('urgent public API', () => {
   it('still allows querying an urgent submission when the window is closed', async () => {
     const created = await request(app).post('/api/public/urgent/submit').send({
       site_code: 'HA02',
-      sku: 'U-QUERY-CLOSED',
+      sku: '1006028',
       qty: 4,
       urgent_reason: '1',
     });
@@ -614,7 +670,7 @@ describe('urgent public API', () => {
   it('rejects urgent modify with invalid qty', async () => {
     const created = await request(app).post('/api/public/urgent/submit').send({
       site_code: 'HA02',
-      sku: 'U-MODIFY-BAD-QTY',
+      sku: '1006020',
       qty: 4,
       urgent_reason: '1',
     });
@@ -622,7 +678,7 @@ describe('urgent public API', () => {
     const res = await request(app).post('/api/public/modify').send({
       application_no: no,
       site_code: 'HA02',
-      sku: 'U-MODIFY-BAD-QTY',
+      sku: '1006020',
       qty: 1001,
       urgent_reason: '1',
     });
@@ -633,7 +689,7 @@ describe('urgent public API', () => {
   it('rejects urgent modify with reason 9 and no other reason', async () => {
     const created = await request(app).post('/api/public/urgent/submit').send({
       site_code: 'HA02',
-      sku: 'U-MODIFY-BAD-REASON',
+      sku: '1006021',
       qty: 4,
       urgent_reason: '1',
     });
@@ -641,7 +697,7 @@ describe('urgent public API', () => {
     const res = await request(app).post('/api/public/modify').send({
       application_no: no,
       site_code: 'HA02',
-      sku: 'U-MODIFY-BAD-REASON',
+      sku: '1006021',
       qty: 5,
       urgent_reason: '9',
     });
@@ -652,13 +708,13 @@ describe('urgent public API', () => {
   it('rejects urgent modify to a SKU already submitted today by the same site', async () => {
     await request(app).post('/api/public/urgent/submit').send({
       site_code: 'HA02',
-      sku: 'U-DUP-TARGET',
+      sku: '1006006',
       qty: 2,
       urgent_reason: '1',
     });
     const created = await request(app).post('/api/public/urgent/submit').send({
       site_code: 'HA02',
-      sku: 'U-DUP-SOURCE',
+      sku: '1006005',
       qty: 3,
       urgent_reason: '2',
     });
@@ -666,7 +722,7 @@ describe('urgent public API', () => {
     const res = await request(app).post('/api/public/modify').send({
       application_no: no,
       site_code: 'HA02',
-      sku: 'U-DUP-TARGET',
+      sku: '1006006',
       qty: 3,
       urgent_reason: '2',
     });
@@ -677,7 +733,7 @@ describe('urgent public API', () => {
   it('rejects urgent modify after the submission is locked', async () => {
     const created = await request(app).post('/api/public/urgent/submit').send({
       site_code: 'HA02',
-      sku: 'U-MODIFY-LOCKED',
+      sku: '1006023',
       qty: 4,
       urgent_reason: '1',
     });
@@ -686,7 +742,7 @@ describe('urgent public API', () => {
     const res = await request(app).post('/api/public/modify').send({
       application_no: no,
       site_code: 'HA02',
-      sku: 'U-MODIFY-LOCKED',
+      sku: '1006023',
       qty: 5,
       urgent_reason: '1',
     });
@@ -705,8 +761,8 @@ describe('urgent public API', () => {
     const wb = new ExcelJS.Workbook();
     const ws = wb.addWorksheet(URGENT_SHEET);
     ws.addRow([...URGENT_COLUMNS]);
-    ws.addRow(['HA02', 'U-IMP-1', 2, '1', '']);
-    ws.addRow(['HA06', 'U-IMP-2', 999, '9', 'roadshow 加單']);
+    ws.addRow(['HA02', '1006011', 2, '1', '']);
+    ws.addRow(['HA06', '1006012', 999, '9', 'roadshow 加單']);
     const buffer = Buffer.from(await wb.xlsx.writeBuffer());
 
     const res = await request(app)
@@ -729,7 +785,7 @@ describe('urgent public API', () => {
             row: 2,
             application_no: 'URGENT-00000000-00000000',
             site_code: 'HA02',
-            sku: 'U-IMP-1',
+            sku: '1006011',
             qty: 2,
             urgent_reason: '1',
             urgent_reason_other: '',
@@ -739,7 +795,7 @@ describe('urgent public API', () => {
             row: 3,
             application_no: 'URGENT-00000000-00000001',
             site_code: 'HA06',
-            sku: 'U-IMP-2',
+            sku: '1006012',
             qty: 999,
             urgent_reason: '9',
             urgent_reason_other: 'roadshow 加單',
@@ -762,7 +818,7 @@ describe('urgent public API', () => {
     const wb = new ExcelJS.Workbook();
     const ws = wb.addWorksheet(URGENT_SHEET);
     ws.addRow([...URGENT_COLUMNS]);
-    ws.addRow(['HA02', 'U-IMP-LABEL', 3, '1. 客人訂購 (RP Team定期隨機抽查核實)', '']);
+    ws.addRow(['HA02', '1006114', 3, '1. 客人訂購 (RP Team定期隨機抽查核實)', '']);
     const buffer = Buffer.from(await wb.xlsx.writeBuffer());
 
     const res = await request(app)
@@ -778,7 +834,7 @@ describe('urgent public API', () => {
     const wb = new ExcelJS.Workbook();
     const ws = wb.addWorksheet(URGENT_SHEET);
     ws.addRow([...URGENT_COLUMNS]);
-    ws.addRow(['HA02', 'U-BADQTY', 1001, '1', '']);
+    ws.addRow(['HA02', '1006115', 1001, '1', '']);
     const buffer = Buffer.from(await wb.xlsx.writeBuffer());
 
     const res = await request(app)
@@ -796,7 +852,7 @@ describe('urgent public API', () => {
     const wb = new ExcelJS.Workbook();
     const ws = wb.addWorksheet(URGENT_SHEET);
     ws.addRow([...URGENT_COLUMNS]);
-    ws.addRow(['HA02', 'U-BADREASON', 5, '', '']);
+    ws.addRow(['HA02', '1006116', 5, '', '']);
     const buffer = Buffer.from(await wb.xlsx.writeBuffer());
 
     const res = await request(app)
@@ -811,7 +867,7 @@ describe('urgent public API', () => {
   it('rejects an urgent import using the wrong sheet', async () => {
     const wb = new ExcelJS.Workbook();
     const ws = wb.addWorksheet(RP_TEAM_SHEET);
-    ws.addRow(['HA02', 'U-WRONG', 5]);
+    ws.addRow(['HA02', '1006117', 5]);
     const buffer = Buffer.from(await wb.xlsx.writeBuffer());
 
     const res = await request(app)
@@ -831,7 +887,7 @@ describe('urgent admin API', () => {
   }
 
   it('filters submissions by submission_type=urgent', async () => {
-    await request(app).post('/api/public/urgent/submit').send({ site_code: 'HA02', sku: 'U-FILTER-1', qty: 5, urgent_reason: '1' });
+    await request(app).post('/api/public/urgent/submit').send({ site_code: 'HA02', sku: '1006010', qty: 5, urgent_reason: '1' });
     const { agent } = await urgentAdminAgent();
     const res = await agent.get('/api/admin/submissions?submission_type=urgent&page=1');
     expect(res.status).toBe(200);
@@ -842,7 +898,7 @@ describe('urgent admin API', () => {
   it('admin edits urgent sku/qty/reason and rejects out-of-range qty', async () => {
     const created = await request(app).post('/api/public/urgent/submit').send({
       site_code: 'HA02',
-      sku: 'U-EDIT-1',
+      sku: '1006007',
       qty: 7,
       urgent_reason: '1',
     });
@@ -854,22 +910,22 @@ describe('urgent admin API', () => {
     const res = await agent
       .put(`/api/admin/submissions/${id}`)
       .set('x-csrf-token', token)
-      .send({ sku: 'U-EDIT-2', qty: 12, urgent_reason: '2' });
+      .send({ sku: '1006008', qty: 12, urgent_reason: '2' });
     expect(res.status).toBe(200);
-    expect(res.body.submission.sku).toBe('U-EDIT-2');
+    expect(res.body.submission.sku).toBe('1006008');
     expect(res.body.submission.qty).toBe(12);
     expect(res.body.submission.urgent_reason).toBe('2');
 
     const bad = await agent
       .put(`/api/admin/submissions/${id}`)
       .set('x-csrf-token', token)
-      .send({ sku: 'U-EDIT-2', qty: 1001, urgent_reason: '2' });
+      .send({ sku: '1006008', qty: 1001, urgent_reason: '2' });
     expect(bad.status).toBe(400);
 
     const noReason = await agent
       .put(`/api/admin/submissions/${id}`)
       .set('x-csrf-token', token)
-      .send({ sku: 'U-EDIT-2', qty: 12, urgent_reason: '' });
+      .send({ sku: '1006008', qty: 12, urgent_reason: '' });
     expect(noReason.status).toBe(400);
     expect(noReason.body.field).toBe('urgent_reason');
   });
@@ -877,7 +933,7 @@ describe('urgent admin API', () => {
   it('admin can complete a reason on a legacy blank urgent row', async () => {
     const created = await request(app).post('/api/public/urgent/submit').send({
       site_code: 'HA02',
-      sku: 'U-LEGACY-1',
+      sku: '1006015',
       qty: 6,
       urgent_reason: '1',
     });
@@ -893,14 +949,14 @@ describe('urgent admin API', () => {
     const res = await agent
       .put(`/api/admin/submissions/${id}`)
       .set('x-csrf-token', token)
-      .send({ sku: 'U-LEGACY-1', qty: 6, urgent_reason: '9', urgent_reason_other: '補回原因' });
+      .send({ sku: '1006015', qty: 6, urgent_reason: '9', urgent_reason_other: '補回原因' });
     expect(res.status).toBe(200);
     expect(res.body.submission.urgent_reason).toBe('9');
     expect(res.body.submission.urgent_reason_other).toBe('補回原因');
   });
 
   it('urgent export locks urgent only; SAP export excludes urgent', async () => {
-    await request(app).post('/api/public/urgent/submit').send({ site_code: 'HA06', sku: 'U-EXP-1', qty: 3, urgent_reason: '1' });
+    await request(app).post('/api/public/urgent/submit').send({ site_code: 'HA06', sku: '1006009', qty: 3, urgent_reason: '1' });
     const { agent, token } = await urgentAdminAgent();
 
     const sap = await agent
@@ -929,12 +985,12 @@ describe('sales public API', () => {
   it('accepts a valid sales submission with SALES prefix', async () => {
     const res = await request(app).post('/api/public/sales/submit').send({
       site_code: 'HA02',
-      sku: 'S-VALID-1',
+      sku: '1005024',
     });
     expect(res.status).toBe(201);
     expect(res.body.submission.application_no).toMatch(/^SALES-[A-Z2-9]{8}-[A-Z2-9]{8}$/);
     expect(res.body.submission.submission_type).toBe('sales');
-    expect(res.body.submission.sku).toBe('S-VALID-1');
+    expect(res.body.submission.sku).toBe('1005024');
     expect(res.body.submission.qty).toBeNull();
     expect(res.body.submission.locked).toBe(false);
   });
@@ -942,7 +998,7 @@ describe('sales public API', () => {
   it('rejects sales submit with unknown site code', async () => {
     const res = await request(app).post('/api/public/sales/submit').send({
       site_code: 'ZZ99',
-      sku: 'S-BAD',
+      sku: '1005010',
     });
     expect(res.status).toBe(400);
     expect(res.body.field).toBe('site_code');
@@ -957,11 +1013,20 @@ describe('sales public API', () => {
     expect(res.body.field).toBe('sku');
   });
 
+  it('rejects sales submit with an invalid SKU format', async () => {
+    const res = await request(app).post('/api/public/sales/submit').send({
+      site_code: 'HA02',
+      sku: '12,34',
+    });
+    expect(res.status).toBe(400);
+    expect(res.body.field).toBe('sku');
+  });
+
   it('accepts sales submissions after the urgent 14:30 cutoff (no time limit)', async () => {
     timeSpy.mockReturnValue(23 * 60 + 59);
     const res = await request(app).post('/api/public/sales/submit').send({
       site_code: 'HA02',
-      sku: 'S-NOLIMIT-1',
+      sku: '1005023',
     });
     expect(res.status).toBe(201);
     timeSpy.mockReturnValue(9 * 60);
@@ -970,13 +1035,13 @@ describe('sales public API', () => {
   it('exposes sales submissions to the public lookup', async () => {
     const created = await request(app).post('/api/public/sales/submit').send({
       site_code: 'HA02',
-      sku: 'S-LOOKUP-1',
+      sku: '1005017',
     });
     const no = created.body.submission.application_no;
     const res = await request(app).get(`/api/public/query?application_no=${no}&site_code=HA02`);
     expect(res.status).toBe(200);
     expect(res.body.submission.submission_type).toBe('sales');
-    expect(res.body.submission.sku).toBe('S-LOOKUP-1');
+    expect(res.body.submission.sku).toBe('1005017');
     expect(res.body.submission.requested_by_email).toBe('ha02@sasa.com');
     expect(res.body.versions).toHaveLength(1);
   });
@@ -984,32 +1049,32 @@ describe('sales public API', () => {
   it('modifies a sales submission sku and records a version', async () => {
     const created = await request(app).post('/api/public/sales/submit').send({
       site_code: 'HA02',
-      sku: 'S-MODIFY-1',
+      sku: '1005018',
     });
     const no = created.body.submission.application_no;
     const res = await request(app).post('/api/public/modify').send({
       application_no: no,
       site_code: 'HA02',
-      sku: 'S-MODIFY-2',
+      sku: '1005019',
     });
     expect(res.status).toBe(200);
-    expect(res.body.submission.sku).toBe('S-MODIFY-2');
+    expect(res.body.submission.sku).toBe('1005019');
     const queried = await request(app).get(`/api/public/query?application_no=${no}&site_code=HA02`);
-    expect(queried.body.submission.sku).toBe('S-MODIFY-2');
+    expect(queried.body.submission.sku).toBe('1005019');
     expect(queried.body.versions).toHaveLength(2);
   });
 
   it('rejects sales modify after the submission is locked', async () => {
     const created = await request(app).post('/api/public/sales/submit').send({
       site_code: 'HA02',
-      sku: 'S-LOCKED-1',
+      sku: '1005015',
     });
     const no = created.body.submission.application_no;
     await db.query('UPDATE submissions SET locked_at = now(), exported_at = now() WHERE application_no = $1', [no]);
     const res = await request(app).post('/api/public/modify').send({
       application_no: no,
       site_code: 'HA02',
-      sku: 'S-LOCKED-2',
+      sku: '1005016',
     });
     expect(res.status).toBe(409);
     expect(res.body.error).toContain('鎖定');
@@ -1026,8 +1091,8 @@ describe('sales public API', () => {
     const wb = new ExcelJS.Workbook();
     const ws = wb.addWorksheet(SALES_SHEET);
     ws.addRow([...SALES_COLUMNS]);
-    ws.addRow(['HA02', 'S-IMP-1']);
-    ws.addRow(['HA06', 'S-IMP-2']);
+    ws.addRow(['HA02', '1005013']);
+    ws.addRow(['HA06', '1007006']);
     const buffer = Buffer.from(await wb.xlsx.writeBuffer());
 
     const res = await request(app)
@@ -1049,7 +1114,7 @@ describe('sales public API', () => {
             row: 2,
             application_no: 'SALES-00000000-00000000',
             site_code: 'HA02',
-            sku: 'S-IMP-1',
+            sku: '1005013',
             submitted_at: '2026-08-03 09:00:00',
           },
         ],
@@ -1063,7 +1128,7 @@ describe('sales public API', () => {
   it('rejects a sales import using the wrong sheet', async () => {
     const wb = new ExcelJS.Workbook();
     const ws = wb.addWorksheet(RP_TEAM_SHEET);
-    ws.addRow(['HA02', 'S-WRONG']);
+    ws.addRow(['HA02', '1007005']);
     const buffer = Buffer.from(await wb.xlsx.writeBuffer());
 
     const res = await request(app)
@@ -1079,7 +1144,7 @@ describe('sales public API', () => {
     const wb = new ExcelJS.Workbook();
     const ws = wb.addWorksheet(SALES_SHEET);
     ws.addRow([...SALES_COLUMNS]);
-    ws.addRow(['ZZ99', 'S-BAD']);
+    ws.addRow(['ZZ99', '1005010']);
     const buffer = Buffer.from(await wb.xlsx.writeBuffer());
 
     const res = await request(app)
@@ -1096,7 +1161,7 @@ describe('sales admin API', () => {
   it('filters submissions by submission_type=sales and edits sku', async () => {
     const created = await request(app).post('/api/public/sales/submit').send({
       site_code: 'HA02',
-      sku: 'S-ADM-1',
+      sku: '1005008',
     });
     const no = created.body.submission.application_no;
     const idRes = await db.query<{ id: string }>('SELECT id FROM submissions WHERE application_no = $1', [no]);
@@ -1113,9 +1178,9 @@ describe('sales admin API', () => {
     const res = await agent
       .put(`/api/admin/submissions/${id}`)
       .set('x-csrf-token', token)
-      .send({ sku: 'S-ADM-2' });
+      .send({ sku: '1005009' });
     expect(res.status).toBe(200);
-    expect(res.body.submission.sku).toBe('S-ADM-2');
+    expect(res.body.submission.sku).toBe('1005009');
 
     const missing = await agent
       .put(`/api/admin/submissions/${id}`)
@@ -1126,10 +1191,10 @@ describe('sales admin API', () => {
   });
 
   it('sales export locks sales only; SAP export excludes sales', async () => {
-    await request(app).post('/api/public/sales/submit').send({ site_code: 'HA06', sku: 'S-EXP-1' });
+    await request(app).post('/api/public/sales/submit').send({ site_code: 'HA06', sku: '1005011' });
     await request(app).post('/api/public/submit').send({
       site_code: 'HA02',
-      sku: 'S-EXP-NORMAL',
+      sku: '1005012',
       rp_type: 'ND',
       nd_code: 'ND20-SO-Not displayed in small stores',
     });
@@ -1163,64 +1228,64 @@ describe('daily duplicate rule', () => {
   const ND = { rp_type: 'ND', nd_code: 'ND20-SO-Not displayed in small stores' };
 
   it('blocks a second normal submission for the same site+sku on the same day', async () => {
-    const first = await request(app).post('/api/public/submit').send({ site_code: 'HA02', sku: 'DUP-001', ...ND });
+    const first = await request(app).post('/api/public/submit').send({ site_code: 'HA02', sku: '1003001', ...ND });
     expect(first.status).toBe(201);
-    const dup = await request(app).post('/api/public/submit').send({ site_code: 'HA02', sku: 'DUP-001', ...ND });
+    const dup = await request(app).post('/api/public/submit').send({ site_code: 'HA02', sku: '1003001', ...ND });
     expect(dup.status).toBe(409);
     expect(dup.body.field).toBe('sku');
   });
 
   it('allows the same sku on a different site code', async () => {
-    const res = await request(app).post('/api/public/submit').send({ site_code: 'HA06', sku: 'DUP-001', ...ND });
+    const res = await request(app).post('/api/public/submit').send({ site_code: 'HA06', sku: '1003001', ...ND });
     expect(res.status).toBe(201);
   });
 
   it('allows the same site+sku once for normal and once for urgent, but not urgent twice', async () => {
-    const urgent = await request(app).post('/api/public/urgent/submit').send({ site_code: 'HA02', sku: 'DUP-001', qty: 5, urgent_reason: '1' });
+    const urgent = await request(app).post('/api/public/urgent/submit').send({ site_code: 'HA02', sku: '1003001', qty: 5, urgent_reason: '1' });
     expect(urgent.status).toBe(201);
-    const urgentDup = await request(app).post('/api/public/urgent/submit').send({ site_code: 'HA02', sku: 'DUP-001', qty: 6, urgent_reason: '2' });
+    const urgentDup = await request(app).post('/api/public/urgent/submit').send({ site_code: 'HA02', sku: '1003001', qty: 6, urgent_reason: '2' });
     expect(urgentDup.status).toBe(409);
     expect(urgentDup.body.field).toBe('sku');
   });
 
   it('allows the same site+sku for sales alongside normal and urgent, but not sales twice', async () => {
-    const normal = await request(app).post('/api/public/submit').send({ site_code: 'HA06', sku: 'DUP-S-1', ...ND });
+    const normal = await request(app).post('/api/public/submit').send({ site_code: 'HA06', sku: '1003009', ...ND });
     expect(normal.status).toBe(201);
-    const urgent = await request(app).post('/api/public/urgent/submit').send({ site_code: 'HA06', sku: 'DUP-S-1', qty: 5, urgent_reason: '1' });
+    const urgent = await request(app).post('/api/public/urgent/submit').send({ site_code: 'HA06', sku: '1003009', qty: 5, urgent_reason: '1' });
     expect(urgent.status).toBe(201);
-    const sales = await request(app).post('/api/public/sales/submit').send({ site_code: 'HA06', sku: 'DUP-S-1' });
+    const sales = await request(app).post('/api/public/sales/submit').send({ site_code: 'HA06', sku: '1003009' });
     expect(sales.status).toBe(201);
-    const salesDup = await request(app).post('/api/public/sales/submit').send({ site_code: 'HA06', sku: 'DUP-S-1' });
+    const salesDup = await request(app).post('/api/public/sales/submit').send({ site_code: 'HA06', sku: '1003009' });
     expect(salesDup.status).toBe(409);
     expect(salesDup.body.field).toBe('sku');
   });
 
   it('blocks sales modify changing sku to one already submitted today, allows a new sku', async () => {
-    const a = await request(app).post('/api/public/sales/submit').send({ site_code: 'HA02', sku: 'DUP-SM-1' });
-    await request(app).post('/api/public/sales/submit').send({ site_code: 'HA02', sku: 'DUP-SM-2' });
+    const a = await request(app).post('/api/public/sales/submit').send({ site_code: 'HA02', sku: '1003011' });
+    await request(app).post('/api/public/sales/submit').send({ site_code: 'HA02', sku: '1003012' });
     const no = a.body.submission.application_no;
 
     const blocked = await request(app)
       .post('/api/public/modify')
-      .send({ application_no: no, site_code: 'HA02', sku: 'DUP-SM-2' });
+      .send({ application_no: no, site_code: 'HA02', sku: '1003012' });
     expect(blocked.status).toBe(409);
     expect(blocked.body.field).toBe('sku');
 
     const ok = await request(app)
       .post('/api/public/modify')
-      .send({ application_no: no, site_code: 'HA02', sku: 'DUP-SM-3' });
+      .send({ application_no: no, site_code: 'HA02', sku: '1003013' });
     expect(ok.status).toBe(200);
-    expect(ok.body.submission.sku).toBe('DUP-SM-3');
+    expect(ok.body.submission.sku).toBe('1003013');
   });
 
   it('rejects a sales import row duplicating an existing today sales submission without writing', async () => {
-    await request(app).post('/api/public/sales/submit').send({ site_code: 'HA02', sku: 'DUP-SI-1' });
+    await request(app).post('/api/public/sales/submit').send({ site_code: 'HA02', sku: '1003010' });
     const beforeTotal = await countSubmissions(`WHERE submission_type = 'sales'`);
 
     const wb = new ExcelJS.Workbook();
     const ws = wb.addWorksheet(SALES_SHEET);
     ws.addRow([...SALES_COLUMNS]);
-    ws.addRow(['HA02', 'DUP-SI-1']);
+    ws.addRow(['HA02', '1003010']);
     const buffer = Buffer.from(await wb.xlsx.writeBuffer());
 
     const res = await request(app).post('/api/public/sales/import').attach('file', buffer, 'sales-dup.xlsx');
@@ -1231,30 +1296,30 @@ describe('daily duplicate rule', () => {
   });
 
   it('blocks modify changing sku to one already submitted today, allows a new sku', async () => {
-    const a = await request(app).post('/api/public/submit').send({ site_code: 'HA02', sku: 'DUP-MOD-1', ...ND });
-    await request(app).post('/api/public/submit').send({ site_code: 'HA02', sku: 'DUP-MOD-2', ...ND });
+    const a = await request(app).post('/api/public/submit').send({ site_code: 'HA02', sku: '1003005', ...ND });
+    await request(app).post('/api/public/submit').send({ site_code: 'HA02', sku: '1003006', ...ND });
     const no = a.body.submission.application_no;
 
     const blocked = await request(app)
       .post('/api/public/modify')
-      .send({ application_no: no, site_code: 'HA02', sku: 'DUP-MOD-2', ...ND });
+      .send({ application_no: no, site_code: 'HA02', sku: '1003006', ...ND });
     expect(blocked.status).toBe(409);
 
     const ok = await request(app)
       .post('/api/public/modify')
-      .send({ application_no: no, site_code: 'HA02', sku: 'DUP-MOD-3', ...ND });
+      .send({ application_no: no, site_code: 'HA02', sku: '1003007', ...ND });
     expect(ok.status).toBe(200);
-    expect(ok.body.submission.sku).toBe('DUP-MOD-3');
+    expect(ok.body.submission.sku).toBe('1003007');
   });
 
   it('rejects a public import row duplicating an existing today submission without writing', async () => {
-    await request(app).post('/api/public/submit').send({ site_code: 'HA02', sku: 'DUP-IMP-1', ...ND });
+    await request(app).post('/api/public/submit').send({ site_code: 'HA02', sku: '1003004', ...ND });
     const beforeTotal = await countSubmissions();
 
     const wb = new ExcelJS.Workbook();
     const ws = wb.addWorksheet(RP_TEAM_SHEET);
     ws.addRow([...TEMPLATE_COLUMNS]);
-    ws.addRow(['HA02', 'DUP-IMP-1', 'ND', '', 'ND20-SO-Not displayed in small stores', '']);
+    ws.addRow(['HA02', '1003004', 'ND', '', 'ND20-SO-Not displayed in small stores', '']);
     const buffer = Buffer.from(await wb.xlsx.writeBuffer());
 
     const res = await request(app).post('/api/public/import').attach('file', buffer, 'dup-import.xlsx');
@@ -1270,8 +1335,8 @@ describe('daily duplicate rule', () => {
     const wb = new ExcelJS.Workbook();
     const ws = wb.addWorksheet(RP_TEAM_SHEET);
     ws.addRow([...TEMPLATE_COLUMNS]);
-    ws.addRow(['HA02', 'DUP-IMP-2', 'ND', '', 'ND20-SO-Not displayed in small stores', '']);
-    ws.addRow(['HA02', 'DUP-IMP-2', 'ND', '', 'ND20-SO-Not displayed in small stores', '']);
+    ws.addRow(['HA02', '1003014', 'ND', '', 'ND20-SO-Not displayed in small stores', '']);
+    ws.addRow(['HA02', '1003014', 'ND', '', 'ND20-SO-Not displayed in small stores', '']);
     const buffer = Buffer.from(await wb.xlsx.writeBuffer());
 
     const res = await request(app).post('/api/public/import').attach('file', buffer, 'dup-inline.xlsx');
@@ -1289,8 +1354,8 @@ describe('daily duplicate rule', () => {
     const wb = new ExcelJS.Workbook();
     const ws = wb.addWorksheet(RP_TEAM_SHEET);
     ws.addRow([...TEMPLATE_COLUMNS]);
-    ws.addRow(['HA02', 'DUP-001', 'ND', '', 'ND20-SO-Not displayed in small stores', '']);
-    ws.addRow(['HA02', 'DUP-001', 'ND', '', 'ND20-SO-Not displayed in small stores', '']);
+    ws.addRow(['HA02', '1003001', 'ND', '', 'ND20-SO-Not displayed in small stores', '']);
+    ws.addRow(['HA02', '1003001', 'ND', '', 'ND20-SO-Not displayed in small stores', '']);
     const buffer = Buffer.from(await wb.xlsx.writeBuffer());
 
     const res = await agent
@@ -1302,8 +1367,8 @@ describe('daily duplicate rule', () => {
   });
 
   it('allows admin edit to change sku to a duplicate combination (exempt)', async () => {
-    const a = await request(app).post('/api/public/submit').send({ site_code: 'HA02', sku: 'DUP-ADM-1', ...ND });
-    await request(app).post('/api/public/submit').send({ site_code: 'HA02', sku: 'DUP-ADM-2', ...ND });
+    const a = await request(app).post('/api/public/submit').send({ site_code: 'HA02', sku: '1003002', ...ND });
+    await request(app).post('/api/public/submit').send({ site_code: 'HA02', sku: '1003003', ...ND });
     const no = a.body.submission.application_no;
     const idRes = await db.query<{ id: string }>('SELECT id FROM submissions WHERE application_no = $1', [no]);
     const id = idRes.rows[0]!.id;
@@ -1314,18 +1379,18 @@ describe('daily duplicate rule', () => {
     const res = await agent
       .put(`/api/admin/submissions/${id}`)
       .set('x-csrf-token', token)
-      .send({ sku: 'DUP-ADM-2', ...ND });
+      .send({ sku: '1003003', ...ND });
     expect(res.status).toBe(200);
-    expect(res.body.submission.sku).toBe('DUP-ADM-2');
+    expect(res.body.submission.sku).toBe('1003003');
   });
 
   it('allows re-submission on the next day', async () => {
-    await request(app).post('/api/public/submit').send({ site_code: 'HA02', sku: 'DUP-NEXT-1', ...ND });
+    await request(app).post('/api/public/submit').send({ site_code: 'HA02', sku: '1003008', ...ND });
     await db.query(
       `UPDATE submissions SET application_date = application_date - 1
-       WHERE site_code = 'HA02' AND sku = 'DUP-NEXT-1' AND submission_type = 'normal'`,
+       WHERE site_code = 'HA02' AND sku = '1003008' AND submission_type = 'normal'`,
     );
-    const res = await request(app).post('/api/public/submit').send({ site_code: 'HA02', sku: 'DUP-NEXT-1', ...ND });
+    const res = await request(app).post('/api/public/submit').send({ site_code: 'HA02', sku: '1003008', ...ND });
     expect(res.status).toBe(201);
   });
 });
@@ -1342,7 +1407,7 @@ describe('urgent submission window (14:30 cutoff)', () => {
     timeSpy.mockReturnValue(14 * 60 + 29);
     const res = await request(app).post('/api/public/urgent/submit').send({
       site_code: 'HA02',
-      sku: 'U-WINDOW-OPEN',
+      sku: '1006032',
       qty: 5,
       urgent_reason: '1',
     });
@@ -1353,7 +1418,7 @@ describe('urgent submission window (14:30 cutoff)', () => {
     timeSpy.mockReturnValue(14 * 60 + 30);
     const res = await request(app).post('/api/public/urgent/submit').send({
       site_code: 'HA02',
-      sku: 'U-WINDOW-CLOSED',
+      sku: '1006030',
       qty: 5,
       urgent_reason: '1',
     });
@@ -1366,7 +1431,7 @@ describe('urgent submission window (14:30 cutoff)', () => {
     timeSpy.mockReturnValue(23 * 60 + 59);
     const closed = await request(app).post('/api/public/urgent/submit').send({
       site_code: 'HA02',
-      sku: 'U-WINDOW-EOD',
+      sku: '1006031',
       qty: 5,
       urgent_reason: '1',
     });
@@ -1375,7 +1440,7 @@ describe('urgent submission window (14:30 cutoff)', () => {
     timeSpy.mockReturnValue(0);
     const reopened = await request(app).post('/api/public/urgent/submit').send({
       site_code: 'HA02',
-      sku: 'U-WINDOW-EOD',
+      sku: '1006031',
       qty: 5,
       urgent_reason: '1',
     });
@@ -1388,7 +1453,7 @@ describe('urgent submission window (14:30 cutoff)', () => {
     const wb = new ExcelJS.Workbook();
     const ws = wb.addWorksheet(URGENT_SHEET);
     ws.addRow([...URGENT_COLUMNS]);
-    ws.addRow(['HA02', 'U-WINDOW-IMP', 2, '1', '']);
+    ws.addRow(['HA02', '1006118', 2, '1', '']);
     const buffer = Buffer.from(await wb.xlsx.writeBuffer());
 
     timeSpy.mockReturnValue(14 * 60 + 30);
@@ -1405,7 +1470,7 @@ describe('urgent submission window (14:30 cutoff)', () => {
     timeSpy.mockReturnValue(23 * 60 + 59);
     const res = await request(app).post('/api/public/submit').send({
       site_code: 'HA02',
-      sku: '110011',
+      sku: '1000011',
       ...ND,
     });
     expect(res.status).toBe(201);
@@ -1422,5 +1487,97 @@ describe('urgent submission window (14:30 cutoff)', () => {
     timeSpy.mockReturnValue(10 * 60);
     const open = await request(app).get('/api/public/urgent/window');
     expect(open.body.open).toBe(true);
+  });
+});
+
+describe('SKU format validation', () => {
+  it('rejects a public normal import with a multi-SKU cell without writing anything', async () => {
+    const beforeTotal = await countSubmissions();
+
+    const wb = new ExcelJS.Workbook();
+    const ws = wb.addWorksheet(RP_TEAM_SHEET);
+    ws.addRow([...TEMPLATE_COLUMNS]);
+    ws.addRow(['HA02', '123456789012 , 123456789011', 'ND', '', 'ND20-SO-Not displayed in small stores', '']);
+    const buffer = Buffer.from(await wb.xlsx.writeBuffer());
+
+    const res = await request(app).post('/api/public/import').attach('file', buffer, 'multi-sku.xlsx');
+    expect(res.status).toBe(400);
+    expect(res.body.errors?.some((e: { field: string }) => e.field === 'SKU')).toBe(true);
+
+    expect(await countSubmissions()).toBe(beforeTotal);
+  });
+
+  it('rejects a public urgent import with a multi-SKU cell without writing anything', async () => {
+    const beforeTotal = await countSubmissions();
+
+    const wb = new ExcelJS.Workbook();
+    const ws = wb.addWorksheet(URGENT_SHEET);
+    ws.addRow([...URGENT_COLUMNS]);
+    ws.addRow(['HA02', '123456789012,123456789011', 2, '1', '']);
+    const buffer = Buffer.from(await wb.xlsx.writeBuffer());
+
+    const res = await request(app).post('/api/public/urgent/import').attach('file', buffer, 'urgent-multi-sku.xlsx');
+    expect(res.status).toBe(400);
+    expect(res.body.errors?.some((e: { field: string }) => e.field === 'SKU')).toBe(true);
+
+    expect(await countSubmissions()).toBe(beforeTotal);
+  });
+
+  it('rejects a public sales import with a multi-SKU cell without writing anything', async () => {
+    const beforeTotal = await countSubmissions();
+
+    const wb = new ExcelJS.Workbook();
+    const ws = wb.addWorksheet(SALES_SHEET);
+    ws.addRow([...SALES_COLUMNS]);
+    ws.addRow(['HA02', '123456789012 123456789011']);
+    const buffer = Buffer.from(await wb.xlsx.writeBuffer());
+
+    const res = await request(app).post('/api/public/sales/import').attach('file', buffer, 'sales-multi-sku.xlsx');
+    expect(res.status).toBe(400);
+    expect(res.body.errors?.some((e: { field: string }) => e.field === 'SKU')).toBe(true);
+
+    expect(await countSubmissions()).toBe(beforeTotal);
+  });
+
+  it('allows admin import of rows with non-conforming SKUs (exempt)', async () => {
+    const agent = request.agent(app);
+    await adminLogin(agent);
+    const token = await csrf(agent);
+
+    const wb = new ExcelJS.Workbook();
+    const ws = wb.addWorksheet(RP_TEAM_SHEET);
+    ws.addRow([...TEMPLATE_COLUMNS]);
+    ws.addRow(['HA02', 'NOT-SKU-123', 'ND', '', 'ND20-SO-Not displayed in small stores', '']);
+    const buffer = Buffer.from(await wb.xlsx.writeBuffer());
+
+    const res = await agent
+      .post('/api/admin/import')
+      .set('x-csrf-token', token)
+      .attach('file', buffer, 'admin-nonconforming.xlsx');
+    expect(res.status).toBe(201);
+    expect(res.body.successCount).toBe(1);
+    expect(res.body.rows[0].sku).toBe('NOT-SKU-123');
+  });
+
+  it('allows admin edit to set a non-conforming SKU (exempt)', async () => {
+    const created = await request(app).post('/api/public/submit').send({
+      site_code: 'HA02',
+      sku: '1009001',
+      rp_type: 'ND',
+      nd_code: 'ND20-SO-Not displayed in small stores',
+    });
+    const no = created.body.submission.application_no;
+    const idRes = await db.query<{ id: string }>('SELECT id FROM submissions WHERE application_no = $1', [no]);
+    const id = idRes.rows[0]!.id;
+
+    const agent = request.agent(app);
+    await adminLogin(agent);
+    const token = await csrf(agent);
+    const res = await agent
+      .put(`/api/admin/submissions/${id}`)
+      .set('x-csrf-token', token)
+      .send({ sku: 'ADMIN-FREE-FORM', rp_type: 'ND', nd_code: 'ND20-SO-Not displayed in small stores' });
+    expect(res.status).toBe(200);
+    expect(res.body.submission.sku).toBe('ADMIN-FREE-FORM');
   });
 });

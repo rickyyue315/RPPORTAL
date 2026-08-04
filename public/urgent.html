@@ -21,6 +21,10 @@
     </nav>
   </header>
 
+  <div class="announce-banner" role="alert">
+    Urgent Order的處理時間為工作天星期一至五，其他非工作日的申請會順延至下一個工作天早上處理。
+  </div>
+
   <main class="container">
     <div class="card">
       <h2>Urgent Order 單筆申報</h2>
@@ -45,6 +49,7 @@
           <div>
             <label for="sku">SKU <span class="optional">（必填）</span></label>
             <input type="text" id="sku" autocomplete="off">
+            <div class="hint">只可輸入一個 SKU（7 位或 12 位數字）。</div>
           </div>
           <div>
             <label for="qty">QTY <span class="optional">（必填，1 至 1000）</span></label>

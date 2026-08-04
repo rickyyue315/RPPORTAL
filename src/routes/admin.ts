@@ -459,7 +459,7 @@ adminRouter.post(
     const stores = await query<{ site_code: string }>('SELECT site_code FROM stores');
     const storeCodes = new Set(stores.rows.map((s) => s.site_code));
 
-    const parsed = await parseImportWorkbook(file.buffer, storeCodes, config.maxImportRows);
+    const parsed = await parseImportWorkbook(file.buffer, storeCodes, config.maxImportRows, { validateSku: false });
     if (!parsed.ok || !parsed.rows) {
       await writeAuditEvent({
         eventType: 'excel_import_error',
@@ -691,7 +691,7 @@ adminRouter.post(
     const stores = await query<{ site_code: string }>('SELECT site_code FROM stores');
     const storeCodes = new Set(stores.rows.map((s) => s.site_code));
 
-    const parsed = await parseUrgentImportWorkbook(file.buffer, storeCodes, config.maxImportRows);
+    const parsed = await parseUrgentImportWorkbook(file.buffer, storeCodes, config.maxImportRows, { validateSku: false });
     if (!parsed.ok || !parsed.rows) {
       await writeAuditEvent({
         eventType: 'excel_import_error',

@@ -160,7 +160,7 @@ describe('submissions (integration)', () => {
       siteCode: 'HA02',
       source: 'web',
       submissionType: 'urgent',
-      fields: { brand: '', sku: 'U-INT-1', rp_type: '', safety_stock: '', nd_code: '', remark: '' },
+      fields: { brand: '', sku: '1006013', rp_type: '', safety_stock: '', nd_code: '', remark: '' },
       qty: 42,
       urgentReason: '9',
       urgentReasonOther: '臨時原因',
@@ -182,7 +182,7 @@ describe('submissions (integration)', () => {
       urgent_reason_other: string | null;
     };
     expect(snapshot.site_code).toBe('HA02');
-    expect(snapshot.sku).toBe('U-INT-1');
+    expect(snapshot.sku).toBe('1006013');
     expect(snapshot.qty).toBe(42);
     expect(snapshot.urgent_reason).toBe('9');
     expect(snapshot.urgent_reason_other).toBe('臨時原因');
@@ -194,7 +194,7 @@ describe('submissions (integration)', () => {
         siteCode: 'HA02',
         source: 'web',
         submissionType: 'urgent',
-        fields: { brand: '', sku: 'U-INT-2', rp_type: '', safety_stock: '', nd_code: '', remark: '' },
+        fields: { brand: '', sku: '1006014', rp_type: '', safety_stock: '', nd_code: '', remark: '' },
         qty: 42,
         ip: '203.0.113.9',
         changeSource: 'web_submit',
@@ -207,7 +207,7 @@ describe('submissions (integration)', () => {
       siteCode: 'HA02',
       source: 'web',
       submissionType: 'sales',
-      fields: { brand: '', sku: 'S-INT-1', rp_type: '', safety_stock: '', nd_code: '', remark: '' },
+      fields: { brand: '', sku: '1005014', rp_type: '', safety_stock: '', nd_code: '', remark: '' },
       ip: '203.0.113.10',
       changeSource: 'web_submit',
     });
@@ -219,6 +219,6 @@ describe('submissions (integration)', () => {
     const version = await db.query('SELECT data_after FROM submission_versions WHERE submission_id = $1', [row.id]);
     const snapshot = version.rows[0]?.data_after as { site_code: string; sku: string };
     expect(snapshot.site_code).toBe('HA02');
-    expect(snapshot.sku).toBe('S-INT-1');
+    expect(snapshot.sku).toBe('1005014');
   });
 });

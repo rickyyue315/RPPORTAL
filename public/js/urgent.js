@@ -57,7 +57,7 @@
     try {
       const data = await api(`/api/public/stores/${encodeURIComponent(code)}`);
       storeCache = data.store;
-      $('store_info').innerHTML = `<b>${escapeHtml(data.store.shop)}</b><br>${escapeHtml(data.store.requested_by_email)}`;
+      $('store_info').innerHTML = `<b>${escapeHtml(data.store.shop)}</b>`;
     } catch (err) {
       storeCache = null;
       $('store_info').innerHTML = `<span style="color:var(--danger)">Site Code 不存在</span>`;

@@ -12,6 +12,7 @@ export type AuditEventType =
   | 'excel_import'
   | 'excel_import_error'
   | 'export_created'
+  | 'export_preview'
   | 'export_error'
   | 'export_locked'
   | 'store_master_updated'

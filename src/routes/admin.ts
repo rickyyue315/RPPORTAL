@@ -97,7 +97,7 @@ const businessFieldsSchema = z.object({
   remark: z.string().max(2000).optional().default(''),
 });
 
-function serializeAdminSubmission(row: SubmissionRow) {
+function serializeAdminSubmission(row: SubmissionRow, lastModifiedAt?: string | null) {
   return {
     id: row.id,
     application_no: row.application_no,
@@ -108,6 +108,7 @@ function serializeAdminSubmission(row: SubmissionRow) {
     application_date: row.application_date,
     submitted_at: toHKString(row.submitted_at),
     updated_at: row.updated_at ? toHKString(row.updated_at) : null,
+    last_modified_at: lastModifiedAt ? toHKString(lastModifiedAt) : null,
     locked: Boolean(row.locked_at || row.exported_at),
     locked_at: row.locked_at ? toHKString(row.locked_at) : null,
     exported_at: row.exported_at ? toHKString(row.exported_at) : null,
@@ -199,12 +200,27 @@ adminRouter.get(
       [...params, size, offset],
     );
 
+    const pageIds = result.rows.map((r) => r.id);
+    const lastModified = new Map<string, string>();
+    if (pageIds.length) {
+      const modifiedRows = await query<{ submission_id: string; last_modified_at: string }>(
+        `SELECT submission_id, max(changed_at) AS last_modified_at
+         FROM submission_versions
+         WHERE submission_id = ANY($1::uuid[]) AND version > 1
+         GROUP BY submission_id`,
+        [pageIds],
+      );
+      for (const r of modifiedRows.rows) {
+        lastModified.set(r.submission_id, r.last_modified_at);
+      }
+    }
+
     res.json({
       total,
       page: pageNum,
       page_size: size,
       total_pages: Math.ceil(total / size),
-      submissions: result.rows.map(serializeAdminSubmission),
+      submissions: result.rows.map((row) => serializeAdminSubmission(row, lastModified.get(row.id) ?? null)),
     });
   }),
 );
@@ -570,6 +586,7 @@ const exportFiltersSchema = z.object({
   to: z.string().optional(),
   site_code: z.string().optional(),
   include_exported: z.coerce.boolean().optional().default(false),
+  preview: z.coerce.boolean().optional().default(false),
 });
 
 /** POST /api/admin/export — SAP export + lock. */
@@ -617,6 +634,21 @@ adminRouter.post(
 
     // Generate the file first; only lock on success.
     const buffer = await buildSapExportBuffer(rows.rows);
+
+    if (parsed.data.preview) {
+      const previewName = `NDRF_SAP_Preview_${new Date().toISOString().slice(0, 10)}.xlsx`;
+      await writeAuditEvent({
+        eventType: 'export_preview',
+        actorRole: 'admin',
+        actor: req.adminUsername,
+        ip: getClientIp(req),
+        metadata: { filename: previewName, count: rows.rows.length, filters: parsed.data, submission_type: 'normal' },
+      });
+      res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+      res.setHeader('Content-Disposition', `attachment; filename="${previewName}"`);
+      res.send(buffer);
+      return;
+    }
 
     const filename = `NDRF_SAP_Export_${new Date().toISOString().slice(0, 10)}.xlsx`;
     const batchResult = await withTransaction(async (client) => {
@@ -851,6 +883,21 @@ adminRouter.post(
       })),
     );
 
+    if (parsed.data.preview) {
+      const previewName = `Urgent_Order_Preview_${new Date().toISOString().slice(0, 10)}.xlsx`;
+      await writeAuditEvent({
+        eventType: 'export_preview',
+        actorRole: 'admin',
+        actor: req.adminUsername,
+        ip: getClientIp(req),
+        metadata: { filename: previewName, count: rows.rows.length, filters: parsed.data, submission_type: 'urgent' },
+      });
+      res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+      res.setHeader('Content-Disposition', `attachment; filename="${previewName}"`);
+      res.send(buffer);
+      return;
+    }
+
     const filename = `Urgent_Order_Export_${new Date().toISOString().slice(0, 10)}.xlsx`;
     const batchResult = await withTransaction(async (client) => {
       const batch = await client.query<{ id: string }>(
@@ -965,6 +1012,22 @@ adminRouter.post(
       site_code: row.site_code,
       sku: row.sku,
     })));
+
+    if (parsed.data.preview) {
+      const previewName = `Sudden_Sales_Preview_${new Date().toISOString().slice(0, 10)}.xlsx`;
+      await writeAuditEvent({
+        eventType: 'export_preview',
+        actorRole: 'admin',
+        actor: req.adminUsername,
+        ip: getClientIp(req),
+        metadata: { filename: previewName, count: rows.rows.length, filters: parsed.data, submission_type: 'sales' },
+      });
+      res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+      res.setHeader('Content-Disposition', `attachment; filename="${previewName}"`);
+      res.send(buffer);
+      return;
+    }
+
     const filename = `Sudden_Sales_Export_${new Date().toISOString().slice(0, 10)}.xlsx`;
     const batchResult = await withTransaction(async (client) => {
       const batch = await client.query<{ id: string }>(

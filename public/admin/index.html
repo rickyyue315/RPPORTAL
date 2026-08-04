@@ -145,7 +145,7 @@
       <table id="list_table">
         <thead>
           <tr>
-            <th>申請編號</th><th>Site Code</th><th>SKU</th><th>類型</th><th>來源</th>
+            <th>申請編號</th><th>Site Code</th><th>SKU</th><th>RP Type</th><th>Safety Qty</th><th>ND Code</th><th>類型</th><th>來源</th>
             <th>申請時間</th><th>修改時間</th><th>狀態</th><th></th>
           </tr>
         </thead>
@@ -241,7 +241,7 @@
 
     <div class="card">
       <h2>SAP Excel 匯出（一般 NDRF）</h2>
-      <div class="hint">只會匯出一般 NDRF 申報，Urgent Order 使用下方的獨立匯出。匯出後該批申報會被鎖定，申請人不能再修改。匯出失敗不會鎖定。</div>
+      <div class="hint">只會匯出一般 NDRF 申報，Urgent Order 使用下方的獨立匯出。匯出後該批申報會被鎖定，申請人不能再修改。匯出失敗不會鎖定。預覽下載不會鎖定申報。</div>
       <div class="toolbar">
         <div class="field">
           <label>由 (日期)</label>
@@ -266,13 +266,14 @@
       <div id="export_info"></div>
       <div class="btn-row">
         <button class="btn" id="btn_export">匯出並鎖定</button>
+        <button class="btn secondary" id="btn_export_preview">預覽下載(不鎖定)</button>
         <button class="btn ghost" id="btn_audit">下載審計報表</button>
       </div>
     </div>
 
     <div class="card">
       <h2>Urgent Order Excel 匯出</h2>
-      <div class="hint">只會匯出 Urgent Order（欄位：Application No. | Site Code | SKU | QTY | Urgent Reason | Other Reason）。匯出後該批 Urgent Order 會被鎖定，不能修改。匯出失敗不會鎖定。</div>
+      <div class="hint">只會匯出 Urgent Order（欄位：Application No. | Site Code | SKU | QTY | Urgent Reason | Other Reason）。匯出後該批 Urgent Order 會被鎖定，不能修改。匯出失敗不會鎖定。預覽下載不會鎖定申報。</div>
       <div class="toolbar">
         <div class="field">
           <label>由 (日期)</label>
@@ -297,12 +298,13 @@
       <div id="urgent_export_info"></div>
       <div class="btn-row">
         <button class="btn" id="btn_urgent_export">匯出並鎖定</button>
+        <button class="btn secondary" id="btn_urgent_export_preview">預覽下載(不鎖定)</button>
       </div>
     </div>
 
     <div class="card">
       <h2>突發性銷售申報 Excel 匯出</h2>
-      <div class="hint">只會匯出突發性銷售申報，欄位為 Application Date | Requested by | Shop Code | SKU。匯出後該批申報會被鎖定，不能修改；匯出失敗不會鎖定。</div>
+      <div class="hint">只會匯出突發性銷售申報，欄位為 Application Date | Requested by | Shop Code | SKU。匯出後該批申報會被鎖定，不能修改；匯出失敗不會鎖定。預覽下載不會鎖定申報。</div>
       <div class="toolbar">
         <div class="field">
           <label>由 (日期)</label>
@@ -327,6 +329,7 @@
       <div id="sales_export_info"></div>
       <div class="btn-row">
         <button class="btn" id="btn_sales_export">匯出並鎖定</button>
+        <button class="btn secondary" id="btn_sales_export_preview">預覽下載(不鎖定)</button>
       </div>
     </div>
 

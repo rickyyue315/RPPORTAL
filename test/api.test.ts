@@ -336,6 +336,106 @@ describe('admin API', () => {
     expect(Number(listAfter.body.total)).toBeGreaterThanOrEqual(2);
   });
 
+  describe('preview export & last_modified_at (shared admin session)', () => {
+    let agent: ReturnType<typeof request.agent>;
+    beforeAll(async () => {
+      agent = request.agent(app);
+      await adminLogin(agent);
+    });
+
+    it('derives last_modified_at from version history (null until modified)', async () => {
+      const created = await request(app).post('/api/public/submit').send({
+        site_code: 'HA02',
+        sku: '1004101',
+        rp_type: 'ND',
+        nd_code: 'ND20-SO-Not displayed in small stores',
+      });
+      const no = created.body.submission.application_no;
+
+      const before = await agent.get(`/api/admin/submissions?application_no=${no}&page=1`);
+      expect(before.status).toBe(200);
+      const rowBefore = before.body.submissions.find((s) => s.application_no === no);
+      expect(rowBefore.last_modified_at).toBeNull();
+
+      const modify = await request(app).post('/api/public/modify').send({
+        application_no: no,
+        site_code: 'HA02',
+        sku: '1004102',
+        rp_type: 'ND',
+        nd_code: 'ND20-SO-Not displayed in small stores',
+      });
+      expect(modify.status).toBe(200);
+
+      const after = await agent.get(`/api/admin/submissions?application_no=${no}&page=1`);
+      const rowAfter = after.body.submissions.find((s) => s.application_no === no);
+      expect(rowAfter.last_modified_at).not.toBeNull();
+
+      const versionRes = await db.query<{ changed_at: string }>(
+        `SELECT v.changed_at FROM submission_versions v
+         JOIN submissions s ON s.id = v.submission_id
+         WHERE s.application_no = $1 AND v.version = 2`,
+        [no],
+      );
+      expect(versionRes.rows[0]).toBeDefined();
+    });
+
+    it('preview export downloads without locking or writing batches', async () => {
+      await request(app).post('/api/public/submit').send({
+        site_code: 'HA06',
+        sku: '1004103',
+        rp_type: 'ND',
+        nd_code: 'ND20-SO-Not displayed in small stores',
+      });
+
+      const token = await csrf(agent);
+
+      const pendingBefore = await countSubmissions('WHERE exported_at IS NULL');
+      const batchesBefore = await db.query<{ count: string }>('SELECT count(*)::text AS count FROM export_batches');
+
+      const preview = await agent
+        .post('/api/admin/export')
+        .set('x-csrf-token', token)
+        .send({ include_exported: false, preview: true });
+      expect(preview.status).toBe(200);
+      expect(preview.headers['content-type']).toContain('spreadsheetml');
+      expect(preview.headers['content-disposition']).toContain('Preview');
+
+      const pendingAfter = await countSubmissions('WHERE exported_at IS NULL');
+      expect(Number(pendingAfter)).toBe(Number(pendingBefore));
+
+      const batchesAfter = await db.query<{ count: string }>('SELECT count(*)::text AS count FROM export_batches');
+      expect(Number(batchesAfter.rows[0]!.count)).toBe(Number(batchesBefore.rows[0]!.count));
+    });
+
+    it('previewed submission remains modifiable by the applicant', async () => {
+      const created = await request(app).post('/api/public/submit').send({
+        site_code: 'HA06',
+        sku: '1004104',
+        rp_type: 'ND',
+        nd_code: 'ND20-SO-Not displayed in small stores',
+      });
+      const no = created.body.submission.application_no;
+
+      const token = await csrf(agent);
+
+      const preview = await agent
+        .post('/api/admin/export')
+        .set('x-csrf-token', token)
+        .send({ preview: true });
+      expect(preview.status).toBe(200);
+
+      const modify = await request(app).post('/api/public/modify').send({
+        application_no: no,
+        site_code: 'HA06',
+        sku: '1004105',
+        rp_type: 'ND',
+        nd_code: 'ND20-SO-Not displayed in small stores',
+      });
+      expect(modify.status).toBe(200);
+      expect(modify.body.submission.sku).toBe('1004105');
+    });
+  });
+
   it('returns submission summary counts', async () => {
     const agent = request.agent(app);
     await adminLogin(agent);

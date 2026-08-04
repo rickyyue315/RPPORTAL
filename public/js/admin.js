@@ -58,7 +58,7 @@
     const tbody = $('list_body');
     tbody.innerHTML = '';
     if (!data.submissions.length) {
-      tbody.innerHTML = '<tr><td colspan="9" class="empty">沒有符合條件的申報</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="12" class="empty">沒有符合條件的申報</td></tr>';
       $('page_info').textContent = '0 筆';
       $('btn_prev').disabled = true;
       $('btn_next').disabled = true;
@@ -73,10 +73,13 @@
         <td>${escapeHtml(s.application_no)}</td>
         <td>${escapeHtml(s.site_code)}</td>
         <td>${escapeHtml(s.sku)}${s.submission_type === 'urgent' ? `<div class="hint">QTY: ${escapeHtml(s.qty)}</div>` : ''}</td>
+        <td>${escapeHtml(s.rp_type || '—')}</td>
+        <td>${escapeHtml(s.safety_stock || '—')}</td>
+        <td>${escapeHtml(s.nd_code || '—')}</td>
         <td>${s.submission_type === 'urgent' ? '<span class="status-badge received">Urgent</span>' : s.submission_type === 'sales' ? '<span class="status-badge received">突發銷售</span>' : '一般'}</td>
         <td>${s.source === 'web' ? '網頁' : 'Excel'}</td>
         <td>${escapeHtml(s.submitted_at)}</td>
-        <td>${escapeHtml(s.updated_at || '—')}</td>
+        <td>${escapeHtml(s.last_modified_at || '—')}</td>
         <td>${status}</td>
         <td><a href="#" class="view-link" data-id="${s.id}">查看／編輯</a></td>
       `;
@@ -329,6 +332,72 @@
       btn.disabled = false;
       btn.textContent = '匯出並鎖定';
     }
+  });
+
+  async function previewExport(path, body, fallbackName, infoId, btnId) {
+    const btn = $(btnId);
+    btn.disabled = true;
+    btn.textContent = '下載中…';
+    showAlert($(infoId), '', '');
+    try {
+      const token = await getCsrf();
+      const res = await fetch(path, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-csrf-token': token },
+        body: JSON.stringify(body),
+      });
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({ error: '預覽下載失敗' }));
+        throw new Error(errData.error || '預覽下載失敗');
+      }
+      const blob = await res.blob();
+      const disp = res.headers.get('Content-Disposition') || '';
+      const match = disp.match(/filename="([^"]+)"/);
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = match ? match[1] : fallbackName;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+      showAlert($(infoId), 'success', '預覽下載完成，申報未被鎖定。');
+    } catch (err) {
+      showAlert($(infoId), 'error', escapeHtml(err.message));
+    } finally {
+      btn.disabled = false;
+      btn.textContent = '預覽下載(不鎖定)';
+    }
+  }
+
+  $('btn_export_preview').addEventListener('click', () => {
+    previewExport('/api/admin/export', {
+      from: $('e_from').value,
+      to: $('e_to').value,
+      site_code: $('e_site').value.trim(),
+      include_exported: $('e_include').value === 'true',
+      preview: true,
+    }, 'NDRF_SAP_Preview.xlsx', 'export_info', 'btn_export_preview');
+  });
+
+  $('btn_urgent_export_preview').addEventListener('click', () => {
+    previewExport('/api/admin/urgent/export', {
+      from: $('ue_from').value,
+      to: $('ue_to').value,
+      site_code: $('ue_site').value.trim(),
+      include_exported: $('ue_include').value === 'true',
+      preview: true,
+    }, 'Urgent_Order_Preview.xlsx', 'urgent_export_info', 'btn_urgent_export_preview');
+  });
+
+  $('btn_sales_export_preview').addEventListener('click', () => {
+    previewExport('/api/admin/sales/export', {
+      from: $('se_from').value,
+      to: $('se_to').value,
+      site_code: $('se_site').value.trim(),
+      include_exported: $('se_include').value === 'true',
+      preview: true,
+    }, 'Sudden_Sales_Preview.xlsx', 'sales_export_info', 'btn_sales_export_preview');
   });
 
   $('btn_urgent_export').addEventListener('click', async () => {

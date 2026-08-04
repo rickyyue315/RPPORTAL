@@ -9,7 +9,7 @@ import { fileURLToPath } from 'node:url';
 import { setPoolForTesting } from '../src/db/pool.js';
 import { createApp } from '../src/app.js';
 import { replaceStores } from '../src/services/stores.js';
-import { TEMPLATE_COLUMNS, RP_TEAM_SHEET, SHOP_CODE_HEADER, URGENT_COLUMNS, URGENT_SHEET } from '../src/lib/fields.js';
+import { TEMPLATE_COLUMNS, RP_TEAM_SHEET, SHOP_CODE_HEADER, URGENT_COLUMNS, URGENT_SHEET, SALES_COLUMNS, SALES_SHEET } from '../src/lib/fields.js';
 import * as time from '../src/lib/time.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -49,7 +49,7 @@ async function countSubmissions(where = ''): Promise<number> {
 beforeAll(async () => {
   db = new PGlite();
   setPoolForTesting(makePglitePool(db));
-  const migrationFiles = ['001_init.sql', '002_drop_rp_type_completed_at.sql', '003_add_submission_type_qty.sql', '004_add_urgent_reason.sql'];
+  const migrationFiles = ['001_init.sql', '002_drop_rp_type_completed_at.sql', '003_add_submission_type_qty.sql', '004_add_urgent_reason.sql', '005_add_sales_submission_type.sql'];
   for (const file of migrationFiles) {
     let sql = await readFile(path.join(__dirname, '..', 'src', 'db', 'migrations', file), 'utf8');
     sql = sql.replace(/CREATE EXTENSION IF NOT EXISTS pgcrypto;\s*/g, '');
@@ -310,9 +310,15 @@ describe('admin API', () => {
         today: expect.any(Number),
         today_exported: expect.any(Number),
       },
+      sales: {
+        total: expect.any(Number),
+        exported: expect.any(Number),
+        today: expect.any(Number),
+        today_exported: expect.any(Number),
+      },
     });
     expect(res.body.total).toBeGreaterThanOrEqual(1);
-    expect(res.body.total).toBe(res.body.normal.total + res.body.urgent.total);
+    expect(res.body.total).toBe(res.body.normal.total + res.body.urgent.total + res.body.sales.total);
   });
 
   it('requires CSRF token for admin mutations', async () => {
@@ -919,6 +925,240 @@ describe('urgent admin API', () => {
   });
 });
 
+describe('sales public API', () => {
+  it('accepts a valid sales submission with SALES prefix', async () => {
+    const res = await request(app).post('/api/public/sales/submit').send({
+      site_code: 'HA02',
+      sku: 'S-VALID-1',
+    });
+    expect(res.status).toBe(201);
+    expect(res.body.submission.application_no).toMatch(/^SALES-[A-Z2-9]{8}-[A-Z2-9]{8}$/);
+    expect(res.body.submission.submission_type).toBe('sales');
+    expect(res.body.submission.sku).toBe('S-VALID-1');
+    expect(res.body.submission.qty).toBeNull();
+    expect(res.body.submission.locked).toBe(false);
+  });
+
+  it('rejects sales submit with unknown site code', async () => {
+    const res = await request(app).post('/api/public/sales/submit').send({
+      site_code: 'ZZ99',
+      sku: 'S-BAD',
+    });
+    expect(res.status).toBe(400);
+    expect(res.body.field).toBe('site_code');
+  });
+
+  it('rejects sales submit with missing sku', async () => {
+    const res = await request(app).post('/api/public/sales/submit').send({
+      site_code: 'HA02',
+      sku: '',
+    });
+    expect(res.status).toBe(400);
+    expect(res.body.field).toBe('sku');
+  });
+
+  it('accepts sales submissions after the urgent 14:30 cutoff (no time limit)', async () => {
+    timeSpy.mockReturnValue(23 * 60 + 59);
+    const res = await request(app).post('/api/public/sales/submit').send({
+      site_code: 'HA02',
+      sku: 'S-NOLIMIT-1',
+    });
+    expect(res.status).toBe(201);
+    timeSpy.mockReturnValue(9 * 60);
+  });
+
+  it('exposes sales submissions to the public lookup', async () => {
+    const created = await request(app).post('/api/public/sales/submit').send({
+      site_code: 'HA02',
+      sku: 'S-LOOKUP-1',
+    });
+    const no = created.body.submission.application_no;
+    const res = await request(app).get(`/api/public/query?application_no=${no}&site_code=HA02`);
+    expect(res.status).toBe(200);
+    expect(res.body.submission.submission_type).toBe('sales');
+    expect(res.body.submission.sku).toBe('S-LOOKUP-1');
+    expect(res.body.submission.requested_by_email).toBe('ha02@sasa.com');
+    expect(res.body.versions).toHaveLength(1);
+  });
+
+  it('modifies a sales submission sku and records a version', async () => {
+    const created = await request(app).post('/api/public/sales/submit').send({
+      site_code: 'HA02',
+      sku: 'S-MODIFY-1',
+    });
+    const no = created.body.submission.application_no;
+    const res = await request(app).post('/api/public/modify').send({
+      application_no: no,
+      site_code: 'HA02',
+      sku: 'S-MODIFY-2',
+    });
+    expect(res.status).toBe(200);
+    expect(res.body.submission.sku).toBe('S-MODIFY-2');
+    const queried = await request(app).get(`/api/public/query?application_no=${no}&site_code=HA02`);
+    expect(queried.body.submission.sku).toBe('S-MODIFY-2');
+    expect(queried.body.versions).toHaveLength(2);
+  });
+
+  it('rejects sales modify after the submission is locked', async () => {
+    const created = await request(app).post('/api/public/sales/submit').send({
+      site_code: 'HA02',
+      sku: 'S-LOCKED-1',
+    });
+    const no = created.body.submission.application_no;
+    await db.query('UPDATE submissions SET locked_at = now(), exported_at = now() WHERE application_no = $1', [no]);
+    const res = await request(app).post('/api/public/modify').send({
+      application_no: no,
+      site_code: 'HA02',
+      sku: 'S-LOCKED-2',
+    });
+    expect(res.status).toBe(409);
+    expect(res.body.error).toContain('鎖定');
+  });
+
+  it('downloads the sales template workbook', async () => {
+    const res = await request(app).get('/api/public/sales/template');
+    expect(res.status).toBe(200);
+    expect(res.headers['content-type']).toContain('spreadsheetml');
+    expect(Number(res.headers['content-length'])).toBeGreaterThan(1000);
+  });
+
+  it('imports a valid sales xlsx and creates SALES application numbers', async () => {
+    const wb = new ExcelJS.Workbook();
+    const ws = wb.addWorksheet(SALES_SHEET);
+    ws.addRow([...SALES_COLUMNS]);
+    ws.addRow(['HA02', 'S-IMP-1']);
+    ws.addRow(['HA06', 'S-IMP-2']);
+    const buffer = Buffer.from(await wb.xlsx.writeBuffer());
+
+    const res = await request(app)
+      .post('/api/public/sales/import')
+      .attach('file', buffer, 'sales-import.xlsx');
+    expect(res.status).toBe(201);
+    expect(res.body.successCount).toBe(2);
+    expect(res.body.rows[0].application_no).toMatch(/^SALES-/);
+    expect(res.body.rows[0].site_code).toBe('HA02');
+    expect(res.body.rows[1].site_code).toBe('HA06');
+  });
+
+  it('downloads the sales import record workbook', async () => {
+    const res = await request(app)
+      .post('/api/public/sales/import/record')
+      .send({
+        rows: [
+          {
+            row: 2,
+            application_no: 'SALES-00000000-00000000',
+            site_code: 'HA02',
+            sku: 'S-IMP-1',
+            submitted_at: '2026-08-03 09:00:00',
+          },
+        ],
+      });
+    expect(res.status).toBe(200);
+    expect(res.headers['content-type']).toContain('spreadsheetml');
+    expect(Number(res.headers['content-length'])).toBeGreaterThan(1000);
+    expect(res.headers['content-disposition']).toContain('Sudden_Sales_Import_Record');
+  });
+
+  it('rejects a sales import using the wrong sheet', async () => {
+    const wb = new ExcelJS.Workbook();
+    const ws = wb.addWorksheet(RP_TEAM_SHEET);
+    ws.addRow(['HA02', 'S-WRONG']);
+    const buffer = Buffer.from(await wb.xlsx.writeBuffer());
+
+    const res = await request(app)
+      .post('/api/public/sales/import')
+      .attach('file', buffer, 'sales-wrong-sheet.xlsx');
+    expect(res.status).toBe(400);
+    expect(res.body.errors?.[0]?.field).toBe('sheet');
+  });
+
+  it('rejects a sales import with invalid site code without writing anything', async () => {
+    const beforeTotal = await countSubmissions(`WHERE submission_type = 'sales'`);
+
+    const wb = new ExcelJS.Workbook();
+    const ws = wb.addWorksheet(SALES_SHEET);
+    ws.addRow([...SALES_COLUMNS]);
+    ws.addRow(['ZZ99', 'S-BAD']);
+    const buffer = Buffer.from(await wb.xlsx.writeBuffer());
+
+    const res = await request(app)
+      .post('/api/public/sales/import')
+      .attach('file', buffer, 'sales-bad-site.xlsx');
+    expect(res.status).toBe(400);
+    expect(res.body.errors?.[0]?.field).toBe('Site Code');
+
+    expect(await countSubmissions(`WHERE submission_type = 'sales'`)).toBe(beforeTotal);
+  });
+});
+
+describe('sales admin API', () => {
+  it('filters submissions by submission_type=sales and edits sku', async () => {
+    const created = await request(app).post('/api/public/sales/submit').send({
+      site_code: 'HA02',
+      sku: 'S-ADM-1',
+    });
+    const no = created.body.submission.application_no;
+    const idRes = await db.query<{ id: string }>('SELECT id FROM submissions WHERE application_no = $1', [no]);
+    const id = idRes.rows[0]!.id;
+
+    const agent = request.agent(app);
+    await adminLogin(agent);
+    const token = await csrf(agent);
+
+    const list = await agent.get('/api/admin/submissions?submission_type=sales&page=1');
+    expect(list.status).toBe(200);
+    expect(list.body.submissions.every((s: { submission_type: string }) => s.submission_type === 'sales')).toBe(true);
+
+    const res = await agent
+      .put(`/api/admin/submissions/${id}`)
+      .set('x-csrf-token', token)
+      .send({ sku: 'S-ADM-2' });
+    expect(res.status).toBe(200);
+    expect(res.body.submission.sku).toBe('S-ADM-2');
+
+    const missing = await agent
+      .put(`/api/admin/submissions/${id}`)
+      .set('x-csrf-token', token)
+      .send({ sku: '' });
+    expect(missing.status).toBe(400);
+    expect(missing.body.field).toBe('sku');
+  });
+
+  it('sales export locks sales only; SAP export excludes sales', async () => {
+    await request(app).post('/api/public/sales/submit').send({ site_code: 'HA06', sku: 'S-EXP-1' });
+    await request(app).post('/api/public/submit').send({
+      site_code: 'HA02',
+      sku: 'S-EXP-NORMAL',
+      rp_type: 'ND',
+      nd_code: 'ND20-SO-Not displayed in small stores',
+    });
+    const agent = request.agent(app);
+    await adminLogin(agent);
+    const token = await csrf(agent);
+
+    const sap = await agent
+      .post('/api/admin/export')
+      .set('x-csrf-token', token)
+      .send({ include_exported: false });
+    expect(sap.status).toBe(200);
+
+    const stillPending = await agent.get('/api/admin/submissions?submission_type=sales&exported=no&page=1');
+    expect(Number(stillPending.body.total)).toBeGreaterThanOrEqual(1);
+
+    const res = await agent
+      .post('/api/admin/sales/export')
+      .set('x-csrf-token', token)
+      .send({ include_exported: false });
+    expect(res.status).toBe(200);
+    expect(res.headers['content-type']).toContain('spreadsheetml');
+    expect(res.headers['content-disposition']).toContain('Sudden_Sales_Export');
+
+    const exported = await agent.get('/api/admin/submissions?submission_type=sales&exported=yes&page=1');
+    expect(Number(exported.body.total)).toBeGreaterThanOrEqual(1);
+  });
+});
+
 describe('daily duplicate rule', () => {
   const ND = { rp_type: 'ND', nd_code: 'ND20-SO-Not displayed in small stores' };
 
@@ -941,6 +1181,53 @@ describe('daily duplicate rule', () => {
     const urgentDup = await request(app).post('/api/public/urgent/submit').send({ site_code: 'HA02', sku: 'DUP-001', qty: 6, urgent_reason: '2' });
     expect(urgentDup.status).toBe(409);
     expect(urgentDup.body.field).toBe('sku');
+  });
+
+  it('allows the same site+sku for sales alongside normal and urgent, but not sales twice', async () => {
+    const normal = await request(app).post('/api/public/submit').send({ site_code: 'HA06', sku: 'DUP-S-1', ...ND });
+    expect(normal.status).toBe(201);
+    const urgent = await request(app).post('/api/public/urgent/submit').send({ site_code: 'HA06', sku: 'DUP-S-1', qty: 5, urgent_reason: '1' });
+    expect(urgent.status).toBe(201);
+    const sales = await request(app).post('/api/public/sales/submit').send({ site_code: 'HA06', sku: 'DUP-S-1' });
+    expect(sales.status).toBe(201);
+    const salesDup = await request(app).post('/api/public/sales/submit').send({ site_code: 'HA06', sku: 'DUP-S-1' });
+    expect(salesDup.status).toBe(409);
+    expect(salesDup.body.field).toBe('sku');
+  });
+
+  it('blocks sales modify changing sku to one already submitted today, allows a new sku', async () => {
+    const a = await request(app).post('/api/public/sales/submit').send({ site_code: 'HA02', sku: 'DUP-SM-1' });
+    await request(app).post('/api/public/sales/submit').send({ site_code: 'HA02', sku: 'DUP-SM-2' });
+    const no = a.body.submission.application_no;
+
+    const blocked = await request(app)
+      .post('/api/public/modify')
+      .send({ application_no: no, site_code: 'HA02', sku: 'DUP-SM-2' });
+    expect(blocked.status).toBe(409);
+    expect(blocked.body.field).toBe('sku');
+
+    const ok = await request(app)
+      .post('/api/public/modify')
+      .send({ application_no: no, site_code: 'HA02', sku: 'DUP-SM-3' });
+    expect(ok.status).toBe(200);
+    expect(ok.body.submission.sku).toBe('DUP-SM-3');
+  });
+
+  it('rejects a sales import row duplicating an existing today sales submission without writing', async () => {
+    await request(app).post('/api/public/sales/submit').send({ site_code: 'HA02', sku: 'DUP-SI-1' });
+    const beforeTotal = await countSubmissions(`WHERE submission_type = 'sales'`);
+
+    const wb = new ExcelJS.Workbook();
+    const ws = wb.addWorksheet(SALES_SHEET);
+    ws.addRow([...SALES_COLUMNS]);
+    ws.addRow(['HA02', 'DUP-SI-1']);
+    const buffer = Buffer.from(await wb.xlsx.writeBuffer());
+
+    const res = await request(app).post('/api/public/sales/import').attach('file', buffer, 'sales-dup.xlsx');
+    expect(res.status).toBe(400);
+    expect(res.body.errors?.some((e: { field: string }) => e.field === 'SKU')).toBe(true);
+
+    expect(await countSubmissions(`WHERE submission_type = 'sales'`)).toBe(beforeTotal);
   });
 
   it('blocks modify changing sku to one already submitted today, allows a new sku', async () => {

@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>突發性銷售申報 — NDRF 申報平台</title>
+  <link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+  <header class="topbar">
+    <div>
+      <h1>NDRF 申報平台</h1>
+      <div class="subtitle">突發性銷售申報</div>
+    </div>
+    <nav>
+      <a href="/">一般申報</a>
+      <a href="/urgent.html">Urgent Order</a>
+      <a href="/sales.html" class="active" aria-current="page">突發性銷售申報</a>
+      <a href="/lookup.html">查詢／修改</a>
+      <a href="/help.html">使用說明</a>
+    </nav>
+  </header>
+
+  <main class="container">
+    <div class="card">
+      <h2>突發性銷售申報</h2>
+      <p class="hint">只需填寫 <b>Site Code</b> 及 <b>SKU</b>。本申報沒有提交時間限制。</p>
+      <div id="form_error"></div>
+      <form id="apply_form">
+        <div class="form-grid">
+          <div>
+            <label for="site_code">Site Code <span class="optional">（必填）</span></label>
+            <input type="text" id="site_code" autocomplete="off" placeholder="例如 HA02">
+            <div class="hint">輸入後自動驗證門店。</div>
+          </div>
+          <div>
+            <label>門店資訊</label>
+            <div id="store_info" class="hint" style="padding-top:9px">—</div>
+          </div>
+          <div class="full">
+            <label for="sku">SKU <span class="optional">（必填）</span></label>
+            <input type="text" id="sku" autocomplete="off">
+          </div>
+        </div>
+        <div class="btn-row">
+          <button type="submit" class="btn" id="btn_submit">提交</button>
+          <button type="button" class="btn secondary" id="btn_preview">預覽</button>
+        </div>
+      </form>
+
+      <div id="preview_box" style="display:none">
+        <hr>
+        <h3>提交預覽</h3>
+        <div class="dl" id="preview_body"></div>
+        <div class="btn-row">
+          <button class="btn" id="btn_confirm">確認提交</button>
+          <button class="btn secondary" id="btn_cancel_preview">返回修改</button>
+        </div>
+        <div id="confirm_error"></div>
+      </div>
+    </div>
+
+    <div class="card" id="result_card" style="display:none">
+      <h2>已收件</h2>
+      <div class="result-box">
+        <div>申請時間：<b id="res_time"></b></div>
+        <div style="margin-top:8px">申請編號：</div>
+        <div class="app-no" id="res_no"></div>
+        <div class="hint" style="margin-top:12px">請記下申請編號，之後可於「<a href="/lookup.html">查詢／修改</a>」頁面輸入「申請編號 + Site Code」查看及在匯出前修改。</div>
+      </div>
+      <div class="btn-row">
+        <button class="btn" id="btn_again">再提交一筆</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Excel 批量上載</h2>
+      <p class="hint">下載獨立模板，在 <b>突發性銷售申報</b> 工作表填寫 <b>Site Code</b>、<b>SKU</b> 兩欄。整份檔案會先完整驗證，任何錯誤都不會寫入資料。</p>
+      <div class="btn-row" style="margin-top:0">
+        <a class="btn ghost" href="/api/public/sales/template">下載模板 (.xlsx)</a>
+      </div>
+      <div class="file-drop" id="file_drop">
+        <div id="file_label">拖曳 .xlsx 檔案到此處，或按一下選擇檔案</div>
+        <input type="file" id="file_input" accept=".xlsx" style="display:none">
+      </div>
+      <div class="btn-row">
+        <button class="btn" id="btn_import">上載並匯入</button>
+      </div>
+      <div id="import_result"></div>
+    </div>
+
+    <div class="card">
+      <h2>需要幫助？</h2>
+      <p class="hint" style="margin-top:0">請到<a href="/help.html#sales">圖文使用說明</a>查看突發性銷售申報及 Excel 批量上載步驟。</p>
+    </div>
+  </main>
+
+  <script src="/js/api.js"></script>
+  <script src="/js/sales.js"></script>
+</body>
+</html>

@@ -12,7 +12,7 @@ import { validateUrgentReason } from '../lib/validation.js';
 import { toHKDateString, hkTodayForDateColumn } from '../lib/time.js';
 import { normalizeSiteCode } from './stores.js';
 
-export type SubmissionType = 'normal' | 'urgent';
+export type SubmissionType = 'normal' | 'urgent' | 'sales';
 
 export interface SubmissionRow {
   id: string;
@@ -96,6 +96,13 @@ export function urgentFieldsFromRow(row: SubmissionRow): {
   };
 }
 
+export function salesFieldsFromRow(row: SubmissionRow): { site_code: string; sku: string } {
+  return {
+    site_code: row.site_code,
+    sku: normalizeText(row.sku),
+  };
+}
+
 function toBusinessParams(fields: SubmissionBusinessFields): unknown[] {
   return [
     normalizeText(fields.brand) || null,
@@ -150,7 +157,7 @@ export async function createSubmission(
   const siteCode = normalizeSiteCode(input.siteCode);
   const fields = input.fields;
   const submissionType: SubmissionType = input.submissionType ?? 'normal';
-  const isUrgent = submissionType === 'urgent';
+   const isUrgent = submissionType === 'urgent';
   const qty = isUrgent ? (input.qty ?? null) : null;
   if (isUrgent) {
     if (!(typeof qty === 'number' && Number.isInteger(qty) && qty >= URGENT_QTY_MIN && qty <= URGENT_QTY_MAX)) {
@@ -163,7 +170,7 @@ export async function createSubmission(
   }
   const requestedByEmail = `${siteCode.toLowerCase()}@sasa.com`;
   const applicationDate = input.applicationDateOverride ?? hkTodayForDateColumn();
-  const appNoPrefix = isUrgent ? 'URGENT' : 'NDRF';
+   const appNoPrefix = isUrgent ? 'URGENT' : submissionType === 'sales' ? 'SALES' : 'NDRF';
 
   return withTransaction(async (client) => {
     await assertNoDuplicate(client, { siteCode, sku: fields.sku, submissionType, date: applicationDate });
@@ -194,15 +201,17 @@ export async function createSubmission(
     );
     const row = result.rows[0]!;
 
-    const snapshot = isUrgent
-      ? {
-          site_code: siteCode,
-          sku: normalizeText(fields.sku),
-          qty,
-          urgent_reason: normalizeText(input.urgentReason) || null,
-          urgent_reason_other: normalizeText(input.urgentReasonOther) || null,
-        }
-      : fields;
+     const snapshot = isUrgent
+       ? {
+           site_code: siteCode,
+           sku: normalizeText(fields.sku),
+           qty,
+           urgent_reason: normalizeText(input.urgentReason) || null,
+           urgent_reason_other: normalizeText(input.urgentReasonOther) || null,
+         }
+       : submissionType === 'sales'
+         ? { site_code: siteCode, sku: normalizeText(fields.sku) }
+       : fields;
 
     await client.query(
       `INSERT INTO submission_versions
@@ -346,6 +355,59 @@ export async function modifySubmission(
       ],
     );
 
+    return newRow;
+  });
+}
+
+export interface ModifySalesSubmissionInput {
+  applicationNo: string;
+  siteCode: string;
+  sku: string;
+  ip: string;
+  changeSource: string;
+}
+
+export async function modifySalesSubmission(input: ModifySalesSubmissionInput): Promise<SubmissionRow> {
+  const siteCode = normalizeSiteCode(input.siteCode);
+  return withTransaction(async (client) => {
+    const rowResult = await client.query<SubmissionRow>(
+      'SELECT * FROM submissions WHERE application_no = $1 AND site_code = $2',
+      [input.applicationNo.trim().toUpperCase(), siteCode],
+    );
+    const row = rowResult.rows[0];
+    if (!row) throw new Error('找不到申報');
+    if (row.submission_type !== 'sales') throw new NotSupportedError('此申報不是突發性銷售申報');
+    if (row.locked_at || row.exported_at) {
+      throw new LockedError(row.locked_at ? new Date(row.locked_at) : null);
+    }
+
+    await assertNoDuplicate(client, {
+      siteCode,
+      sku: input.sku,
+      submissionType: row.submission_type,
+      date: row.application_date,
+      excludeId: row.id,
+    });
+
+    const before = salesFieldsFromRow(row);
+    const updated = await client.query<SubmissionRow>(
+      `UPDATE submissions SET sku = $1, updated_at = now()
+       WHERE id = $2
+       RETURNING *`,
+      [normalizeText(input.sku), row.id],
+    );
+    const newRow = updated.rows[0]!;
+    const versionResult = await client.query<{ max: number | null }>(
+      'SELECT max(version) AS max FROM submission_versions WHERE submission_id = $1',
+      [row.id],
+    );
+    const nextVersion = (versionResult.rows[0]?.max ?? 0) + 1;
+    await client.query(
+      `INSERT INTO submission_versions
+         (submission_id, version, data_before, data_after, actor_role, actor, ip, change_source)
+       VALUES ($1, $2, $3, $4, 'applicant', NULL, $5, $6)`,
+      [row.id, nextVersion, JSON.stringify(before), JSON.stringify(salesFieldsFromRow(newRow)), input.ip, input.changeSource],
+    );
     return newRow;
   });
 }
@@ -519,6 +581,41 @@ export async function adminUpdateUrgentSubmission(input: {
       [row.id, nextVersion, JSON.stringify(before), JSON.stringify(after), 'admin', input.username, input.ip, 'admin_edit'],
     );
 
+    return newRow;
+  });
+}
+
+export async function adminUpdateSalesSubmission(input: {
+  id: string;
+  sku: string;
+  ip: string;
+  username: string;
+}): Promise<SubmissionRow> {
+  return withTransaction(async (client) => {
+    const rowResult = await client.query<SubmissionRow>('SELECT * FROM submissions WHERE id = $1', [input.id]);
+    const row = rowResult.rows[0];
+    if (!row) throw new Error('找不到申報');
+    if (row.submission_type !== 'sales') throw new Error('此申報不是突發性銷售申報');
+
+    const before = salesFieldsFromRow(row);
+    const updated = await client.query<SubmissionRow>(
+      `UPDATE submissions SET sku = $1, updated_at = now()
+       WHERE id = $2
+       RETURNING *`,
+      [normalizeText(input.sku), row.id],
+    );
+    const newRow = updated.rows[0]!;
+    const versionResult = await client.query<{ max: number | null }>(
+      'SELECT max(version) AS max FROM submission_versions WHERE submission_id = $1',
+      [row.id],
+    );
+    const nextVersion = (versionResult.rows[0]?.max ?? 0) + 1;
+    await client.query(
+      `INSERT INTO submission_versions
+         (submission_id, version, data_before, data_after, actor_role, actor, ip, change_source)
+       VALUES ($1, $2, $3, $4, 'admin', $5, $6, 'admin_edit')`,
+      [row.id, nextVersion, JSON.stringify(before), JSON.stringify(salesFieldsFromRow(newRow)), input.username, input.ip],
+    );
     return newRow;
   });
 }

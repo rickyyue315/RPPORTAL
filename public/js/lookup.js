@@ -6,6 +6,10 @@
     return current?.submission?.submission_type === 'urgent';
   }
 
+  function isSales() {
+    return current?.submission?.submission_type === 'sales';
+  }
+
   function syncOtherReasonWrap() {
     const reason = $('f_u_urgent_reason').value;
     $('f_u_other_wrap').style.display = reason === '9' ? '' : 'none';
@@ -50,6 +54,8 @@
       headerRows += `
         <dt>QTY</dt><dd>${escapeHtml(s.qty)}</dd>
         <dt>Urgent Reason</dt><dd>${escapeHtml(s.urgent_reason_label || s.urgent_reason)}${s.urgent_reason_other ? '（' + escapeHtml(s.urgent_reason_other) + '）' : ''}</dd>`;
+    } else if (isSales()) {
+      headerRows += '<dt>申報類型</dt><dd>突發性銷售申報</dd>';
     }
     if (s.locked_at) {
       headerRows += `<dt>鎖定時間</dt><dd>${escapeHtml(s.locked_at)}</dd>`;
@@ -67,6 +73,9 @@
       $('f_u_urgent_reason').value = s.urgent_reason || '';
       $('f_u_urgent_reason_other').value = s.urgent_reason_other || '';
       syncOtherReasonWrap();
+    } else if (isSales()) {
+      normalFields.style.display = 'none';
+      urgentFields.style.display = 'none';
     } else {
       normalFields.style.display = '';
       urgentFields.style.display = 'none';
@@ -110,6 +119,10 @@
         }
       }).catch(() => {});
       $('save_note').textContent = '每日 14:30 前可修改，每次修改會新增一個版本紀錄。';
+    } else if (isSales()) {
+      $('lock_banner').innerHTML = '';
+      $('modify_box').style.display = '';
+      $('save_note').textContent = '沒有提交時間限制；匯出前可修改 SKU，每次修改會新增一個版本紀錄。';
     } else {
       $('lock_banner').innerHTML = '';
       $('modify_box').style.display = '';
@@ -152,7 +165,9 @@
           urgent_reason: $('f_u_urgent_reason').value,
           urgent_reason_other: $('f_u_urgent_reason_other').value.trim(),
         }
-      : {
+      : isSales()
+        ? base
+        : {
           ...base,
           rp_type: $('f_rp_type').value,
           safety_stock: $('f_safety_stock').value.trim(),
@@ -161,7 +176,9 @@
         };
     const clientErrs = isUrgent()
       ? validateUrgentFields(body)
-      : validateBusinessFields(body, current.submission.site_code);
+      : isSales()
+        ? (body.sku.trim() ? [] : [{ message: 'SKU 為必填' }])
+        : validateBusinessFields(body, current.submission.site_code);
     if (clientErrs.length) {
       showAlert($('save_error'), 'error', clientErrs.map((e) => escapeHtml(e.message)).join('<br>'));
       return;

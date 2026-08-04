@@ -15,6 +15,7 @@ import {
   listVersions,
   modifySubmission,
   modifyUrgentSubmission,
+  modifySalesSubmission,
   LockedError,
   NotSupportedError,
   DuplicateSubmissionError,
@@ -22,8 +23,8 @@ import {
 } from '../services/submissions.js';
 import { writeAuditEvent } from '../lib/audit.js';
 import { toHKString, hkTodayForDateColumn, hkMinutesNow, hkHM } from '../lib/time.js';
-import { parseImportWorkbook, parseUrgentImportWorkbook, findDuplicateImportErrors } from '../lib/excelImport.js';
-import { generateTemplateWorkbook, generateUrgentTemplateWorkbook, buildImportRecordBuffer, buildUrgentImportRecordBuffer } from '../lib/excelExport.js';
+import { parseImportWorkbook, parseUrgentImportWorkbook, parseSalesImportWorkbook, findDuplicateImportErrors } from '../lib/excelImport.js';
+import { generateTemplateWorkbook, generateUrgentTemplateWorkbook, generateSalesTemplateWorkbook, buildImportRecordBuffer, buildUrgentImportRecordBuffer, buildSalesImportRecordBuffer } from '../lib/excelExport.js';
 import { URGENT_QTY_MIN, URGENT_QTY_MAX, urgentReasonLabel } from '../lib/fields.js';
 import { RF_REMARK_REQUIRED_SITES, validateBusinessFields, validateUrgentReason } from '../lib/validation.js';
 import { query, withTransaction } from '../db/pool.js';
@@ -99,6 +100,24 @@ function serializeUrgentSubmission(row: SubmissionRow) {
     urgent_reason: row.urgent_reason,
     urgent_reason_label: urgentReasonLabel(row.urgent_reason),
     urgent_reason_other: row.urgent_reason_other,
+  };
+}
+
+function serializeSalesSubmission(row: SubmissionRow) {
+  return {
+    application_no: row.application_no,
+    site_code: row.site_code,
+    requested_by_email: row.requested_by_email,
+    application_date: row.application_date,
+    submitted_at: toHKString(row.submitted_at),
+    source: row.source,
+    submission_type: row.submission_type,
+    status: row.status,
+    locked: Boolean(row.locked_at || row.exported_at),
+    locked_at: row.locked_at ? toHKString(row.locked_at) : null,
+    exported_at: row.exported_at ? toHKString(row.exported_at) : null,
+    sku: row.sku,
+    qty: row.qty,
   };
 }
 
@@ -223,6 +242,221 @@ publicRouter.post(
     });
 
     res.status(201).json({ submission: serializeSubmission(row), store: { shop: store.shop } });
+  }),
+);
+
+const salesSubmitSchema = z.object({
+  site_code: z.string().trim().min(1, 'Site Code 為必填').max(20),
+  sku: z.string().trim().min(1, 'SKU 為必填').max(100),
+});
+
+/** POST /api/public/sales/submit — sudden sales single web submission. */
+publicRouter.post(
+  '/sales/submit',
+  publicSubmitLimiter,
+  asyncHandler(async (req: Request, res: Response) => {
+    const parsed = salesSubmitSchema.safeParse(req.body);
+    if (!parsed.success) {
+      const first = parsed.error.issues[0];
+      res.status(400).json({ error: first?.message ?? '輸入資料無效', field: first?.path[0] ?? null });
+      return;
+    }
+    const siteCode = normalizeSiteCode(parsed.data.site_code);
+    const store = await getStore(siteCode);
+    if (!store) {
+      res.status(400).json({ error: `Site Code「${siteCode}」不存在於門店主檔`, field: 'site_code' });
+      return;
+    }
+
+    const ip = getClientIp(req);
+    let row: SubmissionRow;
+    try {
+      row = await createSubmission({
+        siteCode,
+        source: 'web',
+        submissionType: 'sales',
+        fields: { brand: '', sku: parsed.data.sku, rp_type: '', safety_stock: '', nd_code: '', remark: '' },
+        ip,
+        changeSource: 'web_submit',
+      });
+    } catch (err) {
+      if (err instanceof DuplicateSubmissionError) {
+        res.status(409).json({ error: err.message, field: 'sku' });
+        return;
+      }
+      throw err;
+    }
+
+    await writeAuditEvent({
+      eventType: 'submission_created',
+      actorRole: 'applicant',
+      submissionId: row.id,
+      applicationNo: row.application_no,
+      ip,
+      metadata: { source: 'web', submission_type: 'sales', shop: store.shop },
+    });
+    res.status(201).json({ submission: serializeSalesSubmission(row), store: { shop: store.shop } });
+  }),
+);
+
+/** GET /api/public/sales/template — download sudden sales import template. */
+publicRouter.get(
+  '/sales/template',
+  excelExportLimiter,
+  asyncHandler(async (_req: Request, res: Response) => {
+    const buffer = await generateSalesTemplateWorkbook();
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition', 'attachment; filename="Sudden_Sales_Template.xlsx"');
+    res.send(buffer);
+  }),
+);
+
+/** POST /api/public/sales/import — sudden sales Excel batch upload. */
+publicRouter.post(
+  '/sales/import',
+  excelImportLimiter,
+  upload.single('file'),
+  asyncHandler(async (req: Request, res: Response) => {
+    const file = (req as Request & { file?: Express.Multer.File }).file;
+    if (!file) {
+      res.status(400).json({ error: '請上載 Excel 檔案' });
+      return;
+    }
+    if (!/\.xlsx$/i.test(file.originalname)) {
+      res.status(400).json({ error: '只接受 .xlsx 檔案' });
+      return;
+    }
+    if (file.size > config.maxUploadBytes) {
+      res.status(400).json({ error: `檔案超過 ${config.maxUploadBytes / 1024 / 1024}MB 限制` });
+      return;
+    }
+
+    const stores = await query<{ site_code: string }>('SELECT site_code FROM stores');
+    const storeCodes = new Set(stores.rows.map((s) => s.site_code));
+    const parsed = await parseSalesImportWorkbook(file.buffer, storeCodes, config.maxImportRows);
+    if (!parsed.ok || !parsed.rows) {
+      await writeAuditEvent({
+        eventType: 'excel_import_error',
+        actorRole: 'applicant',
+        ip: getClientIp(req),
+        metadata: { filename: file.originalname, submission_type: 'sales', errors: parsed.errors ?? [] },
+      });
+      res.status(400).json({ error: '匯入失敗', totalRows: parsed.totalRows, errors: parsed.errors ?? [] });
+      return;
+    }
+
+    const existing = await query<{ site_code: string; sku: string }>(
+      `SELECT site_code, sku FROM submissions
+       WHERE application_date = $1::date AND submission_type = 'sales'`,
+      [hkTodayForDateColumn()],
+    );
+    const existingKeys = new Set(existing.rows.map((s) => `${s.site_code}|${s.sku}`));
+    const dupErrors = findDuplicateImportErrors(
+      parsed.rows.map((r) => ({ rowNumber: r.rowNumber, siteCode: r.siteCode, sku: r.sku })),
+      existingKeys,
+    );
+    if (dupErrors.length) {
+      await writeAuditEvent({
+        eventType: 'excel_import_error',
+        actorRole: 'applicant',
+        ip: getClientIp(req),
+        metadata: { filename: file.originalname, submission_type: 'sales', errors: dupErrors },
+      });
+      res.status(400).json({ error: '匯入失敗', totalRows: parsed.totalRows, errors: dupErrors });
+      return;
+    }
+
+    const ip = getClientIp(req);
+    const results = await withTransaction(async (client) => {
+      const rowsOut: Array<{
+        row: number;
+        application_no: string;
+        site_code: string;
+        sku: string;
+        submitted_at: string;
+      }> = [];
+      for (const item of parsed.rows!) {
+        const appNo = generateApplicationNo('SALES');
+        const requestedByEmail = `${item.siteCode.toLowerCase()}@sasa.com`;
+        const insert = await client.query<SubmissionRow>(
+          `INSERT INTO submissions (
+             application_no, source, submission_type, site_code, requested_by_email, application_date,
+             brand, sku, rp_type, safety_stock, nd_code, remark, qty, created_ip, created_ip_expires_at
+           ) VALUES ($1, 'excel', 'sales', $2, $3, to_char(now() AT TIME ZONE 'Asia/Hong_Kong', 'YYYY-MM-DD')::date,
+             '', $4, NULL, NULL, NULL, NULL, NULL, $5, $6)
+           RETURNING *`,
+          [appNo, item.siteCode, requestedByEmail, item.sku, ip, ip ? ipExpiryIso() : null],
+        );
+        const row = insert.rows[0]!;
+        await client.query(
+          `INSERT INTO submission_versions
+             (submission_id, version, data_before, data_after, actor_role, actor, ip, change_source)
+           VALUES ($1, 1, NULL, $2, 'applicant', NULL, $3, 'excel_import')`,
+          [row.id, JSON.stringify({ site_code: item.siteCode, sku: item.sku }), ip],
+        );
+        rowsOut.push({
+          row: item.rowNumber,
+          application_no: row.application_no,
+          site_code: row.site_code,
+          sku: row.sku,
+          submitted_at: toHKString(row.submitted_at),
+        });
+      }
+      const batch = await client.query<{ id: string }>(
+        `INSERT INTO import_batches (filename, sheet_name, row_count, success_count, failed_count, results, content_hash, created_by)
+         VALUES ($1, $2, $3, $4, 0, $5::jsonb, $6, 'applicant')
+         RETURNING id`,
+        [file.originalname, parsed.sheetName ?? '', parsed.totalRows, rowsOut.length, JSON.stringify(rowsOut), parsed.contentHash],
+      );
+      return { batchId: batch.rows[0]!.id, rows: rowsOut, successCount: rowsOut.length };
+    });
+
+    await writeAuditEvent({
+      eventType: 'excel_import',
+      actorRole: 'applicant',
+      ip,
+      metadata: {
+        filename: file.originalname,
+        submission_type: 'sales',
+        batchId: results.batchId,
+        totalRows: parsed.totalRows,
+        successCount: results.successCount,
+      },
+    });
+    res.status(201).json({
+      message: `成功匯入 ${results.successCount} 行`,
+      totalRows: parsed.totalRows,
+      successCount: results.successCount,
+      rows: results.rows,
+    });
+  }),
+);
+
+const salesImportRecordSchema = z.object({
+  rows: z.array(z.object({
+    row: z.number(),
+    application_no: z.string().max(64),
+    site_code: z.string().max(20),
+    sku: z.string().max(100),
+    submitted_at: z.string().max(64),
+  })).min(1).max(config.maxImportRows),
+});
+
+/** POST /api/public/sales/import/record — download sudden sales import record. */
+publicRouter.post(
+  '/sales/import/record',
+  excelExportLimiter,
+  asyncHandler(async (req: Request, res: Response) => {
+    const parsed = salesImportRecordSchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ error: '資料格式錯誤' });
+      return;
+    }
+    const buffer = await buildSalesImportRecordBuffer(parsed.data.rows);
+    const stamp = toHKString(new Date()).replace(/[^0-9]/g, '');
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition', `attachment; filename="Sudden_Sales_Import_Record_${stamp}.xlsx"`);
+    res.send(buffer);
   }),
 );
 
@@ -788,7 +1022,11 @@ publicRouter.get(
 
     res.json({
       submission:
-        row.submission_type === 'urgent' ? serializeUrgentSubmission(row) : serializeSubmission(row),
+        row.submission_type === 'urgent'
+          ? serializeUrgentSubmission(row)
+          : row.submission_type === 'sales'
+            ? serializeSalesSubmission(row)
+            : serializeSubmission(row),
       store: { shop: store?.shop ?? '', requested_by_email: row.requested_by_email },
       versions: versions.map((v) => ({
         version: v.version,
@@ -854,6 +1092,42 @@ publicRouter.post(
     }
 
     const ip = getClientIp(req);
+
+    if (existing.submission_type === 'sales') {
+      try {
+        const row = await modifySalesSubmission({
+          applicationNo: data.application_no,
+          siteCode,
+          sku: data.sku,
+          ip,
+          changeSource: 'web_modify',
+        });
+        await writeAuditEvent({
+          eventType: 'submission_modified',
+          actorRole: 'applicant',
+          submissionId: row.id,
+          applicationNo: row.application_no,
+          ip,
+          metadata: { submission_type: 'sales' },
+        });
+        res.json({ submission: serializeSalesSubmission(row) });
+      } catch (err) {
+        if (err instanceof LockedError) {
+          res.status(409).json({ error: err.message });
+          return;
+        }
+        if (err instanceof DuplicateSubmissionError) {
+          res.status(409).json({ error: err.message, field: 'sku' });
+          return;
+        }
+        if (err instanceof NotSupportedError || (err instanceof Error && err.message === '找不到申報')) {
+          res.status(err instanceof NotSupportedError ? 400 : 404).json({ error: err.message === '找不到申報' ? '找不到相符申報' : err.message });
+          return;
+        }
+        throw err;
+      }
+      return;
+    }
 
     if (existing.submission_type === 'urgent') {
       if (!isUrgentWindowOpen()) {

@@ -73,7 +73,7 @@
         <td>${escapeHtml(s.application_no)}</td>
         <td>${escapeHtml(s.site_code)}</td>
         <td>${escapeHtml(s.sku)}${s.submission_type === 'urgent' ? `<div class="hint">QTY: ${escapeHtml(s.qty)}</div>` : ''}</td>
-        <td>${s.submission_type === 'urgent' ? '<span class="status-badge received">Urgent</span>' : '一般'}</td>
+        <td>${s.submission_type === 'urgent' ? '<span class="status-badge received">Urgent</span>' : s.submission_type === 'sales' ? '<span class="status-badge received">突發銷售</span>' : '一般'}</td>
         <td>${s.source === 'web' ? '網頁' : 'Excel'}</td>
         <td>${escapeHtml(s.submitted_at)}</td>
         <td>${escapeHtml(s.updated_at || '—')}</td>
@@ -132,10 +132,11 @@
   function renderDetail(data) {
     const s = data.submission;
     const isUrgent = s.submission_type === 'urgent';
+    const isSales = s.submission_type === 'sales';
     $('detail_title').textContent = `申報詳情 — ${s.application_no}`;
     let header = `
       <dt>狀態</dt><dd>${s.locked ? '<span class="status-badge locked">已鎖定</span>' : '<span class="status-badge received">已收件</span>'}</dd>
-      <dt>類型</dt><dd>${isUrgent ? 'Urgent Order' : '一般 NDRF'}</dd>
+       <dt>類型</dt><dd>${isUrgent ? 'Urgent Order' : isSales ? '突發性銷售申報' : '一般 NDRF'}</dd>
       <dt>Site Code</dt><dd>${escapeHtml(s.site_code)}（${escapeHtml(data.store?.shop || '')}）</dd>
       <dt>申請電郵</dt><dd>${escapeHtml(s.requested_by_email)}</dd>
       <dt>來源</dt><dd>${s.source === 'web' ? '網頁' : 'Excel'}</dd>
@@ -150,8 +151,9 @@
     if (s.exported_at) header += `<dt>匯出時間</dt><dd>${escapeHtml(s.exported_at)}</dd>`;
     $('detail_header').innerHTML = header;
 
-    $('normal_fields').style.display = isUrgent ? 'none' : '';
+    $('normal_fields').style.display = isUrgent || isSales ? 'none' : '';
     $('urgent_fields').style.display = isUrgent ? '' : 'none';
+    $('sales_fields').style.display = isSales ? '' : 'none';
     $('urgent_note').style.display = isUrgent ? '' : 'none';
 
     $('a_sku_normal').value = s.sku || '';
@@ -163,6 +165,7 @@
     $('a_qty').value = s.qty || '';
     $('a_urgent_reason').value = s.urgent_reason || '';
     $('a_urgent_reason_other').value = s.urgent_reason_other || '';
+    $('a_sku_sales').value = s.sku || '';
     syncUrgentOtherField();
 
     $('btn_save_edit').disabled = s.locked;
@@ -195,6 +198,7 @@
   $('btn_save_edit').addEventListener('click', async () => {
     if (!currentDetail) return;
     const isUrgent = currentDetail.submission.submission_type === 'urgent';
+    const isSales = currentDetail.submission.submission_type === 'sales';
     const body = isUrgent
       ? {
           sku: $('a_sku_urgent').value.trim(),
@@ -202,7 +206,9 @@
           urgent_reason: $('a_urgent_reason').value,
           urgent_reason_other: $('a_urgent_reason_other').value.trim(),
         }
-      : {
+      : isSales
+        ? { sku: $('a_sku_sales').value.trim() }
+        : {
           sku: $('a_sku_normal').value.trim(),
           rp_type: $('a_rp_type').value,
           safety_stock: $('a_safety_stock').value.trim(),
@@ -216,6 +222,11 @@
       else if (body.urgent_reason !== '9' && body.urgent_reason_other) urgentErrs.push('僅選擇「9. 其他」時才可填寫 Other Reason');
       if (urgentErrs.length) {
         showAlert($('save_edit_error'), 'error', urgentErrs.map((e) => escapeHtml(e)).join('<br>'));
+        return;
+      }
+    } else if (isSales) {
+      if (!body.sku) {
+        showAlert($('save_edit_error'), 'error', 'SKU 為必填');
         return;
       }
     } else {
@@ -410,6 +421,10 @@
       setStat('urgent', 'exported', 's_urgent_exported');
       setStat('urgent', 'today', 's_urgent_today');
       setStat('urgent', 'today_exported', 's_urgent_today_exported');
+      setStat('sales', 'total', 's_sales_total');
+      setStat('sales', 'exported', 's_sales_exported');
+      setStat('sales', 'today', 's_sales_today');
+      setStat('sales', 'today_exported', 's_sales_today_exported');
       const note = $('summary_note');
       if (note) {
         if (data.total > 0) {
@@ -446,6 +461,50 @@
       showAlert($('store_result'), 'error', msg);
     } finally {
       btn.disabled = false;
+    }
+  });
+
+  $('btn_sales_export').addEventListener('click', async () => {
+    const btn = $('btn_sales_export');
+    btn.disabled = true;
+    btn.textContent = '匯出中…';
+    showAlert($('sales_export_info'), '', '');
+    const body = {
+      from: $('se_from').value,
+      to: $('se_to').value,
+      site_code: $('se_site').value.trim(),
+      include_exported: $('se_include').value === 'true',
+    };
+    try {
+      const token = await getCsrf();
+      const response = await fetch('/api/admin/sales/export', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-csrf-token': token },
+        body: JSON.stringify(body),
+      });
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ error: '匯出失敗' }));
+        throw new Error(errorData.error || '匯出失敗');
+      }
+      const blob = await response.blob();
+      const disposition = response.headers.get('Content-Disposition') || '';
+      const match = disposition.match(/filename="([^"]+)"/);
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement('a');
+      anchor.href = url;
+      anchor.download = match ? match[1] : 'Sudden_Sales_Export.xlsx';
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      URL.revokeObjectURL(url);
+      showAlert($('sales_export_info'), 'success', '匯出成功，相關申報已鎖定。');
+      loadList();
+      loadSummary();
+    } catch (error) {
+      showAlert($('sales_export_info'), 'error', escapeHtml(error.message));
+    } finally {
+      btn.disabled = false;
+      btn.textContent = '匯出並鎖定';
     }
   });
 

@@ -16,6 +16,7 @@ import {
   listVersions,
   adminUpdateSubmission,
   adminUpdateUrgentSubmission,
+  adminUpdateSalesSubmission,
   type SubmissionRow,
 } from '../services/submissions.js';
 import { query, withTransaction } from '../db/pool.js';
@@ -25,6 +26,7 @@ import {
   buildAuditExportBuffer,
   generateUrgentTemplateWorkbook,
   buildUrgentExportBuffer,
+  buildSalesExportBuffer,
 } from '../lib/excelExport.js';
 import { parseImportWorkbook, parseUrgentImportWorkbook } from '../lib/excelImport.js';
 import { getStore, normalizeSiteCode, parseStoresCsv, replaceStores, listStores } from '../services/stores.js';
@@ -161,7 +163,7 @@ adminRouter.get(
       where.push(`source = $${idx++}`);
       params.push(source);
     }
-    if (submission_type === 'normal' || submission_type === 'urgent') {
+    if (submission_type === 'normal' || submission_type === 'urgent' || submission_type === 'sales') {
       where.push(`submission_type = $${idx++}`);
       params.push(submission_type);
     }
@@ -223,7 +225,11 @@ adminRouter.get(
       urgent_total: string;
       urgent_exported: string;
       urgent_today: string;
-      urgent_today_exported: string;
+       urgent_today_exported: string;
+       sales_total: string;
+       sales_exported: string;
+       sales_today: string;
+       sales_today_exported: string;
     }>(
       `SELECT
          (SELECT count(*)::text FROM submissions) AS total,
@@ -231,10 +237,14 @@ adminRouter.get(
          (SELECT count(*)::text FROM submissions WHERE submission_type = 'normal' AND exported_at IS NOT NULL) AS normal_exported,
          (SELECT count(*)::text FROM submissions WHERE submission_type = 'normal' AND application_date = $1::date) AS normal_today,
          (SELECT count(*)::text FROM submissions WHERE submission_type = 'normal' AND application_date = $1::date AND exported_at IS NOT NULL) AS normal_today_exported,
-         (SELECT count(*)::text FROM submissions WHERE submission_type = 'urgent') AS urgent_total,
-         (SELECT count(*)::text FROM submissions WHERE submission_type = 'urgent' AND exported_at IS NOT NULL) AS urgent_exported,
-         (SELECT count(*)::text FROM submissions WHERE submission_type = 'urgent' AND application_date = $1::date) AS urgent_today,
-         (SELECT count(*)::text FROM submissions WHERE submission_type = 'urgent' AND application_date = $1::date AND exported_at IS NOT NULL) AS urgent_today_exported`,
+          (SELECT count(*)::text FROM submissions WHERE submission_type = 'urgent') AS urgent_total,
+          (SELECT count(*)::text FROM submissions WHERE submission_type = 'urgent' AND exported_at IS NOT NULL) AS urgent_exported,
+          (SELECT count(*)::text FROM submissions WHERE submission_type = 'urgent' AND application_date = $1::date) AS urgent_today,
+          (SELECT count(*)::text FROM submissions WHERE submission_type = 'urgent' AND application_date = $1::date AND exported_at IS NOT NULL) AS urgent_today_exported,
+          (SELECT count(*)::text FROM submissions WHERE submission_type = 'sales') AS sales_total,
+          (SELECT count(*)::text FROM submissions WHERE submission_type = 'sales' AND exported_at IS NOT NULL) AS sales_exported,
+          (SELECT count(*)::text FROM submissions WHERE submission_type = 'sales' AND application_date = $1::date) AS sales_today,
+          (SELECT count(*)::text FROM submissions WHERE submission_type = 'sales' AND application_date = $1::date AND exported_at IS NOT NULL) AS sales_today_exported`,
       [today],
     );
     const r = rows.rows[0]!;
@@ -251,6 +261,12 @@ adminRouter.get(
         exported: Number(r.urgent_exported),
         today: Number(r.urgent_today),
         today_exported: Number(r.urgent_today_exported),
+      },
+      sales: {
+        total: Number(r.sales_total),
+        exported: Number(r.sales_exported),
+        today: Number(r.sales_today),
+        today_exported: Number(r.sales_today_exported),
       },
     });
   }),
@@ -286,7 +302,7 @@ adminRouter.get(
   }),
 );
 
-/** PUT /api/admin/submissions/:id — admin edits business fields (normal) or SKU/QTY (urgent). */
+/** PUT /api/admin/submissions/:id — admin edits fields according to submission type. */
 adminRouter.put(
   '/submissions/:id',
   requireAdmin,
@@ -298,6 +314,34 @@ adminRouter.put(
       return;
     }
     const ip = getClientIp(req);
+    if (row.submission_type === 'sales') {
+      const salesSchema = z.object({
+        sku: z.string().trim().min(1, 'SKU 為必填').max(100),
+      });
+      const parsed = salesSchema.safeParse(req.body);
+      if (!parsed.success) {
+        const first = parsed.error.issues[0];
+        res.status(400).json({ error: first?.message ?? '輸入資料無效', field: first?.path[0] ?? null });
+        return;
+      }
+      const updated = await adminUpdateSalesSubmission({
+        id: row.id,
+        sku: parsed.data.sku,
+        ip,
+        username: req.adminUsername!,
+      });
+      await writeAuditEvent({
+        eventType: 'admin_modified',
+        actorRole: 'admin',
+        actor: req.adminUsername,
+        submissionId: row.id,
+        applicationNo: row.application_no,
+        ip,
+        metadata: { submission_type: 'sales' },
+      });
+      res.json({ submission: serializeAdminSubmission(updated) });
+      return;
+    }
     if (row.submission_type === 'urgent') {
       const urgentSchema = z.object({
         sku: z.string().trim().min(1, 'SKU 為必填').max(100),
@@ -873,6 +917,85 @@ adminRouter.get(
     const buffer = await buildAuditExportBuffer(auditRows.rows as never);
     res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
     res.setHeader('Content-Disposition', `attachment; filename="NDRF_Audit_Report_${new Date().toISOString().slice(0, 10)}.xlsx"`);
+    res.send(buffer);
+  }),
+);
+
+/** POST /api/admin/sales/export — sudden sales export + lock. */
+adminRouter.post(
+  '/sales/export',
+  requireAdmin,
+  excelExportLimiter,
+  asyncHandler(async (req: Request, res: Response) => {
+    const parsed = exportFiltersSchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ error: '篩選條件無效' });
+      return;
+    }
+    const { from, to, site_code, include_exported } = parsed.data;
+    const where: string[] = [`submission_type = 'sales'`];
+    const params: unknown[] = [];
+    let idx = 1;
+    if (from) {
+      where.push(`application_date >= $${idx++}`);
+      params.push(from);
+    }
+    if (to) {
+      where.push(`application_date <= $${idx++}`);
+      params.push(to);
+    }
+    if (site_code) {
+      where.push(`site_code = $${idx++}`);
+      params.push(normalizeSiteCode(site_code));
+    }
+    if (!include_exported) where.push('exported_at IS NULL');
+
+    const rows = await query<SubmissionRow>(
+      `SELECT * FROM submissions WHERE ${where.join(' AND ')} ORDER BY application_date ASC, submitted_at ASC`,
+      params,
+    );
+    if (rows.rows.length === 0) {
+      res.status(400).json({ error: '沒有符合條件的突發性銷售申報可以匯出' });
+      return;
+    }
+
+    const buffer = await buildSalesExportBuffer(rows.rows.map((row) => ({
+      application_date: row.application_date,
+      requested_by_email: row.requested_by_email,
+      site_code: row.site_code,
+      sku: row.sku,
+    })));
+    const filename = `Sudden_Sales_Export_${new Date().toISOString().slice(0, 10)}.xlsx`;
+    const batchResult = await withTransaction(async (client) => {
+      const batch = await client.query<{ id: string }>(
+        `INSERT INTO export_batches (filename, submission_count, submission_nos, filters, created_by)
+         VALUES ($1, $2, $3::jsonb, $4::jsonb, $5)
+         RETURNING id`,
+        [
+          filename,
+          rows.rows.length,
+          JSON.stringify(rows.rows.map((row) => row.application_no)),
+          JSON.stringify({ ...parsed.data, submission_type: 'sales' }),
+          req.adminUsername,
+        ],
+      );
+      await client.query(
+        `UPDATE submissions SET exported_at = now(), export_batch_id = $1, locked_at = now(), updated_at = now()
+         WHERE id = ANY($2::uuid[])`,
+        [batch.rows[0]!.id, rows.rows.map((row) => row.id)],
+      );
+      return batch.rows[0]!.id;
+    });
+
+    await writeAuditEvent({
+      eventType: 'export_created',
+      actorRole: 'admin',
+      actor: req.adminUsername,
+      ip: getClientIp(req),
+      metadata: { batchId: batchResult, filename, count: rows.rows.length, submission_type: 'sales' },
+    });
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
     res.send(buffer);
   }),
 );

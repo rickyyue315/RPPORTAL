@@ -34,7 +34,7 @@ setPoolForTesting({
 console.log('[smoke] PGlite ready');
 
 // Apply migrations manually without the pgcrypto extension line.
-for (const file of ['001_init.sql', '002_drop_rp_type_completed_at.sql', '003_add_submission_type_qty.sql', '004_add_urgent_reason.sql']) {
+for (const file of ['001_init.sql', '002_drop_rp_type_completed_at.sql', '003_add_submission_type_qty.sql', '004_add_urgent_reason.sql', '005_add_sales_submission_type.sql']) {
   const sql = (await readFile(path.join(root, 'src', 'db', 'migrations', file), 'utf8')).replace(
     /CREATE EXTENSION IF NOT EXISTS pgcrypto;\s*/g,
     '',
@@ -104,6 +104,14 @@ const server = app.listen(0, async () => {
     const urgentJson = await urgent.json();
     check('urgent web submit', urgent.status === 201 && /^URGENT-/.test(urgentJson.submission.application_no) && urgentJson.submission.qty === 8 && urgentJson.submission.urgent_reason === '1');
 
+    const sales = await fetch(`${base}/api/public/sales/submit`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ site_code: 'HA06', sku: 'SMOKE-SALES' }),
+    });
+    const salesJson = await sales.json();
+    check('sales web submit', sales.status === 201 && /^SALES-/.test(salesJson.submission.application_no));
+
     const csrf = await fetch(`${base}/api/csrf`);
     const csrfJson = await csrf.json();
     collectCookie(csrf);
@@ -165,6 +173,17 @@ const server = app.listen(0, async () => {
       body: JSON.stringify({ include_exported: false }),
     });
     check('admin urgent export + lock', urgentExportRes.status === 200 && Number(urgentExportRes.headers.get('content-length')) > 1000);
+
+    const salesExportRes = await fetch(`${base}/api/admin/sales/export`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        cookie: cookieJar,
+        'x-csrf-token': csrfJson.token,
+      },
+      body: JSON.stringify({ include_exported: false }),
+    });
+    check('admin sales export + lock', salesExportRes.status === 200 && Number(salesExportRes.headers.get('content-length')) > 1000);
 
     const locked = await fetch(`${base}/api/public/modify`, {
       method: 'POST',

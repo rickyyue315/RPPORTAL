@@ -7,13 +7,19 @@ import {
   URGENT_COLUMNS,
   URGENT_SHEET,
   SAP_COLUMNS,
+  SALES_COLUMNS,
+  SALES_SHEET,
+  SALES_EXPORT_COLUMNS,
 } from '../src/lib/fields.js';
-import { parseImportWorkbook, parseUrgentImportWorkbook } from '../src/lib/excelImport.js';
+import { parseImportWorkbook, parseUrgentImportWorkbook, parseSalesImportWorkbook } from '../src/lib/excelImport.js';
 import {
   generateTemplateWorkbook,
   buildSapExportBuffer,
   generateUrgentTemplateWorkbook,
   buildUrgentExportBuffer,
+  generateSalesTemplateWorkbook,
+  buildSalesImportRecordBuffer,
+  buildSalesExportBuffer,
 } from '../src/lib/excelExport.js';
 
 const storeCodes = new Set(['HA02', 'HA06', 'HB11', 'HA19']);
@@ -388,5 +394,113 @@ describe('generateUrgentTemplateWorkbook / buildUrgentExportBuffer', () => {
     expect(data.getCell(4).value).toBe(9);
     expect(data.getCell(5).value).toBe('9. 其他');
     expect(data.getCell(6).value).toBe('備註原因');
+  });
+});
+
+describe('sales Excel', () => {
+  async function salesBuffer(rows: string[][]): Promise<Buffer> {
+    const wb = new ExcelJS.Workbook();
+    const ws = wb.addWorksheet(SALES_SHEET);
+    ws.addRow([...SALES_COLUMNS]);
+    rows.forEach((r) => ws.addRow(r));
+    return Buffer.from(await wb.xlsx.writeBuffer());
+  }
+
+  it('accepts a valid sales workbook', async () => {
+    const buffer = await salesBuffer([['HA02', 'S-1']]);
+    const result = await parseSalesImportWorkbook(buffer, storeCodes, 1000);
+    expect(result.ok).toBe(true);
+    expect(result.totalRows).toBe(1);
+    expect(result.rows![0].siteCode).toBe('HA02');
+    expect(result.rows![0].sku).toBe('S-1');
+  });
+
+  it('rejects wrong sheet name', async () => {
+    const wb = new ExcelJS.Workbook();
+    const ws = wb.addWorksheet('Other');
+    ws.addRow(['Site Code', 'SKU']);
+    ws.addRow(['HA02', 'S-2']);
+    const buffer = Buffer.from(await wb.xlsx.writeBuffer());
+    const result = await parseSalesImportWorkbook(buffer, storeCodes, 1000);
+    expect(result.ok).toBe(false);
+    expect(result.errors?.[0]?.field).toBe('sheet');
+  });
+
+  it('rejects wrong headers', async () => {
+    const wb = new ExcelJS.Workbook();
+    const ws = wb.addWorksheet(SALES_SHEET);
+    ws.addRow(['Site Code', 'SKU', 'QTY']);
+    const buffer = Buffer.from(await wb.xlsx.writeBuffer());
+    const result = await parseSalesImportWorkbook(buffer, storeCodes, 1000);
+    expect(result.ok).toBe(false);
+    expect(result.errors?.[0]?.field).toBe('header');
+  });
+
+  it('rejects unknown site code and missing sku', async () => {
+    const buffer = await salesBuffer([['ZZ99', 'S-3'], ['HA02', '']]);
+    const result = await parseSalesImportWorkbook(buffer, storeCodes, 1000);
+    expect(result.ok).toBe(false);
+    expect(result.errors?.some((e) => e.field === 'Site Code')).toBe(true);
+    expect(result.errors?.some((e) => e.field === 'SKU')).toBe(true);
+  });
+
+  it('rejects rows over maxRows limit', async () => {
+    const rows = Array.from({ length: 4 }, (_, i) => ['HA02', `S-ROW-${i}`]);
+    const buffer = await salesBuffer(rows);
+    const result = await parseSalesImportWorkbook(buffer, storeCodes, 2);
+    expect(result.ok).toBe(false);
+    expect(result.errors?.some((e) => e.reason.includes('超出單次'))).toBe(true);
+  });
+
+  it('ignores fully blank rows', async () => {
+    const wb = new ExcelJS.Workbook();
+    const ws = wb.addWorksheet(SALES_SHEET);
+    ws.addRow([...SALES_COLUMNS]);
+    ws.addRow(['HA02', 'S-4']);
+    ws.addRow([]);
+    const buffer = Buffer.from(await wb.xlsx.writeBuffer());
+    const result = await parseSalesImportWorkbook(buffer, storeCodes, 1000);
+    expect(result.ok).toBe(true);
+    expect(result.totalRows).toBe(1);
+  });
+
+  it('produces a sales template with exactly Site Code | SKU', async () => {
+    const buffer = await generateSalesTemplateWorkbook();
+    const wb = new ExcelJS.Workbook();
+    await wb.xlsx.load(buffer as never);
+    const ws = wb.getWorksheet(SALES_SHEET)!;
+    expect(ws.getCell(1, 1).value).toBe('Site Code');
+    expect(ws.getCell(1, 2).value).toBe('SKU');
+  });
+
+  it('builds a sales import record workbook grouped by site', async () => {
+    const buffer = await buildSalesImportRecordBuffer([
+      { row: 2, application_no: 'SALES-A', site_code: 'HA02', sku: 'S-5', submitted_at: '2026-08-03 09:00:00' },
+      { row: 3, application_no: 'SALES-B', site_code: 'HA06', sku: 'S-6', submitted_at: '2026-08-03 09:00:01' },
+    ]);
+    const wb = new ExcelJS.Workbook();
+    await wb.xlsx.load(buffer as never);
+    expect(wb.getWorksheet('HA02')).toBeDefined();
+    expect(wb.getWorksheet('HA06')).toBeDefined();
+    const ws = wb.getWorksheet('HA02')!;
+    expect(ws.getCell(1, 2).value).toBe('申請編號');
+    expect(ws.getCell(2, 2).value).toBe('SALES-A');
+  });
+
+  it('builds the four-column sales export with RP Team sheet', async () => {
+    const buffer = await buildSalesExportBuffer([
+      { application_date: '2026-08-03', requested_by_email: 'ha02@sasa.com', site_code: 'HA02', sku: 'S-7' },
+    ]);
+    const wb = new ExcelJS.Workbook();
+    await wb.xlsx.load(buffer as never);
+    const ws = wb.getWorksheet(RP_TEAM_SHEET)!;
+    SALES_EXPORT_COLUMNS.forEach((name, i) => {
+      expect(ws.getCell(1, i + 1).value).toBe(name);
+    });
+    const data = ws.getRow(2);
+    expect(data.getCell(1).value).toBe('2026-08-03');
+    expect(data.getCell(2).value).toBe('ha02@sasa.com');
+    expect(data.getCell(3).value).toBe('HA02');
+    expect(data.getCell(4).value).toBe('S-7');
   });
 });

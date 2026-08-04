@@ -23,7 +23,7 @@ function encode(bytes: Buffer): string {
 /**
  * Generates an unguessable application number.
  * Format: <PREFIX>-XXXXXXXX-XXXXXXXX (8+8 base32 chars from 10 random bytes -> 80 bits).
- * Default prefix is NDRF (Page 1); Urgent orders use URGENT.
+ * Default prefix is NDRF (Page 1); Urgent orders use URGENT and sales reports use SALES.
  */
 export function generateApplicationNo(prefix = 'NDRF'): string {
   const bytes = randomBytes(10);

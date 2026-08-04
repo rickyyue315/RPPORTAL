@@ -92,6 +92,11 @@ export type UrgentColumn = (typeof URGENT_COLUMNS)[number];
 
 export const URGENT_SHEET = 'Urgent Order';
 
+export const SALES_COLUMNS = ['Site Code', 'SKU'] as const;
+export type SalesColumn = (typeof SALES_COLUMNS)[number];
+export const SALES_SHEET = '突發性銷售申報';
+export const SALES_EXPORT_COLUMNS = ['Application Date', 'Requested by', 'Shop Code', 'SKU'] as const;
+
 export const URGENT_QTY_MIN = 1;
 export const URGENT_QTY_MAX = 1000;
 

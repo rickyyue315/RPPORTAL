@@ -35,7 +35,7 @@ let db: PGlite;
 beforeAll(async () => {
   db = new PGlite();
   setPoolForTesting(makePglitePool(db));
-  const migrationFiles = ['001_init.sql', '002_drop_rp_type_completed_at.sql', '003_add_submission_type_qty.sql', '004_add_urgent_reason.sql'];
+  const migrationFiles = ['001_init.sql', '002_drop_rp_type_completed_at.sql', '003_add_submission_type_qty.sql', '004_add_urgent_reason.sql', '005_add_sales_submission_type.sql'];
   for (const file of migrationFiles) {
     let sql = await readFile(path.join(__dirname, '..', 'src', 'db', 'migrations', file), 'utf8');
     // PGlite bundles gen_random_uuid; the pgcrypto extension may not be available in WASM builds.
@@ -200,5 +200,25 @@ describe('submissions (integration)', () => {
         changeSource: 'web_submit',
       }),
     ).rejects.toThrowError('Urgent Reason 為必填');
+  });
+
+  it('creates a sales submission with SALES prefix and sku-only snapshot', async () => {
+    const row = await createSubmission({
+      siteCode: 'HA02',
+      source: 'web',
+      submissionType: 'sales',
+      fields: { brand: '', sku: 'S-INT-1', rp_type: '', safety_stock: '', nd_code: '', remark: '' },
+      ip: '203.0.113.10',
+      changeSource: 'web_submit',
+    });
+    expect(row.application_no).toMatch(/^SALES-/);
+    expect(row.submission_type).toBe('sales');
+    expect(row.qty).toBeNull();
+    expect(row.urgent_reason).toBeNull();
+
+    const version = await db.query('SELECT data_after FROM submission_versions WHERE submission_id = $1', [row.id]);
+    const snapshot = version.rows[0]?.data_after as { site_code: string; sku: string };
+    expect(snapshot.site_code).toBe('HA02');
+    expect(snapshot.sku).toBe('S-INT-1');
   });
 });

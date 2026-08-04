@@ -16,6 +16,7 @@
     <nav aria-label="主要導覽">
       <a href="/">一般申報</a>
       <a href="/urgent.html">Urgent Order</a>
+      <a href="/sales.html">突發性銷售申報</a>
       <a href="/lookup.html">查詢／修改</a>
       <a href="/help.html" class="active" aria-current="page">使用說明</a>
     </nav>
@@ -31,7 +32,8 @@
       <a href="#normal">1. 一般申報<small>ND／RF 單筆申報</small></a>
       <a href="#excel">2. Excel 批量<small>一次提交多間店舖</small></a>
       <a href="#urgent">3. Urgent Order<small>緊急補貨申報</small></a>
-      <a href="#lookup">4. 查詢／修改<small>查看申請進度及資料</small></a>
+      <a href="#sales">4. 突發性銷售申報<small>只填 Site Code 及 SKU</small></a>
+      <a href="#lookup">5. 查詢／修改<small>查看申請進度及資料</small></a>
     </nav>
 
     <section class="card help-section" id="normal" aria-labelledby="normal-title">
@@ -108,8 +110,28 @@
       </div>
     </section>
 
+    <section class="card help-section" id="sales" aria-labelledby="sales-title">
+      <h2 id="sales-title">4. 突發性銷售申報</h2>
+      <p class="help-section-intro">突發性銷售申報只需填寫 Site Code 及 SKU，沒有提交時間限制。</p>
+      <div class="help-step">
+        <img src="/images/help/normal-site.svg" alt="填寫突發性銷售申報的 Site Code 及 SKU 的示意圖" width="640" height="360" loading="lazy" decoding="async">
+        <div>
+          <h3><span class="help-step-number">1</span>填寫 Site Code 及 SKU</h3>
+          <p>按「突發性銷售申報」，輸入 <b>Site Code</b> 及 <b>SKU</b>，兩項均為必填。輸入 Site Code 後會自動顯示門店名稱，請先確認店舖正確。</p>
+        </div>
+      </div>
+      <div class="help-step">
+        <img src="/images/help/excel-upload.svg" alt="下載突發性銷售申報模板並批量上載的示意圖" width="640" height="360" loading="lazy" decoding="async">
+        <div>
+          <h3><span class="help-step-number">2</span>預覽提交或使用 Excel 批量上載</h3>
+          <p>單筆申報按「預覽」後確認提交；多筆申報可下載獨立模板，在 <b>突發性銷售申報</b> 工作表填寫 <b>Site Code</b>、<b>SKU</b> 兩欄。整份檔案會先完整驗證，任何錯誤都不會寫入；成功後可下載按店舖分頁的匯入記錄。</p>
+          <div class="help-note">突發性銷售申報沒有提交時間限制，任何時間都可提交。</div>
+        </div>
+      </div>
+    </section>
+
     <section class="card help-section" id="lookup" aria-labelledby="lookup-title">
-      <h2 id="lookup-title">4. 查詢／修改</h2>
+      <h2 id="lookup-title">5. 查詢／修改</h2>
       <p class="help-section-intro">提交成功後，可使用申請編號及 Site Code 找回申報資料。</p>
       <div class="help-step">
         <img src="/images/help/lookup.svg" alt="使用申請編號及 Site Code 查詢資料的示意圖" width="640" height="360" loading="lazy" decoding="async">
@@ -122,12 +144,12 @@
         <img src="/images/help/lookup-edit.svg" alt="修改資料並儲存版本的示意圖" width="640" height="360" loading="lazy" decoding="async">
         <div>
           <h3><span class="help-step-number">2</span>匯出前可以修改</h3>
-          <p>資料顯示後，可在匯出前修改並按「儲存修改」。每次修改會新增版本紀錄；管理員匯出後，申報會被鎖定，不能再修改。</p>
+          <p>資料顯示後，可在匯出前修改並按「儲存修改」。每次修改會新增版本紀錄；管理員匯出後，申報會被鎖定，不能再修改。突發性銷售申報只可修改 SKU，且沒有時間限制。</p>
         </div>
       </div>
     </section>
 
-    <p class="help-footer">如需重新開始，按頁面上方的「一般申報」或「Urgent Order」即可返回。</p>
+    <p class="help-footer">如需重新開始，按頁面上方的「一般申報」、「Urgent Order」或「突發性銷售申報」即可返回。</p>
   </main>
 </body>
 </html>

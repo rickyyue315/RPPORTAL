@@ -11,6 +11,9 @@ import {
   URGENT_QTY_MAX,
   URGENT_REASONS,
   urgentReasonLabel,
+  SALES_COLUMNS,
+  SALES_SHEET,
+  SALES_EXPORT_COLUMNS,
 } from '../lib/fields.js';
 import { toHKDateString } from '../lib/time.js';
 import type { SubmissionRow } from '../services/submissions.js';
@@ -332,6 +335,90 @@ export async function buildUrgentImportRecordBuffer(rows: UrgentImportRecordRow[
 
   const buffer = await workbook.xlsx.writeBuffer();
   return Buffer.from(buffer);
+}
+
+/** Generates the dedicated two-column sudden sales import template. */
+export async function generateSalesTemplateWorkbook(): Promise<Buffer> {
+  const workbook = new ExcelJS.Workbook();
+  const sheet = workbook.addWorksheet(SALES_SHEET);
+  const headerStyle: Partial<ExcelJS.Style> = {
+    font: { bold: true, color: { argb: 'FF000000' } },
+    fill: { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFD9E1F2' } },
+    border: {
+      top: { style: 'thin' },
+      left: { style: 'thin' },
+      bottom: { style: 'thin' },
+      right: { style: 'thin' },
+    },
+  };
+  SALES_COLUMNS.forEach((name, index) => {
+    const cell = sheet.getCell(1, index + 1);
+    cell.value = name;
+    cell.style = headerStyle;
+  });
+  sheet.getColumn(1).width = 16;
+  sheet.getColumn(2).width = 24;
+  return Buffer.from(await workbook.xlsx.writeBuffer());
+}
+
+export interface SalesImportRecordRow {
+  row: number;
+  application_no: string;
+  site_code: string;
+  sku: string;
+  submitted_at: string;
+}
+
+/** Builds the sudden sales import record workbook, one sheet per Site Code. */
+export async function buildSalesImportRecordBuffer(rows: SalesImportRecordRow[]): Promise<Buffer> {
+  const workbook = new ExcelJS.Workbook();
+  const headerStyle: Partial<ExcelJS.Style> = {
+    font: { bold: true },
+    fill: { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFD9E1F2' } },
+  };
+  const headers = ['Excel 行', '申請編號', 'Site Code', 'SKU', '已收件時間'];
+  const bySite = new Map<string, SalesImportRecordRow[]>();
+  for (const row of rows) {
+    const siteRows = bySite.get(row.site_code) ?? [];
+    siteRows.push(row);
+    bySite.set(row.site_code, siteRows);
+  }
+  for (const site of [...bySite.keys()].sort()) {
+    const sheet = workbook.addWorksheet(site.slice(0, 31));
+    sheet.addRow(headers);
+    headers.forEach((_, index) => { sheet.getCell(1, index + 1).style = headerStyle; });
+    for (const row of bySite.get(site)!) {
+      sheet.addRow([row.row, row.application_no, row.site_code, row.sku, row.submitted_at]);
+    }
+    [10, 32, 14, 24, 24].forEach((width, index) => { sheet.getColumn(index + 1).width = width; });
+  }
+  return Buffer.from(await workbook.xlsx.writeBuffer());
+}
+
+export interface SalesExportRow {
+  application_date: string;
+  requested_by_email: string;
+  site_code: string;
+  sku: string;
+}
+
+/** Builds the four-column sudden sales admin export workbook. */
+export function buildSalesExportBuffer(rows: SalesExportRow[]): Promise<Buffer> {
+  return (async () => {
+    const workbook = new ExcelJS.Workbook();
+    const sheet = workbook.addWorksheet(RP_TEAM_SHEET);
+    sheet.addRow([...SALES_EXPORT_COLUMNS]);
+    const headerStyle: Partial<ExcelJS.Style> = {
+      font: { bold: true },
+      fill: { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFD9E1F2' } },
+    };
+    SALES_EXPORT_COLUMNS.forEach((_, index) => { sheet.getCell(1, index + 1).style = headerStyle; });
+    for (const row of rows) {
+      sheet.addRow([toHKDateString(row.application_date), row.requested_by_email, row.site_code, row.sku]);
+    }
+    [18, 22, 14, 24].forEach((width, index) => { sheet.getColumn(index + 1).width = width; });
+    return Buffer.from(await workbook.xlsx.writeBuffer());
+  })();
 }
 
 export async function buildAuditExportBuffer(

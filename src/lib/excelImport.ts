@@ -10,6 +10,8 @@ import {
   URGENT_SHEET,
   URGENT_QTY_MIN,
   URGENT_QTY_MAX,
+  SALES_COLUMNS,
+  SALES_SHEET,
   BUSINESS_FIELD_LABELS,
   resolveUrgentReasonCode,
   type SubmissionBusinessFields,
@@ -383,4 +385,99 @@ export function findDuplicateImportErrors(
     seen.add(key);
   }
   return errors;
+}
+
+export interface ParsedSalesRow {
+  rowNumber: number;
+  siteCode: string;
+  sku: string;
+}
+
+export interface ParsedSalesImport {
+  ok: boolean;
+  sheetName?: string;
+  headers?: string[];
+  totalRows: number;
+  errors?: ImportRowError[];
+  rows?: ParsedSalesRow[];
+  contentHash?: string;
+}
+
+/** Validates the dedicated two-column sudden sales workbook. */
+export async function parseSalesImportWorkbook(
+  buffer: Buffer,
+  storeCodes: Set<string>,
+  maxRows: number,
+): Promise<ParsedSalesImport> {
+  const contentHash = hashFileContent(buffer);
+  const workbook = new ExcelJS.Workbook();
+  try {
+    await workbook.xlsx.load(buffer as never);
+  } catch {
+    return { ok: false, totalRows: 0, errors: [{ row: 0, field: 'file', reason: '無法解析 Excel 檔案' }], contentHash };
+  }
+
+  const sheet = workbook.getWorksheet(SALES_SHEET);
+  if (!sheet) {
+    return {
+      ok: false,
+      sheetName: SALES_SHEET,
+      totalRows: 0,
+      errors: [{ row: 0, field: 'sheet', reason: `工作表名稱必須為「${SALES_SHEET}」` }],
+      contentHash,
+    };
+  }
+
+  const headerRow = sheet.getRow(1);
+  const headers = SALES_COLUMNS.map((_, index) => cellValue(headerRow.getCell(index + 1)));
+  if (headerRow.cellCount !== SALES_COLUMNS.length || headers.some((header, index) => header !== SALES_COLUMNS[index])) {
+    return {
+      ok: false,
+      sheetName: SALES_SHEET,
+      headers,
+      totalRows: 0,
+      errors: [{
+        row: 1,
+        field: 'header',
+        reason: `欄名必須與模板一致，缺少或不符: ${SALES_COLUMNS.filter((header, index) => headers[index] !== header).join(', ')}`,
+      }],
+      contentHash,
+    };
+  }
+
+  const errors: ImportRowError[] = [];
+  const rows: ParsedSalesRow[] = [];
+  let totalRows = 0;
+  sheet.eachRow((row, rowNumber) => {
+    if (rowNumber === 1) return;
+    const hasAny = SALES_COLUMNS.some((_, index) => {
+      const value = row.getCell(index + 1).value;
+      return value !== null && value !== undefined && String(value).trim() !== '';
+    });
+    if (!hasAny) return;
+
+    totalRows++;
+    const siteCode = normalizeSiteCode(cellValue(row.getCell(1)));
+    const sku = cellValue(row.getCell(2));
+    const rowError = (field: string, reason: string) => errors.push({ row: rowNumber, field, reason, siteCode: siteCode || undefined });
+
+    if (totalRows > maxRows) {
+      rowError('file', `超出單次最多 ${maxRows} 行限制`);
+      return;
+    }
+    if (!siteCode) rowError('Site Code', 'Site Code 為必填');
+    else if (!storeCodes.has(siteCode)) rowError('Site Code', `Site Code「${siteCode}」不存在於門店主檔`);
+    if (!sku) rowError('SKU', 'SKU 為必填');
+    rows.push({ rowNumber, siteCode, sku });
+  });
+
+  return {
+    ok: errors.length === 0,
+    sheetName: SALES_SHEET,
+    headers,
+    totalRows,
+    errors: errors.length ? errors : undefined,
+    rows: errors.length ? undefined : rows,
+    contentHash,
+  };
 }

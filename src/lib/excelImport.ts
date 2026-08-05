@@ -77,6 +77,20 @@ function cellValue(cell: ExcelJS.Cell): string {
   return excelValueToText(cell.value);
 }
 
+function headerErrorReason(expected: readonly string[], headers: string[], headerRow: ExcelJS.Row): string {
+  const mismatched = expected.filter((h, i) => headers[i] !== h);
+  const extras: string[] = [];
+  if (headerRow.cellCount > expected.length) {
+    for (let c = expected.length + 1; c <= headerRow.cellCount; c++) {
+      const value = cellValue(headerRow.getCell(c));
+      if (value) extras.push(value);
+    }
+  }
+  const parts = [`缺少或不符: ${mismatched.join(', ') || '無'}`];
+  if (extras.length) parts.push(`額外欄位: ${extras.join(', ')}`);
+  return `欄名必須與模板一致，${parts.join('；')}`;
+}
+
 /**
  * Validates the whole file first; returns ok=false with all errors if any invalid.
  * No partial writes happen because validation is done before insertion.
@@ -134,7 +148,7 @@ export async function parseImportWorkbook(
         {
           row: 1,
           field: 'header',
-          reason: `欄名必須與模板一致，缺少或不符: ${EXPECTED_HEADERS.filter((h, i) => headers[i] !== h).join(', ')}`,
+          reason: headerErrorReason(EXPECTED_HEADERS, headers, headerRow),
         },
       ],
       contentHash,
@@ -312,7 +326,7 @@ export async function parseUrgentImportWorkbook(
         {
           row: 1,
           field: 'header',
-          reason: `欄名必須與模板一致，缺少或不符: ${EXPECTED_URGENT_HEADERS.filter((h, i) => headers[i] !== h).join(', ')}`,
+          reason: headerErrorReason(EXPECTED_URGENT_HEADERS, headers, headerRow),
         },
       ],
       contentHash,
@@ -465,7 +479,7 @@ export async function parseReturnImportWorkbook(
       errors: [{
         row: 1,
         field: 'header',
-        reason: `欄名必須與模板一致，缺少或不符: ${RETURN_COLUMNS.filter((header, index) => headers[index] !== header).join(', ')}`,
+        reason: headerErrorReason(RETURN_COLUMNS, headers, sheet.getRow(1)),
       }],
       contentHash,
     };
@@ -603,7 +617,7 @@ export async function parseSalesImportWorkbook(
       errors: [{
         row: 1,
         field: 'header',
-        reason: `欄名必須與模板一致，缺少或不符: ${SALES_COLUMNS.filter((header, index) => headers[index] !== header).join(', ')}`,
+        reason: headerErrorReason(SALES_COLUMNS, headers, headerRow),
       }],
       contentHash,
     };

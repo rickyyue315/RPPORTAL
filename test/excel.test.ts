@@ -85,6 +85,7 @@ describe('parseImportWorkbook', () => {
     const result = await parseImportWorkbook(Buffer.from(await wb.xlsx.writeBuffer()), storeCodes, 1000);
     expect(result.ok).toBe(false);
     expect(result.errors?.[0]?.field).toBe('header');
+    expect(result.errors?.[0]?.reason).toContain('額外欄位: Unexpected');
   });
 
   it('uses a formula result when Excel stores a calculated cell', async () => {
@@ -314,6 +315,7 @@ describe('parseUrgentImportWorkbook', () => {
     const result = await parseImportWorkbook(Buffer.from(await wb.xlsx.writeBuffer()), storeCodes, 1000);
     expect(result.ok).toBe(false);
     expect(result.errors?.[0]?.field).toBe('header');
+    expect(result.errors?.[0]?.reason).toContain('額外欄位: Unexpected');
   });
 
   it('uses a formula result when Excel stores a calculated cell', async () => {
@@ -503,6 +505,7 @@ describe('sales Excel', () => {
     const result = await parseImportWorkbook(Buffer.from(await wb.xlsx.writeBuffer()), storeCodes, 1000);
     expect(result.ok).toBe(false);
     expect(result.errors?.[0]?.field).toBe('header');
+    expect(result.errors?.[0]?.reason).toContain('額外欄位: Unexpected');
   });
 
   it('uses a formula result when Excel stores a calculated cell', async () => {

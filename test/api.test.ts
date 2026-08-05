@@ -414,14 +414,14 @@ describe('admin API', () => {
     expect(archived.rows[0]?.file_data).toBeInstanceOf(Uint8Array);
     expect(new Date(archived.rows[0]!.expires_at).getTime()).toBeGreaterThan(Date.now());
 
-    const recovered = await agent.get(`/api/admin/export-batches/${batchId}/download`);
+    const recovered = await agent.get(`/api/admin/export-batches/${batchId}/download`).set('x-csrf-token', token);
     expect(recovered.status).toBe(200);
     expect(recovered.headers['content-type']).toContain('spreadsheetml');
     expect(Number(recovered.headers['content-length'])).toBe(Number(archived.rows[0]!.file_size));
 
     await db.query('UPDATE export_batch_files SET expires_at = now() - interval \'1 day\' WHERE export_batch_id = $1', [batchId]);
     expect(await cleanupExpiredExportFiles()).toBeGreaterThanOrEqual(1);
-    const expired = await agent.get(`/api/admin/export-batches/${batchId}/download`);
+    const expired = await agent.get(`/api/admin/export-batches/${batchId}/download`).set('x-csrf-token', token);
     expect(expired.status).toBe(410);
 
     // Submissions should now be locked
@@ -452,7 +452,8 @@ describe('admin API', () => {
     );
     const agent = request.agent(app);
     await adminLogin(agent);
-    const res = await agent.get(`/api/admin/export-batches/${batch.rows[0]!.id}/download`);
+    const token = await csrf(agent);
+    const res = await agent.get(`/api/admin/export-batches/${batch.rows[0]!.id}/download`).set('x-csrf-token', token);
     expect(res.status).toBe(200);
     expect(res.headers['content-type']).toContain('spreadsheetml');
   });

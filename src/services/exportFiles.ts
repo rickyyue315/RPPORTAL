@@ -28,5 +28,14 @@ export async function cleanupExpiredExportFiles(): Promise<number> {
         AND expires_at <= now()
      RETURNING export_batch_id`,
   );
-  return Math.max(result.rowCount ?? 0, result.rows.length);
+  const cleared = Math.max(result.rowCount ?? 0, result.rows.length);
+  if (cleared > 0) {
+    // NULL-ing BYTEA does not free disk space until the table is vacuumed.
+    try {
+      await query('VACUUM (ANALYZE) export_batch_files');
+    } catch (err) {
+      console.error('[cleanup] VACUUM export_batch_files failed', err);
+    }
+  }
+  return cleared;
 }

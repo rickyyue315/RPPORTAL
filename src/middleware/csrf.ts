@@ -2,7 +2,7 @@ import type { NextFunction, Request, Response } from 'express';
 import { randomBytes } from 'node:crypto';
 import { config } from '../config.js';
 
-const CSRF_COOKIE = 'csrf_token';
+export const CSRF_COOKIE = 'csrf_token';
 
 /** Ensures a CSRF token cookie exists for the response. */
 export function csrfTokenCookie(req: Request, res: Response, next: NextFunction): void {

@@ -646,13 +646,13 @@
       let action;
       if (batch.archive_available) {
         status = `<span class="status-badge received">已保存至 ${escapeHtml(batch.archive_expires_at || '三個月')}</span><div class="hint">${formatFileSize(batch.archive_file_size)}</div>`;
-        action = `<button class="btn ghost btn-download-export" data-id="${escapeHtml(batch.id)}" data-filename="${escapeHtml(batch.filename)}">重新下載</button>`;
+        action = `<button class="btn ghost btn-download-export" data-id="${escapeHtml(batch.id)}" data-filename="${escapeHtml(batch.filename)}" data-label="重新下載">重新下載</button>`;
       } else if (batch.archive_expired) {
         status = '<span class="status-badge locked">已過保存期限</span>';
         action = '<span class="hint">檔案已清理</span>';
       } else {
         status = '<span class="status-badge received">舊批次</span><div class="hint">按申報資料重建</div>';
-        action = `<button class="btn ghost btn-download-export" data-id="${escapeHtml(batch.id)}" data-filename="${escapeHtml(batch.filename)}">重新產生</button>`;
+        action = `<button class="btn ghost btn-download-export" data-id="${escapeHtml(batch.id)}" data-filename="${escapeHtml(batch.filename)}" data-label="重新產生">重新產生</button>`;
       }
       return `<tr><td>${escapeHtml(batch.created_at)}</td><td>${escapeHtml(batch.filename)}</td><td>${exportTypeLabel(batch.submission_type)}</td><td>${escapeHtml(batch.submission_count)}</td><td>${status}</td><td>${action}</td></tr>`;
     }).join('');
@@ -698,7 +698,7 @@
       showAlert($('export_history_info'), 'error', escapeHtml(err.message));
     } finally {
       button.disabled = false;
-      button.textContent = button.dataset.filename ? '重新下載' : '重新產生';
+      button.textContent = button.dataset.label || '重新下載';
     }
   }
 

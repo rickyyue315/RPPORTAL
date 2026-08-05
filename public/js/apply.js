@@ -129,9 +129,29 @@
 
   const drop = $('file_drop');
   const fileInput = $('file_input');
+  const IMPORT_STORAGE_KEY = 'ndrf_pending_import_normal';
+  function savedImportKeyFor(file) {
+    try {
+      const saved = JSON.parse(sessionStorage.getItem(IMPORT_STORAGE_KEY) || 'null');
+      if (saved && saved.name === file.name && saved.size === file.size && saved.lastModified === file.lastModified && saved.key) {
+        return saved.key;
+      }
+    } catch {}
+    return null;
+  }
+  function rememberImportKey(file, key) {
+    try {
+      sessionStorage.setItem(IMPORT_STORAGE_KEY, JSON.stringify({ name: file.name, size: file.size, lastModified: file.lastModified, key }));
+    } catch {}
+  }
+  function clearImportKey() {
+    try { sessionStorage.removeItem(IMPORT_STORAGE_KEY); } catch {}
+  }
   const setPendingFile = (file) => {
     pendingFile = file;
-    pendingImportKey = createIdempotencyKey();
+    const savedKey = savedImportKeyFor(file);
+    pendingImportKey = savedKey || createIdempotencyKey();
+    if (!savedKey) rememberImportKey(file, pendingImportKey);
     $('file_label').textContent = `已選擇：${file.name}`;
   };
   drop.addEventListener('click', () => fileInput.click());
@@ -176,6 +196,7 @@
        const importBatchKey = importKey;
        pendingFile = null;
        pendingImportKey = null;
+       clearImportKey();
        fileInput.value = '';
       const dlBtn = $('btn_dl_record');
       dlBtn.addEventListener('click', async () => {

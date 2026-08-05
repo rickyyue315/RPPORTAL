@@ -108,6 +108,13 @@ a:hover {
   }
 }
 
+.site-footer {
+  text-align: center;
+  padding: 20px 16px 28px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
 .container {
   max-width: 920px;
   margin: 0 auto;

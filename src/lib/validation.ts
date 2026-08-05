@@ -1,5 +1,8 @@
 import {
   normalizeText,
+  RETURN_QTY_MAX,
+  RETURN_QTY_MIN,
+  resolveReturnReasonCode,
   resolveUrgentReasonCode,
   URGENT_REASON_OTHER_CODE,
   URGENT_REASON_OTHER_MAX,
@@ -40,6 +43,39 @@ export interface BusinessValidationError {
 export interface UrgentReasonValidationError {
   field: string;
   message: string;
+}
+
+export interface ReturnValidationError {
+  field: string;
+  message: string;
+}
+
+export interface ReturnBusinessFields {
+  sku: string;
+  qty: number;
+  reason: string;
+  confirmerName: string;
+  confirmerPhone: string;
+}
+
+export function validateReturnFields(fields: ReturnBusinessFields): ReturnValidationError[] {
+  const errors: ReturnValidationError[] = [];
+  const sku = normalizeText(fields.sku);
+  const reason = normalizeText(fields.reason);
+  const name = normalizeText(fields.confirmerName);
+  const phone = normalizeText(fields.confirmerPhone);
+
+  if (!sku) errors.push({ field: 'sku', message: 'SKU 為必填' });
+  else if (!isValidSku(sku)) errors.push({ field: 'sku', message: SKU_ERROR });
+
+  if (!Number.isInteger(fields.qty) || fields.qty < RETURN_QTY_MIN || fields.qty > RETURN_QTY_MAX) {
+    errors.push({ field: 'qty', message: `QTY 必須為 ${RETURN_QTY_MIN} 至 ${RETURN_QTY_MAX} 的整數` });
+  }
+  if (!reason) errors.push({ field: 'reason', message: 'REASON 為必填' });
+  else if (!resolveReturnReasonCode(reason)) errors.push({ field: 'reason', message: 'REASON 選項無效' });
+  if (!name) errors.push({ field: 'confirmer_name', message: '確認人姓名為必填' });
+  if (!phone) errors.push({ field: 'confirmer_phone', message: '確認人電話為必填' });
+  return errors;
 }
 
 function isPositiveNumber(value: string): boolean {

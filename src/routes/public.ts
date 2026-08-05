@@ -16,11 +16,15 @@ import {
   modifySubmission,
   modifyUrgentSubmission,
   modifySalesSubmission,
+  modifyReturnSubmission,
   LockedError,
   NotSupportedError,
   DuplicateSubmissionError,
+  ReturnSubmissionConflictError,
+  ReturnWindowClosedError,
   lockDuplicateSubmissionKeys,
   assertNoDuplicate,
+  assertNoDuplicateReturn,
   type SubmissionRow,
 } from '../services/submissions.js';
 import { writeAuditEvent } from '../lib/audit.js';
@@ -29,16 +33,37 @@ import {
   parseImportWorkbook,
   parseUrgentImportWorkbook,
   parseSalesImportWorkbook,
+  parseReturnImportWorkbook,
   findDuplicateImportErrors,
   EXCEL_UPLOAD_EXTENSION_ERROR,
 } from '../lib/excelImport.js';
-import { generateTemplateWorkbook, generateUrgentTemplateWorkbook, generateSalesTemplateWorkbook, buildImportRecordBuffer, buildUrgentImportRecordBuffer, buildSalesImportRecordBuffer } from '../lib/excelExport.js';
-import { URGENT_QTY_MIN, URGENT_QTY_MAX, urgentReasonLabel } from '../lib/fields.js';
+import {
+  generateTemplateWorkbook,
+  generateUrgentTemplateWorkbook,
+  generateSalesTemplateWorkbook,
+  generateReturnTemplateWorkbook,
+  buildImportRecordBuffer,
+  buildUrgentImportRecordBuffer,
+  buildSalesImportRecordBuffer,
+  buildReturnImportRecordBuffer,
+} from '../lib/excelExport.js';
+import {
+  RETURN_QTY_MIN,
+  RETURN_QTY_MAX,
+  returnReasonLabel,
+  resolveReturnReasonCode,
+  RETURN_REASONS,
+  RETURN_SHEET,
+  URGENT_QTY_MIN,
+  URGENT_QTY_MAX,
+  urgentReasonLabel,
+} from '../lib/fields.js';
 import { RF_REMARK_REQUIRED_SITES, SKU_PATTERN, SKU_ERROR, validateBusinessFields, validateUrgentReason } from '../lib/validation.js';
 import { query, withTransaction } from '../db/pool.js';
 import { config } from '../config.js';
 import { generateApplicationNo } from '../lib/applicationNo.js';
 import { ipExpiryIso } from '../lib/ip.js';
+import { RETURN_SCHEDULE, RETURN_WINDOWS, getActiveReturnWindow, isReturnModificationOpen } from '../lib/returnSchedule.js';
 
 export const publicRouter = Router();
 
@@ -137,6 +162,33 @@ function serializeSalesSubmission(row: SubmissionRow) {
     exported_at: row.exported_at ? toHKString(row.exported_at) : null,
     sku: row.sku,
     qty: row.qty,
+  };
+}
+
+function serializeReturnSubmission(row: SubmissionRow) {
+  const window = RETURN_WINDOWS.find((item) => item.key === row.return_window_key) ?? null;
+  return {
+    application_no: row.application_no,
+    site_code: row.site_code,
+    requested_by_email: row.requested_by_email,
+    application_date: row.application_date,
+    submitted_at: toHKString(row.submitted_at),
+    source: row.source,
+    submission_type: row.submission_type,
+    status: row.status,
+    locked: Boolean(row.locked_at || row.exported_at),
+    locked_at: row.locked_at ? toHKString(row.locked_at) : null,
+    exported_at: row.exported_at ? toHKString(row.exported_at) : null,
+    sku: row.sku,
+    qty: row.return_qty,
+    return_qty: row.return_qty,
+    return_reason: row.return_reason,
+    return_reason_label: returnReasonLabel(row.return_reason),
+    return_confirmer_name: row.return_confirmer_name,
+    return_confirmer_phone: row.return_confirmer_phone,
+    return_window_key: row.return_window_key,
+    return_window: window,
+    return_window_open: isReturnModificationOpen(row.return_window_key, hkTodayForDateColumn()),
   };
 }
 
@@ -501,6 +553,305 @@ publicRouter.post(
     const stamp = toHKString(new Date()).replace(/[^0-9]/g, '');
     res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
     res.setHeader('Content-Disposition', `attachment; filename="Sudden_Sales_Import_Record_${stamp}.xlsx"`);
+    res.send(buffer);
+  }),
+);
+
+const returnSubmitSchema = z.object({
+  site_code: z.string().trim().min(1, 'Site Code 為必填').max(20),
+  sku: z.string().trim().min(1, 'SKU 為必填').regex(SKU_PATTERN, SKU_ERROR),
+  qty: z.number({ invalid_type_error: 'QTY 必須為整數' }).int('QTY 必須為整數').min(RETURN_QTY_MIN).max(RETURN_QTY_MAX),
+  reason: z.string().trim().min(1, 'REASON 為必填').max(200),
+  confirmer_name: z.string().trim().min(1, '確認人姓名為必填').max(200),
+  confirmer_phone: z.string().trim().min(1, '確認人電話為必填').max(200),
+});
+
+function returnWindowStatus() {
+  const today = hkTodayForDateColumn();
+  const activeWindow = getActiveReturnWindow(today);
+  return {
+    open: Boolean(activeWindow),
+    today,
+    timezone: config.timezone,
+    window: activeWindow,
+    windows: RETURN_SCHEDULE,
+    reasons: RETURN_REASONS,
+    message: activeWindow
+      ? ''
+      : '目前不在店舖申請退行貨日期內，暫停申請；請參考 2026 年店舖申請退行貨時間表',
+  };
+}
+
+/** GET /api/public/return/schedule — return-goods processing schedule. */
+publicRouter.get(
+  '/return/schedule',
+  publicLookupLimiter,
+  asyncHandler(async (_req: Request, res: Response) => {
+    res.json(returnWindowStatus());
+  }),
+);
+
+/** GET /api/public/return/window — current return-goods application window. */
+publicRouter.get(
+  '/return/window',
+  publicLookupLimiter,
+  asyncHandler(async (_req: Request, res: Response) => {
+    const status = returnWindowStatus();
+    res.json({
+      open: status.open,
+      today: status.today,
+      timezone: status.timezone,
+      window: status.window,
+      message: status.message,
+    });
+  }),
+);
+
+/** POST /api/public/return/submit — single return-goods report. */
+publicRouter.post(
+  '/return/submit',
+  publicSubmitLimiter,
+  asyncHandler(async (req: Request, res: Response) => {
+    const parsed = returnSubmitSchema.safeParse(req.body);
+    if (!parsed.success) {
+      const first = parsed.error.issues[0];
+      res.status(400).json({ error: first?.message ?? '輸入資料無效', field: first?.path[0] ?? null });
+      return;
+    }
+    const data = parsed.data;
+    const siteCode = normalizeSiteCode(data.site_code);
+    const store = await getStore(siteCode);
+    if (!store) {
+      res.status(400).json({ error: `Site Code「${siteCode}」不存在於門店主檔`, field: 'site_code' });
+      return;
+    }
+    const reason = resolveReturnReasonCode(data.reason);
+    if (!reason) {
+      res.status(400).json({ error: 'REASON 選項無效', field: 'reason' });
+      return;
+    }
+    const ip = getClientIp(req);
+    let row: SubmissionRow;
+    try {
+      row = await createSubmission({
+        siteCode,
+        source: 'web',
+        submissionType: 'return',
+        fields: { brand: '', sku: data.sku, rp_type: '', safety_stock: '', nd_code: '', remark: '' },
+        returnQty: data.qty,
+        returnReason: reason,
+        returnConfirmerName: data.confirmer_name,
+        returnConfirmerPhone: data.confirmer_phone,
+        ip,
+        changeSource: 'web_submit',
+      });
+    } catch (err) {
+      if (err instanceof ReturnWindowClosedError) {
+        res.status(400).json({ error: err.message, field: null });
+        return;
+      }
+      if (err instanceof ReturnSubmissionConflictError) {
+        res.status(409).json({ error: err.message, field: 'sku' });
+        return;
+      }
+      throw err;
+    }
+    await writeAuditEvent({
+      eventType: 'submission_created',
+      actorRole: 'applicant',
+      submissionId: row.id,
+      applicationNo: row.application_no,
+      ip,
+      metadata: { source: 'web', submission_type: 'return', shop: store.shop },
+    });
+    res.status(201).json({ submission: serializeReturnSubmission(row), store: { shop: store.shop } });
+  }),
+);
+
+/** GET /api/public/return/template — download return-goods import template. */
+publicRouter.get(
+  '/return/template',
+  excelExportLimiter,
+  asyncHandler(async (_req: Request, res: Response) => {
+    const buffer = await generateReturnTemplateWorkbook();
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition', `attachment; filename="Return_Goods_Template.xlsx"`);
+    res.send(buffer);
+  }),
+);
+
+/** POST /api/public/return/import — return-goods Excel batch upload. */
+publicRouter.post(
+  '/return/import',
+  excelImportLimiter,
+  upload.single('file'),
+  asyncHandler(async (req: Request, res: Response) => {
+    const activeWindow = getActiveReturnWindow(hkTodayForDateColumn());
+    if (!activeWindow) {
+      res.status(400).json({ error: '目前不在店舖申請退行貨日期內，暫停申請', field: null });
+      return;
+    }
+    const file = (req as Request & { file?: Express.Multer.File }).file;
+    if (!file) {
+      res.status(400).json({ error: '請上載 Excel 檔案' });
+      return;
+    }
+    if (!/\.xlsx$/i.test(file.originalname)) {
+      res.status(400).json({ error: EXCEL_UPLOAD_EXTENSION_ERROR });
+      return;
+    }
+    if (file.size > config.maxUploadBytes) {
+      res.status(400).json({ error: `檔案超過 ${config.maxUploadBytes / 1024 / 1024}MB 限制` });
+      return;
+    }
+    const stores = await query<{ site_code: string }>('SELECT site_code FROM stores');
+    const storeCodes = new Set(stores.rows.map((store) => store.site_code));
+    const parsed = await parseReturnImportWorkbook(file.buffer, storeCodes, config.maxImportRows);
+    if (!parsed.ok || !parsed.rows) {
+      await writeAuditEvent({
+        eventType: 'excel_import_error',
+        actorRole: 'applicant',
+        ip: getClientIp(req),
+        metadata: { filename: file.originalname, submission_type: 'return', errors: parsed.errors ?? [] },
+      });
+      res.status(400).json({ error: '匯入失敗', totalRows: parsed.totalRows, errors: parsed.errors ?? [] });
+      return;
+    }
+
+    const existing = await query<{ site_code: string; sku: string }>(
+      `SELECT site_code, sku FROM submissions
+       WHERE submission_type = 'return' AND return_window_key = $1`,
+      [activeWindow.key],
+    );
+    const existingKeys = new Set(existing.rows.map((row) => `${row.site_code}|${row.sku}`));
+    const duplicateErrors: Array<{ row: number; field: string; reason: string; siteCode?: string }> = [];
+    const seen = new Set<string>();
+    for (const row of parsed.rows) {
+      const key = `${row.siteCode}|${row.sku}`;
+      if (seen.has(key) || existingKeys.has(key)) {
+        duplicateErrors.push({ row: row.rowNumber, field: 'SKU', reason: '同一退行貨申請期已申報相同 SKU 或與檔案內其他行重複', siteCode: row.siteCode });
+      }
+      seen.add(key);
+    }
+    if (duplicateErrors.length) {
+      res.status(400).json({ error: '匯入失敗', totalRows: parsed.totalRows, errors: duplicateErrors });
+      return;
+    }
+
+    const ip = getClientIp(req);
+    try {
+      const results = await withTransaction(async (client) => {
+        await lockDuplicateSubmissionKeys(client, parsed.rows!.map((row) => ({
+          siteCode: row.siteCode,
+          sku: row.sku,
+          submissionType: 'return' as const,
+          date: activeWindow.key,
+        })));
+        const rowsOut: Array<{
+          row: number;
+          application_no: string;
+          site_code: string;
+          sku: string;
+          qty: number;
+          reason: string;
+          confirmer_name: string;
+          confirmer_phone: string;
+          submitted_at: string;
+        }> = [];
+        for (const item of parsed.rows!) {
+          await assertNoDuplicateReturn(client, {
+            siteCode: item.siteCode,
+            sku: item.sku,
+            windowKey: activeWindow.key,
+          });
+          const appNo = generateApplicationNo('RETURN');
+          const insert = await client.query<SubmissionRow>(
+            `INSERT INTO submissions (
+               application_no, source, submission_type, site_code, requested_by_email, application_date,
+               brand, sku, return_qty, return_reason, return_confirmer_name, return_confirmer_phone,
+               return_window_key, created_ip, created_ip_expires_at
+             ) VALUES ($1, 'excel', 'return', $2, $3, $4, '', $5, $6, $7, $8, $9, $10, $11, $12)
+             RETURNING *`,
+            [
+              appNo,
+              item.siteCode,
+              `${item.siteCode.toLowerCase()}@sasa.com`,
+              hkTodayForDateColumn(),
+              item.sku,
+              item.qty,
+              item.reason,
+              item.confirmerName,
+              item.confirmerPhone,
+              activeWindow.key,
+              ip,
+              ip ? ipExpiryIso() : null,
+            ],
+          );
+          const row = insert.rows[0]!;
+          await client.query(
+            `INSERT INTO submission_versions
+               (submission_id, version, data_before, data_after, actor_role, actor, ip, change_source)
+             VALUES ($1, 1, NULL, $2, 'applicant', NULL, $3, 'excel_import')`,
+            [row.id, JSON.stringify({ site_code: row.site_code, sku: row.sku, return_qty: row.return_qty, return_reason: row.return_reason, return_confirmer_name: row.return_confirmer_name, return_confirmer_phone: row.return_confirmer_phone, return_window_key: row.return_window_key }), ip],
+          );
+          rowsOut.push({
+            row: item.rowNumber,
+            application_no: row.application_no,
+            site_code: row.site_code,
+            sku: row.sku,
+            qty: row.return_qty as number,
+            reason: row.return_reason as string,
+            confirmer_name: row.return_confirmer_name as string,
+            confirmer_phone: row.return_confirmer_phone as string,
+            submitted_at: toHKString(row.submitted_at),
+          });
+        }
+        const batch = await client.query<{ id: string }>(
+          `INSERT INTO import_batches (filename, sheet_name, row_count, success_count, failed_count, results, content_hash, created_by)
+           VALUES ($1, $2, $3, $4, 0, $5::jsonb, $6, 'applicant') RETURNING id`,
+          [file.originalname, parsed.sheetName ?? RETURN_SHEET, parsed.totalRows, rowsOut.length, JSON.stringify(rowsOut), parsed.contentHash],
+        );
+        return { batchId: batch.rows[0]!.id, rows: rowsOut, successCount: rowsOut.length };
+      });
+      await writeAuditEvent({ eventType: 'excel_import', actorRole: 'applicant', ip, metadata: { filename: file.originalname, submission_type: 'return', batchId: results.batchId, totalRows: parsed.totalRows, successCount: results.successCount } });
+      res.status(201).json({ message: `成功匯入 ${results.successCount} 行`, totalRows: parsed.totalRows, successCount: results.successCount, rows: results.rows });
+    } catch (err) {
+      if (err instanceof ReturnSubmissionConflictError || err instanceof DuplicateSubmissionError) {
+        res.status(409).json({ error: err.message, field: 'SKU' });
+        return;
+      }
+      throw err;
+    }
+  }),
+);
+
+const returnImportRecordSchema = z.object({
+  rows: z.array(z.object({
+    row: z.number(),
+    application_no: z.string().max(64),
+    site_code: z.string().max(20),
+    sku: z.string().max(100),
+    qty: z.number(),
+    reason: z.string().max(200),
+    confirmer_name: z.string().max(200),
+    confirmer_phone: z.string().max(200),
+    submitted_at: z.string().max(64),
+  })).min(1).max(config.maxImportRows),
+});
+
+publicRouter.post(
+  '/return/import/record',
+  excelExportLimiter,
+  asyncHandler(async (req: Request, res: Response) => {
+    const parsed = returnImportRecordSchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ error: '資料格式錯誤' });
+      return;
+    }
+    const buffer = await buildReturnImportRecordBuffer(parsed.data.rows);
+    const stamp = toHKString(new Date()).replace(/[^0-9]/g, '');
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition', `attachment; filename="Return_Goods_Import_Record_${stamp}.xlsx"`);
     res.send(buffer);
   }),
 );
@@ -1115,6 +1466,8 @@ publicRouter.get(
           ? serializeUrgentSubmission(row)
           : row.submission_type === 'sales'
             ? serializeSalesSubmission(row)
+            : row.submission_type === 'return'
+              ? serializeReturnSubmission(row)
             : serializeSubmission(row),
       store: { shop: store?.shop ?? '', requested_by_email: row.requested_by_email },
       versions: versions.map((v) => ({
@@ -1141,6 +1494,10 @@ const modifySchema = z.object({
     .optional(),
   urgent_reason: z.string().trim().max(100).optional().default(''),
   urgent_reason_other: z.string().max(2000).optional().default(''),
+  return_qty: z.number({ invalid_type_error: 'QTY 必須為整數' }).int('QTY 必須為整數').min(RETURN_QTY_MIN).max(RETURN_QTY_MAX).optional(),
+  return_reason: z.string().trim().max(200).optional().default(''),
+  return_confirmer_name: z.string().trim().max(200).optional().default(''),
+  return_confirmer_phone: z.string().trim().max(200).optional().default(''),
 });
 
 /** POST /api/public/modify — modify before export lock. */
@@ -1175,12 +1532,60 @@ publicRouter.post(
       res.status(404).json({ error: '找不到相符申報' });
       return;
     }
-    if (existing.locked_at || existing.exported_at) {
+  if (existing.locked_at || existing.exported_at) {
       res.status(409).json({ error: '此申報已匯出並鎖定，不能修改' });
       return;
     }
 
+    if (existing.submission_type === 'return' && !isReturnModificationOpen(existing.return_window_key, hkTodayForDateColumn())) {
+      res.status(400).json({ error: '此申請所屬的店舖申請退行貨日期已結束，現時只可查詢', field: null });
+      return;
+    }
+
     const ip = getClientIp(req);
+
+    if (existing.submission_type === 'return') {
+      if (typeof data.return_qty !== 'number') {
+        res.status(400).json({ error: 'QTY 必須為整數', field: 'return_qty' });
+        return;
+      }
+      try {
+        const row = await modifyReturnSubmission({
+          applicationNo: data.application_no,
+          siteCode,
+          sku: data.sku,
+          qty: data.return_qty,
+          reason: data.return_reason,
+          confirmerName: data.return_confirmer_name,
+          confirmerPhone: data.return_confirmer_phone,
+          ip,
+          changeSource: 'web_modify',
+        });
+        await writeAuditEvent({
+          eventType: 'submission_modified',
+          actorRole: 'applicant',
+          submissionId: row.id,
+          applicationNo: row.application_no,
+          ip,
+          metadata: { submission_type: 'return' },
+        });
+        res.json({ submission: serializeReturnSubmission(row) });
+      } catch (err) {
+        if (err instanceof LockedError || err instanceof ReturnWindowClosedError || err instanceof ReturnSubmissionConflictError) {
+          res.status(err instanceof LockedError || err instanceof ReturnSubmissionConflictError ? 409 : 400).json({
+            error: err.message,
+            field: err instanceof ReturnSubmissionConflictError ? 'sku' : null,
+          });
+          return;
+        }
+        if (err instanceof NotSupportedError || (err instanceof Error && err.message === '找不到申報')) {
+          res.status(err instanceof NotSupportedError ? 400 : 404).json({ error: err.message === '找不到申報' ? '找不到相符申報' : err.message });
+          return;
+        }
+        throw err;
+      }
+      return;
+    }
 
     if (existing.submission_type === 'sales') {
       try {

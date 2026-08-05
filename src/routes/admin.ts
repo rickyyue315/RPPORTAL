@@ -17,6 +17,7 @@ import {
   adminUpdateSubmission,
   adminUpdateUrgentSubmission,
   adminUpdateSalesSubmission,
+  adminUpdateReturnSubmission,
   LockedError,
   type SubmissionRow,
 } from '../services/submissions.js';
@@ -28,6 +29,7 @@ import {
   generateUrgentTemplateWorkbook,
   buildUrgentExportBuffer,
   buildSalesExportBuffer,
+  buildReturnExportBuffer,
 } from '../lib/excelExport.js';
 import {
   parseImportWorkbook,
@@ -38,7 +40,15 @@ import { getStore, normalizeSiteCode, parseStoresCsv, replaceStores, listStores 
 import { toHKString, hkTodayForDateColumn } from '../lib/time.js';
 import { generateApplicationNo } from '../lib/applicationNo.js';
 import { ipExpiryIso } from '../lib/ip.js';
-import { URGENT_QTY_MIN, URGENT_QTY_MAX, urgentReasonLabel } from '../lib/fields.js';
+import {
+  URGENT_QTY_MIN,
+  URGENT_QTY_MAX,
+  urgentReasonLabel,
+  RETURN_QTY_MIN,
+  RETURN_QTY_MAX,
+  returnReasonLabel,
+  resolveReturnReasonCode,
+} from '../lib/fields.js';
 import { validateBusinessFields, validateUrgentReason } from '../lib/validation.js';
 
 export const adminRouter = Router();
@@ -138,6 +148,12 @@ function serializeAdminSubmission(row: SubmissionRow, lastModifiedAt?: string | 
     urgent_reason: row.urgent_reason,
     urgent_reason_label: urgentReasonLabel(row.urgent_reason),
     urgent_reason_other: row.urgent_reason_other,
+    return_qty: row.return_qty,
+    return_reason: row.return_reason,
+    return_reason_label: returnReasonLabel(row.return_reason),
+    return_confirmer_name: row.return_confirmer_name,
+    return_confirmer_phone: row.return_confirmer_phone,
+    return_window_key: row.return_window_key,
   };
 }
 
@@ -180,7 +196,7 @@ adminRouter.get(
       where.push(`source = $${idx++}`);
       params.push(source);
     }
-    if (submission_type === 'normal' || submission_type === 'urgent' || submission_type === 'sales') {
+    if (submission_type === 'normal' || submission_type === 'urgent' || submission_type === 'sales' || submission_type === 'return') {
       where.push(`submission_type = $${idx++}`);
       params.push(submission_type);
     }
@@ -266,6 +282,11 @@ adminRouter.get(
        sales_today: string;
        sales_today_exported: string;
        sales_stores_today: string;
+       return_total: string;
+       return_exported: string;
+       return_today: string;
+       return_today_exported: string;
+       return_stores_today: string;
     }>(
       `SELECT
          (SELECT count(*)::text FROM submissions) AS total,
@@ -284,7 +305,12 @@ adminRouter.get(
           (SELECT count(*)::text FROM submissions WHERE submission_type = 'sales' AND exported_at IS NOT NULL) AS sales_exported,
           (SELECT count(*)::text FROM submissions WHERE submission_type = 'sales' AND application_date = $1::date) AS sales_today,
           (SELECT count(*)::text FROM submissions WHERE submission_type = 'sales' AND application_date = $1::date AND exported_at IS NOT NULL) AS sales_today_exported,
-          (SELECT count(DISTINCT site_code)::text FROM submissions WHERE submission_type = 'sales' AND application_date = $1::date) AS sales_stores_today`,
+           (SELECT count(DISTINCT site_code)::text FROM submissions WHERE submission_type = 'sales' AND application_date = $1::date) AS sales_stores_today,
+           (SELECT count(*)::text FROM submissions WHERE submission_type = 'return') AS return_total,
+           (SELECT count(*)::text FROM submissions WHERE submission_type = 'return' AND exported_at IS NOT NULL) AS return_exported,
+           (SELECT count(*)::text FROM submissions WHERE submission_type = 'return' AND application_date = $1::date) AS return_today,
+           (SELECT count(*)::text FROM submissions WHERE submission_type = 'return' AND application_date = $1::date AND exported_at IS NOT NULL) AS return_today_exported,
+           (SELECT count(DISTINCT site_code)::text FROM submissions WHERE submission_type = 'return' AND application_date = $1::date) AS return_stores_today`,
       [today],
     );
     const r = rows.rows[0]!;
@@ -311,6 +337,13 @@ adminRouter.get(
         today: Number(r.sales_today),
         today_exported: Number(r.sales_today_exported),
         stores_today: Number(r.sales_stores_today),
+      },
+      return: {
+        total: Number(r.return_total),
+        exported: Number(r.return_exported),
+        today: Number(r.return_today),
+        today_exported: Number(r.return_today_exported),
+        stores_today: Number(r.return_stores_today),
       },
     });
   }),
@@ -358,6 +391,50 @@ adminRouter.put(
       return;
     }
     const ip = getClientIp(req);
+    if (row.submission_type === 'return') {
+      const returnSchema = z.object({
+        sku: z.string().trim().min(1, 'SKU 為必填').max(100),
+        return_qty: z.number({ invalid_type_error: 'QTY 必須為整數' }).int('QTY 必須為整數').min(RETURN_QTY_MIN).max(RETURN_QTY_MAX),
+        return_reason: z.string().trim().min(1, 'REASON 為必填').max(200),
+        return_confirmer_name: z.string().trim().min(1, '確認人姓名為必填').max(200),
+        return_confirmer_phone: z.string().trim().min(1, '確認人電話為必填').max(200),
+      });
+      const parsed = returnSchema.safeParse(req.body);
+      if (!parsed.success) {
+        const first = parsed.error.issues[0];
+        res.status(400).json({ error: first?.message ?? '輸入資料無效', field: first?.path[0] ?? null });
+        return;
+      }
+      if (!resolveReturnReasonCode(parsed.data.return_reason)) {
+        res.status(400).json({ error: 'REASON 選項無效', field: 'return_reason' });
+        return;
+      }
+      try {
+        const updated = await adminUpdateReturnSubmission({
+          id: row.id,
+          sku: parsed.data.sku,
+          qty: parsed.data.return_qty,
+          reason: parsed.data.return_reason,
+          confirmerName: parsed.data.return_confirmer_name,
+          confirmerPhone: parsed.data.return_confirmer_phone,
+          ip,
+          username: req.adminUsername!,
+        });
+        await writeAuditEvent({ eventType: 'admin_modified', actorRole: 'admin', actor: req.adminUsername, submissionId: row.id, applicationNo: row.application_no, ip, metadata: { submission_type: 'return' } });
+        res.json({ submission: serializeAdminSubmission(updated) });
+      } catch (err) {
+        if (err instanceof LockedError) {
+          res.status(409).json({ error: err.message });
+          return;
+        }
+        if (err instanceof Error && err.name === 'ReturnSubmissionConflictError') {
+          res.status(409).json({ error: err.message, field: 'sku' });
+          return;
+        }
+        throw err;
+      }
+      return;
+    }
     if (row.submission_type === 'sales') {
       const salesSchema = z.object({
         sku: z.string().trim().min(1, 'SKU 為必填').max(100),
@@ -1161,6 +1238,78 @@ adminRouter.post(
     res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
     res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
     res.send(buffer);
+  }),
+);
+
+/** POST /api/admin/return/export — return-goods Buyer export + lock. */
+adminRouter.post(
+  '/return/export',
+  requireAdmin,
+  excelExportLimiter,
+  asyncHandler(async (req: Request, res: Response) => {
+    const parsed = exportFiltersSchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ error: '篩選條件無效' });
+      return;
+    }
+    const { from, to, site_code, include_exported } = parsed.data;
+    const where: string[] = [`submission_type = 'return'`];
+    const params: unknown[] = [];
+    let idx = 1;
+    if (from) { where.push(`application_date >= $${idx++}`); params.push(from); }
+    if (to) { where.push(`application_date <= $${idx++}`); params.push(to); }
+    if (site_code) { where.push(`site_code = $${idx++}`); params.push(normalizeSiteCode(site_code)); }
+    if (!include_exported) where.push('exported_at IS NULL');
+    const whereSql = `WHERE ${where.join(' AND ')}`;
+    const rows = await query<SubmissionRow>(`SELECT * FROM submissions ${whereSql} ORDER BY application_date ASC, submitted_at ASC`, params);
+    if (!rows.rows.length) {
+      res.status(400).json({ error: '沒有符合條件的行貨退貨報數可以匯出' });
+      return;
+    }
+    const exportRows = (items: SubmissionRow[]) => buildReturnExportBuffer(items.map((row) => ({
+      application_no: row.application_no,
+      application_date: row.application_date,
+      site_code: row.site_code,
+      sku: row.sku,
+      qty: row.return_qty,
+      reason: row.return_reason,
+      confirmer_name: row.return_confirmer_name,
+      confirmer_phone: row.return_confirmer_phone,
+    })));
+    if (parsed.data.preview) {
+      const buffer = await exportRows(rows.rows);
+      const filename = `Return_Goods_Preview_${new Date().toISOString().slice(0, 10)}.xlsx`;
+      await writeAuditEvent({ eventType: 'export_preview', actorRole: 'admin', actor: req.adminUsername, ip: getClientIp(req), metadata: { filename, count: rows.rows.length, filters: parsed.data, submission_type: 'return' } });
+      res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+      res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+      res.send(buffer);
+      return;
+    }
+    const filename = `Return_Goods_Export_${new Date().toISOString().slice(0, 10)}.xlsx`;
+    const exportResult = await withTransaction(async (client) => {
+      const lockedRows = await client.query<SubmissionRow>(`SELECT * FROM submissions ${whereSql} ORDER BY application_date ASC, submitted_at ASC FOR UPDATE`, params);
+      if (!lockedRows.rows.length) return null;
+      const buffer = await exportRows(lockedRows.rows);
+      const batch = await client.query<{ id: string }>(
+        `INSERT INTO export_batches (filename, submission_count, submission_nos, filters, created_by)
+         VALUES ($1, $2, $3::jsonb, $4::jsonb, $5) RETURNING id`,
+        [filename, lockedRows.rows.length, JSON.stringify(lockedRows.rows.map((row) => row.application_no)), JSON.stringify({ ...parsed.data, submission_type: 'return' }), req.adminUsername],
+      );
+      await client.query(
+        `UPDATE submissions SET exported_at = now(), export_batch_id = $1, locked_at = now(), updated_at = now()
+         WHERE id = ANY($2::uuid[])`,
+        [batch.rows[0]!.id, lockedRows.rows.map((row) => row.id)],
+      );
+      return { batchId: batch.rows[0]!.id, buffer, count: lockedRows.rows.length };
+    });
+    if (!exportResult) {
+      res.status(400).json({ error: '沒有符合條件的行貨退貨報數可以匯出' });
+      return;
+    }
+    await writeAuditEvent({ eventType: 'export_created', actorRole: 'admin', actor: req.adminUsername, ip: getClientIp(req), metadata: { batchId: exportResult.batchId, filename, count: exportResult.count, submission_type: 'return' } });
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    res.send(exportResult.buffer);
   }),
 );
 

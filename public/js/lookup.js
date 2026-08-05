@@ -10,6 +10,10 @@
     return current?.submission?.submission_type === 'sales';
   }
 
+  function isReturn() {
+    return current?.submission?.submission_type === 'return';
+  }
+
   function syncOtherReasonWrap() {
     const reason = $('f_u_urgent_reason').value;
     $('f_u_other_wrap').style.display = reason === '9' ? '' : 'none';
@@ -56,6 +60,8 @@
         <dt>Urgent Reason</dt><dd>${escapeHtml(s.urgent_reason_label || s.urgent_reason)}${s.urgent_reason_other ? '（' + escapeHtml(s.urgent_reason_other) + '）' : ''}</dd>`;
     } else if (isSales()) {
       headerRows += '<dt>申報類型</dt><dd>突發性銷售申報</dd>';
+    } else if (isReturn()) {
+      headerRows += `<dt>申報類型</dt><dd>行貨退貨報數</dd><dt>QTY</dt><dd>${escapeHtml(s.return_qty)}</dd><dt>REASON</dt><dd>${escapeHtml(s.return_reason_label || s.return_reason)}</dd><dt>確認人姓名</dt><dd>${escapeHtml(s.return_confirmer_name)}</dd><dt>確認人電話</dt><dd>${escapeHtml(s.return_confirmer_phone)}</dd>`;
     }
     if (s.locked_at) {
       headerRows += `<dt>鎖定時間</dt><dd>${escapeHtml(s.locked_at)}</dd>`;
@@ -69,6 +75,7 @@
     if (isUrgent()) {
       normalFields.style.display = 'none';
       urgentFields.style.display = '';
+      $('return_fields').style.display = 'none';
       $('f_u_qty').value = s.qty ?? '';
       $('f_u_urgent_reason').value = s.urgent_reason || '';
       $('f_u_urgent_reason_other').value = s.urgent_reason_other || '';
@@ -76,9 +83,19 @@
     } else if (isSales()) {
       normalFields.style.display = 'none';
       urgentFields.style.display = 'none';
+      $('return_fields').style.display = 'none';
+    } else if (isReturn()) {
+      normalFields.style.display = 'none';
+      urgentFields.style.display = 'none';
+      $('return_fields').style.display = '';
+      $('f_return_qty').value = s.return_qty ?? '';
+      $('f_return_reason').value = s.return_reason || '';
+      $('f_return_name').value = s.return_confirmer_name || '';
+      $('f_return_phone').value = s.return_confirmer_phone || '';
     } else {
       normalFields.style.display = '';
       urgentFields.style.display = 'none';
+      $('return_fields').style.display = 'none';
       $('f_rp_type').value = s.rp_type || '';
       $('f_safety_stock').value = s.safety_stock || '';
       $('f_nd_code').value = s.nd_code || '';
@@ -123,6 +140,17 @@
       $('lock_banner').innerHTML = '';
       $('modify_box').style.display = '';
       $('save_note').textContent = '沒有提交時間限制；匯出前可修改 SKU，每次修改會新增一個版本紀錄。';
+    } else if (isReturn()) {
+      $('modify_box').style.display = '';
+      const windowOpen = Boolean(s.return_window_open);
+      if (!windowOpen) {
+        $('lock_banner').innerHTML = '<div class="alert warning">此申請所屬的店舖申請退行貨日期已結束，現時只可查詢。</div>';
+        btn.disabled = true;
+        $('save_note').textContent = '';
+      } else {
+        $('lock_banner').innerHTML = '';
+        $('save_note').textContent = '只可於原申請窗口內修改，每次修改會新增一個版本紀錄。';
+      }
     } else {
       $('lock_banner').innerHTML = '';
       $('modify_box').style.display = '';
@@ -167,6 +195,8 @@
         }
       : isSales()
         ? base
+        : isReturn()
+          ? { ...base, return_qty: Number($('f_return_qty').value), return_reason: $('f_return_reason').value, return_confirmer_name: $('f_return_name').value.trim(), return_confirmer_phone: $('f_return_phone').value.trim() }
         : {
           ...base,
           rp_type: $('f_rp_type').value,
@@ -178,6 +208,8 @@
       ? validateUrgentFields(body)
       : isSales()
         ? (body.sku.trim() ? [] : [{ message: 'SKU 為必填' }])
+        : isReturn()
+          ? ((body.sku.trim() && Number.isInteger(body.return_qty) && body.return_qty >= 1 && body.return_qty <= 9999 && body.return_reason && body.return_confirmer_name && body.return_confirmer_phone) ? [] : [{ message: '請填妥 QTY、REASON、確認人姓名及確認人電話' }])
         : validateBusinessFields(body, current.submission.site_code);
     if (body.sku.trim() && !/^(?:\d{7}|\d{12})$/.test(body.sku.trim())) {
       clientErrs.push({ message: 'SKU 只容許 7 位或 12 位數字，每個申請只能輸入一個 SKU' });
@@ -214,4 +246,7 @@
   });
 
   populateNdCodeDatalists();
+  api('/api/public/return/schedule').then((data) => {
+    $('f_return_reason').innerHTML = '<option value="">請選擇申請退貨原因</option>' + data.reasons.map((r) => `<option value="${escapeHtml(r.code)}">${escapeHtml(r.label)}</option>`).join('');
+  }).catch(() => {});
 })();

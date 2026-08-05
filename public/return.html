@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>行貨退貨報數 — NDRF 申報平台</title>
+  <link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+  <header class="topbar">
+    <div><h1>NDRF 申報平台</h1><div class="subtitle">行貨退貨報數</div></div>
+    <nav>
+      <a href="/">一般申報</a>
+      <a href="/urgent.html">Urgent Order</a>
+      <a href="/sales.html">突發性銷售申報</a>
+      <a href="/return.html" class="active" aria-current="page">行貨退貨報數</a>
+      <a href="/lookup.html">查詢／修改</a>
+      <a href="/help.html">使用說明</a>
+    </nav>
+  </header>
+
+  <main class="container">
+    <div class="card">
+      <h2>行貨退貨報數</h2>
+      <div id="window_status"></div>
+      <p class="hint">請參考附件 2026 年店舖申請退行貨時間表。退行貨申請需要交由 Buyer 審批，約七個工作天後出退行貨號碼。</p>
+      <div class="alert warning">
+        申請退行貨前必須在庫存分析報表檢查清楚有足夠機數才申請（報數後請即時收起退貨，不可繼續售賣）。<br>
+        <b>***經常更改已建立退貨單數量或加減 SKU，下期退行貨申請會被暫停一次</b><br><br>
+        如機數不足、沒有註明申請退貨原因、重複申請、Buyer 不接受退貨申請，將不會出退貨 NO.，敬請留意！<br>
+        已有退貨 NO. 之 SKU 已經 block 數，不用盤點，謝謝。
+      </div>
+      <div id="form_error"></div>
+      <form id="apply_form">
+        <div class="form-grid">
+          <div>
+            <label for="site_code">Site Code <span class="optional">（必填）</span></label>
+            <input type="text" id="site_code" autocomplete="off" placeholder="例如 HA02">
+          </div>
+          <div><label>門店資訊</label><div id="store_info" class="hint" style="padding-top:9px">—</div></div>
+          <div>
+            <label for="sku">SKU <span class="optional">（必填）</span></label>
+            <input type="text" id="sku" autocomplete="off">
+            <div class="hint">只可輸入一個 SKU（7 位或 12 位數字）。</div>
+          </div>
+          <div>
+            <label for="qty">QTY <span class="optional">（1 至 9999）</span></label>
+            <input type="number" id="qty" min="1" max="9999" step="1" inputmode="numeric">
+          </div>
+          <div class="full">
+            <label for="reason">REASON <span class="optional">（必填）</span></label>
+            <select id="reason"><option value="">請選擇申請退貨原因</option></select>
+          </div>
+          <div>
+            <label for="confirmer_name">確認人姓名 <span class="optional">（必填）</span></label>
+            <input type="text" id="confirmer_name" maxlength="200">
+          </div>
+          <div>
+            <label for="confirmer_phone">確認人電話 <span class="optional">（必填）</span></label>
+            <input type="text" id="confirmer_phone" maxlength="200">
+          </div>
+        </div>
+        <div class="btn-row">
+          <button type="submit" class="btn" id="btn_preview">預覽</button>
+        </div>
+      </form>
+      <div id="preview_box" style="display:none">
+        <hr><h3>提交預覽</h3><div class="dl" id="preview_body"></div>
+        <div class="btn-row"><button class="btn" id="btn_confirm">確認提交</button><button class="btn secondary" id="btn_cancel">返回修改</button></div>
+        <div id="confirm_error"></div>
+      </div>
+    </div>
+
+    <div class="card" id="result_card" style="display:none">
+      <h2>已收件</h2>
+      <div class="result-box"><div>申請時間：<b id="res_time"></b></div><div style="margin-top:8px">申請編號：</div><div class="app-no" id="res_no"></div><div class="hint" style="margin-top:12px">請記下申請編號，之後可於「<a href="/lookup.html">查詢／修改</a>」頁面輸入申請編號及 Site Code 查詢。</div></div>
+      <div class="btn-row"><button class="btn" id="btn_again">再提交一筆</button></div>
+    </div>
+
+    <div class="card">
+      <h2>Excel 批量上載</h2>
+      <p class="hint">下載「行貨退貨報數」工作表模板，每行填寫 Site Code、SKU、QTY、REASON、確認人姓名及確認人電話。只接受 .xlsx；整份檔案會先完整驗證，任何錯誤都不會寫入資料。</p>
+      <div class="btn-row" style="margin-top:0"><a class="btn ghost" href="/api/public/return/template">下載模板 (.xlsx)</a></div>
+      <div class="file-drop" id="file_drop"><div id="file_label">拖曳 .xlsx 檔案到此處，或按一下選擇檔案</div><input type="file" id="file_input" accept=".xlsx" style="display:none"></div>
+      <div class="btn-row"><button class="btn" id="btn_import">上載並匯入</button></div>
+      <div id="import_result"></div>
+    </div>
+
+    <div class="card">
+      <h2>2026 年店舖申請退行貨時間表</h2>
+      <div class="table-scroll"><table id="schedule_table"><thead><tr><th>店舖申請退行貨日期</th><th>Buyer 審批日期</th><th>出退貨 NO. 日期</th></tr></thead><tbody></tbody></table></div>
+    </div>
+  </main>
+  <script src="/js/api.js"></script><script src="/js/return.js"></script>
+  <footer class="site-footer">Developed by RP Team - Ricky Yue</footer>
+</body>
+</html>

@@ -15,6 +15,7 @@
     <nav>
       <a href="/">公開申請頁</a>
       <a href="/sales.html">突發性銷售申報</a>
+      <a href="/return.html">行貨退貨報數</a>
       <a href="/help.html">使用說明</a>
       <a href="#" id="btn_logout">登出</a>
     </nav>
@@ -107,6 +108,16 @@
           </div>
         </div>
       </div>
+      <div class="dash-group">
+        <div class="dash-group-title">行貨退貨報數</div>
+        <div class="dash-grid">
+          <div class="dash-stat dash-stat--info"><div class="dash-val" id="s_return_total">—</div><div class="dash-lbl">總提交</div></div>
+          <div class="dash-stat dash-stat--ok"><div class="dash-val" id="s_return_exported">—</div><div class="dash-lbl">已匯出總數</div></div>
+          <div class="dash-stat dash-stat--info"><div class="dash-val" id="s_return_today">—</div><div class="dash-lbl">今日提交</div></div>
+          <div class="dash-stat dash-stat--info"><div class="dash-val" id="s_return_today_exported">—</div><div class="dash-lbl">今日已匯出</div></div>
+          <div class="dash-stat dash-stat--info"><div class="dash-val" id="s_return_stores_today">—</div><div class="dash-lbl">今日店舖數</div></div>
+        </div>
+      </div>
     </div>
 
     <div class="card">
@@ -139,6 +150,7 @@
             <option value="normal">一般 NDRF</option>
             <option value="urgent">Urgent Order</option>
             <option value="sales">突發性銷售申報</option>
+            <option value="return">行貨退貨報數</option>
           </select>
         </div>
         <div class="field">
@@ -243,13 +255,20 @@
             <input type="text" id="a_urgent_reason_other" maxlength="2000">
           </div>
         </div>
-        <div id="sales_fields" class="form-grid" style="display:none">
+          <div id="sales_fields" class="form-grid" style="display:none">
           <div>
             <label for="a_sku_sales">SKU</label>
             <input type="text" id="a_sku_sales">
           </div>
         </div>
-      </form>
+        <div id="return_fields" class="form-grid" style="display:none">
+          <div><label for="a_sku_return">SKU</label><input type="text" id="a_sku_return"></div>
+          <div><label for="a_return_qty">QTY <span class="optional">（1 至 9999）</span></label><input type="number" id="a_return_qty" min="1" max="9999" step="1"></div>
+          <div class="full"><label for="a_return_reason">REASON</label><select id="a_return_reason"><option value="">請選擇申請退貨原因</option></select></div>
+          <div><label for="a_return_name">確認人姓名</label><input type="text" id="a_return_name" maxlength="200"></div>
+         <div><label for="a_return_phone">確認人電話</label><input type="text" id="a_return_phone" maxlength="200"></div>
+        </div>
+       </form>
       <div class="btn-row">
         <button class="btn" id="btn_save_edit">儲存修改</button>
         <button class="btn secondary" id="btn_close_detail">返回清單</button>
@@ -352,6 +371,13 @@
         <button class="btn" id="btn_sales_export">匯出並鎖定</button>
         <button class="btn secondary" id="btn_sales_export_preview">預覽下載(不鎖定)</button>
       </div>
+    </div>
+
+    <div class="card">
+      <h2>行貨退貨報數 Excel 匯出</h2>
+      <div class="hint">輸出 8 欄：申請編號、申請日期、Requested by（Site Code）、SKU、QTY、Reason、確認人姓名、確認人電話。預覽不鎖定；正式匯出後店舖不能再修改。</div>
+      <div class="toolbar"><div class="field"><label>由 (日期)</label><input type="date" id="re_from"></div><div class="field"><label>至 (日期)</label><input type="date" id="re_to"></div><div class="field"><label>Site Code</label><input type="text" id="re_site"></div><div class="field"><label>包含已匯出資料</label><select id="re_include"><option value="false">否（只匯出未匯出）</option><option value="true">是</option></select></div></div>
+      <div id="return_export_info"></div><div class="btn-row"><button class="btn" id="btn_return_export">匯出並鎖定</button><button class="btn secondary" id="btn_return_export_preview">預覽下載(不鎖定)</button></div>
     </div>
 
     <div class="card">

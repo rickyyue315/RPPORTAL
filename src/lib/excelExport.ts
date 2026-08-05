@@ -14,6 +14,13 @@ import {
   SALES_COLUMNS,
   SALES_SHEET,
   SALES_EXPORT_COLUMNS,
+  RETURN_COLUMNS,
+  RETURN_SHEET,
+  RETURN_QTY_MIN,
+  RETURN_QTY_MAX,
+  RETURN_REASONS,
+  RETURN_EXPORT_COLUMNS,
+  returnReasonLabel,
 } from '../lib/fields.js';
 import { toHKDateString } from '../lib/time.js';
 import type { SubmissionRow } from '../services/submissions.js';
@@ -417,6 +424,127 @@ export function buildSalesExportBuffer(rows: SalesExportRow[]): Promise<Buffer> 
       sheet.addRow([toHKDateString(row.application_date), row.requested_by_email, row.site_code, row.sku]);
     }
     [18, 22, 14, 24].forEach((width, index) => { sheet.getColumn(index + 1).width = width; });
+    return Buffer.from(await workbook.xlsx.writeBuffer());
+  })();
+}
+
+/** Generates the return-goods import template. */
+export async function generateReturnTemplateWorkbook(): Promise<Buffer> {
+  const workbook = new ExcelJS.Workbook();
+  const sheet = workbook.addWorksheet(RETURN_SHEET);
+  const headerStyle: Partial<ExcelJS.Style> = {
+    font: { bold: true, color: { argb: 'FF000000' } },
+    fill: { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFD9E1F2' } },
+    border: {
+      top: { style: 'thin' },
+      left: { style: 'thin' },
+      bottom: { style: 'thin' },
+      right: { style: 'thin' },
+    },
+  };
+  RETURN_COLUMNS.forEach((name, index) => {
+    const cell = sheet.getCell(1, index + 1);
+    cell.value = name;
+    cell.style = headerStyle;
+  });
+  const validationSheet = asValidationSheet(sheet);
+  validationSheet.dataValidations.add('C2:C2001', {
+    type: 'whole',
+    operator: 'between',
+    allowBlank: true,
+    formulae: [RETURN_QTY_MIN, RETURN_QTY_MAX],
+  });
+  validationSheet.dataValidations.add('D2:D2001', {
+    type: 'list',
+    allowBlank: true,
+    formulae: [`"${RETURN_REASONS.map((reason) => reason.label).join(',')}"`],
+  });
+  [14, 22, 12, 45, 24, 24].forEach((width, index) => { sheet.getColumn(index + 1).width = width; });
+  return Buffer.from(await workbook.xlsx.writeBuffer());
+}
+
+export interface ReturnImportRecordRow {
+  row: number;
+  application_no: string;
+  site_code: string;
+  sku: string;
+  qty: number;
+  reason?: string;
+  confirmer_name: string;
+  confirmer_phone: string;
+  submitted_at: string;
+}
+
+export async function buildReturnImportRecordBuffer(rows: ReturnImportRecordRow[]): Promise<Buffer> {
+  const workbook = new ExcelJS.Workbook();
+  const headerStyle: Partial<ExcelJS.Style> = {
+    font: { bold: true },
+    fill: { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFD9E1F2' } },
+  };
+  const headers = ['Excel 行', '申請編號', 'Site Code', 'SKU', 'QTY', 'Reason', '確認人姓名', '確認人電話', '已收件時間'];
+  const bySite = new Map<string, ReturnImportRecordRow[]>();
+  for (const row of rows) {
+    const siteRows = bySite.get(row.site_code) ?? [];
+    siteRows.push(row);
+    bySite.set(row.site_code, siteRows);
+  }
+  for (const site of [...bySite.keys()].sort()) {
+    const sheet = workbook.addWorksheet(site.slice(0, 31));
+    sheet.addRow(headers);
+    headers.forEach((_, index) => { sheet.getCell(1, index + 1).style = headerStyle; });
+    for (const row of bySite.get(site)!) {
+      sheet.addRow([
+        row.row,
+        row.application_no,
+        row.site_code,
+        row.sku,
+        row.qty,
+        returnReasonLabel(row.reason) || row.reason || '',
+        row.confirmer_name,
+        row.confirmer_phone,
+        row.submitted_at,
+      ]);
+    }
+    [10, 32, 14, 24, 10, 45, 24, 24, 24].forEach((width, index) => { sheet.getColumn(index + 1).width = width; });
+  }
+  return Buffer.from(await workbook.xlsx.writeBuffer());
+}
+
+export interface ReturnExportRow {
+  application_no: string;
+  application_date: string;
+  site_code: string;
+  sku: string;
+  qty: number | null;
+  reason: string | null;
+  confirmer_name: string | null;
+  confirmer_phone: string | null;
+}
+
+/** Builds the eight-column Buyer return-goods export workbook. */
+export function buildReturnExportBuffer(rows: ReturnExportRow[]): Promise<Buffer> {
+  return (async () => {
+    const workbook = new ExcelJS.Workbook();
+    const sheet = workbook.addWorksheet(RETURN_SHEET);
+    sheet.addRow([...RETURN_EXPORT_COLUMNS]);
+    const headerStyle: Partial<ExcelJS.Style> = {
+      font: { bold: true },
+      fill: { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFD9E1F2' } },
+    };
+    RETURN_EXPORT_COLUMNS.forEach((_, index) => { sheet.getCell(1, index + 1).style = headerStyle; });
+    for (const row of rows) {
+      sheet.addRow([
+        row.application_no,
+        toHKDateString(row.application_date),
+        row.site_code,
+        row.sku,
+        row.qty,
+        returnReasonLabel(row.reason) || row.reason || '',
+        row.confirmer_name ?? '',
+        row.confirmer_phone ?? '',
+      ]);
+    }
+    [32, 18, 14, 24, 10, 45, 24, 24].forEach((width, index) => { sheet.getColumn(index + 1).width = width; });
     return Buffer.from(await workbook.xlsx.writeBuffer());
   })();
 }

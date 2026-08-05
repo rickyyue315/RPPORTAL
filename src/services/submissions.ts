@@ -6,13 +6,15 @@ import {
   type SubmissionBusinessFields,
   URGENT_QTY_MIN,
   URGENT_QTY_MAX,
+  resolveReturnReasonCode,
   resolveUrgentReasonCode,
 } from '../lib/fields.js';
-import { validateUrgentReason } from '../lib/validation.js';
+import { validateReturnFields, validateUrgentReason } from '../lib/validation.js';
 import { toHKDateString, hkTodayForDateColumn } from '../lib/time.js';
+import { getActiveReturnWindow, isReturnModificationOpen } from '../lib/returnSchedule.js';
 import { normalizeSiteCode } from './stores.js';
 
-export type SubmissionType = 'normal' | 'urgent' | 'sales';
+export type SubmissionType = 'normal' | 'urgent' | 'sales' | 'return';
 
 export interface SubmissionRow {
   id: string;
@@ -32,6 +34,11 @@ export interface SubmissionRow {
   qty: number | null;
   urgent_reason: string | null;
   urgent_reason_other: string | null;
+  return_qty: number | null;
+  return_reason: string | null;
+  return_confirmer_name: string | null;
+  return_confirmer_phone: string | null;
+  return_window_key: string | null;
   status: string;
   exported_at: string | null;
   export_batch_id: string | null;
@@ -53,6 +60,11 @@ export interface CreateSubmissionInput {
   qty?: number | null;
   urgentReason?: string | null;
   urgentReasonOther?: string | null;
+  returnQty?: number | null;
+  returnReason?: string | null;
+  returnConfirmerName?: string | null;
+  returnConfirmerPhone?: string | null;
+  returnWindowKey?: string | null;
   ip: string;
   changeSource: string;
   actor?: string;
@@ -103,6 +115,26 @@ export function salesFieldsFromRow(row: SubmissionRow): { site_code: string; sku
   };
 }
 
+export function returnFieldsFromRow(row: SubmissionRow): {
+  site_code: string;
+  sku: string;
+  return_qty: number | null;
+  return_reason: string | null;
+  return_confirmer_name: string | null;
+  return_confirmer_phone: string | null;
+  return_window_key: string | null;
+} {
+  return {
+    site_code: row.site_code,
+    sku: normalizeText(row.sku),
+    return_qty: row.return_qty,
+    return_reason: normalizeText(row.return_reason) || null,
+    return_confirmer_name: normalizeText(row.return_confirmer_name) || null,
+    return_confirmer_phone: normalizeText(row.return_confirmer_phone) || null,
+    return_window_key: normalizeText(row.return_window_key) || null,
+  };
+}
+
 function toBusinessParams(fields: SubmissionBusinessFields): unknown[] {
   return [
     normalizeText(fields.brand) || null,
@@ -132,6 +164,20 @@ export interface DuplicateSubmissionKey {
   sku: string;
   submissionType: SubmissionType;
   date: string;
+}
+
+export class ReturnWindowClosedError extends Error {
+  constructor(message = '目前不在店舖申請退行貨日期內，暫停申請或修改') {
+    super(message);
+    this.name = 'ReturnWindowClosedError';
+  }
+}
+
+export class ReturnSubmissionConflictError extends Error {
+  constructor() {
+    super('同一店舖及 SKU 在此退行貨申請期已申請，請使用「查詢／修改」更正原申請');
+    this.name = 'ReturnSubmissionConflictError';
+  }
 }
 
 function duplicateKeyValue(key: DuplicateSubmissionKey): string {
@@ -181,9 +227,103 @@ export async function assertNoDuplicate(
   }
 }
 
+export async function assertNoDuplicateReturn(
+  client: DuplicateCheckClient,
+  params: { siteCode: string; sku: string; windowKey: string; excludeId?: string },
+): Promise<void> {
+  const result = await client.query(
+    `SELECT 1 FROM submissions
+     WHERE site_code = $1 AND sku = $2 AND submission_type = 'return'
+       AND return_window_key = $3
+       AND ($4::uuid IS NULL OR id <> $4)
+     LIMIT 1`,
+    [params.siteCode, normalizeText(params.sku), params.windowKey, params.excludeId ?? null],
+  );
+  if (result.rows.length > 0) throw new ReturnSubmissionConflictError();
+}
+
+async function createReturnSubmission(input: CreateSubmissionInput): Promise<SubmissionRow> {
+  const siteCode = normalizeSiteCode(input.siteCode);
+  const applicationDate = input.applicationDateOverride ?? hkTodayForDateColumn();
+  const activeWindow = getActiveReturnWindow(applicationDate);
+  if (!activeWindow) throw new ReturnWindowClosedError('目前不在店舖申請退行貨日期內，暫停申請');
+  if (input.returnWindowKey && input.returnWindowKey !== activeWindow.key) {
+    throw new ReturnWindowClosedError('退行貨申請期已變更，請重新載入頁面後再提交');
+  }
+
+  const returnFields = {
+    sku: normalizeText(input.fields.sku),
+    qty: input.returnQty ?? NaN,
+    reason: normalizeText(input.returnReason),
+    confirmerName: normalizeText(input.returnConfirmerName),
+    confirmerPhone: normalizeText(input.returnConfirmerPhone),
+  };
+  const fieldErrors = validateReturnFields(returnFields);
+  if (fieldErrors.length) throw new Error(fieldErrors[0]!.message);
+  const reason = resolveReturnReasonCode(returnFields.reason);
+
+  return withTransaction(async (client) => {
+    await lockDuplicateSubmissionKeys(client, [{
+      siteCode,
+      sku: returnFields.sku,
+      submissionType: 'return',
+      date: activeWindow.key,
+    }]);
+    await assertNoDuplicateReturn(client, {
+      siteCode,
+      sku: returnFields.sku,
+      windowKey: activeWindow.key,
+    });
+    const applicationNo = await nextApplicationNo(client, 'RETURN');
+    const requestedByEmail = `${siteCode.toLowerCase()}@sasa.com`;
+    const result = await client.query<SubmissionRow>(
+      `INSERT INTO submissions (
+         application_no, source, submission_type, site_code, requested_by_email, application_date,
+         brand, sku, qty, urgent_reason, urgent_reason_other,
+         return_qty, return_reason, return_confirmer_name, return_confirmer_phone, return_window_key,
+         created_ip, created_ip_expires_at
+       )
+       VALUES ($1, $2, 'return', $3, $4, $5, '', $6, NULL, NULL, NULL, $7, $8, $9, $10, $11, $12, $13)
+       RETURNING *`,
+      [
+        applicationNo,
+        input.source,
+        siteCode,
+        requestedByEmail,
+        applicationDate,
+        returnFields.sku,
+        returnFields.qty,
+        reason,
+        returnFields.confirmerName,
+        returnFields.confirmerPhone,
+        activeWindow.key,
+        input.ip,
+        input.ip ? ipExpiryIso() : null,
+      ],
+    );
+    const row = result.rows[0]!;
+    await client.query(
+      `INSERT INTO submission_versions
+         (submission_id, version, data_before, data_after, actor_role, actor, ip, change_source)
+       VALUES ($1, 1, NULL, $2, 'applicant', $3, $4, $5)`,
+      [
+        row.id,
+        JSON.stringify(returnFieldsFromRow(row)),
+        input.actor ?? null,
+        input.ip,
+        input.changeSource,
+      ],
+    );
+    return row;
+  });
+}
+
 export async function createSubmission(
   input: CreateSubmissionInput,
 ): Promise<SubmissionRow> {
+  if ((input.submissionType ?? 'normal') === 'return') {
+    return createReturnSubmission(input);
+  }
   const siteCode = normalizeSiteCode(input.siteCode);
   const fields = input.fields;
   const submissionType: SubmissionType = input.submissionType ?? 'normal';
@@ -410,6 +550,82 @@ export interface ModifySalesSubmissionInput {
   sku: string;
   ip: string;
   changeSource: string;
+}
+
+export interface ModifyReturnSubmissionInput {
+  applicationNo: string;
+  siteCode: string;
+  sku: string;
+  qty: number;
+  reason: string;
+  confirmerName: string;
+  confirmerPhone: string;
+  ip: string;
+  changeSource: string;
+}
+
+export async function modifyReturnSubmission(input: ModifyReturnSubmissionInput): Promise<SubmissionRow> {
+  const siteCode = normalizeSiteCode(input.siteCode);
+  const fieldErrors = validateReturnFields({
+    sku: input.sku,
+    qty: input.qty,
+    reason: input.reason,
+    confirmerName: input.confirmerName,
+    confirmerPhone: input.confirmerPhone,
+  });
+  if (fieldErrors.length) throw new Error(fieldErrors[0]!.message);
+  const reason = resolveReturnReasonCode(input.reason);
+
+  return withTransaction(async (client) => {
+    const rowResult = await client.query<SubmissionRow>(
+      'SELECT * FROM submissions WHERE application_no = $1 AND site_code = $2 FOR UPDATE',
+      [input.applicationNo.trim().toUpperCase(), siteCode],
+    );
+    const row = rowResult.rows[0];
+    if (!row) throw new Error('找不到申報');
+    if (row.submission_type !== 'return') throw new NotSupportedError('此申報不是行貨退貨報數');
+    if (row.locked_at || row.exported_at) {
+      throw new LockedError(row.locked_at ? new Date(row.locked_at) : null);
+    }
+    if (!isReturnModificationOpen(row.return_window_key, hkTodayForDateColumn())) {
+      throw new ReturnWindowClosedError();
+    }
+    await lockDuplicateSubmissionKeys(client, [{
+      siteCode,
+      sku: input.sku,
+      submissionType: 'return',
+      date: row.return_window_key ?? '',
+    }]);
+    await assertNoDuplicateReturn(client, {
+      siteCode,
+      sku: input.sku,
+      windowKey: row.return_window_key ?? '',
+      excludeId: row.id,
+    });
+
+    const before = returnFieldsFromRow(row);
+    const updated = await client.query<SubmissionRow>(
+      `UPDATE submissions SET
+         sku = $1, return_qty = $2, return_reason = $3,
+         return_confirmer_name = $4, return_confirmer_phone = $5, updated_at = now()
+       WHERE id = $6
+       RETURNING *`,
+      [normalizeText(input.sku), input.qty, reason, normalizeText(input.confirmerName), normalizeText(input.confirmerPhone), row.id],
+    );
+    const newRow = updated.rows[0]!;
+    const versionResult = await client.query<{ max: number | null }>(
+      'SELECT max(version) AS max FROM submission_versions WHERE submission_id = $1',
+      [row.id],
+    );
+    const nextVersion = (versionResult.rows[0]?.max ?? 0) + 1;
+    await client.query(
+      `INSERT INTO submission_versions
+         (submission_id, version, data_before, data_after, actor_role, actor, ip, change_source)
+       VALUES ($1, $2, $3, $4, 'applicant', NULL, $5, $6)`,
+      [row.id, nextVersion, JSON.stringify(before), JSON.stringify(returnFieldsFromRow(newRow)), input.ip, input.changeSource],
+    );
+    return newRow;
+  });
 }
 
 export async function modifySalesSubmission(input: ModifySalesSubmissionInput): Promise<SubmissionRow> {
@@ -681,6 +897,70 @@ export async function adminUpdateSalesSubmission(input: {
          (submission_id, version, data_before, data_after, actor_role, actor, ip, change_source)
        VALUES ($1, $2, $3, $4, 'admin', $5, $6, 'admin_edit')`,
       [row.id, nextVersion, JSON.stringify(before), JSON.stringify(salesFieldsFromRow(newRow)), input.username, input.ip],
+    );
+    return newRow;
+  });
+}
+
+export async function adminUpdateReturnSubmission(input: {
+  id: string;
+  sku: string;
+  qty: number;
+  reason: string;
+  confirmerName: string;
+  confirmerPhone: string;
+  ip: string;
+  username: string;
+}): Promise<SubmissionRow> {
+  const fieldErrors = validateReturnFields({
+    sku: input.sku,
+    qty: input.qty,
+    reason: input.reason,
+    confirmerName: input.confirmerName,
+    confirmerPhone: input.confirmerPhone,
+  });
+  if (fieldErrors.length) throw new Error(fieldErrors[0]!.message);
+  const reason = resolveReturnReasonCode(input.reason);
+  return withTransaction(async (client) => {
+    const rowResult = await client.query<SubmissionRow>('SELECT * FROM submissions WHERE id = $1 FOR UPDATE', [input.id]);
+    const row = rowResult.rows[0];
+    if (!row) throw new Error('找不到申報');
+    if (row.submission_type !== 'return') throw new Error('此申報不是行貨退貨報數');
+    if (row.locked_at || row.exported_at) {
+      throw new LockedError(row.locked_at ? new Date(row.locked_at) : null);
+    }
+    await lockDuplicateSubmissionKeys(client, [{
+      siteCode: row.site_code,
+      sku: input.sku,
+      submissionType: 'return',
+      date: row.return_window_key ?? '',
+    }]);
+    await assertNoDuplicateReturn(client, {
+      siteCode: row.site_code,
+      sku: input.sku,
+      windowKey: row.return_window_key ?? '',
+      excludeId: row.id,
+    });
+    const before = returnFieldsFromRow(row);
+    const updated = await client.query<SubmissionRow>(
+      `UPDATE submissions SET
+         sku = $1, return_qty = $2, return_reason = $3,
+         return_confirmer_name = $4, return_confirmer_phone = $5, updated_at = now()
+       WHERE id = $6
+       RETURNING *`,
+      [normalizeText(input.sku), input.qty, reason, normalizeText(input.confirmerName), normalizeText(input.confirmerPhone), row.id],
+    );
+    const newRow = updated.rows[0]!;
+    const versionResult = await client.query<{ max: number | null }>(
+      'SELECT max(version) AS max FROM submission_versions WHERE submission_id = $1',
+      [row.id],
+    );
+    const nextVersion = (versionResult.rows[0]?.max ?? 0) + 1;
+    await client.query(
+      `INSERT INTO submission_versions
+         (submission_id, version, data_before, data_after, actor_role, actor, ip, change_source)
+       VALUES ($1, $2, $3, $4, 'admin', $5, $6, 'admin_edit')`,
+      [row.id, nextVersion, JSON.stringify(before), JSON.stringify(returnFieldsFromRow(newRow)), input.username, input.ip],
     );
     return newRow;
   });

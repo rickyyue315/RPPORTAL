@@ -12,6 +12,7 @@ export const publicSubmitLimiter = rateLimit({
   standardHeaders: 'draft-7',
   legacyHeaders: false,
   keyGenerator,
+  skip: () => process.env.NODE_ENV === 'test',
   message: { error: '提交次數過多，請稍後再試' },
 });
 
@@ -21,6 +22,7 @@ export const publicLookupLimiter = rateLimit({
   standardHeaders: 'draft-7',
   legacyHeaders: false,
   keyGenerator,
+  skip: () => process.env.NODE_ENV === 'test',
   message: { error: '查詢次數過多，請稍後再試' },
 });
 
@@ -30,6 +32,7 @@ export const excelImportLimiter = rateLimit({
   standardHeaders: 'draft-7',
   legacyHeaders: false,
   keyGenerator,
+  skip: () => process.env.NODE_ENV === 'test',
   message: { error: '匯入次數過多，請稍後再試' },
 });
 
@@ -39,6 +42,7 @@ export const adminLoginLimiter = rateLimit({
   standardHeaders: 'draft-7',
   legacyHeaders: false,
   keyGenerator,
+  skip: () => process.env.NODE_ENV === 'test',
   message: { error: '登入嘗試次數過多，請稍後再試' },
 });
 
@@ -48,6 +52,7 @@ export const adminActionLimiter = rateLimit({
   standardHeaders: 'draft-7',
   legacyHeaders: false,
   keyGenerator,
+  skip: () => process.env.NODE_ENV === 'test',
   message: { error: '操作次數過多，請稍後再試' },
 });
 
@@ -57,5 +62,6 @@ export const excelExportLimiter = rateLimit({
   standardHeaders: 'draft-7',
   legacyHeaders: false,
   keyGenerator,
+  skip: () => process.env.NODE_ENV === 'test',
   message: { error: '匯出次數過多，請稍後再試' },
 });

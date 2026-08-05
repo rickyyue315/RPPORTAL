@@ -16,6 +16,7 @@
       <a href="/">一般申報</a>
       <a href="/urgent.html">Urgent Order</a>
       <a href="/sales.html">突發性銷售申報</a>
+      <a href="/return.html">行貨退貨報數</a>
       <a href="/lookup.html" class="active" aria-current="page">查詢／修改</a>
       <a href="/help.html">使用說明</a>
     </nav>
@@ -30,7 +31,7 @@
         <div class="form-grid">
           <div>
             <label for="q_no">申請編號</label>
-          <input type="text" id="q_no" placeholder="NDRF-...、URGENT-... 或 SALES-...">
+            <input type="text" id="q_no" placeholder="NDRF-...、URGENT-...、SALES-... 或 RETURN-...">
           </div>
           <div>
             <label for="q_site">Site Code</label>
@@ -104,6 +105,18 @@
               <label for="f_u_urgent_reason_other">Other Reason <span class="optional">（選擇「9. 其他」時必填）</span></label>
               <input type="text" id="f_u_urgent_reason_other" autocomplete="off" maxlength="2000">
             </div>
+          </div>
+          <div class="form-grid" id="return_fields" style="display:none">
+            <div>
+              <label for="f_return_qty">QTY <span class="optional">（必填，1 至 9999）</span></label>
+              <input type="number" id="f_return_qty" min="1" max="9999" step="1">
+            </div>
+            <div class="full">
+              <label for="f_return_reason">REASON <span class="optional">（必填）</span></label>
+              <select id="f_return_reason"><option value="">請選擇申請退貨原因</option></select>
+            </div>
+            <div><label for="f_return_name">確認人姓名 <span class="optional">（必填）</span></label><input type="text" id="f_return_name" maxlength="200"></div>
+            <div><label for="f_return_phone">確認人電話 <span class="optional">（必填）</span></label><input type="text" id="f_return_phone" maxlength="200"></div>
           </div>
         </div>
       </form>

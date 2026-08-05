@@ -12,8 +12,13 @@ import {
   URGENT_QTY_MAX,
   SALES_COLUMNS,
   SALES_SHEET,
+  RETURN_COLUMNS,
+  RETURN_SHEET,
+  RETURN_QTY_MIN,
+  RETURN_QTY_MAX,
   BUSINESS_FIELD_LABELS,
   resolveUrgentReasonCode,
+  resolveReturnReasonCode,
   type SubmissionBusinessFields,
 } from '../lib/fields.js';
 import { normalizeSiteCode } from '../services/stores.js';
@@ -402,6 +407,115 @@ export function findDuplicateImportErrors(
   return errors;
 }
 
+function parseReturnQtyCell(raw: ExcelJS.CellValue): number {
+  if (typeof raw === 'number') return Number.isInteger(raw) ? raw : NaN;
+  const value = normalizeText(raw as never);
+  if (!/^\d+$/.test(value)) return NaN;
+  const qty = Number(value);
+  return Number.isSafeInteger(qty) ? qty : NaN;
+}
+
+/** Validates the public return-goods workbook with all-or-nothing semantics. */
+export async function parseReturnImportWorkbook(
+  buffer: Buffer,
+  storeCodes: Set<string>,
+  maxRows: number,
+  options: { validateSku?: boolean } = {},
+): Promise<ParsedReturnImport> {
+  const { validateSku = true } = options;
+  const contentHash = hashFileContent(buffer);
+  const workbook = new ExcelJS.Workbook();
+  try {
+    await workbook.xlsx.load(buffer as never);
+  } catch {
+    return { ok: false, totalRows: 0, errors: [{ row: 0, field: 'file', reason: EXCEL_UPLOAD_PARSE_ERROR }], contentHash };
+  }
+
+  const sheet = workbook.getWorksheet(RETURN_SHEET);
+  if (!sheet) {
+    return {
+      ok: false,
+      sheetName: RETURN_SHEET,
+      totalRows: 0,
+      errors: [{ row: 0, field: 'sheet', reason: `工作表名稱必須為「${RETURN_SHEET}」` }],
+      contentHash,
+    };
+  }
+
+  const headers = RETURN_COLUMNS.map((_, index) => cellValue(sheet.getRow(1).getCell(index + 1)));
+  if (sheet.getRow(1).cellCount !== RETURN_COLUMNS.length || headers.some((header, index) => header !== RETURN_COLUMNS[index])) {
+    return {
+      ok: false,
+      sheetName: RETURN_SHEET,
+      headers,
+      totalRows: 0,
+      errors: [{
+        row: 1,
+        field: 'header',
+        reason: `欄名必須與模板一致，缺少或不符: ${RETURN_COLUMNS.filter((header, index) => headers[index] !== header).join(', ')}`,
+      }],
+      contentHash,
+    };
+  }
+
+  const errors: ImportRowError[] = [];
+  const rows: ParsedReturnRow[] = [];
+  let totalRows = 0;
+  sheet.eachRow((row, rowNumber) => {
+    if (rowNumber === 1) return;
+    const hasAny = RETURN_COLUMNS.some((_, index) => {
+      const value = row.getCell(index + 1).value;
+      return value !== null && value !== undefined && String(value).trim() !== '';
+    });
+    if (!hasAny) return;
+    totalRows++;
+
+    const siteCode = normalizeSiteCode(cellValue(row.getCell(1)));
+    const sku = cellValue(row.getCell(2));
+    const qty = parseReturnQtyCell(row.getCell(3).value);
+    const reason = cellValue(row.getCell(4));
+    const confirmerName = cellValue(row.getCell(5));
+    const confirmerPhone = cellValue(row.getCell(6));
+    const rowError = (field: string, message: string) => errors.push({ row: rowNumber, field, reason: message, siteCode: siteCode || undefined });
+
+    if (totalRows > maxRows) {
+      rowError('file', `超出單次最多 ${maxRows} 行限制`);
+      return;
+    }
+    if (!siteCode) rowError('Site Code', 'Site Code 為必填');
+    else if (!storeCodes.has(siteCode)) rowError('Site Code', `Site Code「${siteCode}」不存在於門店主檔`);
+    if (!sku) rowError('SKU', 'SKU 為必填');
+    else if (validateSku && !isValidSku(sku)) rowError('SKU', SKU_ERROR);
+    if (!(Number.isInteger(qty) && qty >= RETURN_QTY_MIN && qty <= RETURN_QTY_MAX)) {
+      rowError('QTY', `QTY 必須為 ${RETURN_QTY_MIN} 至 ${RETURN_QTY_MAX} 的整數`);
+    }
+    if (!reason) rowError('REASON', 'REASON 為必填');
+    else if (!resolveReturnReasonCode(reason)) rowError('REASON', 'REASON 選項無效');
+    if (!confirmerName) rowError('確認人姓名', '確認人姓名為必填');
+    if (!confirmerPhone) rowError('確認人電話', '確認人電話為必填');
+
+    rows.push({
+      rowNumber,
+      siteCode,
+      sku,
+      qty,
+      reason: resolveReturnReasonCode(reason),
+      confirmerName,
+      confirmerPhone,
+    });
+  });
+
+  return {
+    ok: errors.length === 0,
+    sheetName: RETURN_SHEET,
+    headers,
+    totalRows,
+    errors: errors.length ? errors : undefined,
+    rows: errors.length ? undefined : rows,
+    contentHash,
+  };
+}
+
 export interface ParsedSalesRow {
   rowNumber: number;
   siteCode: string;
@@ -415,6 +529,26 @@ export interface ParsedSalesImport {
   totalRows: number;
   errors?: ImportRowError[];
   rows?: ParsedSalesRow[];
+  contentHash?: string;
+}
+
+export interface ParsedReturnRow {
+  rowNumber: number;
+  siteCode: string;
+  sku: string;
+  qty: number;
+  reason: string;
+  confirmerName: string;
+  confirmerPhone: string;
+}
+
+export interface ParsedReturnImport {
+  ok: boolean;
+  sheetName?: string;
+  headers?: string[];
+  totalRows: number;
+  errors?: ImportRowError[];
+  rows?: ParsedReturnRow[];
   contentHash?: string;
 }
 

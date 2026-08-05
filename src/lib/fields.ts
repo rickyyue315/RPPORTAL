@@ -97,8 +97,25 @@ export type SalesColumn = (typeof SALES_COLUMNS)[number];
 export const SALES_SHEET = '突發性銷售申報';
 export const SALES_EXPORT_COLUMNS = ['Application Date', 'Requested by', 'Shop Code', 'SKU'] as const;
 
+export const RETURN_COLUMNS = ['Site Code', 'SKU', 'QTY', 'REASON', '確認人姓名', '確認人電話'] as const;
+export type ReturnColumn = (typeof RETURN_COLUMNS)[number];
+export const RETURN_SHEET = '行貨退貨報數';
+export const RETURN_EXPORT_COLUMNS = [
+  '申請編號',
+  '申請日期',
+  'Requested by',
+  'SKU',
+  'QTY',
+  'Reason',
+  '確認人姓名',
+  '確認人電話',
+] as const;
+
 export const URGENT_QTY_MIN = 1;
 export const URGENT_QTY_MAX = 1000;
+
+export const RETURN_QTY_MIN = 1;
+export const RETURN_QTY_MAX = 9999;
 
 /** Approved Urgent Order reasons in display order. Codes are stable DB values. */
 export const URGENT_REASONS: ReadonlyArray<{ code: string; label: string }> = [
@@ -120,6 +137,41 @@ export const URGENT_REASON_OTHER_MAX = 2000;
 export function urgentReasonLabel(code: string | null | undefined): string {
   const found = URGENT_REASONS.find((r) => r.code === normalizeText(code));
   return found ? found.label : '';
+}
+
+/** Approved return-goods reasons in display order. Codes are stable DB values. */
+export const RETURN_REASONS: ReadonlyArray<{ code: string; label: string }> = [
+  { code: '1', label: '1. BUYER MEMO指定退貨' },
+  { code: '2', label: '2. BUYER 電郵確認可退-期貨' },
+  { code: '3', label: '3. BUYER 電郵確認可退-壞貨' },
+  { code: '4', label: '4. 供應商確認可退-期貨' },
+  { code: '5', label: '5. 供應商確認可退-壞貨' },
+  { code: '6', label: '6. 供應商確認可退-下架貨' },
+] as const;
+
+export const RETURN_REASON_OPTIONS: ReadonlyArray<string> = RETURN_REASONS.map((r) => r.code);
+
+export function returnReasonLabel(code: string | null | undefined): string {
+  const found = RETURN_REASONS.find((r) => r.code === normalizeText(code));
+  return found ? found.label : '';
+}
+
+/** Resolves a return reason code or full Excel dropdown label to its stable code. */
+export function resolveReturnReasonCode(value: string | null | undefined): string {
+  const trimmed = normalizeText(value);
+  if (RETURN_REASON_OPTIONS.includes(trimmed)) return trimmed;
+  const found = RETURN_REASONS.find((r) => r.label === trimmed);
+  return found ? found.code : '';
+}
+
+export interface ReturnFields {
+  site_code: string;
+  sku: string;
+  return_qty: number;
+  return_reason: string;
+  return_confirmer_name: string;
+  return_confirmer_phone: string;
+  return_window_key: string;
 }
 
 /**

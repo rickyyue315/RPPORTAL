@@ -72,11 +72,11 @@
       tr.innerHTML = `
         <td>${escapeHtml(s.application_no)}</td>
         <td>${escapeHtml(s.site_code)}</td>
-        <td>${escapeHtml(s.sku)}${s.submission_type === 'urgent' ? `<div class="hint">QTY: ${escapeHtml(s.qty)}</div>` : ''}</td>
+        <td>${escapeHtml(s.sku)}${s.submission_type === 'urgent' ? `<div class="hint">QTY: ${escapeHtml(s.qty)}</div>` : s.submission_type === 'return' ? `<div class="hint">QTY: ${escapeHtml(s.return_qty)}<br>${escapeHtml(s.return_reason_label || '')}</div>` : ''}</td>
         <td>${escapeHtml(s.rp_type || '—')}</td>
         <td>${escapeHtml(s.safety_stock || '—')}</td>
         <td>${escapeHtml(s.nd_code || '—')}</td>
-        <td>${s.submission_type === 'urgent' ? '<span class="status-badge received">Urgent</span>' : s.submission_type === 'sales' ? '<span class="status-badge received">突發銷售</span>' : '一般'}</td>
+        <td>${s.submission_type === 'urgent' ? '<span class="status-badge received">Urgent</span>' : s.submission_type === 'sales' ? '<span class="status-badge received">突發銷售</span>' : s.submission_type === 'return' ? '<span class="status-badge received">行貨退貨</span>' : '一般'}</td>
         <td>${s.source === 'web' ? '網頁' : 'Excel'}</td>
         <td>${escapeHtml(s.submitted_at)}</td>
         <td>${escapeHtml(s.last_modified_at || '—')}</td>
@@ -136,10 +136,11 @@
     const s = data.submission;
     const isUrgent = s.submission_type === 'urgent';
     const isSales = s.submission_type === 'sales';
+    const isReturn = s.submission_type === 'return';
     $('detail_title').textContent = `申報詳情 — ${s.application_no}`;
     let header = `
       <dt>狀態</dt><dd>${s.locked ? '<span class="status-badge locked">已鎖定</span>' : '<span class="status-badge received">已收件</span>'}</dd>
-       <dt>類型</dt><dd>${isUrgent ? 'Urgent Order' : isSales ? '突發性銷售申報' : '一般 NDRF'}</dd>
+       <dt>類型</dt><dd>${isUrgent ? 'Urgent Order' : isSales ? '突發性銷售申報' : isReturn ? '行貨退貨報數' : '一般 NDRF'}</dd>
       <dt>Site Code</dt><dd>${escapeHtml(s.site_code)}（${escapeHtml(data.store?.shop || '')}）</dd>
       <dt>申請電郵</dt><dd>${escapeHtml(s.requested_by_email)}</dd>
       <dt>來源</dt><dd>${s.source === 'web' ? '網頁' : 'Excel'}</dd>
@@ -150,13 +151,17 @@
       header += `<dt>Urgent Reason</dt><dd>${escapeHtml(s.urgent_reason_label || '—')}</dd>`;
       header += `<dt>Other Reason</dt><dd>${escapeHtml(s.urgent_reason_other || '—')}</dd>`;
     }
+    if (isReturn) {
+      header += `<dt>QTY</dt><dd>${escapeHtml(s.return_qty)}</dd><dt>REASON</dt><dd>${escapeHtml(s.return_reason_label || s.return_reason || '—')}</dd><dt>確認人姓名</dt><dd>${escapeHtml(s.return_confirmer_name || '—')}</dd><dt>確認人電話</dt><dd>${escapeHtml(s.return_confirmer_phone || '—')}</dd><dt>申請窗口</dt><dd>${escapeHtml(s.return_window_key || '—')}</dd>`;
+    }
     if (s.locked_at) header += `<dt>鎖定時間</dt><dd>${escapeHtml(s.locked_at)}</dd>`;
     if (s.exported_at) header += `<dt>匯出時間</dt><dd>${escapeHtml(s.exported_at)}</dd>`;
     $('detail_header').innerHTML = header;
 
-    $('normal_fields').style.display = isUrgent || isSales ? 'none' : '';
+    $('normal_fields').style.display = isUrgent || isSales || isReturn ? 'none' : '';
     $('urgent_fields').style.display = isUrgent ? '' : 'none';
     $('sales_fields').style.display = isSales ? '' : 'none';
+    $('return_fields').style.display = isReturn ? '' : 'none';
     $('urgent_note').style.display = isUrgent ? '' : 'none';
 
     $('a_sku_normal').value = s.sku || '';
@@ -169,6 +174,11 @@
     $('a_urgent_reason').value = s.urgent_reason || '';
     $('a_urgent_reason_other').value = s.urgent_reason_other || '';
     $('a_sku_sales').value = s.sku || '';
+    $('a_sku_return').value = s.sku || '';
+    $('a_return_qty').value = s.return_qty || '';
+    $('a_return_reason').value = s.return_reason || '';
+    $('a_return_name').value = s.return_confirmer_name || '';
+    $('a_return_phone').value = s.return_confirmer_phone || '';
     syncUrgentOtherField();
 
     $('btn_save_edit').disabled = s.locked;
@@ -202,6 +212,7 @@
     if (!currentDetail) return;
     const isUrgent = currentDetail.submission.submission_type === 'urgent';
     const isSales = currentDetail.submission.submission_type === 'sales';
+    const isReturn = currentDetail.submission.submission_type === 'return';
     const body = isUrgent
       ? {
           sku: $('a_sku_urgent').value.trim(),
@@ -211,6 +222,8 @@
         }
       : isSales
         ? { sku: $('a_sku_sales').value.trim() }
+        : isReturn
+          ? { sku: $('a_sku_return').value.trim(), return_qty: Number($('a_return_qty').value), return_reason: $('a_return_reason').value, return_confirmer_name: $('a_return_name').value.trim(), return_confirmer_phone: $('a_return_phone').value.trim() }
         : {
           sku: $('a_sku_normal').value.trim(),
           rp_type: $('a_rp_type').value,
@@ -230,6 +243,11 @@
     } else if (isSales) {
       if (!body.sku) {
         showAlert($('save_edit_error'), 'error', 'SKU 為必填');
+        return;
+      }
+    } else if (isReturn) {
+      if (!body.sku || !Number.isInteger(body.return_qty) || body.return_qty < 1 || body.return_qty > 9999 || !body.return_reason || !body.return_confirmer_name || !body.return_confirmer_phone) {
+        showAlert($('save_edit_error'), 'error', '請填妥 SKU、QTY、REASON、確認人姓名及確認人電話');
         return;
       }
     } else {
@@ -435,6 +453,16 @@
     }, 'Sudden_Sales_Preview.xlsx', 'sales_export_info', 'btn_sales_export_preview');
   });
 
+  $('btn_return_export_preview').addEventListener('click', () => {
+    previewExport('/api/admin/return/export', {
+      from: $('re_from').value,
+      to: $('re_to').value,
+      site_code: $('re_site').value.trim(),
+      include_exported: $('re_include').value === 'true',
+      preview: true,
+    }, 'Return_Goods_Preview.xlsx', 'return_export_info', 'btn_return_export_preview');
+  });
+
   $('btn_urgent_export').addEventListener('click', async () => {
     const confirmed = await confirmExport(
       `匯出日期：${$('ue_from').value || '不限'} 至 ${$('ue_to').value || '不限'}（Site Code：${$('ue_site').value.trim() || '全部'}）\n匯出後該批 Urgent Order 會被鎖定，申請人不能再修改。\n確定要繼續嗎？`
@@ -480,6 +508,18 @@
       btn.disabled = false;
       btn.textContent = '匯出並鎖定';
     }
+  });
+
+  $('btn_return_export').addEventListener('click', async () => {
+    const confirmed = await confirmExport(`匯出日期：${$('re_from').value || '不限'} 至 ${$('re_to').value || '不限'}（Site Code：${$('re_site').value.trim() || '全部'}）\n匯出後該批行貨退貨報數會被鎖定，店舖不能再修改。\n確定要繼續嗎？`);
+    if (!confirmed) return;
+    const btn = $('btn_return_export'); btn.disabled = true; btn.textContent = '匯出中…'; showAlert($('return_export_info'), '', '');
+    try {
+      const token = await getCsrf();
+      const response = await fetch('/api/admin/return/export', { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-csrf-token': token }, body: JSON.stringify({ from: $('re_from').value, to: $('re_to').value, site_code: $('re_site').value.trim(), include_exported: $('re_include').value === 'true' }) });
+      if (!response.ok) { const data = await response.json().catch(() => ({ error: '匯出失敗' })); throw new Error(data.error || '匯出失敗'); }
+      const blob = await response.blob(); const disposition = response.headers.get('Content-Disposition') || ''; const match = disposition.match(/filename="([^"]+)"/); const url = URL.createObjectURL(blob); const anchor = document.createElement('a'); anchor.href = url; anchor.download = match ? match[1] : 'Return_Goods_Export.xlsx'; document.body.appendChild(anchor); anchor.click(); anchor.remove(); URL.revokeObjectURL(url); showAlert($('return_export_info'), 'success', '匯出成功，相關申報已鎖定。'); loadList(); loadSummary();
+    } catch (error) { showAlert($('return_export_info'), 'error', escapeHtml(error.message)); } finally { btn.disabled = false; btn.textContent = '匯出並鎖定'; }
   });
 
   $('btn_audit').addEventListener('click', async (e) => {
@@ -536,7 +576,12 @@
       setStat('sales', 'exported', 's_sales_exported');
       setStat('sales', 'today', 's_sales_today');
       setStat('sales', 'today_exported', 's_sales_today_exported');
-      setStat('sales', 'stores_today', 's_sales_stores_today');
+       setStat('sales', 'stores_today', 's_sales_stores_today');
+       setStat('return', 'total', 's_return_total');
+       setStat('return', 'exported', 's_return_exported');
+       setStat('return', 'today', 's_return_today');
+       setStat('return', 'today_exported', 's_return_today_exported');
+       setStat('return', 'stores_today', 's_return_stores_today');
       const note = $('summary_note');
       if (note) {
         if (data.total > 0) {
@@ -643,4 +688,7 @@
     loadStoreCount();
   });
   populateNdCodeDatalists();
+  api('/api/public/return/schedule').then((data) => {
+    $('a_return_reason').innerHTML = '<option value="">請選擇申請退貨原因</option>' + data.reasons.map((r) => `<option value="${escapeHtml(r.code)}">${escapeHtml(r.label)}</option>`).join('');
+  }).catch(() => {});
 })();

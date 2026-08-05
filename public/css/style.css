@@ -24,6 +24,8 @@ body {
   line-height: 1.55;
 }
 
+.table-scroll { overflow-x: auto; }
+
 a {
   color: var(--brand);
   text-decoration: none;

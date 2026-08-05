@@ -17,6 +17,7 @@
       <a href="/">一般申報</a>
       <a href="/urgent.html">Urgent Order</a>
       <a href="/sales.html">突發性銷售申報</a>
+      <a href="/return.html">行貨退貨報數</a>
       <a href="/lookup.html">查詢／修改</a>
       <a href="/help.html" class="active" aria-current="page">使用說明</a>
     </nav>
@@ -33,7 +34,8 @@
       <a href="#excel">2. Excel 批量<small>一次提交多間店舖</small></a>
       <a href="#urgent">3. Urgent Order<small>緊急補貨申報</small></a>
       <a href="#sales">4. 突發性銷售申報<small>只填 Site Code 及 SKU</small></a>
-      <a href="#lookup">5. 查詢／修改<small>查看申請進度及資料</small></a>
+      <a href="#return">5. 行貨退貨報數<small>申請退行貨及 Excel 批量</small></a>
+      <a href="#lookup">6. 查詢／修改<small>查看申請進度及資料</small></a>
     </nav>
 
     <section class="card help-section" id="normal" aria-labelledby="normal-title">
@@ -131,8 +133,72 @@
       </div>
     </section>
 
+    <section class="card help-section" id="return" aria-labelledby="return-title">
+      <h2 id="return-title">5. 行貨退貨報數</h2>
+      <p class="help-section-intro">行貨退貨報數用於提交需要 Buyer 審批的行貨退貨申請。單筆申請及 Excel 批量上載使用相同欄位及驗證規則。</p>
+      <div class="help-step">
+        <div class="help-placeholder" role="img" aria-label="行貨退貨報數表單操作示意圖">
+          <strong>行貨退貨報數</strong>
+          <span>Site Code · SKU · QTY · REASON · 確認人資料</span>
+        </div>
+        <div>
+          <h3><span class="help-step-number">1</span>確認申請日期及庫存</h3>
+          <p>按「行貨退貨報數」進入申請頁。先參考頁面上的 <b>2026 年店舖申請退行貨時間表</b>，確認目前仍在開放日期內，再到庫存分析報表檢查有足夠機數。</p>
+          <div class="help-note">報數後請即時收起退貨，不可繼續售賣。2026 年 8 月至 12 月只會在指定店舖申請窗口收單；窗口結束後不可新增申請。</div>
+        </div>
+      </div>
+      <div class="help-step">
+        <div class="help-placeholder" role="img" aria-label="行貨退貨報數欄位示意圖">
+          <strong>必填欄位</strong>
+          <span>SKU　QTY　REASON　確認人姓名　確認人電話</span>
+        </div>
+        <div>
+          <h3><span class="help-step-number">2</span>填寫退貨資料</h3>
+          <p><b>Site Code</b> 必須是有效店舖；<b>SKU</b> 只接受一個 7 位或 12 位數字；<b>QTY</b> 必須是 1 至 9999 的整數；確認人姓名及電話必須填寫。</p>
+          <p><b>REASON</b> 必須從指定選項選擇：</p>
+          <div class="help-code-list help-code-list--wide">
+            <span class="help-code">1. BUYER MEMO指定退貨</span>
+            <span class="help-code">2. BUYER 電郵確認可退-期貨</span>
+            <span class="help-code">3. BUYER 電郵確認可退-壞貨</span>
+            <span class="help-code">4. 供應商確認可退-期貨</span>
+            <span class="help-code">5. 供應商確認可退-壞貨</span>
+            <span class="help-code">6. 供應商確認可退-下架貨</span>
+          </div>
+        </div>
+      </div>
+      <div class="help-step">
+        <div class="help-placeholder" role="img" aria-label="確認提交及申請編號示意圖">
+          <strong>預覽 → 確認提交</strong>
+          <span>記下 RETURN- 開頭的申請編號</span>
+        </div>
+        <div>
+          <h3><span class="help-step-number">3</span>預覽、提交及記下申請編號</h3>
+          <p>按「預覽」逐項核對資料，確認無誤後按「確認提交」。成功後會產生 <b>RETURN-</b> 開頭的申請編號，請記下申請編號，日後查詢或修改時需要使用。</p>
+          <div class="help-note">退行貨申請需要交由 Buyer 審批，約七個工作天後出退行貨號碼。系統本身不會顯示 Buyer 是否接受，也不會在此頁產生退貨 NO.。</div>
+        </div>
+      </div>
+      <div class="help-step">
+        <div class="help-placeholder" role="img" aria-label="行貨退貨 Excel 批量上載示意圖">
+          <strong>Excel 批量上載</strong>
+          <span>下載模板 → 每行一個 SKU → 上載並匯入</span>
+        </div>
+        <div>
+          <h3><span class="help-step-number">4</span>使用 Excel 批量上載</h3>
+          <p>在「行貨退貨報數」頁下載模板。工作表名稱及第一行欄名不可更改；每一行代表一個 SKU 申請，欄位依次為 <b>Site Code、SKU、QTY、REASON、確認人姓名、確認人電話</b>。</p>
+          <p>完成後將 `.xlsx` 檔案拖到上載框或按一下選擇檔案，再按「上載並匯入」。系統會先完整驗證整份檔案，任何一行有錯誤時整份檔案都不會寫入。成功後可下載按店舖分頁的匯入記錄。</p>
+        </div>
+      </div>
+      <div class="alert warning">
+        <b>重要注意事項</b><br>
+        經常更改已建立退貨單數量或加減 SKU，下期退行貨申請會被暫停一次。<br>
+        如機數不足、沒有註明申請退貨原因、重複申請或 Buyer 不接受退貨申請，將不會出退貨 NO.。<br>
+        已有退貨 NO. 之 SKU 已經 block 數，不用盤點。<br>
+        同一個退行貨申請窗口內，同一 Site Code 及 SKU 只可申請一次；如要更正，請使用「查詢／修改」修改原申請。
+      </div>
+    </section>
+
     <section class="card help-section" id="lookup" aria-labelledby="lookup-title">
-      <h2 id="lookup-title">5. 查詢／修改</h2>
+      <h2 id="lookup-title">6. 查詢／修改</h2>
       <p class="help-section-intro">提交成功後，可使用申請編號及 Site Code 找回申報資料。</p>
       <div class="help-step">
         <img src="/images/help/lookup.svg" alt="使用申請編號及 Site Code 查詢資料的示意圖" width="640" height="360" loading="lazy" decoding="async">
@@ -145,12 +211,12 @@
         <img src="/images/help/lookup-edit.svg" alt="修改資料並儲存版本的示意圖" width="640" height="360" loading="lazy" decoding="async">
         <div>
           <h3><span class="help-step-number">2</span>匯出前可以修改</h3>
-          <p>資料顯示後，可在匯出前修改並按「儲存修改」。每次修改會新增版本紀錄；管理員匯出後，申報會被鎖定，不能再修改。突發性銷售申報只可修改 SKU，且沒有時間限制。</p>
+          <p>資料顯示後，可在匯出前修改並按「儲存修改」。每次修改會新增版本紀錄；管理員匯出後，申報會被鎖定，不能再修改。突發性銷售申報只可修改 SKU，且沒有時間限制。行貨退貨報數只可在原本所屬的店舖申請退行貨窗口內修改，窗口結束後只可查詢。</p>
         </div>
       </div>
     </section>
 
-    <p class="help-footer">如需重新開始，按頁面上方的「一般申報」、「Urgent Order」或「突發性銷售申報」即可返回。</p>
+    <p class="help-footer">如需重新開始，按頁面上方的「一般申報」、「Urgent Order」、「突發性銷售申報」或「行貨退貨報數」即可返回。</p>
   </main>
 
   <footer class="site-footer">Developed by RP Team - Ricky Yue</footer>

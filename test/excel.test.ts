@@ -10,8 +10,11 @@ import {
   SALES_COLUMNS,
   SALES_SHEET,
   SALES_EXPORT_COLUMNS,
+  RETURN_COLUMNS,
+  RETURN_SHEET,
+  RETURN_EXPORT_COLUMNS,
 } from '../src/lib/fields.js';
-import { parseImportWorkbook, parseUrgentImportWorkbook, parseSalesImportWorkbook } from '../src/lib/excelImport.js';
+import { parseImportWorkbook, parseUrgentImportWorkbook, parseSalesImportWorkbook, parseReturnImportWorkbook } from '../src/lib/excelImport.js';
 import {
   generateTemplateWorkbook,
   buildSapExportBuffer,
@@ -20,6 +23,9 @@ import {
   generateSalesTemplateWorkbook,
   buildSalesImportRecordBuffer,
   buildSalesExportBuffer,
+  generateReturnTemplateWorkbook,
+  buildReturnImportRecordBuffer,
+  buildReturnExportBuffer,
 } from '../src/lib/excelExport.js';
 
 const storeCodes = new Set(['HA02', 'HA06', 'HB11', 'HA19']);
@@ -531,5 +537,63 @@ describe('sales Excel', () => {
     expect(data.getCell(2).value).toBe('ha02@sasa.com');
     expect(data.getCell(3).value).toBe('HA02');
     expect(data.getCell(4).value).toBe('1005007');
+  });
+});
+
+describe('return-goods Excel', () => {
+  async function returnBuffer(rows: Array<Array<string | number>>): Promise<Buffer> {
+    const wb = new ExcelJS.Workbook();
+    const ws = wb.addWorksheet(RETURN_SHEET);
+    ws.addRow([...RETURN_COLUMNS]);
+    rows.forEach((r) => ws.addRow(r));
+    return Buffer.from(await wb.xlsx.writeBuffer());
+  }
+
+  it('accepts a valid return workbook and resolves the reason label', async () => {
+    const result = await parseReturnImportWorkbook(
+      await returnBuffer([['HA02', '1008001', 99, '2. BUYER 電郵確認可退-期貨', '確認人', '電話文字']]),
+      storeCodes,
+      1000,
+    );
+    expect(result.ok).toBe(true);
+    expect(result.rows![0]).toMatchObject({ siteCode: 'HA02', sku: '1008001', qty: 99, reason: '2', confirmerName: '確認人', confirmerPhone: '電話文字' });
+  });
+
+  it('rejects invalid return fields and quantity outside 1 to 9999', async () => {
+    const result = await parseReturnImportWorkbook(
+      await returnBuffer([['ZZ99', '123456', 10000, '99', '', '']]),
+      storeCodes,
+      1000,
+    );
+    expect(result.ok).toBe(false);
+    expect(result.errors?.some((error) => error.field === 'Site Code')).toBe(true);
+    expect(result.errors?.some((error) => error.field === 'SKU')).toBe(true);
+    expect(result.errors?.some((error) => error.field === 'QTY')).toBe(true);
+    expect(result.errors?.some((error) => error.field === 'REASON')).toBe(true);
+  });
+
+  it('generates the return template and eight-column export', async () => {
+    const template = new ExcelJS.Workbook();
+    await template.xlsx.load((await generateReturnTemplateWorkbook()) as never);
+    expect(template.getWorksheet(RETURN_SHEET)?.getRow(1).values).toEqual(expect.arrayContaining([...RETURN_COLUMNS]));
+
+    const exportWorkbook = new ExcelJS.Workbook();
+    await exportWorkbook.xlsx.load((await buildReturnExportBuffer([{
+      application_no: 'RETURN-TEST', application_date: '2026-08-05', site_code: 'HA02', sku: '1008002', qty: 3,
+      reason: '1', confirmer_name: '確認人', confirmer_phone: '電話',
+    }])) as never);
+    const exportSheet = exportWorkbook.getWorksheet(RETURN_SHEET)!;
+    RETURN_EXPORT_COLUMNS.forEach((column, index) => expect(exportSheet.getCell(1, index + 1).value).toBe(column));
+    expect(exportSheet.getCell(2, 3).value).toBe('HA02');
+    expect(exportSheet.getCell(2, 6).value).toContain('BUYER MEMO');
+  });
+
+  it('builds return import records grouped by store', async () => {
+    const workbook = new ExcelJS.Workbook();
+    await workbook.xlsx.load((await buildReturnImportRecordBuffer([{
+      row: 2, application_no: 'RETURN-A', site_code: 'HA02', sku: '1008003', qty: 2, reason: '1', confirmer_name: '甲', confirmer_phone: '電話', submitted_at: '2026-08-05 09:00:00',
+    }])) as never);
+    expect(workbook.getWorksheet('HA02')).toBeDefined();
+    expect(workbook.getWorksheet('HA02')!.getCell(1, 2).value).toBe('申請編號');
   });
 });

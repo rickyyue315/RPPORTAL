@@ -291,7 +291,42 @@
     pendingStoreFile = f;
   });
 
+  function confirmExport(message) {
+    return new Promise((resolve) => {
+      const overlay = $('export_confirm_overlay');
+      $('confirm_message').textContent = message;
+      overlay.style.display = 'flex';
+      const ok = $('confirm_ok');
+      const cancel = $('confirm_cancel');
+      cancel.focus();
+      const close = (v) => {
+        overlay.style.display = 'none';
+        ok.removeEventListener('click', onOk);
+        cancel.removeEventListener('click', onCancel);
+        overlay.removeEventListener('click', onOverlayClick);
+        document.removeEventListener('keydown', onKey);
+        resolve(v);
+      };
+      const onOk = () => close(true);
+      const onCancel = () => close(false);
+      const onOverlayClick = (e) => {
+        if (e.target === overlay) close(false);
+      };
+      const onKey = (e) => {
+        if (e.key === 'Escape') close(false);
+      };
+      ok.addEventListener('click', onOk);
+      cancel.addEventListener('click', onCancel);
+      overlay.addEventListener('click', onOverlayClick);
+      document.addEventListener('keydown', onKey);
+    });
+  }
+
   $('btn_export').addEventListener('click', async () => {
+    const confirmed = await confirmExport(
+      `匯出日期：${$('e_from').value || '不限'} 至 ${$('e_to').value || '不限'}（Site Code：${$('e_site').value.trim() || '全部'}）\n匯出後該批一般 NDRF 申報會被鎖定，申請人不能再修改。\n確定要繼續嗎？`
+    );
+    if (!confirmed) return;
     const btn = $('btn_export');
     btn.disabled = true;
     btn.textContent = '匯出中…';
@@ -401,6 +436,10 @@
   });
 
   $('btn_urgent_export').addEventListener('click', async () => {
+    const confirmed = await confirmExport(
+      `匯出日期：${$('ue_from').value || '不限'} 至 ${$('ue_to').value || '不限'}（Site Code：${$('ue_site').value.trim() || '全部'}）\n匯出後該批 Urgent Order 會被鎖定，申請人不能再修改。\n確定要繼續嗎？`
+    );
+    if (!confirmed) return;
     const btn = $('btn_urgent_export');
     btn.disabled = true;
     btn.textContent = '匯出中…';
@@ -538,6 +577,10 @@
   });
 
   $('btn_sales_export').addEventListener('click', async () => {
+    const confirmed = await confirmExport(
+      `匯出日期：${$('se_from').value || '不限'} 至 ${$('se_to').value || '不限'}（Site Code：${$('se_site').value.trim() || '全部'}）\n匯出後該批突發性銷售申報會被鎖定，申請人不能再修改。\n確定要繼續嗎？`
+    );
+    if (!confirmed) return;
     const btn = $('btn_sales_export');
     btn.disabled = true;
     btn.textContent = '匯出中…';

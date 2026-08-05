@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 360" role="img" aria-labelledby="title desc">
+  <title id="title">行貨退貨申請窗口及庫存</title>
+  <desc id="desc">先確認店舖退貨申請窗口，再檢查庫存分析報表</desc>
+  <rect width="640" height="360" rx="16" fill="#f4f7fa"/>
+  <rect x="38" y="28" width="564" height="304" rx="12" fill="#fff" stroke="#d9dee3"/>
+  <rect x="38" y="28" width="564" height="50" rx="12" fill="#0f5c9c"/>
+  <text x="64" y="60" fill="#fff" font-family="Arial, sans-serif" font-size="18" font-weight="700">行貨退貨報數</text>
+  <rect x="64" y="100" width="244" height="174" rx="10" fill="#fff" stroke="#d9dee3"/>
+  <text x="84" y="128" fill="#0a3d69" font-family="Arial, sans-serif" font-size="14" font-weight="700">2026 申請退行貨時間表</text>
+  <line x1="84" y1="143" x2="288" y2="143" stroke="#d9dee3" stroke-width="2"/>
+  <text x="84" y="168" fill="#66727f" font-family="Arial, sans-serif" font-size="12">8 月至 12 月</text>
+  <rect x="80" y="180" width="212" height="42" rx="6" fill="#eafaf1" stroke="#1e8449" stroke-width="2"/>
+  <text x="96" y="207" fill="#1e8449" font-family="Arial, sans-serif" font-size="13" font-weight="700">目前店舖開放申請</text>
+  <text x="84" y="252" fill="#66727f" font-family="Arial, sans-serif" font-size="12">窗口結束後不可新增</text>
+  <path d="M332 185h58" stroke="#0f5c9c" stroke-width="5"/>
+  <path d="m378 169 18 16-18 16" fill="none" stroke="#0f5c9c" stroke-width="5"/>
+  <rect x="420" y="100" width="150" height="174" rx="10" fill="#eaf2fb"/>
+  <text x="440" y="130" fill="#0a3d69" font-family="Arial, sans-serif" font-size="13" font-weight="700">庫存分析報表</text>
+  <text x="440" y="164" fill="#66727f" font-family="Arial, sans-serif" font-size="12">SKU</text>
+  <text x="510" y="164" fill="#1d2733" font-family="Arial, sans-serif" font-size="12">123456789</text>
+  <text x="440" y="194" fill="#66727f" font-family="Arial, sans-serif" font-size="12">可退數量</text>
+  <text x="520" y="194" fill="#1e8449" font-family="Arial, sans-serif" font-size="15" font-weight="700">8</text>
+  <circle cx="490" cy="235" r="22" fill="#eafaf1" stroke="#1e8449" stroke-width="3"/>
+  <path d="m478 235 8 8 16-17" fill="none" stroke="#1e8449" stroke-width="4"/>
+</svg>

@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 360" role="img" aria-labelledby="title desc">
+  <title id="title">行貨退貨 Excel 批量上載</title>
+  <desc id="desc">下載行貨退貨 Excel 模板、每行填寫一個 SKU 並上載匯入</desc>
+  <rect width="640" height="360" rx="16" fill="#f4f7fa"/>
+  <rect x="56" y="46" width="220" height="238" rx="12" fill="#fff" stroke="#d9dee3"/>
+  <rect x="56" y="46" width="220" height="46" rx="12" fill="#217346"/>
+  <text x="78" y="75" fill="#fff" font-family="Arial, sans-serif" font-size="15" font-weight="700">行貨退貨報數.xlsx</text>
+  <text x="78" y="130" fill="#0a3d69" font-family="Arial, sans-serif" font-size="13" font-weight="700">Site Code　 SKU　 QTY</text>
+  <line x1="78" y1="142" x2="250" y2="142" stroke="#d9dee3" stroke-width="2"/>
+  <text x="78" y="173" fill="#0a3d69" font-family="Arial, sans-serif" font-size="13" font-weight="700">REASON</text>
+  <line x1="78" y1="185" x2="250" y2="185" stroke="#d9dee3" stroke-width="2"/>
+  <text x="78" y="216" fill="#0a3d69" font-family="Arial, sans-serif" font-size="13" font-weight="700">確認人姓名／電話</text>
+  <line x1="78" y1="228" x2="250" y2="228" stroke="#d9dee3" stroke-width="2"/>
+  <text x="100" y="260" fill="#66727f" font-family="Arial, sans-serif" font-size="13">一行一個 SKU</text>
+  <path d="M302 164h92" stroke="#0f5c9c" stroke-width="5"/>
+  <path d="m380 148 18 16-18 16" fill="none" stroke="#0f5c9c" stroke-width="5"/>
+  <rect x="430" y="96" width="150" height="138" rx="10" fill="#eaf2fb"/>
+  <path d="M505 120v48M483 146l22-24 22 24" fill="none" stroke="#0f5c9c" stroke-width="5"/>
+  <text x="463" y="194" fill="#0a3d69" font-family="Arial, sans-serif" font-size="14" font-weight="700">上載並匯入</text>
+  <text x="96" y="316" fill="#66727f" font-family="Arial, sans-serif" font-size="14">完整驗證後一次匯入</text>
+</svg>

@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 360" role="img" aria-labelledby="title desc">
+  <title id="title">行貨退貨報數欄位</title>
+  <desc id="desc">填寫 Site Code、SKU、QTY、退貨原因及確認人資料</desc>
+  <rect width="640" height="360" rx="16" fill="#f4f7fa"/>
+  <rect x="38" y="28" width="564" height="304" rx="12" fill="#fff" stroke="#d9dee3"/>
+  <rect x="38" y="28" width="564" height="50" rx="12" fill="#0f5c9c"/>
+  <text x="64" y="60" fill="#fff" font-family="Arial, sans-serif" font-size="18" font-weight="700">填寫退貨資料</text>
+  <text x="68" y="108" fill="#1d2733" font-family="Arial, sans-serif" font-size="13" font-weight="700">Site Code</text>
+  <rect x="68" y="118" width="148" height="38" rx="6" fill="#fff" stroke="#0f5c9c" stroke-width="2"/>
+  <text x="84" y="143" fill="#1d2733" font-family="Arial, sans-serif" font-size="15">HA02</text>
+  <text x="242" y="108" fill="#1d2733" font-family="Arial, sans-serif" font-size="13" font-weight="700">SKU（7 或 12 位）</text>
+  <rect x="242" y="118" width="182" height="38" rx="6" fill="#fff" stroke="#d9dee3" stroke-width="2"/>
+  <text x="258" y="143" fill="#1d2733" font-family="Arial, sans-serif" font-size="15">123456789</text>
+  <text x="450" y="108" fill="#1d2733" font-family="Arial, sans-serif" font-size="13" font-weight="700">QTY</text>
+  <rect x="450" y="118" width="100" height="38" rx="6" fill="#fff" stroke="#d9dee3" stroke-width="2"/>
+  <text x="466" y="143" fill="#1d2733" font-family="Arial, sans-serif" font-size="15">8</text>
+  <text x="68" y="190" fill="#1d2733" font-family="Arial, sans-serif" font-size="13" font-weight="700">REASON</text>
+  <rect x="68" y="200" width="482" height="38" rx="6" fill="#fff" stroke="#d9dee3" stroke-width="2"/>
+  <text x="84" y="225" fill="#1d2733" font-family="Arial, sans-serif" font-size="14">1. BUYER MEMO 指定退貨　▼</text>
+  <text x="68" y="273" fill="#1d2733" font-family="Arial, sans-serif" font-size="13" font-weight="700">確認人姓名</text>
+  <rect x="68" y="282" width="210" height="32" rx="6" fill="#fff" stroke="#d9dee3" stroke-width="2"/>
+  <text x="84" y="303" fill="#66727f" font-family="Arial, sans-serif" font-size="13">必填</text>
+  <text x="310" y="273" fill="#1d2733" font-family="Arial, sans-serif" font-size="13" font-weight="700">確認人電話</text>
+  <rect x="310" y="282" width="240" height="32" rx="6" fill="#fff" stroke="#d9dee3" stroke-width="2"/>
+  <text x="326" y="303" fill="#66727f" font-family="Arial, sans-serif" font-size="13">必填</text>
+</svg>

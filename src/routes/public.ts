@@ -20,6 +20,8 @@ import {
   LockedError,
   NotSupportedError,
   DuplicateSubmissionError,
+  IdempotencyConflictError,
+  getSubmissionByIdempotencyKey,
   ReturnSubmissionConflictError,
   ReturnWindowClosedError,
   lockDuplicateSubmissionKeys,
@@ -64,6 +66,8 @@ import { config } from '../config.js';
 import { generateApplicationNo } from '../lib/applicationNo.js';
 import { ipExpiryIso } from '../lib/ip.js';
 import { RETURN_SCHEDULE, RETURN_WINDOWS, getActiveReturnWindow, isReturnModificationOpen } from '../lib/returnSchedule.js';
+import { fingerprintPayload, getIdempotencyKey, hasInvalidIdempotencyKey } from '../lib/idempotency.js';
+import { findImportBatchByIdempotencyKey, findImportBatchByKey, getPublicImportBatchRecord, importBatchResponse, lockImportIdempotencyKey, type ImportSubmissionType } from '../services/importBatches.js';
 
 export const publicRouter = Router();
 
@@ -88,6 +92,64 @@ const URGENT_MODIFY_CLOSED_ERROR = `Urgent Order 修改時間已截止（每日 
 function isUrgentWindowOpen(): boolean {
   return hkMinutesNow() < URGENT_SUBMIT_CUTOFF_MINUTES;
 }
+
+/** Return false after writing a 400 response, otherwise the client key or undefined. */
+function requestIdempotencyKey(req: Request, res: Response): string | undefined | false {
+  if (hasInvalidIdempotencyKey(req)) {
+    res.status(400).json({ error: 'Idempotency-Key 格式無效' });
+    return false;
+  }
+  return getIdempotencyKey(req);
+}
+
+async function servePublicImportRecord(
+  req: Request,
+  res: Response,
+  type: ImportSubmissionType,
+  batchId: string,
+  build: (rows: unknown[]) => Promise<Buffer>,
+  fallbackName: string,
+): Promise<void> {
+  const key = requestIdempotencyKey(req, res);
+  if (key === false) return;
+  if (!key) {
+    res.status(400).json({ error: '需要提供原匯入的 Idempotency-Key 才能下載記錄' });
+    return;
+  }
+  const parsedBatchId = z.string().uuid().safeParse(batchId);
+  if (!parsedBatchId.success) {
+    res.status(400).json({ error: '匯入批次編號無效' });
+    return;
+  }
+  const batch = await getPublicImportBatchRecord(batchId, key, type);
+  if (!batch) {
+    res.status(404).json({ error: '找不到匯入批次或重試鍵不符' });
+    return;
+  }
+  const buffer = await build(batch.results);
+  const stamp = toHKString(new Date()).replace(/[^0-9]/g, '');
+  res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+  res.setHeader('Content-Disposition', `attachment; filename="${fallbackName.replace('.xlsx', `_${stamp}.xlsx`)}"`);
+  res.send(buffer);
+}
+async function replaySingleSubmission(
+  key: string | undefined,
+  fingerprint: string,
+  submissionType: ImportSubmissionType,
+  serialize: (row: SubmissionRow) => unknown,
+  res: Response,
+): Promise<boolean> {
+  if (!key) return false;
+  const existing = await getSubmissionByIdempotencyKey(key);
+  if (!existing) return false;
+  if (existing.idempotency_fingerprint !== fingerprint || existing.submission_type !== submissionType) {
+    res.status(409).json({ error: '此提交重試鍵已用於不同資料，請重新整理頁面後再提交' });
+    return true;
+  }
+  res.status(200).json({ submission: serialize(existing), replayed: true });
+  return true;
+}
+
 
 const businessFieldSchema = z.object({
   brand: z.string().max(500).optional().default(''),
@@ -260,6 +322,10 @@ publicRouter.post(
       return;
     }
     const data = parsed.data;
+    const idempotencyKey = requestIdempotencyKey(req, res);
+    if (idempotencyKey === false) return;
+    const idempotencyFingerprint = fingerprintPayload(data);
+    if (await replaySingleSubmission(idempotencyKey, idempotencyFingerprint, 'normal', serializeSubmission, res)) return;
     const siteCode = normalizeSiteCode(data.site_code);
     const store = await getStore(siteCode);
     if (!store) {
@@ -294,8 +360,14 @@ publicRouter.post(
         fields: businessFields,
         ip,
         changeSource: 'web_submit',
+        idempotencyKey,
+        idempotencyFingerprint,
       });
     } catch (err) {
+      if (err instanceof IdempotencyConflictError) {
+        res.status(409).json({ error: err.message });
+        return;
+      }
       if (err instanceof DuplicateSubmissionError) {
         res.status(409).json({ error: err.message, field: 'sku' });
         return;
@@ -332,6 +404,10 @@ publicRouter.post(
       res.status(400).json({ error: first?.message ?? '輸入資料無效', field: first?.path[0] ?? null });
       return;
     }
+    const idempotencyKey = requestIdempotencyKey(req, res);
+    if (idempotencyKey === false) return;
+    const idempotencyFingerprint = fingerprintPayload(parsed.data);
+    if (await replaySingleSubmission(idempotencyKey, idempotencyFingerprint, 'sales', serializeSalesSubmission, res)) return;
     const siteCode = normalizeSiteCode(parsed.data.site_code);
     const store = await getStore(siteCode);
     if (!store) {
@@ -349,8 +425,14 @@ publicRouter.post(
         fields: { brand: '', sku: parsed.data.sku, rp_type: '', safety_stock: '', nd_code: '', remark: '' },
         ip,
         changeSource: 'web_submit',
+        idempotencyKey,
+        idempotencyFingerprint,
       });
     } catch (err) {
+      if (err instanceof IdempotencyConflictError) {
+        res.status(409).json({ error: err.message });
+        return;
+      }
       if (err instanceof DuplicateSubmissionError) {
         res.status(409).json({ error: err.message, field: 'sku' });
         return;
@@ -405,6 +487,19 @@ publicRouter.post(
     const stores = await query<{ site_code: string }>('SELECT site_code FROM stores');
     const storeCodes = new Set(stores.rows.map((s) => s.site_code));
     const parsed = await parseSalesImportWorkbook(file.buffer, storeCodes, config.maxImportRows);
+    const idempotencyKey = requestIdempotencyKey(req, res);
+    if (idempotencyKey === false) return;
+    if (idempotencyKey) {
+      const replay = await findImportBatchByKey(idempotencyKey, 'sales');
+      if (replay) {
+        if (replay.content_hash !== parsed.contentHash) {
+          res.status(409).json({ error: '此重試鍵已用於另一個 Excel 檔案' });
+          return;
+        }
+        res.status(200).json(importBatchResponse(replay));
+        return;
+      }
+    }
     if (!parsed.ok || !parsed.rows) {
       await writeAuditEvent({
         eventType: 'excel_import_error',
@@ -442,6 +537,14 @@ publicRouter.post(
     let results;
     try {
       results = await withTransaction(async (client) => {
+        if (idempotencyKey) {
+          await lockImportIdempotencyKey(client, idempotencyKey);
+          const replay = await findImportBatchByIdempotencyKey(client, idempotencyKey, 'sales');
+          if (replay) {
+            if (replay.content_hash !== parsed.contentHash) throw new IdempotencyConflictError();
+            return { batchId: replay.id, rows: replay.results, successCount: replay.success_count, replayed: true };
+          }
+        }
         await lockDuplicateSubmissionKeys(client, parsed.rows!.map((r) => ({
           siteCode: r.siteCode,
           sku: r.sku,
@@ -493,15 +596,19 @@ publicRouter.post(
           });
         }
         const batch = await client.query<{ id: string }>(
-          `INSERT INTO import_batches (filename, sheet_name, row_count, success_count, failed_count, results, content_hash, created_by)
-           VALUES ($1, $2, $3, $4, 0, $5::jsonb, $6, 'applicant')
+          `INSERT INTO import_batches (filename, sheet_name, row_count, success_count, failed_count, results, content_hash, created_by, submission_type, idempotency_key)
+           VALUES ($1, $2, $3, $4, 0, $5::jsonb, $6, 'applicant', 'sales', $7)
            RETURNING id`,
-          [file.originalname, parsed.sheetName ?? '', parsed.totalRows, rowsOut.length, JSON.stringify(rowsOut), parsed.contentHash],
+          [file.originalname, parsed.sheetName ?? '', parsed.totalRows, rowsOut.length, JSON.stringify(rowsOut), parsed.contentHash, idempotencyKey ?? null],
         );
         return { batchId: batch.rows[0]!.id, rows: rowsOut, successCount: rowsOut.length };
       });
     } catch (err) {
-      if (err instanceof DuplicateSubmissionError) {
+      if (err instanceof IdempotencyConflictError) {
+         res.status(409).json({ error: err.message });
+         return;
+       }
+       if (err instanceof DuplicateSubmissionError) {
         res.status(409).json({ error: err.message, field: 'sku' });
         return;
       }
@@ -524,39 +631,33 @@ publicRouter.post(
       message: `成功匯入 ${results.successCount} 行`,
       totalRows: parsed.totalRows,
       successCount: results.successCount,
+      batchId: results.batchId,
       rows: results.rows,
     });
   }),
 );
 
-const salesImportRecordSchema = z.object({
-  rows: z.array(z.object({
-    row: z.number(),
-    application_no: z.string().max(64),
-    site_code: z.string().max(20),
-    sku: z.string().max(100),
-    submitted_at: z.string().max(64),
-  })).min(1).max(config.maxImportRows),
-});
+/** Download a server-backed sales import record. The idempotency key prevents guessing a batch UUID from exposing data. */
+publicRouter.get(
+  '/sales/import/record/:batchId',
+  excelExportLimiter,
+  asyncHandler(async (req: Request, res: Response) => {
+    await servePublicImportRecord(req, res, 'sales', req.params.batchId as string, (rows) => buildSalesImportRecordBuffer(rows as never), 'Sudden_Sales_Import_Record.xlsx');
+  }),
+);
 
-/** POST /api/public/sales/import/record — download sudden sales import record. */
 publicRouter.post(
   '/sales/import/record',
   excelExportLimiter,
   asyncHandler(async (req: Request, res: Response) => {
-    const parsed = salesImportRecordSchema.safeParse(req.body);
+    const parsed = z.object({ batch_id: z.string().uuid() }).safeParse(req.body);
     if (!parsed.success) {
-      res.status(400).json({ error: '資料格式錯誤' });
+      res.status(400).json({ error: '需要提供有效的 batch_id' });
       return;
     }
-    const buffer = await buildSalesImportRecordBuffer(parsed.data.rows);
-    const stamp = toHKString(new Date()).replace(/[^0-9]/g, '');
-    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
-    res.setHeader('Content-Disposition', `attachment; filename="Sudden_Sales_Import_Record_${stamp}.xlsx"`);
-    res.send(buffer);
+    await servePublicImportRecord(req, res, 'sales', parsed.data.batch_id, (rows) => buildSalesImportRecordBuffer(rows as never), 'Sudden_Sales_Import_Record.xlsx');
   }),
 );
-
 const returnSubmitSchema = z.object({
   site_code: z.string().trim().min(1, 'Site Code 為必填').max(20),
   sku: z.string().trim().min(1, 'SKU 為必填').regex(SKU_PATTERN, SKU_ERROR),
@@ -619,6 +720,10 @@ publicRouter.post(
       return;
     }
     const data = parsed.data;
+    const idempotencyKey = requestIdempotencyKey(req, res);
+    if (idempotencyKey === false) return;
+    const idempotencyFingerprint = fingerprintPayload(data);
+    if (await replaySingleSubmission(idempotencyKey, idempotencyFingerprint, 'return', serializeReturnSubmission, res)) return;
     const siteCode = normalizeSiteCode(data.site_code);
     const store = await getStore(siteCode);
     if (!store) {
@@ -644,8 +749,14 @@ publicRouter.post(
         returnConfirmerPhone: data.confirmer_phone,
         ip,
         changeSource: 'web_submit',
+        idempotencyKey,
+        idempotencyFingerprint,
       });
     } catch (err) {
+      if (err instanceof IdempotencyConflictError) {
+        res.status(409).json({ error: err.message });
+        return;
+      }
       if (err instanceof ReturnWindowClosedError) {
         res.status(400).json({ error: err.message, field: null });
         return;
@@ -686,11 +797,6 @@ publicRouter.post(
   excelImportLimiter,
   upload.single('file'),
   asyncHandler(async (req: Request, res: Response) => {
-    const activeWindow = getActiveReturnWindow(hkTodayForDateColumn());
-    if (!activeWindow) {
-      res.status(400).json({ error: '目前不在店舖申請退行貨日期內，暫停申請', field: null });
-      return;
-    }
     const file = (req as Request & { file?: Express.Multer.File }).file;
     if (!file) {
       res.status(400).json({ error: '請上載 Excel 檔案' });
@@ -707,6 +813,24 @@ publicRouter.post(
     const stores = await query<{ site_code: string }>('SELECT site_code FROM stores');
     const storeCodes = new Set(stores.rows.map((store) => store.site_code));
     const parsed = await parseReturnImportWorkbook(file.buffer, storeCodes, config.maxImportRows);
+    const idempotencyKey = requestIdempotencyKey(req, res);
+    if (idempotencyKey === false) return;
+    if (idempotencyKey) {
+      const replay = await findImportBatchByKey(idempotencyKey, 'return');
+      if (replay) {
+        if (replay.content_hash !== parsed.contentHash) {
+          res.status(409).json({ error: '此重試鍵已用於另一個 Excel 檔案' });
+          return;
+        }
+        res.status(200).json(importBatchResponse(replay));
+        return;
+      }
+    }
+    const activeWindow = getActiveReturnWindow(hkTodayForDateColumn());
+    if (!activeWindow) {
+      res.status(400).json({ error: '目前不在店舖申請退行貨日期內，暫停申請', field: null });
+      return;
+    }
     if (!parsed.ok || !parsed.rows) {
       await writeAuditEvent({
         eventType: 'excel_import_error',
@@ -741,6 +865,14 @@ publicRouter.post(
     const ip = getClientIp(req);
     try {
       const results = await withTransaction(async (client) => {
+         if (idempotencyKey) {
+           await lockImportIdempotencyKey(client, idempotencyKey);
+           const replay = await findImportBatchByIdempotencyKey(client, idempotencyKey, 'return');
+           if (replay) {
+             if (replay.content_hash !== parsed.contentHash) throw new IdempotencyConflictError();
+             return { batchId: replay.id, rows: replay.results, successCount: replay.success_count, replayed: true };
+           }
+         }
         await lockDuplicateSubmissionKeys(client, parsed.rows!.map((row) => ({
           siteCode: row.siteCode,
           sku: row.sku,
@@ -807,16 +939,20 @@ publicRouter.post(
           });
         }
         const batch = await client.query<{ id: string }>(
-          `INSERT INTO import_batches (filename, sheet_name, row_count, success_count, failed_count, results, content_hash, created_by)
-           VALUES ($1, $2, $3, $4, 0, $5::jsonb, $6, 'applicant') RETURNING id`,
-          [file.originalname, parsed.sheetName ?? RETURN_SHEET, parsed.totalRows, rowsOut.length, JSON.stringify(rowsOut), parsed.contentHash],
+          `INSERT INTO import_batches (filename, sheet_name, row_count, success_count, failed_count, results, content_hash, created_by, submission_type, idempotency_key)
+           VALUES ($1, $2, $3, $4, 0, $5::jsonb, $6, 'applicant', 'return', $7) RETURNING id`,
+          [file.originalname, parsed.sheetName ?? RETURN_SHEET, parsed.totalRows, rowsOut.length, JSON.stringify(rowsOut), parsed.contentHash, idempotencyKey ?? null],
         );
         return { batchId: batch.rows[0]!.id, rows: rowsOut, successCount: rowsOut.length };
       });
       await writeAuditEvent({ eventType: 'excel_import', actorRole: 'applicant', ip, metadata: { filename: file.originalname, submission_type: 'return', batchId: results.batchId, totalRows: parsed.totalRows, successCount: results.successCount } });
-      res.status(201).json({ message: `成功匯入 ${results.successCount} 行`, totalRows: parsed.totalRows, successCount: results.successCount, rows: results.rows });
+      res.status(201).json({ message: `成功匯入 ${results.successCount} 行`, totalRows: parsed.totalRows, successCount: results.successCount, batchId: results.batchId, rows: results.rows });
     } catch (err) {
-      if (err instanceof ReturnSubmissionConflictError || err instanceof DuplicateSubmissionError) {
+      if (err instanceof IdempotencyConflictError) {
+         res.status(409).json({ error: err.message });
+         return;
+       }
+       if (err instanceof ReturnSubmissionConflictError || err instanceof DuplicateSubmissionError) {
         res.status(409).json({ error: err.message, field: 'SKU' });
         return;
       }
@@ -825,37 +961,27 @@ publicRouter.post(
   }),
 );
 
-const returnImportRecordSchema = z.object({
-  rows: z.array(z.object({
-    row: z.number(),
-    application_no: z.string().max(64),
-    site_code: z.string().max(20),
-    sku: z.string().max(100),
-    qty: z.number(),
-    reason: z.string().max(200),
-    confirmer_name: z.string().max(200),
-    confirmer_phone: z.string().max(200),
-    submitted_at: z.string().max(64),
-  })).min(1).max(config.maxImportRows),
-});
+/** Download a server-backed return-goods import record. */
+publicRouter.get(
+  '/return/import/record/:batchId',
+  excelExportLimiter,
+  asyncHandler(async (req: Request, res: Response) => {
+    await servePublicImportRecord(req, res, 'return', req.params.batchId as string, (rows) => buildReturnImportRecordBuffer(rows as never), 'Return_Goods_Import_Record.xlsx');
+  }),
+);
 
 publicRouter.post(
   '/return/import/record',
   excelExportLimiter,
   asyncHandler(async (req: Request, res: Response) => {
-    const parsed = returnImportRecordSchema.safeParse(req.body);
+    const parsed = z.object({ batch_id: z.string().uuid() }).safeParse(req.body);
     if (!parsed.success) {
-      res.status(400).json({ error: '資料格式錯誤' });
+      res.status(400).json({ error: '需要提供有效的 batch_id' });
       return;
     }
-    const buffer = await buildReturnImportRecordBuffer(parsed.data.rows);
-    const stamp = toHKString(new Date()).replace(/[^0-9]/g, '');
-    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
-    res.setHeader('Content-Disposition', `attachment; filename="Return_Goods_Import_Record_${stamp}.xlsx"`);
-    res.send(buffer);
+    await servePublicImportRecord(req, res, 'return', parsed.data.batch_id, (rows) => buildReturnImportRecordBuffer(rows as never), 'Return_Goods_Import_Record.xlsx');
   }),
 );
-
 const urgentSubmitSchema = z.object({
   site_code: z.string().trim().min(1, 'Site Code 為必填').max(20),
   sku: z.string().trim().min(1, 'SKU 為必填').regex(SKU_PATTERN, SKU_ERROR),
@@ -873,10 +999,6 @@ publicRouter.post(
   '/urgent/submit',
   publicSubmitLimiter,
   asyncHandler(async (req: Request, res: Response) => {
-    if (!isUrgentWindowOpen()) {
-      res.status(400).json({ error: URGENT_WINDOW_CLOSED_ERROR, field: null });
-      return;
-    }
     const parsed = urgentSubmitSchema.safeParse(req.body);
     if (!parsed.success) {
       const first = parsed.error.issues[0];
@@ -887,6 +1009,14 @@ publicRouter.post(
       return;
     }
     const data = parsed.data;
+    const idempotencyKey = requestIdempotencyKey(req, res);
+    if (idempotencyKey === false) return;
+    const idempotencyFingerprint = fingerprintPayload(data);
+    if (await replaySingleSubmission(idempotencyKey, idempotencyFingerprint, 'urgent', serializeUrgentSubmission, res)) return;
+    if (!isUrgentWindowOpen()) {
+      res.status(400).json({ error: URGENT_WINDOW_CLOSED_ERROR, field: null });
+      return;
+    }
     const siteCode = normalizeSiteCode(data.site_code);
     const store = await getStore(siteCode);
     if (!store) {
@@ -917,8 +1047,14 @@ publicRouter.post(
         urgentReasonOther: data.urgent_reason_other,
         ip,
         changeSource: 'web_submit',
+        idempotencyKey,
+        idempotencyFingerprint,
       });
     } catch (err) {
+      if (err instanceof IdempotencyConflictError) {
+        res.status(409).json({ error: err.message });
+        return;
+      }
       if (err instanceof DuplicateSubmissionError) {
         res.status(409).json({ error: err.message, field: 'sku' });
         return;
@@ -972,10 +1108,6 @@ publicRouter.post(
   excelImportLimiter,
   upload.single('file'),
   asyncHandler(async (req: Request, res: Response) => {
-    if (!isUrgentWindowOpen()) {
-      res.status(400).json({ error: URGENT_WINDOW_CLOSED_ERROR, field: null });
-      return;
-    }
     const file = (req as Request & { file?: Express.Multer.File }).file;
     if (!file) {
       res.status(400).json({ error: '請上載 Excel 檔案' });
@@ -994,6 +1126,23 @@ publicRouter.post(
     const storeCodes = new Set(stores.rows.map((s) => s.site_code));
 
     const parsed = await parseUrgentImportWorkbook(file.buffer, storeCodes, config.maxImportRows);
+    const idempotencyKey = requestIdempotencyKey(req, res);
+    if (idempotencyKey === false) return;
+    if (idempotencyKey) {
+      const replay = await findImportBatchByKey(idempotencyKey, 'urgent');
+      if (replay) {
+        if (replay.content_hash !== parsed.contentHash) {
+          res.status(409).json({ error: '此重試鍵已用於另一個 Excel 檔案' });
+          return;
+        }
+        res.status(200).json(importBatchResponse(replay));
+        return;
+      }
+    }
+    if (!isUrgentWindowOpen()) {
+      res.status(400).json({ error: URGENT_WINDOW_CLOSED_ERROR, field: null });
+      return;
+    }
     if (!parsed.ok || !parsed.rows) {
       await writeAuditEvent({
         eventType: 'excel_import_error',
@@ -1043,6 +1192,14 @@ publicRouter.post(
     let results;
     try {
       results = await withTransaction(async (client) => {
+        if (idempotencyKey) {
+          await lockImportIdempotencyKey(client, idempotencyKey);
+          const replay = await findImportBatchByIdempotencyKey(client, idempotencyKey, 'urgent');
+          if (replay) {
+            if (replay.content_hash !== parsed.contentHash) throw new IdempotencyConflictError();
+            return { batchId: replay.id, rows: replay.results, successCount: replay.success_count, replayed: true };
+          }
+        }
         await lockDuplicateSubmissionKeys(client, parsed.rows!.map((r) => ({
           siteCode: r.siteCode,
           sku: r.sku,
@@ -1113,15 +1270,19 @@ publicRouter.post(
           });
         }
         const batchId = await client.query<{ id: string }>(
-          `INSERT INTO import_batches (filename, sheet_name, row_count, success_count, failed_count, results, content_hash, created_by)
-           VALUES ($1, $2, $3, $4, 0, $5::jsonb, $6, 'applicant')
+          `INSERT INTO import_batches (filename, sheet_name, row_count, success_count, failed_count, results, content_hash, created_by, submission_type, idempotency_key)
+           VALUES ($1, $2, $3, $4, 0, $5::jsonb, $6, 'applicant', 'urgent', $7)
            RETURNING id`,
-          [file.originalname, parsed.sheetName ?? '', parsed.totalRows, successCount, JSON.stringify(rowsOut), parsed.contentHash],
+          [file.originalname, parsed.sheetName ?? '', parsed.totalRows, successCount, JSON.stringify(rowsOut), parsed.contentHash, idempotencyKey ?? null],
         );
         return { batchId: batchId.rows[0]!.id, rows: rowsOut, successCount };
       });
     } catch (err) {
-      if (err instanceof DuplicateSubmissionError) {
+      if (err instanceof IdempotencyConflictError) {
+         res.status(409).json({ error: err.message });
+         return;
+       }
+       if (err instanceof DuplicateSubmissionError) {
         res.status(409).json({ error: err.message, field: 'sku' });
         return;
       }
@@ -1145,47 +1306,33 @@ publicRouter.post(
       message: `成功匯入 ${results.successCount} 行`,
       totalRows: parsed.totalRows,
       successCount: results.successCount,
+      batchId: results.batchId,
       rows: results.rows,
     });
   }),
 );
 
-const urgentImportRecordSchema = z.object({
-  rows: z
-    .array(
-      z.object({
-        row: z.number(),
-        application_no: z.string().max(64),
-        site_code: z.string().max(20),
-        sku: z.string().max(100),
-        qty: z.number(),
-        urgent_reason: z.string().max(100).optional().default(''),
-        urgent_reason_other: z.string().max(2000).optional().default(''),
-        submitted_at: z.string().max(64),
-      }),
-    )
-    .min(1)
-    .max(config.maxImportRows),
-});
+/** Download a server-backed Urgent import record. */
+publicRouter.get(
+  '/urgent/import/record/:batchId',
+  excelExportLimiter,
+  asyncHandler(async (req: Request, res: Response) => {
+    await servePublicImportRecord(req, res, 'urgent', req.params.batchId as string, (rows) => buildUrgentImportRecordBuffer(rows as never), 'Urgent_Import_Record.xlsx');
+  }),
+);
 
-/** POST /api/public/urgent/import/record — download the just-imported urgent rows as an Excel record (one sheet per store). */
 publicRouter.post(
   '/urgent/import/record',
   excelExportLimiter,
   asyncHandler(async (req: Request, res: Response) => {
-    const parsed = urgentImportRecordSchema.safeParse(req.body);
+    const parsed = z.object({ batch_id: z.string().uuid() }).safeParse(req.body);
     if (!parsed.success) {
-      res.status(400).json({ error: '資料格式錯誤' });
+      res.status(400).json({ error: '需要提供有效的 batch_id' });
       return;
     }
-    const buffer = await buildUrgentImportRecordBuffer(parsed.data.rows);
-    const stamp = toHKString(new Date()).replace(/[^0-9]/g, '');
-    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
-    res.setHeader('Content-Disposition', `attachment; filename="Urgent_Import_Record_${stamp}.xlsx"`);
-    res.send(buffer);
+    await servePublicImportRecord(req, res, 'urgent', parsed.data.batch_id, (rows) => buildUrgentImportRecordBuffer(rows as never), 'Urgent_Import_Record.xlsx');
   }),
 );
-
 /** GET /api/public/template — download import template. */
 publicRouter.get(
   '/template',
@@ -1222,6 +1369,19 @@ publicRouter.post(
     const storeCodes = new Set(stores.rows.map((s) => s.site_code));
 
     const parsed = await parseImportWorkbook(file.buffer, storeCodes, config.maxImportRows);
+    const idempotencyKey = requestIdempotencyKey(req, res);
+    if (idempotencyKey === false) return;
+    if (idempotencyKey) {
+      const replay = await findImportBatchByKey(idempotencyKey, 'normal');
+      if (replay) {
+        if (replay.content_hash !== parsed.contentHash) {
+          res.status(409).json({ error: '此重試鍵已用於另一個 Excel 檔案' });
+          return;
+        }
+        res.status(200).json(importBatchResponse(replay));
+        return;
+      }
+    }
     if (!parsed.ok || !parsed.rows) {
       await writeAuditEvent({
         eventType: 'excel_import_error',
@@ -1270,6 +1430,14 @@ publicRouter.post(
     let results;
     try {
       results = await withTransaction(async (client) => {
+        if (idempotencyKey) {
+          await lockImportIdempotencyKey(client, idempotencyKey);
+          const replay = await findImportBatchByIdempotencyKey(client, idempotencyKey, 'normal');
+          if (replay) {
+            if (replay.content_hash !== parsed.contentHash) throw new IdempotencyConflictError();
+            return { batchId: replay.id, rows: replay.results, successCount: replay.success_count, replayed: true };
+          }
+        }
         await lockDuplicateSubmissionKeys(client, parsed.rows!.map((r) => ({
           siteCode: r.siteCode,
           sku: r.fields.sku,
@@ -1343,8 +1511,8 @@ publicRouter.post(
           });
         }
         const batchId = await client.query<{ id: string }>(
-          `INSERT INTO import_batches (filename, sheet_name, row_count, success_count, failed_count, results, content_hash, created_by)
-           VALUES ($1, $2, $3, $4, 0, $5::jsonb, $6, 'applicant')
+          `INSERT INTO import_batches (filename, sheet_name, row_count, success_count, failed_count, results, content_hash, created_by, submission_type, idempotency_key)
+           VALUES ($1, $2, $3, $4, 0, $5::jsonb, $6, 'applicant', 'normal', $7)
            RETURNING id`,
           [
             file.originalname,
@@ -1353,12 +1521,17 @@ publicRouter.post(
             successCount,
             JSON.stringify(rowsOut),
             parsed.contentHash,
+          idempotencyKey ?? null,
           ],
         );
         return { batchId: batchId.rows[0]!.id, rows: rowsOut, successCount };
       });
     } catch (err) {
-      if (err instanceof DuplicateSubmissionError) {
+      if (err instanceof IdempotencyConflictError) {
+         res.status(409).json({ error: err.message });
+         return;
+       }
+       if (err instanceof DuplicateSubmissionError) {
         res.status(409).json({ error: err.message, field: 'sku' });
         return;
       }
@@ -1381,48 +1554,33 @@ publicRouter.post(
       message: `成功匯入 ${results.successCount} 行`,
       totalRows: parsed.totalRows,
       successCount: results.successCount,
+      batchId: results.batchId,
       rows: results.rows,
     });
   }),
 );
 
-const importRecordSchema = z.object({
-  rows: z
-    .array(
-      z.object({
-        row: z.number(),
-        application_no: z.string().max(64),
-        site_code: z.string().max(20),
-        sku: z.string().max(100),
-        rp_type: z.string().max(100).optional().default(''),
-        safety_stock: z.string().max(100).optional().default(''),
-        nd_code: z.string().max(300).optional().default(''),
-        remark: z.string().max(2000).optional().default(''),
-        submitted_at: z.string().max(64),
-      }),
-    )
-    .min(1)
-    .max(config.maxImportRows),
-});
+/** Download a server-backed normal NDRF import record. */
+publicRouter.get(
+  '/import/record/:batchId',
+  excelExportLimiter,
+  asyncHandler(async (req: Request, res: Response) => {
+    await servePublicImportRecord(req, res, 'normal', req.params.batchId as string, (rows) => buildImportRecordBuffer(rows as never), 'NDRF_Import_Record.xlsx');
+  }),
+);
 
-/** POST /api/public/import/record — download the just-imported rows as an Excel record (one sheet per store). */
 publicRouter.post(
   '/import/record',
   excelExportLimiter,
   asyncHandler(async (req: Request, res: Response) => {
-    const parsed = importRecordSchema.safeParse(req.body);
+    const parsed = z.object({ batch_id: z.string().uuid() }).safeParse(req.body);
     if (!parsed.success) {
-      res.status(400).json({ error: '資料格式錯誤' });
+      res.status(400).json({ error: '需要提供有效的 batch_id' });
       return;
     }
-    const buffer = await buildImportRecordBuffer(parsed.data.rows);
-    const stamp = toHKString(new Date()).replace(/[^0-9]/g, '');
-    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
-    res.setHeader('Content-Disposition', `attachment; filename="NDRF_Import_Record_${stamp}.xlsx"`);
-    res.send(buffer);
+    await servePublicImportRecord(req, res, 'normal', parsed.data.batch_id, (rows) => buildImportRecordBuffer(rows as never), 'NDRF_Import_Record.xlsx');
   }),
 );
-
 /** GET /api/public/query?application_no=&site_code= — view submission. */
 publicRouter.get(
   '/query',

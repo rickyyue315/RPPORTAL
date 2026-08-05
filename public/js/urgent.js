@@ -21,6 +21,8 @@
   let storeCache = null;
   let previewData = null;
   let pendingFile = null;
+  let pendingImportKey = null;
+  let submitKey = null;
 
   function readForm() {
     return {
@@ -93,6 +95,7 @@
     showAlert($('form_error'), 'error', errs.map((e) => `<div>${e}</div>`).join(''));
     if (errs.length) return;
     previewData = d;
+    submitKey = createIdempotencyKey();
     const rows = Object.keys(LABELS)
       .map((k) => {
         const v = d[k];
@@ -114,6 +117,7 @@
     try {
       const data = await api('/api/public/urgent/submit', {
         method: 'POST',
+        headers: { 'Idempotency-Key': submitKey },
         body: JSON.stringify(previewData),
       });
       $('res_no').textContent = data.submission.application_no;
@@ -136,6 +140,7 @@
     $('store_info').textContent = '—';
     storeCache = null;
     previewData = null;
+    submitKey = null;
     $('apply_form').style.display = '';
     $('preview_box').style.display = 'none';
     $('result_card').style.display = 'none';
@@ -187,6 +192,11 @@
 
   const drop = $('file_drop');
   const fileInput = $('file_input');
+  const setPendingFile = (file) => {
+    pendingFile = file;
+    pendingImportKey = createIdempotencyKey();
+    $('file_label').textContent = `已選擇：${file.name}`;
+  };
   drop.addEventListener('click', () => fileInput.click());
   drop.addEventListener('dragover', (e) => {
     e.preventDefault();
@@ -196,16 +206,10 @@
   drop.addEventListener('drop', (e) => {
     e.preventDefault();
     drop.classList.remove('dragover');
-    if (e.dataTransfer.files.length) {
-      pendingFile = e.dataTransfer.files[0];
-      $('file_label').textContent = `已選擇：${pendingFile.name}`;
-    }
+    if (e.dataTransfer.files.length) setPendingFile(e.dataTransfer.files[0]);
   });
   fileInput.addEventListener('change', () => {
-    if (fileInput.files.length) {
-      pendingFile = fileInput.files[0];
-      $('file_label').textContent = `已選擇：${pendingFile.name}`;
-    }
+    if (fileInput.files.length) setPendingFile(fileInput.files[0]);
   });
 
   $('btn_import').addEventListener('click', async () => {
@@ -219,40 +223,32 @@
     showAlert($('import_result'), '', '');
     const fd = new FormData();
     fd.append('file', pendingFile);
+    const importKey = pendingImportKey || createIdempotencyKey();
+    pendingImportKey = importKey;
     try {
-      const data = await api('/api/public/urgent/import', { method: 'POST', body: fd });
+      const data = await api('/api/public/urgent/import', {
+        method: 'POST',
+        headers: { 'Idempotency-Key': importKey },
+        body: fd,
+      });
       let html = `<div class="alert success"><b>${escapeHtml(data.message)}</b>（總行數：${data.totalRows}）</div>`;
       html += '<table><thead><tr><th>Excel 行</th><th>申請編號</th><th>Site Code</th><th>SKU</th><th>QTY</th><th>Urgent Reason</th><th>Other Reason</th><th>已收件時間</th></tr></thead><tbody>';
       data.rows.forEach((r) => {
         html += `<tr><td>${r.row}</td><td>${escapeHtml(r.application_no)}</td><td>${escapeHtml(r.site_code)}</td><td>${escapeHtml(r.sku)}</td><td>${escapeHtml(r.qty)}</td><td>${escapeHtml(r.urgent_reason_label || '')}</td><td>${escapeHtml(r.urgent_reason_other || '—')}</td><td>${escapeHtml(r.submitted_at)}</td></tr>`;
       });
-      html += '</tbody></table>';
-      html += '<div class="btn-row"><button class="btn" id="btn_dl_record">下載匯入記錄 Excel（按店舖分頁）</button></div>';
+      html += '</tbody></table><div class="btn-row"><button class="btn" id="btn_dl_record">下載匯入記錄 Excel（按店舖分頁）</button></div>';
       $('import_result').innerHTML = html;
       $('file_label').textContent = '拖曳 .xlsx 檔案到此處，或按一下選擇檔案';
+      const importBatchKey = importKey;
       pendingFile = null;
+      pendingImportKey = null;
+      fileInput.value = '';
       const dlBtn = $('btn_dl_record');
       dlBtn.addEventListener('click', async () => {
         dlBtn.disabled = true;
         dlBtn.textContent = '下載中…';
         try {
-          const res = await fetch('/api/public/urgent/import/record', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ rows: data.rows }),
-          });
-          if (!res.ok) throw new Error('無法下載匯入記錄');
-          const blob = await res.blob();
-          const disp = res.headers.get('Content-Disposition') || '';
-          const match = disp.match(/filename="([^"]+)"/);
-          const url = URL.createObjectURL(blob);
-          const a = document.createElement('a');
-          a.href = url;
-          a.download = match ? match[1] : 'Urgent_Import_Record.xlsx';
-          document.body.appendChild(a);
-          a.click();
-          a.remove();
-          URL.revokeObjectURL(url);
+          await downloadImportRecord('/api/public/urgent/import/record', data.batchId, importBatchKey, 'Urgent_Import_Record.xlsx');
         } catch (err) {
           showAlert($('import_result'), 'error', escapeHtml(err.message));
         } finally {

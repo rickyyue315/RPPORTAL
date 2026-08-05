@@ -124,11 +124,11 @@
       <h2>申報清單</h2>
       <div class="toolbar">
         <div class="field">
-          <label>由 (日期)</label>
+          <label>由 (日期) <span class="optional">（預設今日）</span></label>
           <input type="date" id="f_from">
         </div>
         <div class="field">
-          <label>至 (日期)</label>
+          <label>至 (日期) <span class="optional">（預設今日）</span></label>
           <input type="date" id="f_to">
         </div>
         <div class="field">
@@ -284,11 +284,11 @@
       <div class="hint">只會匯出一般 NDRF 申報，Urgent Order 使用下方的獨立匯出。匯出後該批申報會被鎖定，申請人不能再修改。匯出失敗不會鎖定。預覽下載不會鎖定申報。</div>
       <div class="toolbar">
         <div class="field">
-          <label>由 (日期)</label>
+          <label>由 (日期) <span class="optional">（預設今日）</span></label>
           <input type="date" id="e_from">
         </div>
         <div class="field">
-          <label>至 (日期)</label>
+          <label>至 (日期) <span class="optional">（預設今日）</span></label>
           <input type="date" id="e_to">
         </div>
         <div class="field">
@@ -316,11 +316,11 @@
       <div class="hint">只會匯出 Urgent Order（欄位：Application No. | Site Code | SKU | QTY | Urgent Reason | Other Reason）。匯出後該批 Urgent Order 會被鎖定，不能修改。匯出失敗不會鎖定。預覽下載不會鎖定申報。</div>
       <div class="toolbar">
         <div class="field">
-          <label>由 (日期)</label>
+          <label>由 (日期) <span class="optional">（預設今日）</span></label>
           <input type="date" id="ue_from">
         </div>
         <div class="field">
-          <label>至 (日期)</label>
+          <label>至 (日期) <span class="optional">（預設今日）</span></label>
           <input type="date" id="ue_to">
         </div>
         <div class="field">
@@ -347,11 +347,11 @@
       <div class="hint">只會匯出突發性銷售申報，欄位為 Application Date | Requested by | Shop Code | SKU。匯出後該批申報會被鎖定，不能修改；匯出失敗不會鎖定。預覽下載不會鎖定申報。</div>
       <div class="toolbar">
         <div class="field">
-          <label>由 (日期)</label>
+          <label>由 (日期) <span class="optional">（預設今日）</span></label>
           <input type="date" id="se_from">
         </div>
         <div class="field">
-          <label>至 (日期)</label>
+          <label>至 (日期) <span class="optional">（預設今日）</span></label>
           <input type="date" id="se_to">
         </div>
         <div class="field">
@@ -376,8 +376,21 @@
     <div class="card">
       <h2>行貨退貨報數 Excel 匯出</h2>
       <div class="hint">輸出 8 欄：申請編號、申請日期、Requested by（Site Code）、SKU、QTY、Reason、確認人姓名、確認人電話。預覽不鎖定；正式匯出後店舖不能再修改。</div>
-      <div class="toolbar"><div class="field"><label>由 (日期)</label><input type="date" id="re_from"></div><div class="field"><label>至 (日期)</label><input type="date" id="re_to"></div><div class="field"><label>Site Code</label><input type="text" id="re_site"></div><div class="field"><label>包含已匯出資料</label><select id="re_include"><option value="false">否（只匯出未匯出）</option><option value="true">是</option></select></div></div>
+      <div class="toolbar"><div class="field"><label>由 (日期) <span class="optional">（預設今日）</span></label><input type="date" id="re_from"></div><div class="field"><label>至 (日期) <span class="optional">（預設今日）</span></label><input type="date" id="re_to"></div><div class="field"><label>Site Code</label><input type="text" id="re_site"></div><div class="field"><label>包含已匯出資料</label><select id="re_include"><option value="false">否（只匯出未匯出）</option><option value="true">是</option></select></div></div>
       <div id="return_export_info"></div><div class="btn-row"><button class="btn" id="btn_return_export">匯出並鎖定</button><button class="btn secondary" id="btn_return_export_preview">預覽下載(不鎖定)</button></div>
+    </div>
+
+    <div class="card">
+      <h2>正式匯出批次及重新下載</h2>
+      <div class="hint">正式匯出檔案保存三個月。若瀏覽器下載中斷，可從這裡重新下載；三個月前的舊批次會嘗試按已鎖定申報資料重新產生。</div>
+      <div class="hint" id="export_archive_usage"></div>
+      <div id="export_history_info"></div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>建立時間</th><th>檔案</th><th>類型</th><th>筆數</th><th>保存狀態</th><th>操作</th></tr></thead>
+          <tbody id="export_history_body"><tr><td colspan="6" class="empty">載入中…</td></tr></tbody>
+        </table>
+      </div>
     </div>
 
     <div class="card">

@@ -116,6 +116,24 @@ function parseCsv(text: string): ParsedCsv {
  * Parses a stores CSV. Expects header: Site,Shop,Regional,Class 1,Class 2,Size,OM,Type.
  * Returns { ok, stores?, errors? }. Validates Site Code uniqueness.
  */
+/** Decode CSV files exported by Excel (UTF-8, UTF-16 and Big5 when available). */
+export function decodeStoresCsvBuffer(buffer: Buffer): string {
+  if (buffer.length >= 2 && buffer[0] === 0xff && buffer[1] === 0xfe) {
+    return new TextDecoder('utf-16le').decode(buffer);
+  }
+  if (buffer.length >= 2 && buffer[0] === 0xfe && buffer[1] === 0xff) {
+    return new TextDecoder('utf-16be').decode(buffer);
+  }
+  try {
+    return new TextDecoder('utf-8', { fatal: true }).decode(buffer);
+  } catch {
+    try {
+      return new TextDecoder('big5').decode(buffer);
+    } catch {
+      return buffer.toString('utf8');
+    }
+  }
+}
 export function parseStoresCsv(content: string): {
   ok: boolean;
   stores?: Store[];

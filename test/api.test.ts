@@ -9,6 +9,7 @@ import { fileURLToPath } from 'node:url';
 import { setPoolForTesting } from '../src/db/pool.js';
 import { createApp } from '../src/app.js';
 import { replaceStores } from '../src/services/stores.js';
+import { cleanupExpiredExportFiles } from '../src/services/exportFiles.js';
 import { TEMPLATE_COLUMNS, RP_TEAM_SHEET, SHOP_CODE_HEADER, URGENT_COLUMNS, URGENT_SHEET, SALES_COLUMNS, SALES_SHEET, RETURN_COLUMNS, RETURN_SHEET } from '../src/lib/fields.js';
 import * as time from '../src/lib/time.js';
 
@@ -49,7 +50,7 @@ async function countSubmissions(where = ''): Promise<number> {
 beforeAll(async () => {
   db = new PGlite();
   setPoolForTesting(makePglitePool(db));
-  const migrationFiles = ['001_init.sql', '002_drop_rp_type_completed_at.sql', '003_add_submission_type_qty.sql', '004_add_urgent_reason.sql', '005_add_sales_submission_type.sql', '006_add_return_submission_type.sql'];
+  const migrationFiles = ['001_init.sql', '002_drop_rp_type_completed_at.sql', '003_add_submission_type_qty.sql', '004_add_urgent_reason.sql', '005_add_sales_submission_type.sql', '006_add_return_submission_type.sql', '007_add_idempotency_and_import_recovery.sql', '008_add_export_file_archive.sql'];
   for (const file of migrationFiles) {
     let sql = await readFile(path.join(__dirname, '..', 'src', 'db', 'migrations', file), 'utf8');
     sql = sql.replace(/CREATE EXTENSION IF NOT EXISTS pgcrypto;\s*/g, '');
@@ -281,6 +282,23 @@ describe('public API', () => {
     expect(res.body.store.shop).toBe('駱克');
   });
 
+  it('replays a single web submission after a lost response', async () => {
+    const key = 'normal-retry-test-key';
+    const payload = {
+      site_code: 'HA19',
+      sku: '1008999',
+      rp_type: 'ND',
+      nd_code: 'ND20-SO-Not displayed in small stores',
+    };
+    const first = await request(app).post('/api/public/submit').set('Idempotency-Key', key).send(payload);
+    expect(first.status).toBe(201);
+    const retry = await request(app).post('/api/public/submit').set('Idempotency-Key', key).send(payload);
+    expect(retry.status).toBe(200);
+    expect(retry.body.replayed).toBe(true);
+    expect(retry.body.submission.application_no).toBe(first.body.submission.application_no);
+    const stored = await db.query<{ count: string }>('SELECT count(*)::text AS count FROM submissions WHERE idempotency_key = $1', [key]);
+    expect(stored.rows[0]?.count).toBe('1');
+  });
   it('queries a submission with application_no + site_code', async () => {
     const created = await request(app).post('/api/public/submit').send({
       site_code: 'HA06',
@@ -386,6 +404,25 @@ describe('admin API', () => {
       .send({ include_exported: false });
     expect(exportRes.status).toBe(200);
     expect(exportRes.headers['content-type']).toContain('spreadsheetml');
+    const batchId = exportRes.headers['x-export-batch-id'];
+    expect(batchId).toMatch(/^[0-9a-f-]{36}$/i);
+    const archived = await db.query<{ file_size: string; file_data: Buffer | null; expires_at: string }>(
+      'SELECT file_size, file_data, expires_at FROM export_batch_files WHERE export_batch_id = $1',
+      [batchId],
+    );
+    expect(Number(archived.rows[0]?.file_size)).toBeGreaterThan(1000);
+    expect(archived.rows[0]?.file_data).toBeInstanceOf(Uint8Array);
+    expect(new Date(archived.rows[0]!.expires_at).getTime()).toBeGreaterThan(Date.now());
+
+    const recovered = await agent.get(`/api/admin/export-batches/${batchId}/download`);
+    expect(recovered.status).toBe(200);
+    expect(recovered.headers['content-type']).toContain('spreadsheetml');
+    expect(Number(recovered.headers['content-length'])).toBe(Number(archived.rows[0]!.file_size));
+
+    await db.query('UPDATE export_batch_files SET expires_at = now() - interval \'1 day\' WHERE export_batch_id = $1', [batchId]);
+    expect(await cleanupExpiredExportFiles()).toBeGreaterThanOrEqual(1);
+    const expired = await agent.get(`/api/admin/export-batches/${batchId}/download`);
+    expect(expired.status).toBe(410);
 
     // Submissions should now be locked
     const listAfter = await agent.get('/api/admin/submissions?exported=yes&page=1');
@@ -397,6 +434,27 @@ describe('admin API', () => {
       .set('x-csrf-token', token)
       .send({ sku: '1009120', rp_type: 'ND', nd_code: 'ND20-SO-Not displayed in small stores' });
     expect(lockedEdit.status).toBe(409);
+  });
+
+  it('rebuilds a legacy export batch that has no archived binary', async () => {
+    const created = await request(app).post('/api/public/submit').send({
+      site_code: 'HBA7',
+      sku: '1009131',
+      rp_type: 'ND',
+      nd_code: 'ND20-SO-Not displayed in small stores',
+    });
+    expect(created.status).toBe(201);
+    const batch = await db.query<{ id: string }>(
+      `INSERT INTO export_batches (filename, submission_count, submission_nos, filters, created_by)
+       VALUES ($1, 1, $2::jsonb, $3::jsonb, $4)
+       RETURNING id`,
+      ['Legacy_Export.xlsx', JSON.stringify([created.body.submission.application_no]), JSON.stringify({}), 'admin'],
+    );
+    const agent = request.agent(app);
+    await adminLogin(agent);
+    const res = await agent.get(`/api/admin/export-batches/${batch.rows[0]!.id}/download`);
+    expect(res.status).toBe(200);
+    expect(res.headers['content-type']).toContain('spreadsheetml');
   });
 
   describe('preview export & last_modified_at (shared admin session)', () => {
@@ -984,39 +1042,33 @@ describe('urgent public API', () => {
     expect(res.body.rows[1].urgent_reason_other).toBe('roadshow 加單');
   });
 
-  it('downloads the urgent import record workbook from just-imported rows', async () => {
+  it('downloads the urgent import record workbook from a stored batch', async () => {
+    const key = 'urgent-record-test-key';
+    const wb = new ExcelJS.Workbook();
+    const ws = wb.addWorksheet(URGENT_SHEET);
+    ws.addRow([...URGENT_COLUMNS]);
+    ws.addRow(['HA02', '1006116', 2, '1', '']);
+    ws.addRow(['HA06', '1006117', 999, '9', 'roadshow 加單']);
+    const imported = await request(app)
+      .post('/api/public/urgent/import')
+      .set('Idempotency-Key', key)
+      .attach('file', Buffer.from(await wb.xlsx.writeBuffer()), 'urgent-record.xlsx');
+    expect(imported.status).toBe(201);
+    const retry = await request(app)
+      .post('/api/public/urgent/import')
+      .set('Idempotency-Key', key)
+      .attach('file', Buffer.from(await wb.xlsx.writeBuffer()), 'urgent-record.xlsx');
+    expect(retry.status).toBe(200);
+    expect(retry.body.batchId).toBe(imported.body.batchId);
+
     const res = await request(app)
-      .post('/api/public/urgent/import/record')
-      .send({
-        rows: [
-          {
-            row: 2,
-            application_no: 'URGENT-00000000-00000000',
-            site_code: 'HA02',
-            sku: '1006011',
-            qty: 2,
-            urgent_reason: '1',
-            urgent_reason_other: '',
-            submitted_at: '2026-08-03 09:00:00',
-          },
-          {
-            row: 3,
-            application_no: 'URGENT-00000000-00000001',
-            site_code: 'HA06',
-            sku: '1006012',
-            qty: 999,
-            urgent_reason: '9',
-            urgent_reason_other: 'roadshow 加單',
-            submitted_at: '2026-08-03 09:00:01',
-          },
-        ],
-      });
+      .get(`/api/public/urgent/import/record/${imported.body.batchId}`)
+      .set('Idempotency-Key', key);
     expect(res.status).toBe(200);
     expect(res.headers['content-type']).toContain('spreadsheetml');
     expect(Number(res.headers['content-length'])).toBeGreaterThan(1000);
     expect(res.headers['content-disposition']).toContain('Urgent_Import_Record');
   });
-
   it('rejects an urgent import record request with empty rows', async () => {
     const res = await request(app).post('/api/public/urgent/import/record').send({ rows: [] });
     expect(res.status).toBe(400);
@@ -1313,26 +1365,32 @@ describe('sales public API', () => {
     expect(res.body.rows[1].site_code).toBe('HA06');
   });
 
-  it('downloads the sales import record workbook', async () => {
+  it('downloads the sales import record workbook from a stored batch', async () => {
+    const key = 'sales-record-test-key';
+    const wb = new ExcelJS.Workbook();
+    const ws = wb.addWorksheet(SALES_SHEET);
+    ws.addRow([...SALES_COLUMNS]);
+    ws.addRow(['HA02', '1007015']);
+    const imported = await request(app)
+      .post('/api/public/sales/import')
+      .set('Idempotency-Key', key)
+      .attach('file', Buffer.from(await wb.xlsx.writeBuffer()), 'sales-record.xlsx');
+    expect(imported.status).toBe(201);
+    const retry = await request(app)
+      .post('/api/public/sales/import')
+      .set('Idempotency-Key', key)
+      .attach('file', Buffer.from(await wb.xlsx.writeBuffer()), 'sales-record.xlsx');
+    expect(retry.status).toBe(200);
+    expect(retry.body.batchId).toBe(imported.body.batchId);
+
     const res = await request(app)
-      .post('/api/public/sales/import/record')
-      .send({
-        rows: [
-          {
-            row: 2,
-            application_no: 'SALES-00000000-00000000',
-            site_code: 'HA02',
-            sku: '1005013',
-            submitted_at: '2026-08-03 09:00:00',
-          },
-        ],
-      });
+      .get(`/api/public/sales/import/record/${imported.body.batchId}`)
+      .set('Idempotency-Key', key);
     expect(res.status).toBe(200);
     expect(res.headers['content-type']).toContain('spreadsheetml');
     expect(Number(res.headers['content-length'])).toBeGreaterThan(1000);
     expect(res.headers['content-disposition']).toContain('Sudden_Sales_Import_Record');
   });
-
   it('rejects a sales import using the wrong sheet', async () => {
     const wb = new ExcelJS.Workbook();
     const ws = wb.addWorksheet(RP_TEAM_SHEET);

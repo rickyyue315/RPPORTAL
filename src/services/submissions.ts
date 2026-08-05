@@ -14,6 +14,10 @@ import { toHKDateString, hkTodayForDateColumn } from '../lib/time.js';
 import { getActiveReturnWindow, isReturnModificationOpen } from '../lib/returnSchedule.js';
 import { normalizeSiteCode } from './stores.js';
 
+interface IdempotencyQueryClient {
+  query: <T = unknown>(text: string, params?: unknown[]) => Promise<{ rows: T[] }>;
+}
+
 export type SubmissionType = 'normal' | 'urgent' | 'sales' | 'return';
 
 export interface SubmissionRow {
@@ -47,6 +51,8 @@ export interface SubmissionRow {
   created_ip_expires_at: string | null;
   created_at: string;
   updated_at: string;
+  idempotency_key: string | null;
+  idempotency_fingerprint: string | null;
 }
 
 export type ActorRole = 'applicant' | 'admin';
@@ -69,6 +75,8 @@ export interface CreateSubmissionInput {
   changeSource: string;
   actor?: string;
   applicationDateOverride?: string;
+  idempotencyKey?: string;
+  idempotencyFingerprint?: string;
 }
 
 export interface ModifySubmissionInput {
@@ -173,6 +181,13 @@ export class ReturnWindowClosedError extends Error {
   }
 }
 
+export class IdempotencyConflictError extends Error {
+  constructor() {
+    super('此提交重試鍵已用於不同資料，請重新整理頁面後再提交');
+    this.name = 'IdempotencyConflictError';
+  }
+}
+
 export class ReturnSubmissionConflictError extends Error {
   constructor() {
     super('同一店舖及 SKU 在此退行貨申請期已申請，請使用「查詢／修改」更正原申請');
@@ -180,6 +195,36 @@ export class ReturnSubmissionConflictError extends Error {
   }
 }
 
+async function getIdempotentRow(
+  client: IdempotencyQueryClient,
+  input: CreateSubmissionInput,
+  submissionType: SubmissionType,
+): Promise<SubmissionRow | null> {
+  if (!input.idempotencyKey) return null;
+  await client.query(
+    'SELECT pg_advisory_xact_lock(hashtextextended($1, 1)::bigint)',
+    [`submission:${input.idempotencyKey}`],
+  );
+  const existing = await client.query<SubmissionRow>(
+    'SELECT * FROM submissions WHERE idempotency_key = $1 FOR UPDATE',
+    [input.idempotencyKey],
+  );
+  const row = existing.rows[0];
+  if (!row) return null;
+  if (
+    row.idempotency_fingerprint !== input.idempotencyFingerprint
+    || row.submission_type !== submissionType
+    || row.site_code !== normalizeSiteCode(input.siteCode)
+  ) {
+    throw new IdempotencyConflictError();
+  }
+  return row;
+}
+
+export async function getSubmissionByIdempotencyKey(key: string): Promise<SubmissionRow | null> {
+  const result = await query<SubmissionRow>('SELECT * FROM submissions WHERE idempotency_key = $1', [key]);
+  return result.rows[0] ?? null;
+}
 function duplicateKeyValue(key: DuplicateSubmissionKey): string {
   return [
     normalizeSiteCode(key.siteCode),
@@ -263,6 +308,9 @@ async function createReturnSubmission(input: CreateSubmissionInput): Promise<Sub
   const reason = resolveReturnReasonCode(returnFields.reason);
 
   return withTransaction(async (client) => {
+    const replay = await getIdempotentRow(client, input, 'return');
+    if (replay) return replay;
+
     await lockDuplicateSubmissionKeys(client, [{
       siteCode,
       sku: returnFields.sku,
@@ -281,9 +329,9 @@ async function createReturnSubmission(input: CreateSubmissionInput): Promise<Sub
          application_no, source, submission_type, site_code, requested_by_email, application_date,
          brand, sku, qty, urgent_reason, urgent_reason_other,
          return_qty, return_reason, return_confirmer_name, return_confirmer_phone, return_window_key,
-         created_ip, created_ip_expires_at
-       )
-       VALUES ($1, $2, 'return', $3, $4, $5, '', $6, NULL, NULL, NULL, $7, $8, $9, $10, $11, $12, $13)
+          created_ip, created_ip_expires_at, idempotency_key, idempotency_fingerprint
+        )
+       VALUES ($1, $2, 'return', $3, $4, $5, '', $6, NULL, NULL, NULL, $7, $8, $9, $10, $11, $12, $13, $14, $15)
        RETURNING *`,
       [
         applicationNo,
@@ -299,7 +347,9 @@ async function createReturnSubmission(input: CreateSubmissionInput): Promise<Sub
         activeWindow.key,
         input.ip,
         input.ip ? ipExpiryIso() : null,
-      ],
+         input.idempotencyKey ?? null,
+         input.idempotencyFingerprint ?? null,
+       ],
     );
     const row = result.rows[0]!;
     await client.query(
@@ -346,6 +396,9 @@ export async function createSubmission(
   const appNoPrefix = isUrgent ? 'URGENT' : submissionType === 'sales' ? 'SALES' : 'NDRF';
 
   return withTransaction(async (client) => {
+    const replay = await getIdempotentRow(client, input, submissionType);
+    if (replay) return replay;
+
     await lockDuplicateSubmissionKeys(client, [{
       siteCode,
       sku: fields.sku,
@@ -367,14 +420,17 @@ export async function createSubmission(
       isUrgent ? (normalizeText(input.urgentReasonOther) || null) : null,
       input.ip,
       input.ip ? ipExpiryIso() : null,
-    ];
+       input.idempotencyKey ?? null,
+       input.idempotencyFingerprint ?? null,
+     ];
     const result = await client.query<SubmissionRow>(
       `INSERT INTO submissions (
          application_no, source, submission_type, site_code, requested_by_email, application_date,
          brand, sku, rp_type, safety_stock, nd_code, remark,
-         qty, urgent_reason, urgent_reason_other, created_ip, created_ip_expires_at
-       )
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
+         qty, urgent_reason, urgent_reason_other, created_ip, created_ip_expires_at,
+          idempotency_key, idempotency_fingerprint
+        )
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)
        RETURNING *`,
       values,
     );

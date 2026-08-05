@@ -36,8 +36,8 @@ import {
   parseUrgentImportWorkbook,
   EXCEL_UPLOAD_EXTENSION_ERROR,
 } from '../lib/excelImport.js';
-import { getStore, normalizeSiteCode, parseStoresCsv, replaceStores, listStores } from '../services/stores.js';
-import { toHKString, hkTodayForDateColumn } from '../lib/time.js';
+import { getStore, normalizeSiteCode, parseStoresCsv, decodeStoresCsvBuffer, replaceStores, listStores } from '../services/stores.js';
+import { toHKString, toHKDateString, hkTodayForDateColumn } from '../lib/time.js';
 import { generateApplicationNo } from '../lib/applicationNo.js';
 import { ipExpiryIso } from '../lib/ip.js';
 import {
@@ -50,6 +50,7 @@ import {
   resolveReturnReasonCode,
 } from '../lib/fields.js';
 import { validateBusinessFields, validateUrgentReason } from '../lib/validation.js';
+import { archiveExportBatchFile, EXPORT_CONTENT_TYPE } from '../services/exportFiles.js';
 
 export const adminRouter = Router();
 
@@ -123,6 +124,56 @@ const businessFieldsSchema = z.object({
   remark: z.string().max(2000).optional().default(''),
 });
 
+function isValidIsoDate(value: string): boolean {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+  const date = new Date(`${value}T00:00:00Z`);
+  return date.toISOString().slice(0, 10) === value;
+}
+
+type ExportSubmissionType = 'normal' | 'urgent' | 'sales' | 'return';
+
+function exportSubmissionType(filters: unknown): ExportSubmissionType {
+  if (filters && typeof filters === 'object' && 'submission_type' in filters) {
+    const type = (filters as { submission_type?: unknown }).submission_type;
+    if (type === 'urgent' || type === 'sales' || type === 'return') return type;
+  }
+  return 'normal';
+}
+
+async function buildArchivedExportBuffer(type: ExportSubmissionType, rows: SubmissionRow[]): Promise<Buffer> {
+  if (type === 'urgent') {
+    return buildUrgentExportBuffer(rows.map((row) => ({
+      application_no: row.application_no,
+      site_code: row.site_code,
+      sku: row.sku,
+      qty: row.qty,
+      urgent_reason: row.urgent_reason,
+      urgent_reason_other: row.urgent_reason_other,
+    })));
+  }
+  if (type === 'sales') {
+    return buildSalesExportBuffer(rows.map((row) => ({
+      application_date: row.application_date,
+      requested_by_email: row.requested_by_email,
+      site_code: row.site_code,
+      sku: row.sku,
+    })));
+  }
+  if (type === 'return') {
+    return buildReturnExportBuffer(rows.map((row) => ({
+      application_no: row.application_no,
+      application_date: row.application_date,
+      site_code: row.site_code,
+      sku: row.sku,
+      qty: row.return_qty,
+      reason: row.return_reason,
+      confirmer_name: row.return_confirmer_name,
+      confirmer_phone: row.return_confirmer_phone,
+    })));
+  }
+  return buildSapExportBuffer(rows);
+}
+
 function serializeAdminSubmission(row: SubmissionRow, lastModifiedAt?: string | null) {
   return {
     id: row.id,
@@ -175,8 +226,11 @@ adminRouter.get(
       page = '1',
       page_size = '20',
     } = req.query as Record<string, string | undefined>;
-
-    const where: string[] = [];
+     if ((from && !isValidIsoDate(from)) || (to && !isValidIsoDate(to)) || (from && to && from > to)) {
+       res.status(400).json({ error: '日期範圍無效，請使用 YYYY-MM-DD 且由日期不可晚於至日期' });
+       return;
+     }
+const where: string[] = [];
     const params: unknown[] = [];
     let idx = 1;
 
@@ -625,6 +679,7 @@ adminRouter.post(
     }
 
     const ip = getClientIp(req);
+    const applicationDate = hkTodayForDateColumn();
     const results = await withTransaction(async (client) => {
       const rowsOut: Array<{
         row: number;
@@ -645,13 +700,14 @@ adminRouter.post(
           `INSERT INTO submissions (
              application_no, source, site_code, requested_by_email, application_date,
              brand, sku, rp_type, safety_stock, nd_code, remark, created_ip, created_ip_expires_at
-           ) VALUES ($1,'excel',$2,$3,to_char(now() AT TIME ZONE 'Asia/Hong_Kong','YYYY-MM-DD')::date,
-             $4,$5,$6,$7,$8,$9,$10,$11)
+           ) VALUES ($1,'excel',$2,$3,$4,
+             $5,$6,$7,$8,$9,$10,$11,$12)
            RETURNING *`,
           [
             appNo,
             r.siteCode,
             requestedByEmail,
+            applicationDate,
             r.fields.brand,
             r.fields.sku,
             r.fields.rp_type,
@@ -666,7 +722,7 @@ adminRouter.post(
         await client.query(
           `INSERT INTO submission_versions
              (submission_id, version, data_before, data_after, actor_role, actor, ip, change_source)
-           VALUES ($1, 1, NULL, $2, 'applicant', $3, $4, 'excel_import')`,
+           VALUES ($1, 1, NULL, $2, 'admin', $3, $4, 'excel_import')`,
           [row.id, JSON.stringify(r.fields), req.adminUsername, ip],
         );
         successCount++;
@@ -683,8 +739,8 @@ adminRouter.post(
         });
       }
       const batchId = await client.query<{ id: string }>(
-        `INSERT INTO import_batches (filename, sheet_name, row_count, success_count, failed_count, results, content_hash, created_by)
-         VALUES ($1, $2, $3, $4, 0, $5::jsonb, $6, $7)
+        `INSERT INTO import_batches (filename, sheet_name, row_count, success_count, failed_count, results, content_hash, created_by, submission_type)
+         VALUES ($1, $2, $3, $4, 0, $5::jsonb, $6, $7, 'normal')
          RETURNING id`,
         [file.originalname, parsed.sheetName ?? '', parsed.totalRows, successCount, JSON.stringify(rowsOut), parsed.contentHash, req.adminUsername],
       );
@@ -713,14 +769,22 @@ adminRouter.post(
   }),
 );
 
+const optionalIsoDate = z.preprocess(
+  (value) => value === '' ? undefined : value,
+  z.string().refine(isValidIsoDate, '日期必須為有效的 YYYY-MM-DD').optional(),
+);
+
 const exportFiltersSchema = z.object({
-  from: z.string().optional(),
-  to: z.string().optional(),
-  site_code: z.string().optional(),
+  from: optionalIsoDate,
+  to: optionalIsoDate,
+  site_code: z.string().trim().optional(),
   include_exported: z.coerce.boolean().optional().default(false),
   preview: z.coerce.boolean().optional().default(false),
+}).superRefine((value, ctx) => {
+  if (value.from && value.to && value.from > value.to) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['to'], message: '由日期不可晚於至日期' });
+  }
 });
-
 /** POST /api/admin/export — SAP export + lock. */
 adminRouter.post(
   '/export',
@@ -766,7 +830,7 @@ adminRouter.post(
 
     if (parsed.data.preview) {
       const buffer = await buildSapExportBuffer(rows.rows);
-      const previewName = `NDRF_SAP_Preview_${new Date().toISOString().slice(0, 10)}.xlsx`;
+      const previewName = `NDRF_SAP_Preview_${toHKDateString(new Date())}.xlsx`;
       await writeAuditEvent({
         eventType: 'export_preview',
         actorRole: 'admin',
@@ -780,7 +844,7 @@ adminRouter.post(
       return;
     }
 
-    const filename = `NDRF_SAP_Export_${new Date().toISOString().slice(0, 10)}.xlsx`;
+    const filename = `NDRF_SAP_Export_${toHKDateString(new Date())}.xlsx`;
     const exportResult = await withTransaction(async (client) => {
       const lockedRows = await client.query<SubmissionRow>(
         `SELECT * FROM submissions ${whereSql} ORDER BY application_date ASC, submitted_at ASC FOR UPDATE`,
@@ -801,12 +865,14 @@ adminRouter.post(
           req.adminUsername,
         ],
       );
+      const batchId = batch.rows[0]!.id;
+      await archiveExportBatchFile(client, batchId, filename, buffer, config.exportFileRetentionDays);
       await client.query(
         `UPDATE submissions SET exported_at = now(), export_batch_id = $1, locked_at = now(), updated_at = now()
          WHERE id = ANY($2::uuid[])`,
-        [batch.rows[0]!.id, lockedRows.rows.map((r) => r.id)],
+        [batchId, lockedRows.rows.map((r) => r.id)],
       );
-      return { batchId: batch.rows[0]!.id, buffer, count: lockedRows.rows.length };
+      return { batchId, buffer, count: lockedRows.rows.length };
     });
     if (!exportResult) {
       res.status(400).json({ error: '沒有符合條件的申報可以匯出' });
@@ -824,6 +890,7 @@ adminRouter.post(
 
     res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
     res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    res.setHeader('X-Export-Batch-Id', batchResult);
     res.send(buffer);
   }),
 );
@@ -883,6 +950,7 @@ adminRouter.post(
     }
 
     const ip = getClientIp(req);
+    const applicationDate = hkTodayForDateColumn();
     const results = await withTransaction(async (client) => {
       const rowsOut: Array<{
         row: number;
@@ -903,10 +971,10 @@ adminRouter.post(
           `INSERT INTO submissions (
              application_no, source, submission_type, site_code, requested_by_email, application_date,
              brand, sku, qty, urgent_reason, urgent_reason_other, created_ip, created_ip_expires_at
-           ) VALUES ($1,'excel','urgent',$2,$3,to_char(now() AT TIME ZONE 'Asia/Hong_Kong','YYYY-MM-DD')::date,
-             '',$4,$5,$6,$7,$8,$9)
+           ) VALUES ($1,'excel','urgent',$2,$3,$4,
+             '',$5,$6,$7,$8,$9,$10)
            RETURNING *`,
-          [appNo, r.siteCode, requestedByEmail, r.sku, r.qty, r.urgentReason || null, r.urgentReasonOther || null, ip, ip ? ipExpiryIso() : null],
+          [appNo, r.siteCode, requestedByEmail, applicationDate, r.sku, r.qty, r.urgentReason || null, r.urgentReasonOther || null, ip, ip ? ipExpiryIso() : null],
         );
         const row = insert.rows[0]!;
         await client.query(
@@ -940,8 +1008,8 @@ adminRouter.post(
         });
       }
       const batchId = await client.query<{ id: string }>(
-        `INSERT INTO import_batches (filename, sheet_name, row_count, success_count, failed_count, results, content_hash, created_by)
-         VALUES ($1, $2, $3, $4, 0, $5::jsonb, $6, $7)
+        `INSERT INTO import_batches (filename, sheet_name, row_count, success_count, failed_count, results, content_hash, created_by, submission_type)
+         VALUES ($1, $2, $3, $4, 0, $5::jsonb, $6, $7, 'urgent')
          RETURNING id`,
         [file.originalname, parsed.sheetName ?? '', parsed.totalRows, successCount, JSON.stringify(rowsOut), parsed.contentHash, req.adminUsername],
       );
@@ -1025,7 +1093,7 @@ adminRouter.post(
           urgent_reason_other: r.urgent_reason_other,
         })),
       );
-      const previewName = `Urgent_Order_Preview_${new Date().toISOString().slice(0, 10)}.xlsx`;
+      const previewName = `Urgent_Order_Preview_${toHKDateString(new Date())}.xlsx`;
       await writeAuditEvent({
         eventType: 'export_preview',
         actorRole: 'admin',
@@ -1039,7 +1107,7 @@ adminRouter.post(
       return;
     }
 
-    const filename = `Urgent_Order_Export_${new Date().toISOString().slice(0, 10)}.xlsx`;
+    const filename = `Urgent_Order_Export_${toHKDateString(new Date())}.xlsx`;
     const exportResult = await withTransaction(async (client) => {
       const lockedRows = await client.query<SubmissionRow>(
         `SELECT * FROM submissions ${whereSql} ORDER BY application_date ASC, submitted_at ASC FOR UPDATE`,
@@ -1069,12 +1137,14 @@ adminRouter.post(
           req.adminUsername,
         ],
       );
+      const batchId = batch.rows[0]!.id;
+      await archiveExportBatchFile(client, batchId, filename, buffer, config.exportFileRetentionDays);
       await client.query(
         `UPDATE submissions SET exported_at = now(), export_batch_id = $1, locked_at = now(), updated_at = now()
          WHERE id = ANY($2::uuid[])`,
-        [batch.rows[0]!.id, lockedRows.rows.map((r) => r.id)],
+        [batchId, lockedRows.rows.map((r) => r.id)],
       );
-      return { batchId: batch.rows[0]!.id, buffer, count: lockedRows.rows.length };
+      return { batchId, buffer, count: lockedRows.rows.length };
     });
     if (!exportResult) {
       res.status(400).json({ error: '沒有符合條件的 Urgent Order 可以匯出' });
@@ -1092,6 +1162,7 @@ adminRouter.post(
 
     res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
     res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    res.setHeader('X-Export-Batch-Id', batchResult);
     res.send(buffer);
   }),
 );
@@ -1125,7 +1196,7 @@ adminRouter.get(
     );
     const buffer = await buildAuditExportBuffer(auditRows.rows as never);
     res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
-    res.setHeader('Content-Disposition', `attachment; filename="NDRF_Audit_Report_${new Date().toISOString().slice(0, 10)}.xlsx"`);
+    res.setHeader('Content-Disposition', `attachment; filename="NDRF_Audit_Report_${toHKDateString(new Date())}.xlsx"`);
     res.send(buffer);
   }),
 );
@@ -1175,7 +1246,7 @@ adminRouter.post(
         site_code: row.site_code,
         sku: row.sku,
       })));
-      const previewName = `Sudden_Sales_Preview_${new Date().toISOString().slice(0, 10)}.xlsx`;
+      const previewName = `Sudden_Sales_Preview_${toHKDateString(new Date())}.xlsx`;
       await writeAuditEvent({
         eventType: 'export_preview',
         actorRole: 'admin',
@@ -1189,7 +1260,7 @@ adminRouter.post(
       return;
     }
 
-    const filename = `Sudden_Sales_Export_${new Date().toISOString().slice(0, 10)}.xlsx`;
+    const filename = `Sudden_Sales_Export_${toHKDateString(new Date())}.xlsx`;
     const exportResult = await withTransaction(async (client) => {
       const lockedRows = await client.query<SubmissionRow>(
         `SELECT * FROM submissions WHERE ${where.join(' AND ')} ORDER BY application_date ASC, submitted_at ASC FOR UPDATE`,
@@ -1215,12 +1286,14 @@ adminRouter.post(
           req.adminUsername,
         ],
       );
+      const batchId = batch.rows[0]!.id;
+      await archiveExportBatchFile(client, batchId, filename, buffer, config.exportFileRetentionDays);
       await client.query(
         `UPDATE submissions SET exported_at = now(), export_batch_id = $1, locked_at = now(), updated_at = now()
          WHERE id = ANY($2::uuid[])`,
-        [batch.rows[0]!.id, lockedRows.rows.map((row) => row.id)],
+        [batchId, lockedRows.rows.map((row) => row.id)],
       );
-      return { batchId: batch.rows[0]!.id, buffer, count: lockedRows.rows.length };
+      return { batchId, buffer, count: lockedRows.rows.length };
     });
     if (!exportResult) {
       res.status(400).json({ error: '沒有符合條件的突發性銷售申報可以匯出' });
@@ -1237,6 +1310,7 @@ adminRouter.post(
     });
     res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
     res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    res.setHeader('X-Export-Batch-Id', batchResult);
     res.send(buffer);
   }),
 );
@@ -1278,14 +1352,14 @@ adminRouter.post(
     })));
     if (parsed.data.preview) {
       const buffer = await exportRows(rows.rows);
-      const filename = `Return_Goods_Preview_${new Date().toISOString().slice(0, 10)}.xlsx`;
+      const filename = `Return_Goods_Preview_${toHKDateString(new Date())}.xlsx`;
       await writeAuditEvent({ eventType: 'export_preview', actorRole: 'admin', actor: req.adminUsername, ip: getClientIp(req), metadata: { filename, count: rows.rows.length, filters: parsed.data, submission_type: 'return' } });
       res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
       res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
       res.send(buffer);
       return;
     }
-    const filename = `Return_Goods_Export_${new Date().toISOString().slice(0, 10)}.xlsx`;
+    const filename = `Return_Goods_Export_${toHKDateString(new Date())}.xlsx`;
     const exportResult = await withTransaction(async (client) => {
       const lockedRows = await client.query<SubmissionRow>(`SELECT * FROM submissions ${whereSql} ORDER BY application_date ASC, submitted_at ASC FOR UPDATE`, params);
       if (!lockedRows.rows.length) return null;
@@ -1295,12 +1369,14 @@ adminRouter.post(
          VALUES ($1, $2, $3::jsonb, $4::jsonb, $5) RETURNING id`,
         [filename, lockedRows.rows.length, JSON.stringify(lockedRows.rows.map((row) => row.application_no)), JSON.stringify({ ...parsed.data, submission_type: 'return' }), req.adminUsername],
       );
+      const batchId = batch.rows[0]!.id;
+      await archiveExportBatchFile(client, batchId, filename, buffer, config.exportFileRetentionDays);
       await client.query(
         `UPDATE submissions SET exported_at = now(), export_batch_id = $1, locked_at = now(), updated_at = now()
          WHERE id = ANY($2::uuid[])`,
-        [batch.rows[0]!.id, lockedRows.rows.map((row) => row.id)],
+        [batchId, lockedRows.rows.map((row) => row.id)],
       );
-      return { batchId: batch.rows[0]!.id, buffer, count: lockedRows.rows.length };
+      return { batchId, buffer, count: lockedRows.rows.length };
     });
     if (!exportResult) {
       res.status(400).json({ error: '沒有符合條件的行貨退貨報數可以匯出' });
@@ -1309,7 +1385,91 @@ adminRouter.post(
     await writeAuditEvent({ eventType: 'export_created', actorRole: 'admin', actor: req.adminUsername, ip: getClientIp(req), metadata: { batchId: exportResult.batchId, filename, count: exportResult.count, submission_type: 'return' } });
     res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
     res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    res.setHeader('X-Export-Batch-Id', exportResult.batchId);
     res.send(exportResult.buffer);
+  }),
+);
+
+/** GET /api/admin/export-batches/:id/download — download an archived export. */
+adminRouter.get(
+  '/export-batches/:id/download',
+  requireAdmin,
+  excelExportLimiter,
+  asyncHandler(async (req: Request, res: Response) => {
+    const parsedId = z.string().uuid().safeParse(req.params.id);
+    if (!parsedId.success) {
+      res.status(400).json({ error: '匯出批次編號無效' });
+      return;
+    }
+
+    const result = await query<{
+      id: string;
+      filename: string;
+      submission_nos: unknown;
+      filters: unknown;
+      file_data: Buffer | null;
+      content_type: string | null;
+      expires_at: string | null;
+      archive_exists: boolean;
+    }>(
+      `SELECT eb.id, eb.filename, eb.submission_nos, eb.filters,
+              ebf.file_data, ebf.content_type, ebf.expires_at,
+              (ebf.export_batch_id IS NOT NULL) AS archive_exists
+         FROM export_batches eb
+         LEFT JOIN export_batch_files ebf ON ebf.export_batch_id = eb.id
+        WHERE eb.id = $1`,
+      [parsedId.data],
+    );
+    const batch = result.rows[0];
+    if (!batch) {
+      res.status(404).json({ error: '找不到匯出批次' });
+      return;
+    }
+
+    let buffer: Buffer;
+    let regenerated = false;
+    const expiresAt = batch.expires_at ? new Date(batch.expires_at).getTime() : null;
+    if (batch.file_data && expiresAt !== null && expiresAt > Date.now()) {
+      buffer = Buffer.from(batch.file_data);
+    } else if (batch.archive_exists) {
+      res.status(410).json({ error: '此匯出檔案已超過三個月保存期限' });
+      return;
+    } else {
+      // Batches created before archive migration have metadata and locked rows,
+      // so rebuild them without changing any submission data.
+      const applicationNos = Array.isArray(batch.submission_nos)
+        ? batch.submission_nos.filter((value): value is string => typeof value === 'string')
+        : [];
+      if (!applicationNos.length) {
+        res.status(404).json({ error: '此舊匯出批次沒有可重建的申報資料' });
+        return;
+      }
+      const rows = await query<SubmissionRow>(
+        `SELECT * FROM submissions
+          WHERE application_no = ANY($1::text[])
+          ORDER BY application_date ASC, submitted_at ASC`,
+        [applicationNos],
+      );
+      if (rows.rows.length !== applicationNos.length) {
+        res.status(409).json({ error: '此舊匯出批次的申報資料不完整，無法重建 Excel' });
+        return;
+      }
+      buffer = await buildArchivedExportBuffer(exportSubmissionType(batch.filters), rows.rows);
+      regenerated = true;
+    }
+
+    await writeAuditEvent({
+      eventType: 'export_download',
+      actorRole: 'admin',
+      actor: req.adminUsername,
+      ip: getClientIp(req),
+      metadata: { batchId: batch.id, filename: batch.filename, regenerated },
+    });
+    const safeFilename = batch.filename.replace(/["\r\n]/g, '_');
+    res.setHeader('Content-Type', batch.content_type ?? EXPORT_CONTENT_TYPE);
+    res.setHeader('Content-Disposition', `attachment; filename="${safeFilename}"`);
+    res.setHeader('X-Export-Batch-Id', batch.id);
+    res.send(buffer);
   }),
 );
 
@@ -1320,16 +1480,38 @@ adminRouter.get(
   adminActionLimiter,
   asyncHandler(async (_req: Request, res: Response) => {
     const imports = await query(
-      `SELECT id, filename, sheet_name, row_count, success_count, failed_count, created_by, created_at
+      `SELECT id, filename, sheet_name, row_count, success_count, failed_count, created_by, submission_type, created_at
        FROM import_batches ORDER BY created_at DESC LIMIT 50`,
     );
     const exports = await query(
-      `SELECT id, filename, submission_count, filters, created_by, created_at
-       FROM export_batches ORDER BY created_at DESC LIMIT 50`,
+      `SELECT eb.id, eb.filename, eb.submission_count, eb.filters,
+              eb.filters->>'submission_type' AS submission_type,
+              eb.created_by, eb.created_at,
+              (ebf.file_data IS NOT NULL AND ebf.expires_at > now()) AS archive_available,
+              (ebf.export_batch_id IS NOT NULL AND (ebf.file_data IS NULL OR ebf.expires_at <= now())) AS archive_expired,
+              ebf.file_size AS archive_file_size, ebf.expires_at AS archive_expires_at
+         FROM export_batches eb
+         LEFT JOIN export_batch_files ebf ON ebf.export_batch_id = eb.id
+        ORDER BY eb.created_at DESC LIMIT 50`,
+    );
+    const archiveUsage = await query<{ bytes: string; files: string }>(
+      `SELECT COALESCE(sum(file_size), 0)::text AS bytes, count(*)::text AS files
+         FROM export_batch_files
+        WHERE file_data IS NOT NULL`,
     );
     res.json({
-      imports: imports.rows,
-      exports: exports.rows.map((r) => ({ ...r, created_at: toHKString(r.created_at as string) })),
+      imports: imports.rows.map((r) => ({ ...r, created_at: toHKString(r.created_at as string) })),
+      exports: exports.rows.map((r) => ({
+        ...r,
+        created_at: toHKString(r.created_at as string),
+        archive_expires_at: r.archive_expires_at ? toHKString(r.archive_expires_at as string) : null,
+        archive_file_size: r.archive_file_size === null || r.archive_file_size === undefined ? null : Number(r.archive_file_size),
+      })),
+      archive_usage: {
+        bytes: Number(archiveUsage.rows[0]?.bytes ?? 0),
+        files: Number(archiveUsage.rows[0]?.files ?? 0),
+        retention_days: config.exportFileRetentionDays,
+      },
     });
   }),
 );
@@ -1365,7 +1547,7 @@ adminRouter.put(
       res.status(413).json({ error: `檔案超過 ${config.maxUploadBytes / 1024 / 1024}MB 限制` });
       return;
     }
-    const content = file.buffer.toString('utf8');
+    const content = decodeStoresCsvBuffer(file.buffer);
     const parsed = parseStoresCsv(content);
     if (!parsed.ok || !parsed.stores) {
       res.status(400).json({ error: '門店主檔無效', errors: parsed.errors ?? [] });

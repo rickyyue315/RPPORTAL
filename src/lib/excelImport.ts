@@ -60,8 +60,21 @@ export function hashFileContent(buffer: Buffer): string {
   return createHash('sha256').update(buffer).digest('hex');
 }
 
+function excelValueToText(value: unknown): string {
+  if (value === null || value === undefined) return '';
+  if (value instanceof Date) return value.toISOString();
+  if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') return normalizeText(value as never);
+  if (typeof value === 'object') {
+    const candidate = value as { result?: unknown; text?: unknown; richText?: Array<{ text?: unknown }> };
+    if ('result' in candidate) return excelValueToText(candidate.result);
+    if (Array.isArray(candidate.richText)) return candidate.richText.map((part) => excelValueToText(part.text)).join('');
+    if ('text' in candidate) return excelValueToText(candidate.text);
+  }
+  return '';
+}
+
 function cellValue(cell: ExcelJS.Cell): string {
-  return normalizeText(cell.value as never);
+  return excelValueToText(cell.value);
 }
 
 /**
@@ -111,7 +124,7 @@ export async function parseImportWorkbook(
     headers.push(cellValue(headerRow.getCell(c)));
   }
 
-  if (headers.length !== EXPECTED_HEADERS.length || headers.some((h, i) => h !== EXPECTED_HEADERS[i])) {
+  if (headerRow.cellCount !== EXPECTED_HEADERS.length || headers.some((h, i) => h !== EXPECTED_HEADERS[i])) {
     return {
       ok: false,
       sheetName: RP_TEAM_SHEET,
@@ -289,7 +302,7 @@ export async function parseUrgentImportWorkbook(
     headers.push(cellValue(headerRow.getCell(c)));
   }
 
-  if (headers.length !== EXPECTED_URGENT_HEADERS.length || headers.some((h, i) => h !== EXPECTED_URGENT_HEADERS[i])) {
+  if (headerRow.cellCount !== EXPECTED_URGENT_HEADERS.length || headers.some((h, i) => h !== EXPECTED_URGENT_HEADERS[i])) {
     return {
       ok: false,
       sheetName: URGENT_SHEET,

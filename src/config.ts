@@ -42,6 +42,7 @@ export const config = {
   ipRetentionDays: int('IP_RETENTION_DAYS', 365),
   maxUploadBytes: int('MAX_UPLOAD_MB', 5) * 1024 * 1024,
   maxImportRows: int('MAX_IMPORT_ROWS', 1000),
+  exportFileRetentionDays: Math.max(1, int('EXPORT_FILE_RETENTION_DAYS', 90)),
   storesCsvPath: process.env.STORES_CSV_PATH ?? path.join(__dirname, '..', 'stores-template.csv'),
   corsOrigins: (process.env.CORS_ORIGINS ?? '').split(',').map((s) => s.trim()).filter(Boolean),
   logBody: bool('LOG_BODY', false),

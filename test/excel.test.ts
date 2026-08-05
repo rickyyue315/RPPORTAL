@@ -77,6 +77,26 @@ describe('parseImportWorkbook', () => {
     expect(result.errors?.[0]?.field).toBe('sheet');
   });
 
+  it('rejects extra header columns instead of silently dropping them', async () => {
+    const wb = new ExcelJS.Workbook();
+    const ws = wb.addWorksheet(RP_TEAM_SHEET);
+    ws.addRow([...TEMPLATE_COLUMNS, 'Unexpected']);
+    ws.addRow(dataRow());
+    const result = await parseImportWorkbook(Buffer.from(await wb.xlsx.writeBuffer()), storeCodes, 1000);
+    expect(result.ok).toBe(false);
+    expect(result.errors?.[0]?.field).toBe('header');
+  });
+
+  it('uses a formula result when Excel stores a calculated cell', async () => {
+    const wb = new ExcelJS.Workbook();
+    const ws = wb.addWorksheet(RP_TEAM_SHEET);
+    ws.addRow([...TEMPLATE_COLUMNS]);
+    const row = ws.addRow(dataRow());
+    row.getCell(2).value = { formula: '="110079623001"', result: '110079623001' } as never;
+    const result = await parseImportWorkbook(Buffer.from(await wb.xlsx.writeBuffer()), storeCodes, 1000);
+    expect(result.ok).toBe(true);
+    expect(result.rows?.[0]?.fields.sku).toBe('110079623001');
+  });
   it('rejects wrong headers', async () => {
     const wb = new ExcelJS.Workbook();
     const ws = wb.addWorksheet(RP_TEAM_SHEET);
@@ -206,6 +226,7 @@ describe('generateTemplateWorkbook', () => {
     const ws = wb.getWorksheet(RP_TEAM_SHEET)!;
     expect(ws.getCell(1, 1).value).toBe('Shop Code');
     expect(ws.getCell(1, 6).value).toBe('Remark');
+    expect(ws.getColumn(2).numFmt).toBe('@');
   });
 });
 
@@ -285,6 +306,26 @@ describe('parseUrgentImportWorkbook', () => {
     expect(result.errors?.[0]?.field).toBe('sheet');
   });
 
+  it('rejects extra header columns instead of silently dropping them', async () => {
+    const wb = new ExcelJS.Workbook();
+    const ws = wb.addWorksheet(RP_TEAM_SHEET);
+    ws.addRow([...TEMPLATE_COLUMNS, 'Unexpected']);
+    ws.addRow(dataRow());
+    const result = await parseImportWorkbook(Buffer.from(await wb.xlsx.writeBuffer()), storeCodes, 1000);
+    expect(result.ok).toBe(false);
+    expect(result.errors?.[0]?.field).toBe('header');
+  });
+
+  it('uses a formula result when Excel stores a calculated cell', async () => {
+    const wb = new ExcelJS.Workbook();
+    const ws = wb.addWorksheet(RP_TEAM_SHEET);
+    ws.addRow([...TEMPLATE_COLUMNS]);
+    const row = ws.addRow(dataRow());
+    row.getCell(2).value = { formula: '="110079623001"', result: '110079623001' } as never;
+    const result = await parseImportWorkbook(Buffer.from(await wb.xlsx.writeBuffer()), storeCodes, 1000);
+    expect(result.ok).toBe(true);
+    expect(result.rows?.[0]?.fields.sku).toBe('110079623001');
+  });
   it('rejects wrong headers', async () => {
     const wb = new ExcelJS.Workbook();
     const ws = wb.addWorksheet(URGENT_SHEET);
@@ -454,6 +495,26 @@ describe('sales Excel', () => {
     expect(result.errors?.[0]?.field).toBe('sheet');
   });
 
+  it('rejects extra header columns instead of silently dropping them', async () => {
+    const wb = new ExcelJS.Workbook();
+    const ws = wb.addWorksheet(RP_TEAM_SHEET);
+    ws.addRow([...TEMPLATE_COLUMNS, 'Unexpected']);
+    ws.addRow(dataRow());
+    const result = await parseImportWorkbook(Buffer.from(await wb.xlsx.writeBuffer()), storeCodes, 1000);
+    expect(result.ok).toBe(false);
+    expect(result.errors?.[0]?.field).toBe('header');
+  });
+
+  it('uses a formula result when Excel stores a calculated cell', async () => {
+    const wb = new ExcelJS.Workbook();
+    const ws = wb.addWorksheet(RP_TEAM_SHEET);
+    ws.addRow([...TEMPLATE_COLUMNS]);
+    const row = ws.addRow(dataRow());
+    row.getCell(2).value = { formula: '="110079623001"', result: '110079623001' } as never;
+    const result = await parseImportWorkbook(Buffer.from(await wb.xlsx.writeBuffer()), storeCodes, 1000);
+    expect(result.ok).toBe(true);
+    expect(result.rows?.[0]?.fields.sku).toBe('110079623001');
+  });
   it('rejects wrong headers', async () => {
     const wb = new ExcelJS.Workbook();
     const ws = wb.addWorksheet(SALES_SHEET);

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { parseStoresCsv, normalizeSiteCode } from '../src/services/stores.js';
+import { parseStoresCsv, normalizeSiteCode, decodeStoresCsvBuffer } from '../src/services/stores.js';
 
 describe('parseStoresCsv', () => {
   const valid = [
@@ -68,6 +68,13 @@ describe('parseStoresCsv', () => {
   });
 });
 
+describe('decodeStoresCsvBuffer', () => {
+  it('decodes UTF-16 CSV exported by Excel', () => {
+    const source = 'Site,Shop,Regional,Class 1,Class 2,Size,OM,Type\nHA02,駱克,HK,B,B2,S,Ivy,T';
+    const buffer = Buffer.concat([Buffer.from([0xff, 0xfe]), Buffer.from(source, 'utf16le')]);
+    expect(parseStoresCsv(decodeStoresCsvBuffer(buffer)).ok).toBe(true);
+  });
+});
 describe('normalizeSiteCode', () => {
   it('trims and uppercases', () => {
     expect(normalizeSiteCode('  ha02 ')).toBe('HA02');

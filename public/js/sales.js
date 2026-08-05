@@ -3,6 +3,8 @@
   let storeCache = null;
   let previewData = null;
   let pendingFile = null;
+  let pendingImportKey = null;
+  let submitKey = null;
 
   function readForm() {
     return {
@@ -50,6 +52,7 @@
     showAlert($('form_error'), 'error', errors.map((error) => `<div>${escapeHtml(error)}</div>`).join(''));
     if (errors.length) return;
     previewData = data;
+    submitKey = createIdempotencyKey();
     const site = storeCache ? `${data.site_code}（${storeCache.shop}）` : data.site_code;
     $('preview_body').innerHTML = `<dt>Site Code</dt><dd>${escapeHtml(site)}</dd><dt>SKU</dt><dd>${escapeHtml(data.sku)}</dd>`;
     $('preview_box').style.display = '';
@@ -61,7 +64,7 @@
     button.textContent = '提交中…';
     showAlert($('confirm_error'), '', '');
     try {
-      const data = await api('/api/public/sales/submit', { method: 'POST', body: JSON.stringify(previewData) });
+      const data = await api('/api/public/sales/submit', { method: 'POST', headers: { 'Idempotency-Key': submitKey }, body: JSON.stringify(previewData) });
       $('res_no').textContent = data.submission.application_no;
       $('res_time').textContent = data.submission.submitted_at;
       $('apply_form').style.display = 'none';
@@ -80,6 +83,7 @@
     $('store_info').textContent = '—';
     storeCache = null;
     previewData = null;
+    submitKey = null;
     $('apply_form').style.display = '';
     $('preview_box').style.display = 'none';
     $('result_card').style.display = 'none';
@@ -94,8 +98,9 @@
 
   const drop = $('file_drop');
   const fileInput = $('file_input');
-  const setFile = (file) => {
+  const setPendingFile = (file) => {
     pendingFile = file;
+    pendingImportKey = createIdempotencyKey();
     $('file_label').textContent = `已選擇：${file.name}`;
   };
   drop.addEventListener('click', () => fileInput.click());
@@ -104,10 +109,9 @@
   drop.addEventListener('drop', (event) => {
     event.preventDefault();
     drop.classList.remove('dragover');
-    if (event.dataTransfer.files.length) setFile(event.dataTransfer.files[0]);
+    if (event.dataTransfer.files.length) setPendingFile(event.dataTransfer.files[0]);
   });
-  fileInput.addEventListener('change', () => { if (fileInput.files.length) setFile(fileInput.files[0]); });
-
+  fileInput.addEventListener('change', () => { if (fileInput.files.length) setPendingFile(fileInput.files[0]); });
   $('btn_import').addEventListener('click', async () => {
     if (!pendingFile) {
       showAlert($('import_result'), 'error', '請先選擇 .xlsx 檔案');
@@ -119,8 +123,10 @@
     showAlert($('import_result'), '', '');
     const formData = new FormData();
     formData.append('file', pendingFile);
+    const importKey = pendingImportKey || createIdempotencyKey();
+    pendingImportKey = importKey;
     try {
-      const data = await api('/api/public/sales/import', { method: 'POST', body: formData });
+      const data = await api('/api/public/sales/import', { method: 'POST', headers: { 'Idempotency-Key': importKey }, body: formData });
       let html = `<div class="alert success"><b>${escapeHtml(data.message)}</b>（總行數：${data.totalRows}）</div>`;
       html += '<table><thead><tr><th>Excel 行</th><th>申請編號</th><th>Site Code</th><th>SKU</th><th>已收件時間</th></tr></thead><tbody>';
       data.rows.forEach((row) => {
@@ -129,29 +135,16 @@
       html += '</tbody></table><div class="btn-row"><button class="btn" id="btn_dl_record">下載匯入記錄 Excel（按店舖分頁）</button></div>';
       $('import_result').innerHTML = html;
       $('file_label').textContent = '拖曳 .xlsx 檔案到此處，或按一下選擇檔案';
-      pendingFile = null;
+       const importBatchKey = importKey;
+       pendingFile = null;
+       pendingImportKey = null;
+       fileInput.value = '';
       $('btn_dl_record').addEventListener('click', async () => {
         const downloadButton = $('btn_dl_record');
         downloadButton.disabled = true;
         try {
-          const response = await fetch('/api/public/sales/import/record', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ rows: data.rows }),
-          });
-          if (!response.ok) throw new Error('無法下載匯入記錄');
-          const blob = await response.blob();
-          const disposition = response.headers.get('Content-Disposition') || '';
-          const match = disposition.match(/filename="([^"]+)"/);
-          const url = URL.createObjectURL(blob);
-          const anchor = document.createElement('a');
-          anchor.href = url;
-          anchor.download = match ? match[1] : 'Sudden_Sales_Import_Record.xlsx';
-          document.body.appendChild(anchor);
-          anchor.click();
-          anchor.remove();
-          URL.revokeObjectURL(url);
-        } catch (error) {
+          await downloadImportRecord('/api/public/sales/import/record', data.batchId, importBatchKey, 'Sudden_Sales_Import_Record.xlsx');
+          } catch (error) {
           showAlert($('import_result'), 'error', escapeHtml(error.message));
         } finally {
           downloadButton.disabled = false;

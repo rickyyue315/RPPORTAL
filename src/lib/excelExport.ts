@@ -88,6 +88,8 @@ export async function generateTemplateWorkbook(): Promise<Buffer> {
   widths.forEach((w, i) => {
     sheet.getColumn(i + 1).width = w;
   });
+  sheet.getColumn(1).numFmt = '@';
+  sheet.getColumn(2).numFmt = '@';
 
   const buffer = await workbook.xlsx.writeBuffer();
   return Buffer.from(buffer);
@@ -176,6 +178,8 @@ export async function generateUrgentTemplateWorkbook(): Promise<Buffer> {
 
   sheet.getColumn(1).width = 14;
   sheet.getColumn(2).width = 22;
+  sheet.getColumn(1).numFmt = '@';
+  sheet.getColumn(2).numFmt = '@';
   sheet.getColumn(3).width = 12;
   sheet.getColumn(4).width = 45;
   sheet.getColumn(5).width = 30;
@@ -365,6 +369,8 @@ export async function generateSalesTemplateWorkbook(): Promise<Buffer> {
   });
   sheet.getColumn(1).width = 16;
   sheet.getColumn(2).width = 24;
+  sheet.getColumn(1).numFmt = '@';
+  sheet.getColumn(2).numFmt = '@';
   return Buffer.from(await workbook.xlsx.writeBuffer());
 }
 
@@ -460,6 +466,8 @@ export async function generateReturnTemplateWorkbook(): Promise<Buffer> {
     formulae: [`"${RETURN_REASONS.map((reason) => reason.label).join(',')}"`],
   });
   [14, 22, 12, 45, 24, 24].forEach((width, index) => { sheet.getColumn(index + 1).width = width; });
+  sheet.getColumn(1).numFmt = '@';
+  sheet.getColumn(2).numFmt = '@';
   return Buffer.from(await workbook.xlsx.writeBuffer());
 }
 

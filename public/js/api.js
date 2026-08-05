@@ -21,6 +21,37 @@ async function api(url, options = {}) {
   return data;
 }
 
+
+function createIdempotencyKey() {
+  if (globalThis.crypto?.randomUUID) return globalThis.crypto.randomUUID();
+  return `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+}
+
+async function downloadImportRecord(path, batchId, idempotencyKey, fallbackName) {
+  if (!batchId || !idempotencyKey) throw new Error('找不到匯入批次，請重新上載檔案');
+  const res = await fetch(`${path}/${encodeURIComponent(batchId)}`, {
+    headers: { 'Idempotency-Key': idempotencyKey },
+  });
+  if (!res.ok) {
+    let message = '無法下載匯入記錄';
+    try {
+      const data = await res.json();
+      message = data?.error || message;
+    } catch {}
+    throw new Error(message);
+  }
+  const blob = await res.blob();
+  const disposition = res.headers.get('Content-Disposition') || '';
+  const match = disposition.match(/filename="([^"]+)"/);
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement('a');
+  anchor.href = url;
+  anchor.download = match ? match[1] : fallbackName;
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+  URL.revokeObjectURL(url);
+}
 function escapeHtml(str) {
   const div = document.createElement('div');
   div.textContent = str ?? '';

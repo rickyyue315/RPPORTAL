@@ -4,6 +4,7 @@ import { migrate } from './db/migrate.js';
 import { query } from './db/pool.js';
 import { writeAuditEvent } from './lib/audit.js';
 import { seedStoresFromFile, countStores } from './services/stores.js';
+import { cleanupExpiredExportFiles } from './services/exportFiles.js';
 
 async function runIpCleanup(): Promise<void> {
   try {
@@ -35,6 +36,15 @@ async function runIpCleanup(): Promise<void> {
   }
 }
 
+async function runExportFileCleanup(): Promise<void> {
+  try {
+    const cleared = await cleanupExpiredExportFiles();
+    if (cleared > 0) console.log(`[cleanup] expired ${cleared} export files`);
+  } catch (err) {
+    console.error('[cleanup] export file cleanup failed', err);
+  }
+}
+
 async function main(): Promise<void> {
   console.log(`[boot] NDRF Portal (${config.env})`);
 
@@ -56,7 +66,11 @@ async function main(): Promise<void> {
   setInterval(() => {
     void runIpCleanup();
   }, 24 * 3600 * 1000);
+  setInterval(() => {
+    void runExportFileCleanup();
+  }, 24 * 3600 * 1000);
   void runIpCleanup();
+  void runExportFileCleanup();
 
   const app = createApp();
   app.listen(config.port, () => {

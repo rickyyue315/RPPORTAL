@@ -13,10 +13,11 @@ SASA RP Team 非正常補貨（NDRF）申報平台。申請端免登入，管理
 - Urgent Order 申請編號使用 `URGENT-...` 前綴；超出 1000 件的需求改以電郵向相關 Buyer 申請，不在平台處理
 - 申請編號 + Site Code 查詢／修改（匯出前可修改，每次修改新增不可變版本；Urgent Order 查詢不限時，修改限每日 14:30 前；突發性銷售申報查詢及修改均不限時）
 - 同一 Site Code + SKU 於同一日（香港日期）只可申報一次；一般 NDRF、Urgent 與突發性銷售分開計算。被拒時可用查詢／修改更正，翌日可重新申報；管理後台操作不受此限
-- 管理後台：清單篩選（含申報類型）、詳情編輯、版本歷史、模板下載、批量匯入、SAP 9 欄匯出、獨立 Urgent 匯出、獨立突發性銷售匯出、完整審計報表、門店主檔管理
+- 管理後台：清單篩選（含申報類型；日期預設今日）、詳情編輯、版本歷史、模板下載、批量匯入、SAP 9 欄匯出、獨立 Urgent 匯出、獨立突發性銷售匯出、完整審計報表、門店主檔管理；概覽及清單每分鐘自動刷新
 - 管理後台另提供行貨退貨報數清單、詳情編輯及 Buyer 8 欄 Excel 預覽／匯出鎖定；系統不記錄 Buyer 審批結果或退貨 NO.
 - SAP 匯出只包含一般 NDRF，Urgent Order 使用獨立 6 欄匯出（Application No. | Site Code | SKU | QTY | Urgent Reason | Other Reason）；突發性銷售使用獨立 4 欄匯出（Application Date | Requested by | Shop Code | SKU）；匯出成功後鎖定該批申報，申請人不能再修改；匯出失敗不鎖定。管理員於 14:30 後開始匯出處理，期間 Urgent Order 申請人不可修改（查詢不受限）
 - IP 審計保留 12 個月後自動匿名化
+- 公開單筆及 Excel 提交使用 Idempotency-Key；網絡中斷或回應遺失時，店舖重試會取回原申請編號／原匯入批次，不會重複寫入；匯入記錄由伺服器按 batch ID 重新產生，不再信任瀏覽器回傳整批資料
 - 管理端需密碼登入：密碼存於環境變數 `ADMIN_PASSWORD`（直接常數時間比對，不需 bcrypt hash，避免 `$` 字元在部署平台被展開的問題）；登入後發 httpOnly session cookie（伺服器端 `admin_sessions` 資料表，SHA-256 hash 儲存 token），連線失敗達 `LOGIN_LOCK_THRESHOLD` 次即鎖定 `LOGIN_LOCK_MINUTES` 分鐘；另保留 CSRF 防護、速率限制、安全 headers
 
 ## 技術
@@ -81,6 +82,7 @@ npm run smoke     # 端到端 smoke test（真實 HTTP + PGlite）
 | `IP_RETENTION_DAYS` | `365` |
 | `MAX_UPLOAD_MB` | `5` |
 | `MAX_IMPORT_ROWS` | `1000` |
+| `EXPORT_FILE_RETENTION_DAYS` | `90`（正式匯出 Excel 保存期限） |
 | `CORS_ORIGINS` | 留空（同源）或填允許來源，逗號分隔 |
 
 4. 容器啟動時會自動執行 migration，並在門店主檔為空時載入內建 `stores-template.csv`。
@@ -91,8 +93,10 @@ npm run smoke     # 端到端 smoke test（真實 HTTP + PGlite）
 - `stores`：門店主檔（Site Code 唯一）
 - `submissions`：申報主表（`application_no` 唯一、`submission_type` 分 `normal`／`urgent`／`sales`／`return`；`return_qty`、`return_reason`、確認人資料及 `return_window_key` 供行貨退貨報數使用；狀態固定 `received`、匯出鎖定欄位）
 - `submission_versions`：不可變版本歷史（前後資料快照、操作者角色、IP、時間）
-- `import_batches`：Excel 匯入批次
-- `export_batches`：SAP／Urgent 匯出批次（建立即鎖定該批申報）
+- `import_batches`：Excel 匯入批次、伺服器匯入記錄、申報類型及重試鍵
+- `idempotency_key`：單筆及 Excel 重試對應鍵，避免提交成功但 HTTP 回應遺失時重複寫入
+- `export_batches`：SAP／Urgent／銷售／退貨匯出批次（建立即鎖定該批申報）
+- `export_batch_files`：正式匯出 Excel 原檔，保存 90 日後自動清理；批次 metadata 保留
 - `admin_sessions`：管理員登入 session（token 以 SHA-256 hash 儲存，過期自動清理）
 - `admin_login_attempts`：登入嘗試紀錄（失敗鎖定用）
 - `audit_events`：提交／查詢／修改／匯入／匯出／鎖定／登入／IP 清理審計

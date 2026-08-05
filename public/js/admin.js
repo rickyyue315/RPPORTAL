@@ -5,6 +5,26 @@
   let currentDetail = null;
   let pendingStoreFile = null;
   let csrfToken = null;
+  const DATE_FILTER_IDS = ['f_from', 'f_to', 'e_from', 'e_to', 'ue_from', 'ue_to', 'se_from', 'se_to', 're_from', 're_to'];
+
+  function todayInHongKong() {
+    const parts = new Intl.DateTimeFormat('en-GB', {
+      timeZone: 'Asia/Hong_Kong',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    }).formatToParts(new Date());
+    const values = Object.fromEntries(parts.filter((part) => part.type !== 'literal').map((part) => [part.type, part.value]));
+    return `${values.year}-${values.month}-${values.day}`;
+  }
+
+  function setDefaultDateFilters() {
+    const today = todayInHongKong();
+    DATE_FILTER_IDS.forEach((id) => {
+      const field = $(id);
+      if (field && !field.value) field.value = today;
+    });
+  }
 
   async function ensureAuth() {
     try {
@@ -101,8 +121,10 @@
     loadList();
   });
   $('btn_reset').addEventListener('click', () => {
-    ['from', 'to', 'site', 'sku', 'appno'].forEach((id) => ($(`f_${id}`).value = ''));
+    ['site', 'sku', 'appno'].forEach((id) => ($(`f_${id}`).value = ''));
     ['source', 'type', 'exported'].forEach((id) => ($(`f_${id}`).value = ''));
+    $('f_from').value = todayInHongKong();
+    $('f_to').value = todayInHongKong();
     currentPage = 1;
     loadList();
   });
@@ -379,8 +401,11 @@
       URL.revokeObjectURL(url);
       showAlert($('export_info'), 'success', '匯出成功，相關申報已鎖定。');
       loadList();
+      loadSummary();
+      loadExportBatches();
     } catch (err) {
       showAlert($('export_info'), 'error', escapeHtml(err.message));
+      loadExportBatches();
     } finally {
       btn.disabled = false;
       btn.textContent = '匯出並鎖定';
@@ -502,8 +527,11 @@
       URL.revokeObjectURL(url);
       showAlert($('urgent_export_info'), 'success', '匯出成功，相關 Urgent Order 已鎖定。');
       loadList();
+      loadSummary();
+      loadExportBatches();
     } catch (err) {
       showAlert($('urgent_export_info'), 'error', escapeHtml(err.message));
+      loadExportBatches();
     } finally {
       btn.disabled = false;
       btn.textContent = '匯出並鎖定';
@@ -518,8 +546,8 @@
       const token = await getCsrf();
       const response = await fetch('/api/admin/return/export', { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-csrf-token': token }, body: JSON.stringify({ from: $('re_from').value, to: $('re_to').value, site_code: $('re_site').value.trim(), include_exported: $('re_include').value === 'true' }) });
       if (!response.ok) { const data = await response.json().catch(() => ({ error: '匯出失敗' })); throw new Error(data.error || '匯出失敗'); }
-      const blob = await response.blob(); const disposition = response.headers.get('Content-Disposition') || ''; const match = disposition.match(/filename="([^"]+)"/); const url = URL.createObjectURL(blob); const anchor = document.createElement('a'); anchor.href = url; anchor.download = match ? match[1] : 'Return_Goods_Export.xlsx'; document.body.appendChild(anchor); anchor.click(); anchor.remove(); URL.revokeObjectURL(url); showAlert($('return_export_info'), 'success', '匯出成功，相關申報已鎖定。'); loadList(); loadSummary();
-    } catch (error) { showAlert($('return_export_info'), 'error', escapeHtml(error.message)); } finally { btn.disabled = false; btn.textContent = '匯出並鎖定'; }
+       const blob = await response.blob(); const disposition = response.headers.get('Content-Disposition') || ''; const match = disposition.match(/filename="([^"]+)"/); const url = URL.createObjectURL(blob); const anchor = document.createElement('a'); anchor.href = url; anchor.download = match ? match[1] : 'Return_Goods_Export.xlsx'; document.body.appendChild(anchor); anchor.click(); anchor.remove(); URL.revokeObjectURL(url); showAlert($('return_export_info'), 'success', '匯出成功，相關申報已鎖定。'); loadList(); loadSummary(); loadExportBatches();
+     } catch (error) { showAlert($('return_export_info'), 'error', escapeHtml(error.message)); loadExportBatches(); } finally { btn.disabled = false; btn.textContent = '匯出並鎖定'; }
   });
 
   $('btn_audit').addEventListener('click', async (e) => {
@@ -596,6 +624,89 @@
     }
   }
 
+  function formatFileSize(bytes) {
+    if (!Number.isFinite(bytes) || bytes <= 0) return '—';
+    if (bytes < 1024) return `${bytes} B`;
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  }
+
+  function exportTypeLabel(type) {
+    return ({ normal: '一般 NDRF', urgent: 'Urgent Order', sales: '突發性銷售', return: '行貨退貨' })[type] || '一般 NDRF';
+  }
+
+  function renderExportBatches(data) {
+    const tbody = $('export_history_body');
+    if (!data.exports.length) {
+      tbody.innerHTML = '<tr><td colspan="6" class="empty">暫無正式匯出批次</td></tr>';
+      return;
+    }
+    tbody.innerHTML = data.exports.map((batch) => {
+      let status;
+      let action;
+      if (batch.archive_available) {
+        status = `<span class="status-badge received">已保存至 ${escapeHtml(batch.archive_expires_at || '三個月')}</span><div class="hint">${formatFileSize(batch.archive_file_size)}</div>`;
+        action = `<button class="btn ghost btn-download-export" data-id="${escapeHtml(batch.id)}" data-filename="${escapeHtml(batch.filename)}">重新下載</button>`;
+      } else if (batch.archive_expired) {
+        status = '<span class="status-badge locked">已過保存期限</span>';
+        action = '<span class="hint">檔案已清理</span>';
+      } else {
+        status = '<span class="status-badge received">舊批次</span><div class="hint">按申報資料重建</div>';
+        action = `<button class="btn ghost btn-download-export" data-id="${escapeHtml(batch.id)}" data-filename="${escapeHtml(batch.filename)}">重新產生</button>`;
+      }
+      return `<tr><td>${escapeHtml(batch.created_at)}</td><td>${escapeHtml(batch.filename)}</td><td>${exportTypeLabel(batch.submission_type)}</td><td>${escapeHtml(batch.submission_count)}</td><td>${status}</td><td>${action}</td></tr>`;
+    }).join('');
+  }
+
+  async function loadExportBatches() {
+    try {
+      const data = await adminFetch('/api/admin/batches');
+      renderExportBatches(data);
+      const usage = data.archive_usage || { bytes: 0, files: 0, retention_days: 90 };
+      $('export_archive_usage').textContent = `目前保存 ${usage.files} 個正式匯出檔案，共 ${formatFileSize(usage.bytes)}；保存期限 ${usage.retention_days} 日。`;
+    } catch (err) {
+      showAlert($('export_history_info'), 'error', escapeHtml(err.message));
+    }
+  }
+
+  async function downloadExportBatch(button) {
+    const batchId = button.dataset.id;
+    button.disabled = true;
+    button.textContent = '處理中…';
+    try {
+      const token = await getCsrf();
+      const response = await fetch(`/api/admin/export-batches/${encodeURIComponent(batchId)}/download`, {
+        headers: { 'x-csrf-token': token },
+      });
+      if (!response.ok) {
+        const error = await response.json().catch(() => ({ error: '無法下載匯出檔案' }));
+        throw new Error(error.error || '無法下載匯出檔案');
+      }
+      const blob = await response.blob();
+      const disposition = response.headers.get('Content-Disposition') || '';
+      const match = disposition.match(/filename="([^"]+)"/);
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement('a');
+      anchor.href = url;
+      anchor.download = match ? match[1] : button.dataset.filename || 'Export.xlsx';
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      URL.revokeObjectURL(url);
+      showAlert($('export_history_info'), 'success', '匯出檔案已下載。');
+    } catch (err) {
+      showAlert($('export_history_info'), 'error', escapeHtml(err.message));
+    } finally {
+      button.disabled = false;
+      button.textContent = button.dataset.filename ? '重新下載' : '重新產生';
+    }
+  }
+
+  $('export_history_body').addEventListener('click', (event) => {
+    const button = event.target.closest('.btn-download-export');
+    if (button) void downloadExportBatch(button);
+  });
+
   $('btn_store').addEventListener('click', async () => {
     if (!pendingStoreFile) {
       showAlert($('store_result'), 'error', '請先選擇 CSV 檔案');
@@ -661,8 +772,10 @@
       showAlert($('sales_export_info'), 'success', '匯出成功，相關申報已鎖定。');
       loadList();
       loadSummary();
+      loadExportBatches();
     } catch (error) {
       showAlert($('sales_export_info'), 'error', escapeHtml(error.message));
+      loadExportBatches();
     } finally {
       btn.disabled = false;
       btn.textContent = '匯出並鎖定';
@@ -683,10 +796,19 @@
       window.location.replace('/admin/login.html');
       return;
     }
+    setDefaultDateFilters();
     loadList();
     loadSummary();
+    loadExportBatches();
     loadStoreCount();
   });
+  setInterval(() => {
+    if (document.visibilityState === 'visible') {
+      loadSummary();
+      loadList();
+      loadExportBatches();
+    }
+  }, 60000);
   populateNdCodeDatalists();
   api('/api/public/return/schedule').then((data) => {
     $('a_return_reason').innerHTML = '<option value="">請選擇申請退貨原因</option>' + data.reasons.map((r) => `<option value="${escapeHtml(r.code)}">${escapeHtml(r.label)}</option>`).join('');

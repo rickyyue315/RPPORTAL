@@ -250,55 +250,67 @@ adminRouter.get(
     const today = hkTodayForDateColumn();
     const rows = await query<{
       total: string;
+      stores_today: string;
       normal_total: string;
       normal_exported: string;
       normal_today: string;
       normal_today_exported: string;
+      normal_stores_today: string;
       urgent_total: string;
       urgent_exported: string;
       urgent_today: string;
        urgent_today_exported: string;
+       urgent_stores_today: string;
        sales_total: string;
        sales_exported: string;
        sales_today: string;
        sales_today_exported: string;
+       sales_stores_today: string;
     }>(
       `SELECT
          (SELECT count(*)::text FROM submissions) AS total,
+         (SELECT count(DISTINCT site_code)::text FROM submissions WHERE application_date = $1::date) AS stores_today,
          (SELECT count(*)::text FROM submissions WHERE submission_type = 'normal') AS normal_total,
          (SELECT count(*)::text FROM submissions WHERE submission_type = 'normal' AND exported_at IS NOT NULL) AS normal_exported,
          (SELECT count(*)::text FROM submissions WHERE submission_type = 'normal' AND application_date = $1::date) AS normal_today,
          (SELECT count(*)::text FROM submissions WHERE submission_type = 'normal' AND application_date = $1::date AND exported_at IS NOT NULL) AS normal_today_exported,
+          (SELECT count(DISTINCT site_code)::text FROM submissions WHERE submission_type = 'normal' AND application_date = $1::date) AS normal_stores_today,
           (SELECT count(*)::text FROM submissions WHERE submission_type = 'urgent') AS urgent_total,
           (SELECT count(*)::text FROM submissions WHERE submission_type = 'urgent' AND exported_at IS NOT NULL) AS urgent_exported,
           (SELECT count(*)::text FROM submissions WHERE submission_type = 'urgent' AND application_date = $1::date) AS urgent_today,
           (SELECT count(*)::text FROM submissions WHERE submission_type = 'urgent' AND application_date = $1::date AND exported_at IS NOT NULL) AS urgent_today_exported,
+          (SELECT count(DISTINCT site_code)::text FROM submissions WHERE submission_type = 'urgent' AND application_date = $1::date) AS urgent_stores_today,
           (SELECT count(*)::text FROM submissions WHERE submission_type = 'sales') AS sales_total,
           (SELECT count(*)::text FROM submissions WHERE submission_type = 'sales' AND exported_at IS NOT NULL) AS sales_exported,
           (SELECT count(*)::text FROM submissions WHERE submission_type = 'sales' AND application_date = $1::date) AS sales_today,
-          (SELECT count(*)::text FROM submissions WHERE submission_type = 'sales' AND application_date = $1::date AND exported_at IS NOT NULL) AS sales_today_exported`,
+          (SELECT count(*)::text FROM submissions WHERE submission_type = 'sales' AND application_date = $1::date AND exported_at IS NOT NULL) AS sales_today_exported,
+          (SELECT count(DISTINCT site_code)::text FROM submissions WHERE submission_type = 'sales' AND application_date = $1::date) AS sales_stores_today`,
       [today],
     );
     const r = rows.rows[0]!;
     res.json({
       total: Number(r.total),
+      stores_today: Number(r.stores_today),
       normal: {
         total: Number(r.normal_total),
         exported: Number(r.normal_exported),
         today: Number(r.normal_today),
         today_exported: Number(r.normal_today_exported),
+        stores_today: Number(r.normal_stores_today),
       },
       urgent: {
         total: Number(r.urgent_total),
         exported: Number(r.urgent_exported),
         today: Number(r.urgent_today),
         today_exported: Number(r.urgent_today_exported),
+        stores_today: Number(r.urgent_stores_today),
       },
       sales: {
         total: Number(r.sales_total),
         exported: Number(r.sales_exported),
         today: Number(r.sales_today),
         today_exported: Number(r.sales_today_exported),
+        stores_today: Number(r.sales_stores_today),
       },
     });
   }),

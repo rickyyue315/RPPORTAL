@@ -458,27 +458,58 @@ describe('admin API', () => {
     expect(res.status).toBe(200);
     expect(res.body).toMatchObject({
       total: expect.any(Number),
+      stores_today: expect.any(Number),
       normal: {
         total: expect.any(Number),
         exported: expect.any(Number),
         today: expect.any(Number),
         today_exported: expect.any(Number),
+        stores_today: expect.any(Number),
       },
       urgent: {
         total: expect.any(Number),
         exported: expect.any(Number),
         today: expect.any(Number),
         today_exported: expect.any(Number),
+        stores_today: expect.any(Number),
       },
       sales: {
         total: expect.any(Number),
         exported: expect.any(Number),
         today: expect.any(Number),
         today_exported: expect.any(Number),
+        stores_today: expect.any(Number),
       },
     });
     expect(res.body.total).toBeGreaterThanOrEqual(1);
     expect(res.body.total).toBe(res.body.normal.total + res.body.urgent.total + res.body.sales.total);
+  });
+
+  it('counts distinct stores involved today without double-counting a store', async () => {
+    const agent = request.agent(app);
+    await adminLogin(agent);
+    const before = await agent.get('/api/admin/summary');
+    expect(before.status).toBe(200);
+
+    const submit = (site_code: string, sku: string) =>
+      request(app).post('/api/public/submit').send({
+        site_code,
+        sku,
+        rp_type: 'ND',
+        nd_code: 'ND20-SO-Not displayed in small stores',
+      });
+    const one = await submit('HA02', '1004106');
+    const two = await submit('HA02', '1004107');
+    const three = await submit('HA19', '1004108');
+    expect(one.status).toBe(201);
+    expect(two.status).toBe(201);
+    expect(three.status).toBe(201);
+
+    const after = await agent.get('/api/admin/summary');
+    expect(after.status).toBe(200);
+    expect(after.body.stores_today).toBe(before.body.stores_today + 2);
+    expect(after.body.normal.today).toBe(before.body.normal.today + 3);
+    expect(after.body.normal.stores_today).toBe(before.body.normal.stores_today + 2);
   });
 
   it('requires CSRF token for admin mutations', async () => {

@@ -37,6 +37,11 @@
         提交時段：每日 <b>00:00 至 14:30</b>（香港時間），<b>14:30 後暫停收單</b>。
       </div>
       <div id="window_banner" class="alert error" style="display:none; margin-top:0"></div>
+      <div id="cutdown_box" class="alert info" role="timer" style="margin-top:0">
+        <span id="cutdown_label">距離今日截單時間（14:30 香港時間）尚有：</span>
+        <b id="cutdown">--:--:--</b>
+        <div class="hint" style="margin-top:4px">實際收單以伺服器時間為準，此倒數僅供參考。</div>
+      </div>
       <div id="form_error"></div>
       <form id="apply_form">
         <div class="form-grid">

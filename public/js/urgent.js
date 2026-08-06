@@ -171,30 +171,86 @@
     showPreview();
   });
 
+  function setWindowClosed(closed) {
+    const banner = $('window_banner');
+    if (banner) banner.style.display = closed ? '' : 'none';
+    ['btn_submit', 'btn_preview', 'btn_confirm', 'btn_import'].forEach((id) => {
+      const el = $(id);
+      if (el) el.disabled = closed;
+    });
+    const drop = $('file_drop');
+    if (drop) {
+      drop.style.pointerEvents = closed ? 'none' : '';
+      drop.style.opacity = closed ? '0.5' : '';
+    }
+  }
+
   async function loadWindowStatus() {
     try {
       const data = await api('/api/public/urgent/window');
+      setWindowClosed(data && data.open === false);
       if (data && data.open === false) {
         const banner = $('window_banner');
         if (banner) {
-          banner.style.display = '';
           banner.innerHTML = `<b>${escapeHtml(data.message || 'Urgent Order 提交時間已截止')}</b>`;
         }
-        ['btn_submit', 'btn_preview', 'btn_confirm', 'btn_import'].forEach((id) => {
-          const el = $(id);
-          if (el) el.disabled = true;
-        });
-        const drop = $('file_drop');
-        if (drop) {
-          drop.style.pointerEvents = 'none';
-          drop.style.opacity = '0.5';
-        }
       }
+      lastKnownOpen = data ? Boolean(data.open) : lastKnownOpen;
     } catch {
       // Server-side enforcement remains authoritative; ignore client errors here.
     }
   }
   loadWindowStatus();
+
+  const CUTOFF_HOUR = 14;
+  const CUTOFF_MINUTE = 30;
+  function hkParts(date) {
+    const parts = {};
+    new Intl.DateTimeFormat('en-GB', {
+      timeZone: 'Asia/Hong_Kong',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      hourCycle: 'h23',
+    })
+      .formatToParts(date)
+      .forEach((p) => {
+        parts[p.type] = p.value;
+      });
+    return parts;
+  }
+  function cutdownState() {
+    const p = hkParts(new Date());
+    const nowHk = Date.UTC(+p.year, +p.month - 1, +p.day, +p.hour, +p.minute, +p.second);
+    let cutoff = Date.UTC(+p.year, +p.month - 1, +p.day, CUTOFF_HOUR, CUTOFF_MINUTE, 0);
+    const open = nowHk < cutoff;
+    if (!open) cutoff += 86400000;
+    return { remaining: Math.round((cutoff - nowHk) / 1000), open };
+  }
+  function formatCountdown(totalSeconds) {
+    const hh = String(Math.floor(totalSeconds / 3600)).padStart(2, '0');
+    const mm = String(Math.floor((totalSeconds % 3600) / 60)).padStart(2, '0');
+    const ss = String(totalSeconds % 60).padStart(2, '0');
+    return `${hh}:${mm}:${ss}`;
+  }
+  let lastKnownOpen = null;
+  function tickCutdown() {
+    const { remaining, open } = cutdownState();
+    $('cutdown_label').textContent = open
+      ? '距離今日截單時間（14:30 香港時間）尚有：'
+      : '已截止，距離翌日截單時間（14:30 香港時間）尚有：';
+    $('cutdown').textContent = formatCountdown(remaining);
+    $('cutdown_box').className = `alert ${open ? 'info' : 'warning'}`;
+    if (lastKnownOpen !== null && open !== lastKnownOpen) {
+      loadWindowStatus();
+    }
+    lastKnownOpen = open;
+  }
+  tickCutdown();
+  setInterval(tickCutdown, 1000);
 
   const drop = $('file_drop');
   const fileInput = $('file_input');

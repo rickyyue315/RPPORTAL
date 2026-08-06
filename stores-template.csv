@@ -49,9 +49,11 @@ HB98,星光行2,HK,A,A3,M,Candy,T
 HBA2,廣東道2,HK,A,A3,M,Hippo,T
 HBA3,荷里活廣場2,HK,C,C2,S,Hippo,L
 HBA4,中港城2,HK,C,C2,M,Candy,T
-HBA5,旺角中心,HK,C,C1,XS,Violet,T
+HBA5,旺角中心,HK,B,B2,XS,Violet,T
 HBA6,太平洋,HK,B,B2,L,Ivy,T
 HBA7,AIRSIDE,HK,C,C2,XS,Hippo,M
+HBA8,北京道2,HK,B,B1,L,Hippo,T
+HBB1,彌敦中心,HK,B,B1,M,Eva,T
 HC02,荃灣,HK,B,B2,M,Eva,L
 HC05,上水,HK,B,B2,M,Candy,T
 HC13,沙田中心,HK,C,C2,S,Queenie,M
@@ -78,6 +80,7 @@ HC68,新大圍,HK,C,C2,XS,Candy,L
 HC69,元朗廣場2,HK,C,C2,S,Eva,M
 HC70,青衣2,HK,C,C2,S,Candy,L
 HC71,荃錦中心,HK,C,C1,L,Eva,L
+HC72,落馬洲2,HK,C,C2,XS,Candy,T
 HD02,高士德,MO,B,B1,L,Windy,L
 HD03,議事亭,MO,A,A1,XL,Windy,T
 HD09,新威尼斯人,MO,A,A1,L,Windy,T

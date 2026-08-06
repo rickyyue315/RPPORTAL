@@ -573,9 +573,13 @@ hr {
   flex: 0 1 160px;
   min-width: 130px;
 }
+.toolbar .field.field--ndcode {
+  flex: 0 1 240px;
+  min-width: 210px;
+}
 .toolbar .field.field--appno {
-  flex: 0 1 150px;
-  min-width: 120px;
+  flex: 0 1 220px;
+  min-width: 180px;
 }
 .toolbar .field.field--appno input {
   font-size: 13px;
@@ -583,6 +587,9 @@ hr {
 }
 .toolbar .field label {
   margin: 0 0 4px;
+}
+.toolbar .btn-row {
+  margin-left: auto;
 }
 
 .dash-stats {

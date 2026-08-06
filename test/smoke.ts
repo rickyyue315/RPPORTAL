@@ -104,6 +104,27 @@ const server = app.listen(0, async () => {
     const urgentJson = await urgent.json();
     check('urgent web submit', urgent.status === 201 && /^URGENT-/.test(urgentJson.submission.application_no) && urgentJson.submission.qty === 8 && urgentJson.submission.urgent_reason === '1');
 
+    const urgentBatch = await fetch(`${base}/api/public/urgent/submit`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        site_code: 'HA02',
+        items: [
+          { sku: '1005031', qty: 2, urgent_reason: '1' },
+          { sku: '1005032', qty: 3, urgent_reason: '9', urgent_reason_other: 'smoke 加單' },
+          { sku: '1005033', qty: 4, urgent_reason: '2' },
+        ],
+      }),
+    });
+    const urgentBatchJson = await urgentBatch.json();
+    check(
+      'urgent 3-SKU web batch',
+      urgentBatch.status === 201
+        && urgentBatchJson.submissions.length === 3
+        && new Set(urgentBatchJson.submissions.map((s: { application_no: string }) => s.application_no)).size === 3
+        && urgentBatchJson.submissions[1].urgent_reason_other === 'smoke 加單',
+    );
+
     const sales = await fetch(`${base}/api/public/sales/submit`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },

@@ -132,11 +132,22 @@ const LAST_SUBMISSION_KEY = 'ndrf_last_submission';
 
 function rememberSubmission(data, pageKey) {
   try {
+    const submissions = Array.isArray(data.submissions) && data.submissions.length
+      ? data.submissions.map((s) => ({
+          application_no: s.application_no || '',
+          sku: s.sku || '',
+          qty: s.qty ?? '',
+          urgent_reason_label: s.urgent_reason_label || '',
+          urgent_reason_other: s.urgent_reason_other || '',
+          submitted_at: s.submitted_at || '',
+        }))
+      : undefined;
     sessionStorage.setItem(LAST_SUBMISSION_KEY, JSON.stringify({
       page: pageKey,
-      application_no: data.submission?.application_no || '',
-      submitted_at: data.submission?.submitted_at || '',
-      site_code: data.submission?.site_code || '',
+      application_no: data.submission?.application_no || data.submissions?.[0]?.application_no || '',
+      submitted_at: data.submission?.submitted_at || data.submissions?.[0]?.submitted_at || '',
+      site_code: data.submission?.site_code || data.submissions?.[0]?.site_code || '',
+      submissions,
     }));
   } catch {}
 }

@@ -421,6 +421,32 @@ td.cell-appno {
   white-space: nowrap;
 }
 
+.urgent-item {
+  border-top: 1px solid var(--border);
+  padding-top: 16px;
+  margin-top: 18px;
+}
+.urgent-item:first-of-type {
+  border-top: none;
+  margin-top: 0;
+}
+.urgent-item-title {
+  font-weight: 700;
+  color: var(--brand-dark);
+  font-size: 14px;
+}
+.urgent-item .btn-copy {
+  min-height: 30px;
+  padding: 5px 14px;
+  font-size: 13px;
+}
+@media (max-width: 640px) {
+  #res_table th,
+  #res_table td {
+    white-space: nowrap;
+  }
+}
+
 .version-change {
   font-size: 12.5px;
   margin: 3px 0;

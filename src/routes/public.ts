@@ -11,6 +11,8 @@ import { asyncHandler, getClientIp } from '../middleware/helpers.js';
 import { getStore, normalizeSiteCode } from '../services/stores.js';
 import {
   createSubmission,
+  createUrgentBatch,
+  deriveUrgentBatchIdempotencyKeys,
   getSubmissionByApplicationNo,
   listVersions,
   modifySubmission,
@@ -21,6 +23,7 @@ import {
   NotSupportedError,
   DuplicateSubmissionError,
   IdempotencyConflictError,
+  UrgentBatchDuplicateError,
   getSubmissionByIdempotencyKey,
   ReturnSubmissionConflictError,
   ReturnWindowClosedError,
@@ -58,6 +61,7 @@ import {
   RETURN_SHEET,
   URGENT_QTY_MIN,
   URGENT_QTY_MAX,
+  URGENT_WEB_MAX_ITEMS,
   urgentReasonLabel,
 } from '../lib/fields.js';
 import { RF_REMARK_REQUIRED_SITES, SKU_PATTERN, SKU_ERROR, validateBusinessFields, validateUrgentReason } from '../lib/validation.js';
@@ -147,6 +151,50 @@ async function replaySingleSubmission(
     return true;
   }
   res.status(200).json({ submission: serialize(existing), replayed: true });
+  return true;
+}
+
+/** Replays a completed web batch submission so a lost response can recover all application numbers. */
+async function replayUrgentBatch(
+  key: string,
+  fingerprint: string,
+  siteCode: string,
+  itemCount: number,
+  res: Response,
+): Promise<boolean> {
+  const derivedKeys = deriveUrgentBatchIdempotencyKeys(key, itemCount);
+  const existing = await query<SubmissionRow>(
+    'SELECT * FROM submissions WHERE idempotency_key = ANY($1::text[])',
+    [derivedKeys],
+  );
+  if (existing.rows.length === 0) return false;
+  const byKey = new Map(existing.rows.map((row) => [row.idempotency_key, row]));
+  if (existing.rows.length !== derivedKeys.length) {
+    res.status(409).json({ error: '此提交重試鍵已用於不同資料，請重新整理頁面後再提交' });
+    return true;
+  }
+  const ordered: SubmissionRow[] = [];
+  for (const derived of derivedKeys) {
+    const row = byKey.get(derived);
+    if (
+      !row
+      || row.idempotency_fingerprint !== fingerprint
+      || row.submission_type !== 'urgent'
+      || row.site_code !== normalizeSiteCode(siteCode)
+    ) {
+      res.status(409).json({ error: '此提交重試鍵已用於不同資料，請重新整理頁面後再提交' });
+      return true;
+    }
+    ordered.push(row);
+  }
+  const store = await getStore(siteCode);
+  const submissions = ordered.map(serializeUrgentSubmission);
+  res.status(200).json({
+    submissions,
+    submission: submissions.length === 1 ? submissions[0] : undefined,
+    store: { shop: store?.shop ?? '' },
+    replayed: true,
+  });
   return true;
 }
 
@@ -994,12 +1042,155 @@ const urgentSubmitSchema = z.object({
   urgent_reason_other: z.string().max(2000).optional().default(''),
 });
 
-/** POST /api/public/urgent/submit — single Urgent Order web submission. */
+const urgentBatchItemSchema = z.object({
+  sku: z.string().trim().min(1, 'SKU 為必填').regex(SKU_PATTERN, SKU_ERROR),
+  qty: z
+    .number({ invalid_type_error: 'QTY 必須為整數' })
+    .int('QTY 必須為整數')
+    .min(URGENT_QTY_MIN, `QTY 最少為 ${URGENT_QTY_MIN}`)
+    .max(URGENT_QTY_MAX, `QTY 最多為 ${URGENT_QTY_MAX}`),
+  urgent_reason: z.string().trim().max(100).optional().default(''),
+  urgent_reason_other: z.string().max(2000).optional().default(''),
+});
+
+/** POST /api/public/urgent/submit — single or 1-5 SKU Urgent Order web submission. */
 publicRouter.post(
   '/urgent/submit',
   publicSubmitLimiter,
   asyncHandler(async (req: Request, res: Response) => {
-    const parsed = urgentSubmitSchema.safeParse(req.body);
+    const rawBody = req.body;
+    const isBatch = Boolean(
+      rawBody && typeof rawBody === 'object' && !Array.isArray(rawBody) && 'items' in rawBody,
+    );
+    const idempotencyKey = requestIdempotencyKey(req, res);
+    if (idempotencyKey === false) return;
+
+    if (isBatch) {
+      const topLevel = z.object({
+        site_code: z.string().trim().min(1, 'Site Code 為必填').max(20),
+        items: z.array(z.unknown()).min(1, '至少需要填寫 1 個 SKU').max(URGENT_WEB_MAX_ITEMS, `最多填寫 ${URGENT_WEB_MAX_ITEMS} 個 SKU`),
+      }).safeParse(rawBody);
+      const topLevelData = topLevel.success ? topLevel.data : null;
+
+      // Validate every row independently so schema and business errors are
+      // reported together instead of stopping at the first invalid row.
+      const errors: Array<{ item: number | null; field: string; message: string }> = [];
+      if (!topLevel.success) {
+        for (const issue of topLevel.error.issues) {
+          errors.push({ item: null, field: String(issue.path[0] ?? ''), message: issue.message });
+        }
+      }
+      const rawItems = Array.isArray(rawBody.items) ? rawBody.items : [];
+      const parsedItems: z.infer<typeof urgentBatchItemSchema>[] = [];
+      rawItems.forEach((rawItem: unknown, index: number) => {
+        const parsedItem = urgentBatchItemSchema.safeParse(rawItem);
+        if (!parsedItem.success) {
+          for (const issue of parsedItem.error.issues) {
+            errors.push({ item: index + 1, field: String(issue.path[0] ?? ''), message: issue.message });
+          }
+          return;
+        }
+        const reasonErrors = validateUrgentReason(parsedItem.data.urgent_reason, parsedItem.data.urgent_reason_other);
+        if (reasonErrors.length) {
+          for (const err of reasonErrors) {
+            errors.push({
+              item: index + 1,
+              field: err.field === 'urgent_reason' ? 'urgent_reason' : 'urgent_reason_other',
+              message: err.message,
+            });
+          }
+          return;
+        }
+        parsedItems.push(parsedItem.data);
+      });
+
+      if (errors.length || !topLevelData || parsedItems.length !== rawItems.length) {
+        const first = errors[0];
+        res.status(400).json({
+          error: first ? (first.item ? `第 ${first.item} 行的資料有誤` : first.message) : '輸入資料無效',
+          item: first?.item ?? null,
+          field: first?.field ?? null,
+          errors,
+        });
+        return;
+      }
+
+      const data = { site_code: topLevelData.site_code, items: parsedItems };
+      const idempotencyFingerprint = fingerprintPayload(data);
+      if (idempotencyKey && await replayUrgentBatch(idempotencyKey, idempotencyFingerprint, data.site_code, data.items.length, res)) return;
+      if (!isUrgentWindowOpen()) {
+        res.status(400).json({ error: URGENT_WINDOW_CLOSED_ERROR, field: null });
+        return;
+      }
+      const siteCode = normalizeSiteCode(data.site_code);
+      const store = await getStore(siteCode);
+      if (!store) {
+        res.status(400).json({ error: `Site Code「${siteCode}」不存在於門店主檔`, field: 'site_code' });
+        return;
+      }
+
+      const ip = getClientIp(req);
+      let result;
+      try {
+        result = await createUrgentBatch({
+          siteCode,
+          items: data.items.map((item) => ({
+            sku: item.sku,
+            qty: item.qty,
+            urgentReason: item.urgent_reason,
+            urgentReasonOther: item.urgent_reason_other,
+          })),
+          ip,
+          changeSource: 'web_submit',
+          idempotencyKey,
+          idempotencyFingerprint,
+        });
+      } catch (err) {
+        if (err instanceof IdempotencyConflictError) {
+          res.status(409).json({ error: err.message });
+          return;
+        }
+        if (err instanceof UrgentBatchDuplicateError) {
+          res.status(409).json({
+            error: err.message,
+            errors: err.errors.map((e) => ({
+              item: e.item,
+              field: 'sku',
+              message: `SKU「${e.sku}」同日已申報或與本批其他行重複`,
+            })),
+          });
+          return;
+        }
+        throw err;
+      }
+
+      for (const rowResult of result.rows) {
+        await writeAuditEvent({
+          eventType: 'submission_created',
+          actorRole: 'applicant',
+          submissionId: rowResult.row.id,
+          applicationNo: rowResult.row.application_no,
+          ip,
+          metadata: {
+            source: 'web',
+            submission_type: 'urgent',
+            shop: store.shop,
+            batch_size: result.rows.length,
+            batch_index: rowResult.item,
+          },
+        });
+      }
+
+      const submissions = result.rows.map((rowResult) => serializeUrgentSubmission(rowResult.row));
+      res.status(201).json({
+        submissions,
+        submission: submissions.length === 1 ? submissions[0] : undefined,
+        store: { shop: store.shop },
+      });
+      return;
+    }
+
+    const parsed = urgentSubmitSchema.safeParse(rawBody);
     if (!parsed.success) {
       const first = parsed.error.issues[0];
       res.status(400).json({
@@ -1008,9 +1199,7 @@ publicRouter.post(
       });
       return;
     }
-    const data = parsed.data;
-    const idempotencyKey = requestIdempotencyKey(req, res);
-    if (idempotencyKey === false) return;
+    const data = parsed.data as z.infer<typeof urgentSubmitSchema>;
     const idempotencyFingerprint = fingerprintPayload(data);
     if (await replaySingleSubmission(idempotencyKey, idempotencyFingerprint, 'urgent', serializeUrgentSubmission, res)) return;
     if (!isUrgentWindowOpen()) {

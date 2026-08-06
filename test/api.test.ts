@@ -755,6 +755,161 @@ describe('urgent public API', () => {
     expect(res.body.submission.locked).toBe(false);
   });
 
+  it('accepts a 3-SKU web batch and returns three independent application numbers', async () => {
+    const res = await request(app).post('/api/public/urgent/submit').send({
+      site_code: 'HA06',
+      items: [
+        { sku: '1006211', qty: 2, urgent_reason: '1' },
+        { sku: '1006212', qty: 3, urgent_reason: '9', urgent_reason_other: '加單原因' },
+        { sku: '1006213', qty: 4, urgent_reason: '2' },
+      ],
+    });
+    expect(res.status).toBe(201);
+    expect(res.body.submissions).toHaveLength(3);
+    expect(res.body.submission).toBeUndefined();
+    const nos = res.body.submissions.map((s: { application_no: string; sku: string }) => s.application_no);
+    expect(new Set(nos).size).toBe(3);
+    expect(res.body.submissions[0].sku).toBe('1006211');
+    expect(res.body.submissions[1].qty).toBe(3);
+    expect(res.body.submissions[1].urgent_reason).toBe('9');
+    expect(res.body.submissions[1].urgent_reason_other).toBe('加單原因');
+    expect(res.body.submissions[2].urgent_reason).toBe('2');
+    expect(res.body.store.shop).toBe('北角');
+    const stored = await db.query<{ count: string }>(
+      'SELECT count(*)::text AS count FROM submissions WHERE submission_type = $1 AND sku = ANY($2::text[])',
+      ['urgent', ['1006211', '1006212', '1006213']],
+    );
+    expect(Number(stored.rows[0]?.count)).toBe(3);
+  });
+
+  it('accepts a single-item batch and also exposes the submission alias', async () => {
+    const res = await request(app).post('/api/public/urgent/submit').send({
+      site_code: 'HA02',
+      items: [{ sku: '1006214', qty: 7, urgent_reason: '3' }],
+    });
+    expect(res.status).toBe(201);
+    expect(res.body.submissions).toHaveLength(1);
+    expect(res.body.submission.application_no).toBe(res.body.submissions[0].application_no);
+    expect(res.body.submission.qty).toBe(7);
+  });
+
+  it('rejects a web batch with a mixed row of invalid fields and reports every row', async () => {
+    const res = await request(app).post('/api/public/urgent/submit').send({
+      site_code: 'HA02',
+      items: [
+        { sku: '1006215', qty: 5, urgent_reason: '1' },
+        { sku: '1006216', qty: 1001, urgent_reason: '9' },
+        { sku: '1006217', qty: 5, urgent_reason: '2', urgent_reason_other: '不應填寫' },
+        { sku: 'bad-sku', qty: 5, urgent_reason: '1' },
+      ],
+    });
+    expect(res.status).toBe(400);
+    expect(res.body.errors.some((e: { item: number; field: string }) => e.item === 2 && e.field === 'qty')).toBe(true);
+    expect(res.body.errors.some((e: { item: number; field: string }) => e.item === 3 && e.field === 'urgent_reason_other')).toBe(true);
+    expect(res.body.errors.some((e: { item: number; field: string }) => e.item === 4 && e.field === 'sku')).toBe(true);
+    const stored = await db.query<{ count: string }>(
+      'SELECT count(*)::text AS count FROM submissions WHERE sku = ANY($1::text[])',
+      [['1006215', '1006216', '1006217', 'bad-sku']],
+    );
+    expect(Number(stored.rows[0]?.count)).toBe(0);
+  });
+
+  it('rejects a web batch with duplicate SKUs inside the same batch', async () => {
+    const res = await request(app).post('/api/public/urgent/submit').send({
+      site_code: 'HA02',
+      items: [
+        { sku: '1006218', qty: 5, urgent_reason: '1' },
+        { sku: '1006218', qty: 6, urgent_reason: '2' },
+      ],
+    });
+    expect(res.status).toBe(409);
+    expect(res.body.errors.some((e: { item: number; field: string }) => e.item === 2 && e.field === 'sku')).toBe(true);
+  });
+
+  it('rejects a web batch when an SKU was already submitted today', async () => {
+    await request(app).post('/api/public/urgent/submit').send({
+      site_code: 'HA02',
+      items: [{ sku: '1006219', qty: 5, urgent_reason: '1' }],
+    });
+    const res = await request(app).post('/api/public/urgent/submit').send({
+      site_code: 'HA02',
+      items: [
+        { sku: '1006220', qty: 5, urgent_reason: '1' },
+        { sku: '1006219', qty: 6, urgent_reason: '2' },
+      ],
+    });
+    expect(res.status).toBe(409);
+    expect(res.body.errors.some((e: { item: number; field: string }) => e.item === 2 && e.field === 'sku')).toBe(true);
+    const stored = await db.query<{ count: string }>(
+      'SELECT count(*)::text AS count FROM submissions WHERE sku = ANY($1::text[])',
+      [['1006220', '1006219']],
+    );
+    expect(Number(stored.rows[0]?.count)).toBe(1);
+  });
+
+  it('rejects a web batch with an empty or oversized items array', async () => {
+    const empty = await request(app).post('/api/public/urgent/submit').send({
+      site_code: 'HA02',
+      items: [],
+    });
+    expect(empty.status).toBe(400);
+
+    const oversized = await request(app).post('/api/public/urgent/submit').send({
+      site_code: 'HA02',
+      items: Array.from({ length: 6 }, (_, i) => ({ sku: `100622${i}`, qty: 5, urgent_reason: '1' })),
+    });
+    expect(oversized.status).toBe(400);
+  });
+
+  it('does not fall back to the legacy parser when items is invalid', async () => {
+    const res = await request(app).post('/api/public/urgent/submit').send({
+      site_code: 'HA02',
+      items: 'not-an-array',
+    });
+    expect(res.status).toBe(400);
+    expect(res.body.errors).toBeDefined();
+  });
+
+  it('replays a completed web batch after a lost response', async () => {
+    const key = 'batch-retry-test-key';
+    const payload = {
+      site_code: 'HA06',
+      items: [
+        { sku: '1006231', qty: 2, urgent_reason: '1' },
+        { sku: '1006232', qty: 3, urgent_reason: '1' },
+        { sku: '1006233', qty: 4, urgent_reason: '1' },
+      ],
+    };
+    const first = await request(app).post('/api/public/urgent/submit').set('Idempotency-Key', key).send(payload);
+    expect(first.status).toBe(201);
+    const nos = first.body.submissions.map((s: { application_no: string }) => s.application_no);
+
+    const retry = await request(app).post('/api/public/urgent/submit').set('Idempotency-Key', key).send(payload);
+    expect(retry.status).toBe(200);
+    expect(retry.body.replayed).toBe(true);
+    expect(retry.body.submissions.map((s: { application_no: string }) => s.application_no)).toEqual(nos);
+
+    const stored = await db.query<{ count: string }>(
+      'SELECT count(*)::text AS count FROM submissions WHERE idempotency_key = ANY($1::text[])',
+      [['batch-retry-test-key:1', 'batch-retry-test-key:2', 'batch-retry-test-key:3']],
+    );
+    expect(Number(stored.rows[0]?.count)).toBe(3);
+  });
+
+  it('conflicts when a batch retry key is reused with different data', async () => {
+    const key = 'batch-conflict-test-key';
+    const payload = {
+      site_code: 'HA02',
+      items: [{ sku: '1006241', qty: 2, urgent_reason: '1' }],
+    };
+    await request(app).post('/api/public/urgent/submit').set('Idempotency-Key', key).send(payload);
+    const conflict = await request(app).post('/api/public/urgent/submit').set('Idempotency-Key', key).send({
+      site_code: 'HA02',
+      items: [{ sku: '1006242', qty: 9, urgent_reason: '2' }],
+    });
+    expect(conflict.status).toBe(409);
+  });
+
   it('accepts option 9 with other reason', async () => {
     const res = await request(app).post('/api/public/urgent/submit').send({
       site_code: 'HA02',

@@ -8,6 +8,9 @@ import { setPoolForTesting } from '../src/db/pool.js';
 import { replaceStores, getStore, parseStoresCsv } from '../src/services/stores.js';
 import {
   createSubmission,
+  createUrgentBatch,
+  deriveUrgentBatchIdempotencyKeys,
+  UrgentBatchDuplicateError,
   getSubmissionByApplicationNo,
   modifySubmission,
   adminUpdateSubmission,
@@ -236,5 +239,91 @@ describe('submissions (integration)', () => {
     const snapshot = version.rows[0]?.data_after as { site_code: string; sku: string };
     expect(snapshot.site_code).toBe('HA02');
     expect(snapshot.sku).toBe('1005014');
+  });
+});
+
+describe('urgent web batch (integration)', () => {
+  const batch = (skus: string[], ip = '203.0.113.20', key?: string, fingerprint?: string) =>
+    createUrgentBatch({
+      siteCode: 'HA02',
+      items: skus.map((sku, i) => ({
+        sku,
+        qty: i + 1,
+        urgentReason: '1',
+        urgentReasonOther: '',
+      })),
+      ip,
+      changeSource: 'web_submit',
+      idempotencyKey: key,
+      idempotencyFingerprint: fingerprint,
+    });
+
+  it('creates independent submissions with version snapshots in input order', async () => {
+    const result = await batch(['1006301', '1006302', '1006303']);
+    expect(result.replayed).toBe(false);
+    expect(result.rows).toHaveLength(3);
+    expect(result.rows[0]!.item).toBe(1);
+    expect(result.rows[2]!.item).toBe(3);
+    const nos = result.rows.map((r) => r.row.application_no);
+    expect(new Set(nos).size).toBe(3);
+    expect(nos.every((no) => no.startsWith('URGENT-'))).toBe(true);
+    expect(result.rows[0]!.row.sku).toBe('1006301');
+    expect(result.rows[1]!.row.qty).toBe(2);
+
+    const versions = await db.query(
+      'SELECT count(*)::int AS cnt FROM submission_versions WHERE submission_id = ANY($1::uuid[])',
+      [result.rows.map((r) => r.row.id)],
+    );
+    expect(versions.rows[0]?.cnt).toBe(3);
+    const snapshot = await db.query<{ data_after: { sku: string; qty: number } }>(
+      'SELECT data_after FROM submission_versions WHERE submission_id = $1',
+      [result.rows[0]!.row.id],
+    );
+    expect(snapshot.rows[0]!.data_after.sku).toBe('1006301');
+    expect(snapshot.rows[0]!.data_after.qty).toBe(1);
+  });
+
+  it('rejects a batch with a duplicate SKU inside it and writes nothing', async () => {
+    const before = await db.query('SELECT count(*)::int AS cnt FROM submissions');
+    await expect(batch(['1006304', '1006304'])).rejects.toBeInstanceOf(UrgentBatchDuplicateError);
+    const after = await db.query('SELECT count(*)::int AS cnt FROM submissions');
+    expect(after.rows[0]?.cnt).toBe(before.rows[0]?.cnt);
+  });
+
+  it('rejects a batch when an SKU already exists for the same day and writes nothing', async () => {
+    await batch(['1006305']);
+    const before = await db.query('SELECT count(*)::int AS cnt FROM submissions');
+    await expect(batch(['1006306', '1006305'])).rejects.toBeInstanceOf(UrgentBatchDuplicateError);
+    const after = await db.query('SELECT count(*)::int AS cnt FROM submissions');
+    expect(after.rows[0]?.cnt).toBe(before.rows[0]?.cnt);
+  });
+
+  it('replays an idempotent batch with the same key and fingerprint', async () => {
+    const key = 'batch-ip-key';
+    const fingerprint = 'fp-batch-a';
+    const first = await batch(['1006307', '1006308', '1006309'], '203.0.113.21', key, fingerprint);
+    expect(first.replayed).toBe(false);
+    const firstNos = first.rows.map((r) => r.row.application_no);
+
+    const replay = await batch(['1006307', '1006308', '1006309'], '203.0.113.21', key, fingerprint);
+    expect(replay.replayed).toBe(true);
+    expect(replay.rows.map((r) => r.row.application_no)).toEqual(firstNos);
+
+    const stored = await db.query(
+      'SELECT count(*)::int AS cnt FROM submissions WHERE idempotency_key = ANY($1::text[])',
+      [deriveUrgentBatchIdempotencyKeys(key, 3)],
+    );
+    expect(stored.rows[0]?.cnt).toBe(3);
+    const versions = await db.query(
+      'SELECT count(*)::int AS cnt FROM submission_versions WHERE submission_id = ANY($1::uuid[])',
+      [first.rows.map((r) => r.row.id)],
+    );
+    expect(versions.rows[0]?.cnt).toBe(3);
+  });
+
+  it('conflicts when the same batch key is used with a different fingerprint', async () => {
+    const key = 'batch-ip-conflict';
+    await batch(['1006311'], '203.0.113.22', key, 'fp-a');
+    await expect(batch(['1006311'], '203.0.113.22', key, 'fp-b')).rejects.toThrowError('重試鍵');
   });
 });

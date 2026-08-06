@@ -2,6 +2,7 @@
   const $ = (id) => document.getElementById(id);
   const QTY_MIN = 1;
   const QTY_MAX = 1000;
+  const MAX_ITEMS = 5;
   const URGENT_OTHER_CODE = '9';
   const URGENT_REASONS = [
     { code: '1', label: '1. 客人訂購 (RP Team定期隨機抽查核實)' },
@@ -24,23 +25,93 @@
   let pendingImportKey = null;
   let submitKey = null;
 
-  function readForm() {
-    return {
-      site_code: $('site_code').value.trim(),
-      sku: $('sku').value.trim(),
-      qty: $('qty').value === '' ? '' : Number($('qty').value),
-      urgent_reason: $('urgent_reason').value,
-      urgent_reason_other: $('urgent_reason_other').value.trim(),
-    };
+  function collectRowValues() {
+    const values = [];
+    for (let n = 1; n <= MAX_ITEMS; n++) {
+      const skuEl = $(`item_${n}_sku`);
+      if (!skuEl) {
+        values.push({ sku: '', qty: '', reason: '', other: '' });
+        continue;
+      }
+      values.push({
+        sku: skuEl.value,
+        qty: $(`item_${n}_qty`).value,
+        reason: $(`item_${n}_reason`).value,
+        other: $(`item_${n}_other`).value,
+      });
+    }
+    return values;
   }
 
-  const LABELS = {
-    site_code: 'Site Code',
-    sku: 'SKU',
-    qty: 'QTY',
-    urgent_reason: 'Urgent Reason',
-    urgent_reason_other: 'Other Reason',
-  };
+  function renderItems() {
+    const count = Math.min(MAX_ITEMS, Math.max(1, Number($('item_count').value) || 1));
+    const values = collectRowValues();
+    const container = $('items_container');
+    let html = '';
+    for (let n = 1; n <= count; n++) {
+      html += `<div class="form-grid urgent-item" data-item="${n}">
+        <div class="full urgent-item-title">SKU ${n}</div>
+        <div>
+          <label for="item_${n}_sku">SKU <span class="optional">（必填）</span></label>
+          <input type="text" id="item_${n}_sku" class="item-sku" autocomplete="off">
+          <div class="hint">7 位或 12 位數字，只可一個 SKU。</div>
+        </div>
+        <div>
+          <label for="item_${n}_qty">QTY <span class="optional">（必填，1 至 1000）</span></label>
+          <input type="number" id="item_${n}_qty" min="1" max="1000" step="1" inputmode="numeric" autocomplete="off" class="item-qty">
+        </div>
+        <div class="full">
+          <label for="item_${n}_reason">Urgent Reason <span class="optional">（必填）</span></label>
+          <select id="item_${n}_reason" class="item-reason">
+            <option value="">請選擇申請原因</option>
+            ${URGENT_REASONS.map((r) => `<option value="${r.code}">${escapeHtml(r.label)}</option>`).join('')}
+          </select>
+        </div>
+        <div class="full" id="item_${n}_other_wrap" style="display:none">
+          <label for="item_${n}_other">Other Reason <span class="optional">（選擇「9. 其他」時必填）</span></label>
+          <input type="text" id="item_${n}_other" class="item-other" autocomplete="off" maxlength="2000">
+        </div>
+      </div>`;
+    }
+    container.innerHTML = html;
+    for (let n = 1; n <= count; n++) {
+      const v = values[n - 1] || {};
+      if (v.sku) $(`item_${n}_sku`).value = v.sku;
+      if (v.qty) $(`item_${n}_qty`).value = v.qty;
+      if (v.reason) $(`item_${n}_reason`).value = v.reason;
+      if (v.other) $(`item_${n}_other`).value = v.other;
+    }
+    $('count_hint').textContent = `需要填寫 ${count} 個 SKU`;
+    syncItemReasonWraps();
+  }
+
+  function syncItemReasonWraps() {
+    const count = Math.min(MAX_ITEMS, Math.max(1, Number($('item_count').value) || 1));
+    for (let n = 1; n <= count; n++) {
+      const select = $(`item_${n}_reason`);
+      const wrap = $(`item_${n}_other_wrap`);
+      if (!select || !wrap) continue;
+      const show = select.value === URGENT_OTHER_CODE;
+      wrap.style.display = show ? '' : 'none';
+      if (!show) {
+        const other = $(`item_${n}_other`);
+        if (other) other.value = '';
+      }
+    }
+  }
+
+  $('item_count').addEventListener('change', renderItems);
+  $('items_container').addEventListener('change', (e) => {
+    const target = e.target;
+    if (target && target.classList && target.classList.contains('item-reason')) {
+      const itemEl = target.closest('.urgent-item');
+      const n = itemEl ? Number(itemEl.dataset.item) : 0;
+      const wrap = $(`item_${n}_other_wrap`);
+      const show = target.value === URGENT_OTHER_CODE;
+      wrap.style.display = show ? '' : 'none';
+      if (!show) $(`item_${n}_other`).value = '';
+    }
+  });
 
   let siteTimer = null;
   $('site_code').addEventListener('input', () => {
@@ -66,47 +137,121 @@
     }
   }
 
-  function validateForm() {
-    const d = readForm();
+  function readForm() {
+    const count = Math.min(MAX_ITEMS, Math.max(1, Number($('item_count').value) || 1));
+    const items = [];
+    for (let n = 1; n <= count; n++) {
+      items.push({
+        sku: $(`item_${n}_sku`).value.trim(),
+        qty: $(`item_${n}_qty`).value === '' ? '' : Number($(`item_${n}_qty`).value),
+        urgent_reason: $(`item_${n}_reason`).value,
+        urgent_reason_other: $(`item_${n}_other`).value.trim(),
+      });
+    }
+    return { site_code: $('site_code').value.trim(), items };
+  }
+
+  const SKU_RE = /^(?:\d{7}|\d{12})$/;
+
+  function validateForm(d) {
     const errs = [];
-    if (!d.site_code) errs.push('Site Code 為必填');
-    if (!d.sku) errs.push('SKU 為必填');
-    else if (!/^(?:\d{7}|\d{12})$/.test(d.sku)) errs.push('SKU 只容許 7 位或 12 位數字，每個申請只能輸入一個 SKU');
-    if (d.qty === '' || !Number.isInteger(d.qty)) {
-      errs.push(`QTY 必須為 ${QTY_MIN} 至 ${QTY_MAX} 的整數`);
-    } else if (d.qty < QTY_MIN || d.qty > QTY_MAX) {
-      errs.push(`QTY 必須為 ${QTY_MIN} 至 ${QTY_MAX} 的整數`);
-    }
-    if (!d.urgent_reason) {
-      errs.push('Urgent Reason 為必填');
-    } else if (d.urgent_reason === URGENT_OTHER_CODE) {
-      if (!d.urgent_reason_other) {
-        errs.push('選擇「9. 其他」時必須填寫 Other Reason');
+    if (!d.site_code) errs.push({ item: 0, field: 'site_code', message: 'Site Code 為必填' });
+    const seen = new Map();
+    d.items.forEach((item, i) => {
+      const n = i + 1;
+      if (!item.sku) {
+        errs.push({ item: n, field: 'sku', message: 'SKU 為必填' });
+      } else if (!SKU_RE.test(item.sku)) {
+        errs.push({ item: n, field: 'sku', message: 'SKU 只容許 7 位或 12 位數字，每個 SKU 只能輸入一個' });
+      } else if (seen.has(item.sku)) {
+        errs.push({ item: n, field: 'sku', message: `SKU「${item.sku}」與第 ${seen.get(item.sku)} 行重複` });
+      } else {
+        seen.set(item.sku, n);
       }
-    } else if (d.urgent_reason_other) {
-      errs.push('僅選擇「9. 其他」時才可填寫 Other Reason');
-    }
+      if (item.qty === '' || !Number.isInteger(item.qty)) {
+        errs.push({ item: n, field: 'qty', message: `QTY 必須為 ${QTY_MIN} 至 ${QTY_MAX} 的整數` });
+      } else if (item.qty < QTY_MIN || item.qty > QTY_MAX) {
+        errs.push({ item: n, field: 'qty', message: `QTY 必須為 ${QTY_MIN} 至 ${QTY_MAX} 的整數` });
+      }
+      if (!item.urgent_reason) {
+        errs.push({ item: n, field: 'urgent_reason', message: 'Urgent Reason 為必填' });
+      } else if (item.urgent_reason === URGENT_OTHER_CODE) {
+        if (!item.urgent_reason_other) {
+          errs.push({ item: n, field: 'urgent_reason_other', message: '選擇「9. 其他」時必須填寫 Other Reason' });
+        }
+      } else if (item.urgent_reason_other) {
+        errs.push({ item: n, field: 'urgent_reason_other', message: '僅選擇「9. 其他」時才可填寫 Other Reason' });
+      }
+    });
     return errs;
+  }
+
+  function renderErrors(errs, container) {
+    if (!errs.length) {
+      showAlert(container, '', '');
+      return;
+    }
+    showAlert(container, 'error', errs.map((e) => `<div>${e.item ? `第 ${e.item} 行：` : ''}${escapeHtml(e.message)}</div>`).join(''));
+  }
+
+  function applyFieldErrors(errs) {
+    document.querySelectorAll('.urgent-item input, .urgent-item select').forEach((el) => {
+      el.style.borderColor = '';
+    });
+    errs.forEach((e) => {
+      if (!e.item) return;
+      const suffix = e.field === 'sku' ? 'sku' : e.field === 'qty' ? 'qty' : e.field === 'urgent_reason_other' ? 'other' : 'reason';
+      const el = $(`item_${e.item}_${suffix}`);
+      if (el) el.style.borderColor = 'var(--danger)';
+    });
   }
 
   function showPreview() {
     const d = readForm();
-    const errs = validateForm();
-    showAlert($('form_error'), 'error', errs.map((e) => `<div>${e}</div>`).join(''));
+    const errs = validateForm(d);
+    renderErrors(errs, $('form_error'));
+    applyFieldErrors(errs);
     if (errs.length) return;
     previewData = d;
     submitKey = createIdempotencyKey();
-    const rows = Object.keys(LABELS)
-      .map((k) => {
-        const v = d[k];
-        let val = v === '' || v === null || v === undefined ? '—' : String(v);
-        if (k === 'site_code' && storeCache) val += `（${escapeHtml(storeCache.shop)}）`;
-        if (k === 'urgent_reason') val = reasonLabel(d[k]);
-        return `<dt>${LABELS[k]}</dt><dd>${escapeHtml(val)}</dd>`;
-      })
-      .join('');
-    $('preview_body').innerHTML = rows;
+    const tbody = $('preview_table').querySelector('tbody');
+    tbody.innerHTML = '';
+    d.items.forEach((item, i) => {
+      const tr = document.createElement('tr');
+      tr.innerHTML = `<td>${i + 1}</td><td>${escapeHtml(item.sku)}</td><td>${item.qty}</td><td>${escapeHtml(reasonLabel(item.urgent_reason))}</td><td>${item.urgent_reason === URGENT_OTHER_CODE ? escapeHtml(item.urgent_reason_other) : '—'}</td>`;
+      tbody.appendChild(tr);
+    });
     $('preview_box').style.display = '';
+  }
+
+  function renderResultTable(rows) {
+    const tbody = $('res_table').querySelector('tbody');
+    tbody.innerHTML = '';
+    rows.forEach((s, i) => {
+      const appNo = s.application_no || '';
+      const reason = s.urgent_reason_label || '';
+      const other = s.urgent_reason_other || '';
+      const tr = document.createElement('tr');
+      tr.innerHTML = `<td>${i + 1}</td><td>${escapeHtml(s.sku || '')}</td><td>${escapeHtml(s.qty ?? '')}</td><td>${escapeHtml(reason)}${other ? `（${escapeHtml(other)}）` : ''}</td><td class="cell-appno">${escapeHtml(appNo)}</td><td><button type="button" class="btn ghost btn-copy" data-copy-appno="${escapeHtml(appNo)}">複製</button></td>`;
+      tbody.appendChild(tr);
+    });
+    tbody.querySelectorAll('[data-copy-appno]').forEach((btn) => {
+      btn.addEventListener('click', () => copyText(btn.dataset.copyAppno, btn));
+    });
+  }
+
+  function showSuccess(data) {
+    rememberSubmission(data, 'urgent');
+    const submissions = (data.submissions && data.submissions.length)
+      ? data.submissions
+      : (data.submission ? [data.submission] : []);
+    $('form_error').innerHTML = '';
+    $('apply_form').style.display = 'none';
+    $('preview_box').style.display = 'none';
+    $('res_time').textContent = submissions[0]?.submitted_at || '';
+    renderResultTable(submissions);
+    $('result_card').style.display = '';
+    $('result_card').scrollIntoView({ behavior: 'smooth' });
   }
 
   async function submit() {
@@ -120,16 +265,12 @@
         headers: { 'Idempotency-Key': submitKey },
         body: JSON.stringify(previewData),
       });
-      rememberSubmission(data, 'urgent');
-      $('res_no').textContent = data.submission.application_no;
-      $('res_time').textContent = data.submission.submitted_at;
-      $('form_error').innerHTML = '';
-      $('apply_form').style.display = 'none';
-      $('preview_box').style.display = 'none';
-      $('result_card').style.display = '';
-      $('result_card').scrollIntoView({ behavior: 'smooth' });
+      showSuccess(data);
     } catch (err) {
-      showAlert($('confirm_error'), 'error', escapeHtml(err.message));
+      const msg = err.data?.errors?.length
+        ? err.data.errors.map((e) => `<div>第 ${e.item} 行：${escapeHtml(e.message)}</div>`).join('')
+        : escapeHtml(err.message);
+      showAlert($('confirm_error'), 'error', msg);
     } finally {
       btn.disabled = false;
       btn.textContent = '確認提交';
@@ -138,7 +279,7 @@
 
   function resetForm() {
     $('apply_form').reset();
-    $('urgent_reason_other_wrap').style.display = 'none';
+    renderItems();
     $('store_info').textContent = '—';
     storeCache = null;
     previewData = null;
@@ -150,22 +291,12 @@
     showAlert($('form_error'), '', '');
   }
 
-  $('urgent_reason').addEventListener('change', () => {
-    const wrap = $('urgent_reason_other_wrap');
-    const showOther = $('urgent_reason').value === URGENT_OTHER_CODE;
-    wrap.style.display = showOther ? '' : 'none';
-    if (!showOther) $('urgent_reason_other').value = '';
-  });
-
   $('btn_preview').addEventListener('click', showPreview);
   $('btn_confirm').addEventListener('click', submit);
   $('btn_cancel_preview').addEventListener('click', () => {
     $('preview_box').style.display = 'none';
   });
   $('btn_again').addEventListener('click', resetForm);
-  $('btn_copy_no').addEventListener('click', () => {
-    copyText($('res_no').textContent.trim(), $('btn_copy_no'));
-  });
   $('apply_form').addEventListener('submit', (e) => {
     e.preventDefault();
     showPreview();
@@ -356,5 +487,25 @@
     }
   });
 
-  showLastSubmissionResult('urgent');
+  function restoreLastUrgentResult() {
+    const saved = restoreLastSubmission();
+    if (!saved || saved.page !== 'urgent') return;
+    const resultCard = $('result_card');
+    if (!resultCard) return;
+    const rows = (saved.submissions && saved.submissions.length)
+      ? saved.submissions
+      : (saved.application_no ? [{ application_no: saved.application_no, sku: '', qty: '', urgent_reason_label: '', urgent_reason_other: '' }] : []);
+    if (!rows.length) return;
+    $('apply_form').style.display = 'none';
+    $('preview_box').style.display = 'none';
+    $('res_time').textContent = saved.submitted_at || '';
+    renderResultTable(rows);
+    resultCard.style.display = '';
+    setTimeout(() => {
+      if (resultCard.offsetParent) resultCard.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }, 100);
+  }
+
+  renderItems();
+  restoreLastUrgentResult();
 })();

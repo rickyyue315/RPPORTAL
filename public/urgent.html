@@ -28,8 +28,8 @@
 
   <main class="container">
     <div class="card">
-      <h2>Urgent Order 單筆申報</h2>
-      <p class="hint">只有 <b>Site Code</b>、<b>SKU</b>、<b>QTY</b> 及 <b>Urgent Reason</b> 為必填。QTY 必須為 1 至 1000 的整數；選擇「9. 其他」時必須填寫 Other Reason。</p>
+      <h2>Urgent Order 網頁申報</h2>
+      <p class="hint">可一次填寫 <b>1 至 5 個 SKU</b>。每個 SKU 都必須填寫 <b>SKU</b>、<b>QTY</b>（1 至 1000 的整數）及 <b>Urgent Reason</b>；選擇「9. 其他」時必須填寫 Other Reason。</p>
       <div class="alert warning" style="margin-top:0">
         所有 Urgent Order 申請都預設為 <b>T+1</b>，非緊急 Order 請使用 SAP 打 PR 單。<br>
         每筆 Urgent Order 數量上限為 <b>1000 件</b>。超出 1000 件的需求，請改以電郵向相關 Buyer 申請，不在此平台處理。<br>
@@ -48,41 +48,29 @@
           <div>
             <label for="site_code">Site Code <span class="optional">（必填）</span></label>
             <input type="text" id="site_code" autocomplete="off" placeholder="例如 HA02">
-            <div class="hint">輸入後自動驗證門店。</div>
+            <div class="hint">只填一次，套用到本批次所有 SKU。</div>
           </div>
           <div>
             <label>門店資訊</label>
             <div id="store_info" class="hint" style="padding-top:9px">—</div>
           </div>
           <div>
-            <label for="sku">SKU <span class="optional">（必填）</span></label>
-            <input type="text" id="sku" autocomplete="off">
-            <div class="hint">只可輸入一個 SKU（7 位或 12 位數字）。</div>
+            <label for="item_count">SKU 數量 <span class="optional">（1 至 5）</span></label>
+            <select id="item_count">
+              <option value="1">1 個 SKU</option>
+              <option value="2">2 個 SKU</option>
+              <option value="3">3 個 SKU</option>
+              <option value="4">4 個 SKU</option>
+              <option value="5">5 個 SKU</option>
+            </select>
+            <div class="hint">切換數量不會清除已填內容。</div>
           </div>
           <div>
-            <label for="qty">QTY <span class="optional">（必填，1 至 1000）</span></label>
-            <input type="number" id="qty" min="1" max="1000" step="1" inputmode="numeric" autocomplete="off">
-          </div>
-          <div class="full">
-            <label for="urgent_reason">Urgent Reason <span class="optional">（必填）</span></label>
-            <select id="urgent_reason">
-              <option value="">請選擇申請原因</option>
-              <option value="1">1. 客人訂購 (RP Team定期隨機抽查核實)</option>
-              <option value="2">2. ROADSHOW</option>
-              <option value="3">3. 追數 (OM指定)</option>
-              <option value="4">4. Promotion</option>
-              <option value="5">5. 新舖落貨(只限開舖第一週)</option>
-              <option value="6">6. 新產品SAP無法落貨</option>
-              <option value="7">7. 大堆頭擺放</option>
-              <option value="8">8. 管理層要求(只限Portal落貨)(缺貨)</option>
-              <option value="9">9. 其他</option>
-            </select>
-          </div>
-          <div class="full" id="urgent_reason_other_wrap" style="display:none">
-            <label for="urgent_reason_other">Other Reason <span class="optional">（選擇「9. 其他」時必填）</span></label>
-            <input type="text" id="urgent_reason_other" autocomplete="off" maxlength="2000">
+            <label>需要填寫</label>
+            <div class="hint" id="count_hint" style="padding-top:9px">—</div>
           </div>
         </div>
+        <div id="items_container"></div>
         <div class="btn-row">
           <button type="submit" class="btn" id="btn_submit">提交 Urgent Order</button>
           <button type="button" class="btn secondary" id="btn_preview">預覽</button>
@@ -92,8 +80,13 @@
       <div id="preview_box" style="display:none">
         <hr>
         <h3>提交預覽</h3>
-        <div class="dl" id="preview_body"></div>
-        <div class="hint" style="margin:12px 0 0">確認提交成功後會顯示「申請編號」，請立即記低／複製，日後查詢或修改需要用到。</div>
+        <div class="table-scroll">
+          <table id="preview_table">
+            <thead><tr><th>#</th><th>SKU</th><th>QTY</th><th>Urgent Reason</th><th>Other Reason</th></tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+        <div class="hint" style="margin:12px 0 0">確認提交成功後會顯示每個 SKU 的「申請編號」，請立即記低／複製，日後查詢或修改需要用到。</div>
         <div class="btn-row">
           <button class="btn" id="btn_confirm">確認提交</button>
           <button class="btn secondary" id="btn_cancel_preview">返回修改</button>
@@ -107,13 +100,14 @@
       <div class="result-box">
         <div class="result-banner">✓ 申報已成功收件</div>
         <div>申請時間：<b id="res_time"></b></div>
-        <div class="app-no-label" style="margin-top:8px">申請編號：</div>
-        <div class="app-no-row">
-          <div class="app-no" id="res_no"></div>
-          <button type="button" class="btn ghost btn-copy" id="btn_copy_no" data-copy-target="res_no">複製</button>
+        <div class="table-scroll" style="margin-top:12px">
+          <table id="res_table">
+            <thead><tr><th>#</th><th>SKU</th><th>QTY</th><th>Urgent Reason</th><th>申請編號</th><th></th></tr></thead>
+            <tbody></tbody>
+          </table>
         </div>
         <div class="alert warning" style="margin-top:12px">
-          <b>⚠️ 請務必抄低／截圖此申請編號</b> — 之後如需修改或追蹤，必須於「<a href="/lookup.html">查詢／修改</a>」頁輸入「<b>申請編號 + Site Code</b>」先搵得返紀錄。<b>冇編號就無法自行修改</b>，請即按「複製」或截圖備存。每日 <b>14:30</b> 前可修改（每次修改會新增版本紀錄）；同日不可重複申報相同 SKU，如有更正請於 14:30 前修改原申報；匯出後鎖定不能再改。
+          <b>⚠️ 請務必抄低／截圖所有「申請編號」</b> — 之後如需修改或追蹤，必須於「<a href="/lookup.html">查詢／修改</a>」頁輸入「<b>申請編號 + Site Code</b>」先搵得返紀錄。<b>冇編號就無法自行修改</b>。每個 SKU 使用獨立申請編號，可單獨複製；每日 <b>14:30</b> 前可修改，同日不可重複申報相同 SKU；匯出後鎖定不能再改。
         </div>
       </div>
       <div class="btn-row">

@@ -6,6 +6,7 @@ import {
   type SubmissionBusinessFields,
   URGENT_QTY_MIN,
   URGENT_QTY_MAX,
+  URGENT_WEB_MAX_ITEMS,
   resolveReturnReasonCode,
   resolveUrgentReasonCode,
 } from '../lib/fields.js';
@@ -463,6 +464,189 @@ export async function createSubmission(
     );
 
     return row;
+  });
+}
+
+export class UrgentBatchDuplicateError extends Error {
+  constructor(public errors: Array<{ item: number; sku: string }>) {
+    super('批內有 SKU 重複或同日已申報，整批未提交');
+    this.name = 'UrgentBatchDuplicateError';
+  }
+}
+
+export interface UrgentBatchItemInput {
+  sku: string;
+  qty: number;
+  urgentReason: string | null | undefined;
+  urgentReasonOther: string | null | undefined;
+}
+
+export interface CreateUrgentBatchInput {
+  siteCode: string;
+  items: UrgentBatchItemInput[];
+  ip: string;
+  changeSource: string;
+  idempotencyKey?: string;
+  idempotencyFingerprint?: string;
+}
+
+export interface UrgentBatchResultRow {
+  item: number;
+  row: SubmissionRow;
+}
+
+export interface UrgentBatchResult {
+  rows: UrgentBatchResultRow[];
+  replayed: boolean;
+}
+
+/** Derives the deterministic per-row idempotency keys for a web batch submission. */
+export function deriveUrgentBatchIdempotencyKeys(idempotencyKey: string, itemCount: number): string[] {
+  return Array.from({ length: itemCount }, (_, index) => `${idempotencyKey}:${index + 1}`);
+}
+
+/**
+ * Creates several Urgent Order submissions inside one transaction. The whole
+ * batch is all-or-nothing: any validation, duplicate or idempotency conflict
+ * rolls back everything. Each row keeps an independent application number and
+ * stores the shared batch idempotency fingerprint.
+ */
+export async function createUrgentBatch(
+  input: CreateUrgentBatchInput,
+): Promise<UrgentBatchResult> {
+  if (!Array.isArray(input.items) || input.items.length < 1 || input.items.length > URGENT_WEB_MAX_ITEMS) {
+    throw new Error(`每個批次必須填寫 1 至 ${URGENT_WEB_MAX_ITEMS} 個 SKU`);
+  }
+  const siteCode = normalizeSiteCode(input.siteCode);
+  const applicationDate = hkTodayForDateColumn();
+  const items = input.items.map((item) => ({
+    sku: normalizeText(item.sku),
+    qty: item.qty,
+    urgentReason: normalizeText(item.urgentReason),
+    urgentReasonOther: normalizeText(item.urgentReasonOther) || null,
+  }));
+
+  // Defense in depth: mirror the route-level item validation before opening a transaction.
+  for (const item of items) {
+    if (!(Number.isInteger(item.qty) && item.qty >= URGENT_QTY_MIN && item.qty <= URGENT_QTY_MAX)) {
+      throw new Error(`QTY 必須為 ${URGENT_QTY_MIN} 至 ${URGENT_QTY_MAX} 的整數`);
+    }
+    const reasonErrors = validateUrgentReason(item.urgentReason, item.urgentReasonOther);
+    if (reasonErrors.length) throw new Error(reasonErrors[0]!.message);
+  }
+
+  const requestedByEmail = `${siteCode.toLowerCase()}@sasa.com`;
+  const derivedKeys = input.idempotencyKey
+    ? deriveUrgentBatchIdempotencyKeys(input.idempotencyKey, items.length)
+    : null;
+
+  return withTransaction(async (client) => {
+    if (input.idempotencyKey && derivedKeys) {
+      for (const key of derivedKeys) {
+        await client.query(
+          'SELECT pg_advisory_xact_lock(hashtextextended($1, 1)::bigint)',
+          [`submission:${key}`],
+        );
+      }
+      const existing = await client.query<SubmissionRow>(
+        'SELECT * FROM submissions WHERE idempotency_key = ANY($1::text[]) FOR UPDATE',
+        [derivedKeys],
+      );
+      if (existing.rows.length > 0) {
+        if (existing.rows.length !== derivedKeys.length) throw new IdempotencyConflictError();
+        const byKey = new Map(existing.rows.map((row) => [row.idempotency_key, row]));
+        for (const key of derivedKeys) {
+          const row = byKey.get(key);
+          if (
+            !row
+            || row.idempotency_fingerprint !== input.idempotencyFingerprint
+            || row.submission_type !== 'urgent'
+            || row.site_code !== siteCode
+          ) {
+            throw new IdempotencyConflictError();
+          }
+        }
+        const ordered = derivedKeys.map((key) => byKey.get(key)!);
+        return { rows: ordered.map((row, index) => ({ item: index + 1, row })), replayed: true };
+      }
+    }
+
+    await lockDuplicateSubmissionKeys(client, items.map((item) => ({
+      siteCode,
+      sku: item.sku,
+      submissionType: 'urgent' as const,
+      date: applicationDate,
+    })));
+
+    const seen = new Set<string>();
+    const duplicateErrors: Array<{ item: number; sku: string }> = [];
+    for (const [index, item] of items.entries()) {
+      const key = `${siteCode}|${item.sku}`;
+      if (seen.has(key)) duplicateErrors.push({ item: index + 1, sku: item.sku });
+      seen.add(key);
+    }
+    const existingDuplicates = await client.query<{ sku: string }>(
+      `SELECT sku FROM submissions
+       WHERE site_code = $1 AND submission_type = 'urgent' AND application_date = $2::date
+         AND sku = ANY($3::text[])`,
+      [siteCode, applicationDate, items.map((item) => item.sku)],
+    );
+    const existingSkuSet = new Set(existingDuplicates.rows.map((row) => row.sku));
+    for (const [index, item] of items.entries()) {
+      if (existingSkuSet.has(item.sku)) duplicateErrors.push({ item: index + 1, sku: item.sku });
+    }
+    if (duplicateErrors.length) throw new UrgentBatchDuplicateError(duplicateErrors);
+
+    const rows: UrgentBatchResultRow[] = [];
+    for (const [index, item] of items.entries()) {
+      const urgentReason = item.urgentReason ? resolveUrgentReasonCode(item.urgentReason) : null;
+      const applicationNo = await nextApplicationNo(client, 'URGENT');
+      const idempotencyKey = derivedKeys ? derivedKeys[index] : null;
+      const insert = await client.query<SubmissionRow>(
+        `INSERT INTO submissions (
+           application_no, source, submission_type, site_code, requested_by_email, application_date,
+           brand, sku, qty, urgent_reason, urgent_reason_other, created_ip, created_ip_expires_at,
+           idempotency_key, idempotency_fingerprint
+         )
+         VALUES ($1, 'web', 'urgent', $2, $3, $4, '', $5, $6, $7, $8, $9, $10, $11, $12)
+         RETURNING *`,
+        [
+          applicationNo,
+          siteCode,
+          requestedByEmail,
+          applicationDate,
+          item.sku,
+          item.qty,
+          urgentReason,
+          item.urgentReasonOther,
+          input.ip,
+          input.ip ? ipExpiryIso() : null,
+          idempotencyKey ?? null,
+          input.idempotencyKey ? input.idempotencyFingerprint ?? null : null,
+        ],
+      );
+      const row = insert.rows[0]!;
+      await client.query(
+        `INSERT INTO submission_versions
+           (submission_id, version, data_before, data_after, actor_role, actor, ip, change_source)
+         VALUES ($1, 1, NULL, $2, 'applicant', NULL, $3, $4)`,
+        [
+          row.id,
+          JSON.stringify({
+            site_code: siteCode,
+            sku: item.sku,
+            qty: item.qty,
+            urgent_reason: urgentReason,
+            urgent_reason_other: item.urgentReasonOther,
+          }),
+          input.ip,
+          input.changeSource,
+        ],
+      );
+      rows.push({ item: index + 1, row });
+    }
+
+    return { rows, replayed: false };
   });
 }
 

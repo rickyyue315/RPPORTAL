@@ -114,6 +114,9 @@ export const RETURN_EXPORT_COLUMNS = [
 export const URGENT_QTY_MIN = 1;
 export const URGENT_QTY_MAX = 1000;
 
+/** Maximum number of SKU rows accepted by the Urgent Order web form in a single batch submission. */
+export const URGENT_WEB_MAX_ITEMS = 5;
+
 export const RETURN_QTY_MIN = 1;
 export const RETURN_QTY_MAX = 9999;
 

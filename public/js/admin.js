@@ -53,8 +53,8 @@
 
   function buildQuery() {
     const params = new URLSearchParams();
-    const idMap = { application_no: 'appno', submission_type: 'type', site_code: 'site' };
-    ['from', 'to', 'site_code', 'source', 'submission_type', 'exported', 'sku', 'application_no'].forEach((k) => {
+    const idMap = { application_no: 'appno', submission_type: 'type', site_code: 'site', rp_type: 'rp_type', nd_code: 'nd_code' };
+    ['from', 'to', 'site_code', 'source', 'submission_type', 'exported', 'sku', 'rp_type', 'nd_code', 'application_no'].forEach((k) => {
       const v = $(`f_${idMap[k] || k}`).value.trim();
       if (v) params.set(k, v);
     });
@@ -123,6 +123,7 @@
   $('btn_reset').addEventListener('click', () => {
     ['site', 'sku', 'appno'].forEach((id) => ($(`f_${id}`).value = ''));
     ['source', 'type', 'exported'].forEach((id) => ($(`f_${id}`).value = ''));
+    ['rp_type', 'nd_code'].forEach((id) => ($(`f_${id}`).value = ''));
     $('f_from').value = todayInHongKong();
     $('f_to').value = todayInHongKong();
     currentPage = 1;

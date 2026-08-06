@@ -569,6 +569,18 @@ hr {
   flex: 1;
   min-width: 140px;
 }
+.toolbar .field.field--compact {
+  flex: 0 1 160px;
+  min-width: 130px;
+}
+.toolbar .field.field--appno {
+  flex: 0 1 150px;
+  min-width: 120px;
+}
+.toolbar .field.field--appno input {
+  font-size: 13px;
+  padding: 9px 8px;
+}
 .toolbar .field label {
   margin: 0 0 4px;
 }

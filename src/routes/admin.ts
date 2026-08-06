@@ -223,6 +223,8 @@ adminRouter.get(
       submission_type,
       exported,
       sku,
+      rp_type,
+      nd_code,
       application_no,
       page = '1',
       page_size = '20',
@@ -263,6 +265,17 @@ const where: string[] = [];
     if (sku) {
       where.push(`sku ILIKE $${idx++}`);
       params.push(`%${sku.trim()}%`);
+    }
+    if (rp_type) {
+      const upper = rp_type.trim().toUpperCase();
+      if (upper === 'ND' || upper === 'RF') {
+        where.push(`rp_type = $${idx++}`);
+        params.push(upper);
+      }
+    }
+    if (nd_code) {
+      where.push(`nd_code = $${idx++}`);
+      params.push(nd_code.trim());
     }
     if (application_no) {
       where.push(`application_no = $${idx++}`);

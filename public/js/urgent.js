@@ -120,12 +120,14 @@
         headers: { 'Idempotency-Key': submitKey },
         body: JSON.stringify(previewData),
       });
+      rememberSubmission(data, 'urgent');
       $('res_no').textContent = data.submission.application_no;
       $('res_time').textContent = data.submission.submitted_at;
       $('form_error').innerHTML = '';
       $('apply_form').style.display = 'none';
       $('preview_box').style.display = 'none';
       $('result_card').style.display = '';
+      $('result_card').scrollIntoView({ behavior: 'smooth' });
     } catch (err) {
       showAlert($('confirm_error'), 'error', escapeHtml(err.message));
     } finally {
@@ -141,6 +143,7 @@
     storeCache = null;
     previewData = null;
     submitKey = null;
+    clearLastSubmission();
     $('apply_form').style.display = '';
     $('preview_box').style.display = 'none';
     $('result_card').style.display = 'none';
@@ -160,6 +163,9 @@
     $('preview_box').style.display = 'none';
   });
   $('btn_again').addEventListener('click', resetForm);
+  $('btn_copy_no').addEventListener('click', () => {
+    copyText($('res_no').textContent.trim(), $('btn_copy_no'));
+  });
   $('apply_form').addEventListener('submit', (e) => {
     e.preventDefault();
     showPreview();
@@ -252,9 +258,10 @@
         body: fd,
       });
       let html = `<div class="alert success"><b>${escapeHtml(data.message)}</b>（總行數：${data.totalRows}）</div>`;
+      html += '<div class="import-appno-note">系統已為以下每筆申報產生「申請編號」，請記下申請編號。日後可於「<a href="/lookup.html">查詢／修改</a>」頁面輸入「申請編號 + Site Code」查看及在匯出前修改。</div>';
       html += '<table><thead><tr><th>Excel 行</th><th>申請編號</th><th>Site Code</th><th>SKU</th><th>QTY</th><th>Urgent Reason</th><th>Other Reason</th><th>已收件時間</th></tr></thead><tbody>';
       data.rows.forEach((r) => {
-        html += `<tr><td>${r.row}</td><td>${escapeHtml(r.application_no)}</td><td>${escapeHtml(r.site_code)}</td><td>${escapeHtml(r.sku)}</td><td>${escapeHtml(r.qty)}</td><td>${escapeHtml(r.urgent_reason_label || '')}</td><td>${escapeHtml(r.urgent_reason_other || '—')}</td><td>${escapeHtml(r.submitted_at)}</td></tr>`;
+        html += `<tr><td>${r.row}</td><td class="cell-appno">${escapeHtml(r.application_no)}</td><td>${escapeHtml(r.site_code)}</td><td>${escapeHtml(r.sku)}</td><td>${escapeHtml(r.qty)}</td><td>${escapeHtml(r.urgent_reason_label || '')}</td><td>${escapeHtml(r.urgent_reason_other || '—')}</td><td>${escapeHtml(r.submitted_at)}</td></tr>`;
       });
       html += '</tbody></table><div class="btn-row"><button class="btn" id="btn_dl_record">下載匯入記錄 Excel（按店舖分頁）</button></div>';
       $('import_result').innerHTML = html;
@@ -292,4 +299,6 @@
       btn.textContent = '上載並匯入';
     }
   });
+
+  showLastSubmissionResult('urgent');
 })();

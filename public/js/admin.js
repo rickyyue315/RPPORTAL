@@ -212,11 +212,11 @@
       box.innerHTML = '<div class="empty">沒有版本紀錄</div>';
       return;
     }
-    let html = '<table><thead><tr><th>版本</th><th>修改時間 (HK)</th><th>操作者</th><th>IP</th><th>來源</th></tr></thead><tbody>';
+    let html = '<table><thead><tr><th>版本</th><th>修改時間 (HK)</th><th>操作者</th><th>IP</th><th>來源</th><th>更改內容</th></tr></thead><tbody>';
     const SRC_LABEL = { web_submit: '網頁提交', excel_import: 'Excel 匯入', web_modify: '網頁修改', admin_edit: '管理員修改' };
     data.versions.forEach((v) => {
       const actor = v.actor_role === 'admin' ? `管理員 (${v.actor || '—'})` : '申請人';
-      html += `<tr><td>${v.version}</td><td>${escapeHtml(v.changed_at)}</td><td>${actor}</td><td>${escapeHtml(v.ip || '—')}</td><td>${escapeHtml(SRC_LABEL[v.change_source] || v.change_source)}</td></tr>`;
+      html += `<tr><td>${v.version}</td><td>${escapeHtml(v.changed_at)}</td><td>${actor}</td><td>${escapeHtml(v.ip || '—')}</td><td>${escapeHtml(SRC_LABEL[v.change_source] || v.change_source)}</td><td>${versionChangesHtml(v)}</td></tr>`;
     });
     html += '</tbody></table>';
     box.innerHTML = html;

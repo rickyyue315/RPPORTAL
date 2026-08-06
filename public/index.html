@@ -100,9 +100,13 @@
     <div class="card" id="result_card" style="display:none">
       <h2>已收件</h2>
       <div class="result-box">
+        <div class="result-banner">✓ 申報已成功收件</div>
         <div>申請時間：<b id="res_time"></b></div>
-        <div style="margin-top:8px">申請編號：</div>
-        <div class="app-no" id="res_no"></div>
+        <div class="app-no-label" style="margin-top:8px">申請編號：</div>
+        <div class="app-no-row">
+          <div class="app-no" id="res_no"></div>
+          <button type="button" class="btn ghost btn-copy" id="btn_copy_no" data-copy-target="res_no">複製</button>
+        </div>
         <div class="hint" style="margin-top:12px">
           請記下申請編號。之後可於「<a href="/lookup.html">查詢／修改</a>」頁面輸入「申請編號 + Site Code」查看及在匯出前修改。
         </div>

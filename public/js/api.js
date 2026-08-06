@@ -58,6 +58,143 @@ function escapeHtml(str) {
   return div.innerHTML;
 }
 
+const VERSION_FIELD_LABELS = {
+  site_code: 'Site Code',
+  sku: 'SKU',
+  brand: 'Brand',
+  rp_type: 'RP Type',
+  safety_stock: 'Safety stock',
+  nd_code: 'ND Code',
+  remark: 'Remark',
+  qty: 'QTY',
+  urgent_reason: 'Urgent Reason',
+  urgent_reason_other: 'Other Reason',
+  return_qty: 'QTY',
+  return_reason: 'REASON',
+  return_confirmer_name: '確認人姓名',
+  return_confirmer_phone: '確認人電話',
+  return_window_key: '申請窗口',
+};
+
+const URGENT_REASON_LABELS = {
+  1: '1. 客人訂購 (RP Team定期隨機抽查核實)',
+  2: '2. ROADSHOW',
+  3: '3. 追數 (OM指定)',
+  4: '4. Promotion',
+  5: '5. 新舖落貨(只限開舖第一週)',
+  6: '6. 新產品SAP無法落貨',
+  7: '7. 大堆頭擺放',
+  8: '8. 管理層要求(只限Portal落貨)(缺貨)',
+  9: '9. 其他',
+};
+
+const RETURN_REASON_LABELS = {
+  1: '1. BUYER MEMO指定退貨',
+  2: '2. BUYER 電郵確認可退-期貨',
+  3: '3. BUYER 電郵確認可退-壞貨',
+  4: '4. 供應商確認可退-期貨',
+  5: '5. 供應商確認可退-壞貨',
+  6: '6. 供應商確認可退-下架貨',
+};
+
+function versionFieldDisplayValue(field, value) {
+  const raw = value === null || value === undefined ? '' : String(value).trim();
+  if (!raw) return '';
+  if (field === 'urgent_reason' && URGENT_REASON_LABELS[raw]) return URGENT_REASON_LABELS[raw];
+  if (field === 'return_reason' && RETURN_REASON_LABELS[raw]) return RETURN_REASON_LABELS[raw];
+  return raw;
+}
+
+function versionDiffText(v) {
+  const before = v.data_before || {};
+  const after = v.data_after || {};
+  const changes = [];
+  for (const key of Object.keys(after)) {
+    const label = VERSION_FIELD_LABELS[key] || key;
+    const from = versionFieldDisplayValue(key, before[key]);
+    const to = versionFieldDisplayValue(key, after[key]);
+    if (from === to) continue;
+    changes.push({ label, from: from || '—', to: to || '—' });
+  }
+  return changes;
+}
+
+function versionChangesHtml(v) {
+  if (v.version === 1 && !v.data_before) return '<span class="hint">首次提交</span>';
+  const changes = versionDiffText(v);
+  if (!changes.length) return '<span class="hint">—</span>';
+  return changes
+    .map((c) => `<div class="version-change"><b>${escapeHtml(c.label)}</b>：${escapeHtml(c.from)} → ${escapeHtml(c.to)}</div>`)
+    .join('');
+}
+
+const LAST_SUBMISSION_KEY = 'ndrf_last_submission';
+
+function rememberSubmission(data, pageKey) {
+  try {
+    sessionStorage.setItem(LAST_SUBMISSION_KEY, JSON.stringify({
+      page: pageKey,
+      application_no: data.submission?.application_no || '',
+      submitted_at: data.submission?.submitted_at || '',
+      site_code: data.submission?.site_code || '',
+    }));
+  } catch {}
+}
+
+function restoreLastSubmission() {
+  try {
+    return JSON.parse(sessionStorage.getItem(LAST_SUBMISSION_KEY) || 'null');
+  } catch {
+    return null;
+  }
+}
+
+function clearLastSubmission() {
+  try { sessionStorage.removeItem(LAST_SUBMISSION_KEY); } catch {}
+}
+
+function showLastSubmissionResult(pageKey) {
+  const saved = restoreLastSubmission();
+  if (!saved || saved.page !== pageKey || !saved.application_no) return;
+  const resNo = document.getElementById('res_no');
+  if (!resNo) return;
+  resNo.textContent = saved.application_no;
+  const resTime = document.getElementById('res_time');
+  if (resTime) resTime.textContent = saved.submitted_at || '';
+  const form = document.getElementById('apply_form');
+  if (form) form.style.display = 'none';
+  const preview = document.getElementById('preview_box');
+  if (preview) preview.style.display = 'none';
+  const resultCard = document.getElementById('result_card');
+  if (resultCard) resultCard.style.display = '';
+  setTimeout(() => {
+    if (resultCard && resultCard.offsetParent) resultCard.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  }, 100);
+}
+
+async function copyText(text, button) {
+  if (!text) return;
+  const done = () => {
+    if (!button) return;
+    const original = button.textContent;
+    button.textContent = '已複製';
+    setTimeout(() => { button.textContent = original; }, 1500);
+  };
+  try {
+    await navigator.clipboard.writeText(text);
+  } catch {
+    const ta = document.createElement('textarea');
+    ta.value = text;
+    ta.style.position = 'fixed';
+    ta.style.opacity = '0';
+    document.body.appendChild(ta);
+    ta.select();
+    try { document.execCommand('copy'); } catch {}
+    document.body.removeChild(ta);
+  }
+  done();
+}
+
 function showAlert(el, type, message) {
   if (!el) return;
   el.innerHTML = `<div class="alert ${type}">${message}</div>`;

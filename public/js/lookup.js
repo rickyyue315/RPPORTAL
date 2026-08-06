@@ -114,7 +114,7 @@
       const tr = document.createElement('tr');
       const actor = v.actor_role === 'admin' ? '管理員' : '申請人';
       const src = SRC_LABEL[v.change_source] || v.change_source;
-      tr.innerHTML = `<td>${v.version}</td><td>${escapeHtml(v.changed_at)}</td><td>${actor}</td><td>${escapeHtml(src)}</td>`;
+      tr.innerHTML = `<td>${v.version}</td><td>${escapeHtml(v.changed_at)}</td><td>${actor}</td><td>${escapeHtml(src)}</td><td>${versionChangesHtml(v)}</td>`;
       tbody.appendChild(tr);
     });
 

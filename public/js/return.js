@@ -100,11 +100,13 @@
         headers: { 'Idempotency-Key': submitKey },
         body: JSON.stringify(previewData),
       });
+      rememberSubmission(data, 'return');
       $('res_no').textContent = data.submission.application_no;
       $('res_time').textContent = data.submission.submitted_at;
       $('apply_form').style.display = 'none';
       $('preview_box').style.display = 'none';
       $('result_card').style.display = '';
+      $('result_card').scrollIntoView({ behavior: 'smooth' });
     } catch (error) {
       showAlert($('confirm_error'), 'error', escapeHtml(error.message));
     } finally {
@@ -121,6 +123,10 @@
     previewData = null;
     submitKey = null;
     storeCache = null;
+    clearLastSubmission();
+  });
+  $('btn_copy_no').addEventListener('click', () => {
+    copyText($('res_no').textContent.trim(), $('btn_copy_no'));
   });
 
   const drop = $('file_drop');
@@ -179,9 +185,10 @@
         body: fd,
       });
       let html = `<div class="alert success"><b>${escapeHtml(data.message)}</b></div>`;
+      html += '<div class="import-appno-note">系統已為以下每筆申報產生「申請編號」，請記下申請編號。日後可於「<a href="/lookup.html">查詢／修改</a>」頁面輸入申請編號及 Site Code 查詢。</div>';
       html += '<table><thead><tr><th>Excel 行</th><th>申請編號</th><th>Site Code</th><th>SKU</th><th>QTY</th><th>REASON</th><th>確認人</th><th>已收件時間</th></tr></thead><tbody>';
       data.rows.forEach((row) => {
-        html += `<tr><td>${row.row}</td><td>${escapeHtml(row.application_no)}</td><td>${escapeHtml(row.site_code)}</td><td>${escapeHtml(row.sku)}</td><td>${row.qty}</td><td>${escapeHtml(row.reason)}</td><td>${escapeHtml(row.confirmer_name)}</td><td>${escapeHtml(row.submitted_at)}</td></tr>`;
+        html += `<tr><td>${row.row}</td><td class="cell-appno">${escapeHtml(row.application_no)}</td><td>${escapeHtml(row.site_code)}</td><td>${escapeHtml(row.sku)}</td><td>${row.qty}</td><td>${escapeHtml(row.reason)}</td><td>${escapeHtml(row.confirmer_name)}</td><td>${escapeHtml(row.submitted_at)}</td></tr>`;
       });
       html += '</tbody></table><button class="btn" id="btn_dl_record">下載匯入記錄 Excel</button>';
       $('import_result').innerHTML = html;
@@ -214,4 +221,5 @@
   });
 
   api('/api/public/return/schedule').then(renderSchedule).catch(() => showAlert($('window_status'), 'error', '無法載入退行貨時間表，請稍後再試。'));
+  showLastSubmissionResult('return');
 })();

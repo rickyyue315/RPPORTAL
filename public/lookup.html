@@ -42,6 +42,39 @@
           <button type="submit" class="btn">查詢</button>
         </div>
       </form>
+      <div class="btn-row" style="margin-top:8px">
+        <button type="button" class="btn ghost" id="btn_toggle_recover">唔記得申請編號？</button>
+      </div>
+      <div id="recover_box" style="display:none">
+        <hr>
+        <h3>搵返申請編號</h3>
+        <p class="hint">輸入提交時使用嘅 <b>Site Code</b> 及日期範圍（預設為今日），可列出該日嘅申請編號，撳申請編號即可前往查詢／修改。</p>
+        <div id="recover_error"></div>
+        <form id="recover_form">
+          <div class="form-grid">
+            <div>
+              <label for="r_site">Site Code <span class="optional">（必填）</span></label>
+              <input type="text" id="r_site" autocomplete="off" placeholder="例如 HA02">
+            </div>
+            <div>
+              <label for="r_from">由 (日期)</label>
+              <input type="date" id="r_from">
+            </div>
+            <div>
+              <label for="r_to">至 (日期)</label>
+              <input type="date" id="r_to">
+            </div>
+            <div>
+              <label for="r_sku">SKU <span class="optional">（可選）</span></label>
+              <input type="text" id="r_sku" autocomplete="off" placeholder="7 位或 12 位數字，可留空">
+            </div>
+          </div>
+          <div class="btn-row">
+            <button type="submit" class="btn" id="btn_recover">搵返申請編號</button>
+          </div>
+        </form>
+        <div id="recover_result"></div>
+      </div>
     </div>
 
     <div class="card" id="detail_card" style="display:none">

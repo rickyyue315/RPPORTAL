@@ -320,6 +320,35 @@ describe('public API', () => {
     expect(res.body.error).toContain('找不到相符申報');
   });
 
+  it('recovers application numbers by site code + date range', async () => {
+    const created = await request(app).post('/api/public/submit').send({
+      site_code: 'HA06',
+      sku: '1000888',
+      rp_type: 'ND',
+      nd_code: 'ND20-SO-Not displayed in small stores',
+    });
+    expect(created.status).toBe(201);
+    const no = created.body.submission.application_no;
+    const date = String(created.body.submission.application_date).slice(0, 10);
+
+    const found = await request(app).get(`/api/public/my-applications?site_code=HA06&from=${date}&to=${date}`);
+    expect(found.status).toBe(200);
+    expect(found.body.store.shop).toBe('北角');
+    expect(found.body.rows.some((r) => r.application_no === no)).toBe(true);
+    expect(found.body.rows[0].submission_type).toBe('normal');
+    expect(found.body.rows[0].sku).toBe('1000888');
+
+    const other = await request(app).get(`/api/public/my-applications?site_code=HA02&from=${date}&to=${date}`);
+    expect(other.status).toBe(200);
+    expect(other.body.rows.some((r) => r.application_no === no)).toBe(false);
+
+    const missing = await request(app).get('/api/public/my-applications?site_code=ZZ99');
+    expect(missing.status).toBe(400);
+
+    const badRange = await request(app).get('/api/public/my-applications?site_code=HA06&from=2026-12-31&to=2026-01-01');
+    expect(badRange.status).toBe(400);
+  });
+
   it('downloads the template workbook without login', async () => {
     const res = await request(app).get('/api/public/template');
     expect(res.status).toBe(200);

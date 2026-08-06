@@ -8,6 +8,7 @@ export type AuditEventType =
   | 'submission_created'
   | 'submission_queried'
   | 'submission_modified'
+  | 'application_no_recovered'
   | 'admin_modified'
   | 'excel_import'
   | 'excel_import_error'

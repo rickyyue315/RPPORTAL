@@ -66,6 +66,7 @@
       </form>
       <div id="preview_box" style="display:none">
         <hr><h3>提交預覽</h3><div class="dl" id="preview_body"></div>
+        <div class="hint" style="margin:12px 0 0">確認提交成功後會顯示「申請編號」，請立即記低／複製，日後查詢或修改需要用到。</div>
         <div class="btn-row"><button class="btn" id="btn_confirm">確認提交</button><button class="btn secondary" id="btn_cancel">返回修改</button></div>
         <div id="confirm_error"></div>
       </div>
@@ -81,7 +82,7 @@
           <div class="app-no" id="res_no"></div>
           <button type="button" class="btn ghost btn-copy" id="btn_copy_no" data-copy-target="res_no">複製</button>
         </div>
-        <div class="hint" style="margin-top:12px">請記下申請編號，之後可於「<a href="/lookup.html">查詢／修改</a>」頁面輸入申請編號及 Site Code 查詢。</div>
+        <div class="alert warning" style="margin-top:12px"><b>⚠️ 請務必抄低／截圖此申請編號</b> — 之後如需修改或查詢，必須於「<a href="/lookup.html">查詢／修改</a>」頁輸入「<b>申請編號 + Site Code</b>」先搵得返紀錄。<b>冇編號就無法自行查詢／修改</b>，請即按「複製」或截圖備存（匯出後鎖定不能再改）。</div>
       </div>
       <div class="btn-row"><button class="btn" id="btn_again">再提交一筆</button></div>
     </div>

@@ -1640,6 +1640,106 @@ publicRouter.get(
   }),
 );
 
+const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+
+/** GET /api/public/my-applications?site_code=&from=&to=&sku= — recover application numbers by Site Code + date range. */
+publicRouter.get(
+  '/my-applications',
+  publicLookupLimiter,
+  asyncHandler(async (req: Request, res: Response) => {
+    const siteCode = normalizeSiteCode(String(req.query.site_code ?? ''));
+    const rawFrom = String(req.query.from ?? '').trim();
+    const rawTo = String(req.query.to ?? '').trim();
+    const rawSku = String(req.query.sku ?? '').trim();
+
+    if (!siteCode) {
+      res.status(400).json({ error: 'Site Code 為必填' });
+      return;
+    }
+    const store = await getStore(siteCode);
+    if (!store) {
+      res.status(400).json({ error: `Site Code「${siteCode}」不存在於門店主檔` });
+      return;
+    }
+
+    let from: string | null = null;
+    let to: string | null = null;
+    for (const [label, raw] of [['from', rawFrom], ['to', rawTo]] as const) {
+      if (!raw) continue;
+      if (!DATE_RE.test(raw)) {
+        res.status(400).json({ error: `${label === 'from' ? '由' : '至'}日期格式無效，請使用 YYYY-MM-DD` });
+        return;
+      }
+      if (label === 'from') from = raw;
+      else to = raw;
+    }
+    if (from && to && from > to) {
+      res.status(400).json({ error: '由日期不能晚於至日期' });
+      return;
+    }
+    if (!from) from = to ?? hkTodayForDateColumn();
+    if (!to) to = from;
+
+    const daySpan = (Date.parse(to) - Date.parse(from)) / 86400000;
+    if (daySpan < 0 || daySpan > 31) {
+      res.status(400).json({ error: '查詢日期範圍最多為 31 天' });
+      return;
+    }
+
+    let skuFilter: string | null = null;
+    if (rawSku) {
+      if (!SKU_PATTERN.test(rawSku)) {
+        res.status(400).json({ error: SKU_ERROR });
+        return;
+      }
+      skuFilter = rawSku;
+    }
+
+    const params: unknown[] = [siteCode, from, to];
+    let sql = `
+      SELECT application_no, submission_type, site_code, application_date, submitted_at, source, sku, locked_at, exported_at
+      FROM submissions
+      WHERE site_code = $1 AND application_date >= $2 AND application_date <= $3`;
+    if (skuFilter) {
+      params.push(skuFilter);
+      sql += ` AND sku = $${params.length}`;
+    }
+    sql += ` ORDER BY submitted_at DESC LIMIT 100`;
+
+    const result = await query<{
+      application_no: string;
+      submission_type: string;
+      site_code: string;
+      application_date: string;
+      submitted_at: string;
+      source: string;
+      sku: string;
+      locked_at: string | null;
+      exported_at: string | null;
+    }>(sql, params);
+
+    await writeAuditEvent({
+      eventType: 'application_no_recovered',
+      actorRole: 'applicant',
+      ip: getClientIp(req),
+      metadata: { site_code: siteCode, from, to, count: result.rows.length },
+    });
+
+    res.json({
+      store: { shop: store.shop },
+      rows: result.rows.map((row) => ({
+        application_no: row.application_no,
+        submission_type: row.submission_type,
+        submitted_at: toHKString(row.submitted_at),
+        application_date: row.application_date,
+        source: row.source,
+        sku: row.sku,
+        locked: Boolean(row.locked_at || row.exported_at),
+      })),
+    });
+  }),
+);
+
 const modifySchema = z.object({
   application_no: z.string().trim().min(1).max(40),
   site_code: z.string().trim().min(1).max(20),

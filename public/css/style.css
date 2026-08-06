@@ -414,15 +414,6 @@ textarea {
   margin-bottom: 4px;
 }
 
-.import-appno-note {
-  background: #fef9e7;
-  border: 1px solid #f9e79f;
-  color: var(--warning);
-  border-radius: 6px;
-  padding: 10px 14px;
-  margin: 12px 0;
-  font-size: 13.5px;
-}
 td.cell-appno {
   font-family: Consolas, 'Courier New', monospace;
   font-weight: 700;

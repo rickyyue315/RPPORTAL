@@ -40,6 +40,68 @@
     }
   });
 
+  const recoverBox = $('recover_box');
+  $('btn_toggle_recover').addEventListener('click', () => {
+    const hidden = recoverBox.style.display === 'none';
+    recoverBox.style.display = hidden ? '' : 'none';
+    if (hidden) {
+      const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Hong_Kong' });
+      if (!$('r_from').value) $('r_from').value = today;
+      if (!$('r_to').value) $('r_to').value = today;
+    }
+  });
+
+  $('recover_form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const site = $('r_site').value.trim().toUpperCase();
+    if (!site) {
+      showAlert($('recover_error'), 'error', '請輸入 Site Code');
+      return;
+    }
+    showAlert($('recover_error'), '', '');
+    const params = new URLSearchParams();
+    params.set('site_code', site);
+    if ($('r_from').value) params.set('from', $('r_from').value);
+    if ($('r_to').value) params.set('to', $('r_to').value);
+    const sku = $('r_sku').value.trim();
+    if (sku) params.set('sku', sku);
+    const btn = $('btn_recover');
+    btn.disabled = true;
+    btn.textContent = '查詢中…';
+    try {
+      const data = await api(`/api/public/my-applications?${params.toString()}`);
+      const rows = data.rows || [];
+      const TYPE_LABEL = { normal: '一般 NDRF', urgent: 'Urgent Order', sales: '突發性銷售', return: '行貨退貨' };
+      if (!rows.length) {
+        $('recover_result').innerHTML = '<div class="alert warning">搵唔到相關申報，請檢查 Site Code、日期範圍或 SKU。</div>';
+      } else {
+        let html = `<div class="alert success">搵到 ${rows.length} 筆申報，撳「申請編號」即可前往查詢／修改。</div>`;
+        html += '<div class="table-scroll"><table><thead><tr><th>申請編號</th><th>類型</th><th>SKU</th><th>申請日期</th><th>提交時間</th><th>狀態</th></tr></thead><tbody>';
+        rows.forEach((r) => {
+          const typeLabel = TYPE_LABEL[r.submission_type] || r.submission_type;
+          const status = r.locked ? '已鎖定' : '可修改';
+          html += `<tr><td><a href="#" class="recover-link" data-no="${escapeHtml(r.application_no)}">${escapeHtml(r.application_no)}</a></td><td>${escapeHtml(typeLabel)}</td><td>${escapeHtml(r.sku)}</td><td>${escapeHtml(r.application_date)}</td><td>${escapeHtml(r.submitted_at)}</td><td>${escapeHtml(status)}</td></tr>`;
+        });
+        html += '</tbody></table></div>';
+        $('recover_result').innerHTML = html;
+        $('recover_result').querySelectorAll('.recover-link').forEach((link) => {
+          link.addEventListener('click', (ev) => {
+            ev.preventDefault();
+            $('q_no').value = link.dataset.no;
+            $('q_site').value = site;
+            recoverBox.style.display = 'none';
+            $('search_form').requestSubmit();
+          });
+        });
+      }
+    } catch (err) {
+      showAlert($('recover_error'), 'error', escapeHtml(err.message));
+    } finally {
+      btn.disabled = false;
+      btn.textContent = '搵返申請編號';
+    }
+  });
+
   function renderDetail(data) {
     current = data;
     const s = data.submission;

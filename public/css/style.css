@@ -674,6 +674,12 @@ hr {
 .dash-stat--ok .dash-val { color: var(--success); }
 .dash-stat--warn .dash-val { color: var(--warning); }
 .dash-stat--urgent .dash-val { color: #e67e22; }
+.dash-val--store {
+  font-size: 16px;
+  letter-spacing: -0.2px;
+  line-height: 1.25;
+  word-break: break-word;
+}
 .dash-lbl {
   font-size: 12px;
   color: var(--muted);

@@ -595,10 +595,23 @@
       const el = $(id);
       if (el) el.textContent = String(v);
     };
+    const setStoreInfo = (id, entry) => {
+      const el = $(id);
+      if (!el) return;
+      if (entry) {
+        const name = entry.shop ? entry.shop : entry.site_code;
+        el.textContent = `${name} ${entry.time}`;
+      } else {
+        el.textContent = '—';
+      }
+    };
     try {
       const data = await adminFetch('/api/admin/summary');
       const setStat = (type, key, id) => setNum(id, data[type][key]);
       setNum('s_stores_today', data.stores_today);
+      setNum('s_stores_month', data.stores_month);
+      setStoreInfo('s_earliest_store', data.earliest_submission_today);
+      setStoreInfo('s_latest_store', data.latest_submission_today);
       setStat('normal', 'total', 's_normal_total');
       setStat('normal', 'exported', 's_normal_exported');
       setStat('normal', 'today', 's_normal_today');

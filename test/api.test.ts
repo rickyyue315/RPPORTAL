@@ -595,6 +595,7 @@ describe('admin API', () => {
     expect(res.body).toMatchObject({
       total: expect.any(Number),
       stores_today: expect.any(Number),
+      stores_month: expect.any(Number),
       normal: {
         total: expect.any(Number),
         exported: expect.any(Number),
@@ -626,6 +627,12 @@ describe('admin API', () => {
     });
     expect(res.body.total).toBeGreaterThanOrEqual(1);
     expect(res.body.total).toBe(res.body.normal.total + res.body.urgent.total + res.body.sales.total + res.body.return.total);
+    expect(res.body.stores_month).toBeGreaterThanOrEqual(res.body.stores_today);
+    for (const entry of [res.body.earliest_submission_today, res.body.latest_submission_today]) {
+      if (entry !== null) {
+        expect(entry).toMatchObject({ site_code: expect.any(String), time: expect.any(String) });
+      }
+    }
   });
 
   it('counts distinct stores involved today without double-counting a store', async () => {

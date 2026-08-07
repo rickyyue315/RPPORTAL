@@ -332,9 +332,16 @@ adminRouter.get(
   adminActionLimiter,
   asyncHandler(async (_req: Request, res: Response) => {
     const today = hkTodayForDateColumn();
+    const [y = 0, m = 0] = today.split('-').map(Number);
+    const monthStart = `${y}-${String(m).padStart(2, '0')}-01`;
+    const nextMonthStart =
+      m === 12 ? `${y + 1}-01-01` : `${y}-${String(m + 1).padStart(2, '0')}-01`;
     const rows = await query<{
       total: string;
       stores_today: string;
+      stores_month: string;
+      earliest_submission_today: { site_code: string; shop: string; time: string } | null;
+      latest_submission_today: { site_code: string; shop: string; time: string } | null;
       normal_total: string;
       normal_exported: string;
       normal_today: string;
@@ -359,6 +366,17 @@ adminRouter.get(
       `SELECT
          (SELECT count(*)::text FROM submissions) AS total,
          (SELECT count(DISTINCT site_code)::text FROM submissions WHERE application_date = $1::date) AS stores_today,
+         (SELECT count(DISTINCT site_code)::text FROM submissions WHERE application_date >= $2::date AND application_date < $3::date) AS stores_month,
+         (SELECT jsonb_build_object('site_code', s.site_code, 'shop', COALESCE(st.shop, ''), 'time', to_char(s.submitted_at AT TIME ZONE $4, 'HH24:MI'))
+            FROM submissions s
+            LEFT JOIN stores st ON st.site_code = s.site_code
+            WHERE s.application_date = $1::date
+            ORDER BY s.submitted_at ASC LIMIT 1) AS earliest_submission_today,
+         (SELECT jsonb_build_object('site_code', s.site_code, 'shop', COALESCE(st.shop, ''), 'time', to_char(s.submitted_at AT TIME ZONE $4, 'HH24:MI'))
+            FROM submissions s
+            LEFT JOIN stores st ON st.site_code = s.site_code
+            WHERE s.application_date = $1::date
+            ORDER BY s.submitted_at DESC LIMIT 1) AS latest_submission_today,
          (SELECT count(*)::text FROM submissions WHERE submission_type = 'normal') AS normal_total,
          (SELECT count(*)::text FROM submissions WHERE submission_type = 'normal' AND exported_at IS NOT NULL) AS normal_exported,
          (SELECT count(*)::text FROM submissions WHERE submission_type = 'normal' AND application_date = $1::date) AS normal_today,
@@ -379,12 +397,17 @@ adminRouter.get(
            (SELECT count(*)::text FROM submissions WHERE submission_type = 'return' AND application_date = $1::date) AS return_today,
            (SELECT count(*)::text FROM submissions WHERE submission_type = 'return' AND application_date = $1::date AND exported_at IS NOT NULL) AS return_today_exported,
            (SELECT count(DISTINCT site_code)::text FROM submissions WHERE submission_type = 'return' AND application_date = $1::date) AS return_stores_today`,
-      [today],
+      [today, monthStart, nextMonthStart, config.timezone],
     );
     const r = rows.rows[0]!;
+    const submissionStoreInfo = (e: { site_code: string; shop: string; time: string } | null) =>
+      e ? { site_code: e.site_code, shop: e.shop, time: e.time } : null;
     res.json({
       total: Number(r.total),
       stores_today: Number(r.stores_today),
+      stores_month: Number(r.stores_month),
+      earliest_submission_today: submissionStoreInfo(r.earliest_submission_today),
+      latest_submission_today: submissionStoreInfo(r.latest_submission_today),
       normal: {
         total: Number(r.normal_total),
         exported: Number(r.normal_exported),

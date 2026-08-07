@@ -33,6 +33,15 @@
     siteTimer = setTimeout(validateSite, 300);
   });
 
+  function syncRpTypeFields() {
+    const rpType = $('rp_type').value;
+    $('safety_stock_wrap').style.display = rpType === 'ND' ? 'none' : '';
+    $('nd_code_wrap').style.display = rpType === 'RF' ? 'none' : '';
+    if (rpType === 'RF') $('nd_code').value = '';
+    if (rpType === 'ND') $('safety_stock').value = '';
+  }
+  $('rp_type').addEventListener('change', syncRpTypeFields);
+
   async function validateSite() {
     const code = $('site_code').value.trim();
     if (!code) {

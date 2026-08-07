@@ -192,6 +192,7 @@
     $('a_safety_stock').value = s.safety_stock || '';
     $('a_nd_code').value = s.nd_code || '';
     $('a_remark').value = s.remark || '';
+    syncRpTypeFields();
     $('a_sku_urgent').value = s.sku || '';
     $('a_qty').value = s.qty || '';
     $('a_urgent_reason').value = s.urgent_reason || '';
@@ -230,6 +231,13 @@
   }
 
   $('a_urgent_reason').addEventListener('change', syncUrgentOtherField);
+
+  function syncRpTypeFields() {
+    const rpType = $('a_rp_type').value;
+    $('a_safety_stock_wrap').style.display = rpType === 'ND' ? 'none' : '';
+    $('a_nd_code_wrap').style.display = rpType === 'RF' ? 'none' : '';
+  }
+  $('a_rp_type').addEventListener('change', syncRpTypeFields);
 
   $('btn_save_edit').addEventListener('click', async () => {
     if (!currentDetail) return;

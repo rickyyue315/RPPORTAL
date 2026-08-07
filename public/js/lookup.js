@@ -21,6 +21,13 @@
 
   $('f_u_urgent_reason').addEventListener('change', syncOtherReasonWrap);
 
+  function syncRpTypeFields() {
+    const rpType = $('f_rp_type').value;
+    $('f_safety_stock_wrap').style.display = rpType === 'ND' ? 'none' : '';
+    $('f_nd_code_wrap').style.display = rpType === 'RF' ? 'none' : '';
+  }
+  $('f_rp_type').addEventListener('change', syncRpTypeFields);
+
   $('search_form').addEventListener('submit', async (e) => {
     e.preventDefault();
     const no = $('q_no').value.trim().toUpperCase();
@@ -162,6 +169,7 @@
       $('f_safety_stock').value = s.safety_stock || '';
       $('f_nd_code').value = s.nd_code || '';
       $('f_remark').value = s.remark || '';
+      syncRpTypeFields();
     }
 
     const tbody = $('versions_table').querySelector('tbody');

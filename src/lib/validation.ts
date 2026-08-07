@@ -1,4 +1,5 @@
 import {
+  ND_CODE_OPTIONS,
   normalizeText,
   RETURN_QTY_MAX,
   RETURN_QTY_MIN,
@@ -109,12 +110,20 @@ export function validateBusinessFields(
     } else if (!isPositiveNumber(safetyStock)) {
       errors.push({ field: 'safety_stock', message: 'Safety stock 必須為大於 0 的數字' });
     }
+    if (ndCode) {
+      errors.push({ field: 'nd_code', message: 'RP Type 為 RF 時不可填寫 ND Code' });
+    }
     if (RF_REMARK_REQUIRED_SITES.has(normalizeText(siteCode).toUpperCase()) && !remark) {
       errors.push({ field: 'remark', message: '此店舖轉 RF 時必須填寫 Remark' });
     }
   } else if (rpType === 'ND') {
+    if (safetyStock) {
+      errors.push({ field: 'safety_stock', message: 'RP Type 為 ND 時不可填寫 Safety stock' });
+    }
     if (!ndCode) {
       errors.push({ field: 'nd_code', message: 'RP Type 為 ND 時必須填寫 ND Code' });
+    } else if (!ND_CODE_OPTIONS.includes(ndCode)) {
+      errors.push({ field: 'nd_code', message: 'ND Code 必須為系統提供的選項' });
     }
   }
 

@@ -38,7 +38,7 @@
 
       <div class="card">
         <h2>單筆申報</h2>
-        <p class="hint">只有 <b>Site Code</b>、<b>SKU</b> 及 <b>RP Type</b> 為必填。RP Type 為 <b>RF</b> 時必須填寫 Safety stock（大於 0）；RP Type 為 <b>ND</b> 時必須填寫 ND Code。部分店舖轉 RF 時必須填寫 Remark。</p>
+        <p class="hint">只有 <b>Site Code</b>、<b>SKU</b> 及 <b>RP Type</b> 為必填。RP Type 為 <b>RF</b> 時必須填寫 Safety stock（大於 0）且 <b>不可填寫 ND Code</b>；RP Type 為 <b>ND</b> 時必須填寫 <b>系統提供的 ND Code</b> 且不可填寫 Safety stock。部分店舖轉 RF 時必須填寫 Remark。</p>
         <div id="form_error"></div>
         <form id="apply_form">
           <div class="form-grid">
@@ -64,11 +64,11 @@
               <option value="RF">RF</option>
             </select>
           </div>
-          <div>
+          <div id="safety_stock_wrap">
             <label for="safety_stock">Safety stock</label>
             <input type="text" id="safety_stock">
           </div>
-          <div>
+          <div id="nd_code_wrap">
             <label for="nd_code">ND Code</label>
             <input type="text" id="nd_code" list="nd_code_list">
             <datalist id="nd_code_list"></datalist>

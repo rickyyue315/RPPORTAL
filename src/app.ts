@@ -11,6 +11,7 @@ import { adminRouter } from './routes/admin.js';
 import { checkDatabase } from './db/pool.js';
 import { csrfProtection, csrfTokenCookie } from './middleware/csrf.js';
 import { asyncHandler } from './middleware/helpers.js';
+import { requestLogger } from './middleware/requestLog.js';
 import { toHKString } from './lib/time.js';
 import {
   ND_CODE_OPTIONS,
@@ -61,6 +62,7 @@ export function createApp() {
   );
 
   app.use(cors({ origin: config.corsOrigins.length ? config.corsOrigins : false, credentials: true }));
+  app.use(requestLogger);
   app.use(express.json({ limit: '1mb' }));
   app.use(cookieParser());
   app.use(csrfTokenCookie);
@@ -137,7 +139,8 @@ export function createApp() {
     }
     const status = (err as { status?: number }).status ?? 500;
     if (status >= 500) {
-      console.error('[error]', req.method, req.originalUrl, err.message);
+      const requestId = (res.locals.requestId as string | undefined) ?? '-';
+      console.error('[error]', requestId, req.method, req.originalUrl, err.message);
     }
     if (!res.headersSent) {
       res.status(status).json({

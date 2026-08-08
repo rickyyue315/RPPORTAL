@@ -112,6 +112,27 @@ export async function findImportBatchByKey(
   );
   return result.rows[0] ?? null;
 }
+
+/**
+ * Detects an identical file that was already imported by the same actor. The
+ * admin upload flow has no Idempotency-Key, so a double-click or a network
+ * retry would otherwise write the same rows twice.
+ */
+export async function findImportBatchByContentHash(
+  contentHash: string,
+  submissionType: ImportSubmissionType,
+  createdBy: string,
+): Promise<ImportBatchRow | null> {
+  const result = await query<ImportBatchRow>(
+    `SELECT id, filename, sheet_name, row_count, success_count, failed_count,
+            results, content_hash, created_by, submission_type, idempotency_key, created_at
+       FROM import_batches
+      WHERE content_hash = $1 AND submission_type = $2 AND created_by = $3
+      LIMIT 1`,
+    [contentHash, submissionType, createdBy],
+  );
+  return result.rows[0] ?? null;
+}
 export async function getPublicImportBatchRecord(
   batchId: string,
   key: string,

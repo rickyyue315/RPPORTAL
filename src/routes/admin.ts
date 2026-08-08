@@ -61,7 +61,7 @@ import {
   type ExportFilters,
   type ExportSubmissionType,
 } from '../services/exportBatches.js';
-import { createImportBatch } from '../services/importBatches.js';
+import { createImportBatch, findImportBatchByContentHash } from '../services/importBatches.js';
 
 export const adminRouter = Router();
 
@@ -710,6 +710,23 @@ adminRouter.post(
       return;
     }
 
+    const duplicateBatch = await findImportBatchByContentHash(
+      parsed.contentHash ?? '',
+      'normal',
+      req.adminUsername!,
+    );
+    if (duplicateBatch) {
+      await writeAuditEvent({
+        eventType: 'excel_import_duplicate_rejected',
+        actorRole: 'admin',
+        actor: req.adminUsername,
+        ip: getClientIp(req),
+        metadata: { filename: file.originalname, submission_type: 'normal', existingBatchId: duplicateBatch.id },
+      });
+      res.status(409).json({ error: '此檔案已匯入過（相同內容），避免重複寫入', batchId: duplicateBatch.id });
+      return;
+    }
+
     const ip = getClientIp(req);
     const applicationDate = hkTodayForDateColumn();
     const results = await withTransaction(async (client) => {
@@ -953,6 +970,23 @@ adminRouter.post(
         totalRows: parsed.totalRows,
         errors: parsed.errors ?? [],
       });
+      return;
+    }
+
+    const duplicateBatch = await findImportBatchByContentHash(
+      parsed.contentHash ?? '',
+      'urgent',
+      req.adminUsername!,
+    );
+    if (duplicateBatch) {
+      await writeAuditEvent({
+        eventType: 'excel_import_duplicate_rejected',
+        actorRole: 'admin',
+        actor: req.adminUsername,
+        ip: getClientIp(req),
+        metadata: { filename: file.originalname, submission_type: 'urgent', existingBatchId: duplicateBatch.id },
+      });
+      res.status(409).json({ error: '此檔案已匯入過（相同內容），避免重複寫入', batchId: duplicateBatch.id });
       return;
     }
 

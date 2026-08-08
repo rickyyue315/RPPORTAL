@@ -12,6 +12,7 @@ export type AuditEventType =
   | 'admin_modified'
   | 'excel_import'
   | 'excel_import_error'
+  | 'excel_import_duplicate_rejected'
   | 'export_created'
   | 'export_download'
   | 'export_preview'

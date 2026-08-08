@@ -1,7 +1,7 @@
 import { createApp } from './app.js';
 import { config } from './config.js';
 import { migrate } from './db/migrate.js';
-import { withAdvisoryLock } from './db/pool.js';
+import { pool, withAdvisoryLock } from './db/pool.js';
 import { writeAuditEvent } from './lib/audit.js';
 import { seedStoresFromFile, countStores } from './services/stores.js';
 import { cleanupExpiredExportFiles } from './services/exportFiles.js';
@@ -69,9 +69,25 @@ async function main(): Promise<void> {
   void runMaintenanceCleanup();
 
   const app = createApp();
-  app.listen(config.port, () => {
+  const server = app.listen(config.port, () => {
     console.log(`[boot] listening on port ${config.port}`);
   });
+
+  let shuttingDown = false;
+  for (const signal of ['SIGTERM', 'SIGINT'] as const) {
+    process.on(signal, () => {
+      if (shuttingDown) return;
+      shuttingDown = true;
+      console.log(`[boot] received ${signal}, shutting down`);
+      server.close(() => {
+        pool
+          .end()
+          .catch((err) => console.error('[boot] error closing database pool', err))
+          .finally(() => process.exit(0));
+      });
+      setTimeout(() => process.exit(1), 10_000).unref();
+    });
+  }
 }
 
 main().catch((err) => {

@@ -11,11 +11,16 @@
 process.env.ADMIN_USERNAME = process.env.ADMIN_USERNAME ?? 'admin';
 process.env.ADMIN_PASSWORD = process.env.ADMIN_PASSWORD ?? 'smoke-password';
 process.env.PUBLIC_RECOVERY_CODE = process.env.PUBLIC_RECOVERY_CODE ?? 'smoke-recovery-code';
+// Config requires DATABASE_URL at import time even though the smoke test runs
+// against an in-memory PGlite; provide a harmless default for local runs.
+process.env.DATABASE_URL = process.env.DATABASE_URL ?? 'postgres://smoke:smoke@localhost:5432/smoke';
 
 const { PGlite } = await import('@electric-sql/pglite');
 const { readFile } = await import('node:fs/promises');
 const { default: path } = await import('node:path');
 const { fileURLToPath } = await import('node:url');
+const { default: ExcelJS } = await import('exceljs');
+const { TEMPLATE_COLUMNS, RP_TEAM_SHEET, RETURN_COLUMNS, RETURN_SHEET } = await import('../src/lib/fields.js');
 const { setPoolForTesting } = await import('../src/db/pool.js');
 const { seedStoresFromFile } = await import('../src/services/stores.js');
 const { createApp } = await import('../src/app.js');
@@ -35,7 +40,7 @@ setPoolForTesting({
 console.log('[smoke] PGlite ready');
 
 // Apply migrations manually without the pgcrypto extension line.
-for (const file of ['001_init.sql', '002_drop_rp_type_completed_at.sql', '003_add_submission_type_qty.sql', '004_add_urgent_reason.sql', '005_add_sales_submission_type.sql', '006_add_return_submission_type.sql', '007_add_idempotency_and_import_recovery.sql', '008_add_export_file_archive.sql', '009_architecture_hardening.sql']) {
+for (const file of ['001_init.sql', '002_drop_rp_type_completed_at.sql', '003_add_submission_type_qty.sql', '004_add_urgent_reason.sql', '005_add_sales_submission_type.sql', '006_add_return_submission_type.sql', '007_add_idempotency_and_import_recovery.sql', '008_add_export_file_archive.sql', '009_architecture_hardening.sql', '010_query_optimization.sql']) {
   const sql = (await readFile(path.join(root, 'src', 'db', 'migrations', file), 'utf8')).replace(
     /CREATE EXTENSION IF NOT EXISTS pgcrypto;\s*/g,
     '',
@@ -81,6 +86,11 @@ const server = app.listen(0, async () => {
     const health = await fetch(`${base}/health`);
     check('health endpoint', health.status === 200);
 
+    const urgentWindow = await fetch(`${base}/api/public/urgent/window`);
+    const urgentWindowJson = await urgentWindow.json();
+    check('urgent window', urgentWindow.status === 200 && typeof urgentWindowJson.open === 'boolean');
+    const urgentOpen = urgentWindowJson.open === true;
+
     const store = await fetch(`${base}/api/public/stores/HA02`);
     const storeJson = await store.json();
     check('store lookup HA02', storeJson.store?.shop === '駱克');
@@ -103,7 +113,12 @@ const server = app.listen(0, async () => {
       body: JSON.stringify({ site_code: 'HA06', sku: '1005022', qty: 8, urgent_reason: '1' }),
     });
     const urgentJson = await urgent.json();
-    check('urgent web submit', urgent.status === 201 && /^URGENT-/.test(urgentJson.submission.application_no) && urgentJson.submission.qty === 8 && urgentJson.submission.urgent_reason === '1');
+    check(
+      'urgent web submit',
+      urgentOpen
+        ? urgent.status === 201 && /^URGENT-/.test(urgentJson.submission.application_no) && urgentJson.submission.qty === 8 && urgentJson.submission.urgent_reason === '1'
+        : urgent.status === 400 && String(urgentJson.error ?? '').includes('14:30'),
+    );
 
     const urgentBatch = await fetch(`${base}/api/public/urgent/submit`, {
       method: 'POST',
@@ -120,10 +135,12 @@ const server = app.listen(0, async () => {
     const urgentBatchJson = await urgentBatch.json();
     check(
       'urgent 3-SKU web batch',
-      urgentBatch.status === 201
-        && urgentBatchJson.submissions.length === 3
-        && new Set(urgentBatchJson.submissions.map((s: { application_no: string }) => s.application_no)).size === 3
-        && urgentBatchJson.submissions[1].urgent_reason_other === 'smoke 加單',
+      urgentOpen
+        ? urgentBatch.status === 201
+          && urgentBatchJson.submissions.length === 3
+          && new Set(urgentBatchJson.submissions.map((s: { application_no: string }) => s.application_no)).size === 3
+          && urgentBatchJson.submissions[1].urgent_reason_other === 'smoke 加單'
+        : urgentBatch.status === 400 && String(urgentBatchJson.error ?? '').includes('14:30'),
     );
 
     const sales = await fetch(`${base}/api/public/sales/submit`, {
@@ -133,6 +150,28 @@ const server = app.listen(0, async () => {
     });
     const salesJson = await sales.json();
     check('sales web submit', sales.status === 201 && /^SALES-/.test(salesJson.submission.application_no));
+
+    const recovery = await fetch(`${base}/api/public/my-applications?site_code=HA02`, {
+      headers: { 'x-recovery-code': 'smoke-recovery-code' },
+    });
+    const recoveryJson = await recovery.json();
+    check('public recovery with code', recovery.status === 200 && recoveryJson.store?.shop === '駱克');
+
+    const returnWb = new ExcelJS.Workbook();
+    const returnWs = returnWb.addWorksheet(RETURN_SHEET);
+    returnWs.addRow([...RETURN_COLUMNS]);
+    returnWs.addRow(['HA02', '1005041', 5, '1', 'smoke 確認人', '12345678']);
+    const returnBuffer = Buffer.from(await returnWb.xlsx.writeBuffer());
+    const returnImport = await fetch(`${base}/api/public/return/import`, {
+      method: 'POST',
+      body: (() => {
+        const fd = new FormData();
+        fd.append('file', new Blob([returnBuffer]), 'smoke-return.xlsx');
+        return fd;
+      })(),
+    });
+    const returnImportJson = await returnImport.json();
+    check('public return import', returnImport.status === 201 && returnImportJson.successCount === 1);
 
     const csrf = await fetch(`${base}/api/csrf`);
     const csrfJson = await csrf.json();
@@ -168,6 +207,20 @@ const server = app.listen(0, async () => {
     const meJson = await me.json();
     check('admin me after login', me.status === 200 && meJson.username === 'admin');
 
+    const adminImportWb = new ExcelJS.Workbook();
+    const adminImportWs = adminImportWb.addWorksheet(RP_TEAM_SHEET);
+    adminImportWs.addRow([...TEMPLATE_COLUMNS]);
+    adminImportWs.addRow(['HA02', '1005051', 'ND', '', 'ND20-SO-Not displayed in small stores', '']);
+    const adminImportFd = new FormData();
+    adminImportFd.append('file', new Blob([Buffer.from(await adminImportWb.xlsx.writeBuffer())]), 'smoke-admin-import.xlsx');
+    const adminImport = await fetch(`${base}/api/admin/import`, {
+      method: 'POST',
+      headers: { cookie: cookieJar, 'x-csrf-token': csrfJson.token },
+      body: adminImportFd,
+    });
+    const adminImportJson = await adminImport.json();
+    check('admin import', adminImport.status === 201 && adminImportJson.successCount === 1);
+
     const list = await fetch(`${base}/api/admin/submissions?page=1&page_size=10`, {
       headers: { cookie: cookieJar },
     });
@@ -194,7 +247,9 @@ const server = app.listen(0, async () => {
       },
       body: JSON.stringify({ include_exported: false }),
     });
-    check('admin urgent export + lock', urgentExportRes.status === 200 && Number(urgentExportRes.headers.get('content-length')) > 1000);
+    check('admin urgent export + lock', urgentOpen
+      ? urgentExportRes.status === 200 && Number(urgentExportRes.headers.get('content-length')) > 1000
+      : urgentExportRes.status === 400);
 
     const salesExportRes = await fetch(`${base}/api/admin/sales/export`, {
       method: 'POST',

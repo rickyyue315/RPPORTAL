@@ -51,7 +51,7 @@ async function countSubmissions(where = ''): Promise<number> {
 beforeAll(async () => {
   db = new PGlite();
   setPoolForTesting(makePglitePool(db));
-  const migrationFiles = ['001_init.sql', '002_drop_rp_type_completed_at.sql', '003_add_submission_type_qty.sql', '004_add_urgent_reason.sql', '005_add_sales_submission_type.sql', '006_add_return_submission_type.sql', '007_add_idempotency_and_import_recovery.sql', '008_add_export_file_archive.sql', '009_architecture_hardening.sql'];
+  const migrationFiles = ['001_init.sql', '002_drop_rp_type_completed_at.sql', '003_add_submission_type_qty.sql', '004_add_urgent_reason.sql', '005_add_sales_submission_type.sql', '006_add_return_submission_type.sql', '007_add_idempotency_and_import_recovery.sql', '008_add_export_file_archive.sql', '009_architecture_hardening.sql', '010_query_optimization.sql'];
   for (const file of migrationFiles) {
     let sql = await readFile(path.join(__dirname, '..', 'src', 'db', 'migrations', file), 'utf8');
     sql = sql.replace(/CREATE EXTENSION IF NOT EXISTS pgcrypto;\s*/g, '');
@@ -81,6 +81,12 @@ describe('public API', () => {
   it('rejects an unknown site code', async () => {
     const res = await request(app).get('/api/public/stores/ZZ99');
     expect(res.status).toBe(404);
+  });
+
+  it('sets a request id header for tracing', async () => {
+    const res = await request(app).get('/api/public/stores/HA02');
+    expect(res.status).toBe(200);
+    expect(res.headers['x-request-id']).toBeTruthy();
   });
 
   it('rejects an unknown RP Type before persistence', async () => {
@@ -733,6 +739,37 @@ describe('admin API', () => {
     expect(res.body.rows[0].application_no).toMatch(/^NDRF-/);
     expect(res.body.rows[0].site_code).toBe('HA02');
     expect(res.body.rows[1].site_code).toBe('HA06');
+  });
+
+  it('rejects a re-import of the same file content to avoid duplicates', async () => {
+    const agent = request.agent(app);
+    await adminLogin(agent);
+    const token = await csrf(agent);
+
+    const wb = new ExcelJS.Workbook();
+    const ws = wb.addWorksheet(RP_TEAM_SHEET);
+    ws.addRow([...TEMPLATE_COLUMNS]);
+    ws.addRow(['HA02', '1000777', 'ND', '', 'ND20-SO-Not displayed in small stores', '']);
+    const buffer = Buffer.from(await wb.xlsx.writeBuffer());
+
+    const first = await agent
+      .post('/api/admin/import')
+      .set('x-csrf-token', token)
+      .attach('file', buffer, 'duplicate-check.xlsx');
+    expect(first.status).toBe(201);
+
+    const second = await agent
+      .post('/api/admin/import')
+      .set('x-csrf-token', token)
+      .attach('file', buffer, 'duplicate-check.xlsx');
+    expect(second.status).toBe(409);
+    expect(second.body.error).toContain('已匯入過');
+    expect(second.body.batchId).toBeTruthy();
+
+    const rows = await db.query<{ count: string }>(
+      "SELECT count(*)::text AS count FROM submissions WHERE sku = '1000777'",
+    );
+    expect(rows.rows[0]!.count).toBe('1');
   });
 
   it('rejects an import with an invalid site code without writing anything', async () => {

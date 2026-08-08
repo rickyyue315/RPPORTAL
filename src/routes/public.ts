@@ -64,14 +64,16 @@ import {
   URGENT_WEB_MAX_ITEMS,
   urgentReasonLabel,
 } from '../lib/fields.js';
-import { RF_REMARK_REQUIRED_SITES, SKU_PATTERN, SKU_ERROR, validateBusinessFields, validateUrgentReason } from '../lib/validation.js';
+import { isValidIsoDate, RF_REMARK_REQUIRED_SITES, SKU_PATTERN, SKU_ERROR, validateBusinessFields, validateUrgentReason } from '../lib/validation.js';
 import { query, withTransaction } from '../db/pool.js';
 import { config } from '../config.js';
 import { generateApplicationNo } from '../lib/applicationNo.js';
 import { ipExpiryIso } from '../lib/ip.js';
 import { RETURN_SCHEDULE, RETURN_WINDOWS, getActiveReturnWindow, isReturnModificationOpen } from '../lib/returnSchedule.js';
 import { fingerprintPayload, getIdempotencyKey, hasInvalidIdempotencyKey } from '../lib/idempotency.js';
-import { findImportBatchByIdempotencyKey, findImportBatchByKey, getPublicImportBatchRecord, importBatchResponse, lockImportIdempotencyKey, type ImportSubmissionType } from '../services/importBatches.js';
+import { createImportBatch, findImportBatchByIdempotencyKey, findImportBatchByKey, getPublicImportBatchRecord, importBatchResponse, lockImportIdempotencyKey, type ImportSubmissionType } from '../services/importBatches.js';
+import { isValidPublicRecoveryCode } from '../lib/recovery.js';
+import { getUploadedFile, validateUploadedXlsx } from '../lib/upload.js';
 
 export const publicRouter = Router();
 
@@ -518,17 +520,10 @@ publicRouter.post(
   excelImportLimiter,
   upload.single('file'),
   asyncHandler(async (req: Request, res: Response) => {
-    const file = (req as Request & { file?: Express.Multer.File }).file;
-    if (!file) {
-      res.status(400).json({ error: '請上載 Excel 檔案' });
-      return;
-    }
-    if (!/\.xlsx$/i.test(file.originalname)) {
-      res.status(400).json({ error: EXCEL_UPLOAD_EXTENSION_ERROR });
-      return;
-    }
-    if (file.size > config.maxUploadBytes) {
-      res.status(400).json({ error: `檔案超過 ${config.maxUploadBytes / 1024 / 1024}MB 限制` });
+    const file = getUploadedFile(req)!;
+    const uploadError = validateUploadedXlsx(file, config.maxUploadBytes, EXCEL_UPLOAD_EXTENSION_ERROR);
+    if (uploadError) {
+      res.status(uploadError.status).json({ error: uploadError.message });
       return;
     }
 
@@ -586,7 +581,7 @@ publicRouter.post(
     try {
       results = await withTransaction(async (client) => {
         if (idempotencyKey) {
-          await lockImportIdempotencyKey(client, idempotencyKey);
+          await lockImportIdempotencyKey(client, idempotencyKey, 'sales');
           const replay = await findImportBatchByIdempotencyKey(client, idempotencyKey, 'sales');
           if (replay) {
             if (replay.content_hash !== parsed.contentHash) throw new IdempotencyConflictError();
@@ -643,13 +638,19 @@ publicRouter.post(
             submitted_at: toHKString(row.submitted_at),
           });
         }
-        const batch = await client.query<{ id: string }>(
-          `INSERT INTO import_batches (filename, sheet_name, row_count, success_count, failed_count, results, content_hash, created_by, submission_type, idempotency_key)
-           VALUES ($1, $2, $3, $4, 0, $5::jsonb, $6, 'applicant', 'sales', $7)
-           RETURNING id`,
-          [file.originalname, parsed.sheetName ?? '', parsed.totalRows, rowsOut.length, JSON.stringify(rowsOut), parsed.contentHash, idempotencyKey ?? null],
-        );
-        return { batchId: batch.rows[0]!.id, rows: rowsOut, successCount: rowsOut.length };
+        const batchId = await createImportBatch(client, {
+          filename: file.originalname,
+          sheetName: parsed.sheetName ?? '',
+          rowCount: parsed.totalRows,
+          successCount: rowsOut.length,
+          failedCount: 0,
+          results: rowsOut,
+          contentHash: parsed.contentHash ?? '',
+          createdBy: 'applicant',
+          submissionType: 'sales',
+          idempotencyKey,
+        });
+        return { batchId, rows: rowsOut, successCount: rowsOut.length };
       });
     } catch (err) {
       if (err instanceof IdempotencyConflictError) {
@@ -845,17 +846,10 @@ publicRouter.post(
   excelImportLimiter,
   upload.single('file'),
   asyncHandler(async (req: Request, res: Response) => {
-    const file = (req as Request & { file?: Express.Multer.File }).file;
-    if (!file) {
-      res.status(400).json({ error: '請上載 Excel 檔案' });
-      return;
-    }
-    if (!/\.xlsx$/i.test(file.originalname)) {
-      res.status(400).json({ error: EXCEL_UPLOAD_EXTENSION_ERROR });
-      return;
-    }
-    if (file.size > config.maxUploadBytes) {
-      res.status(400).json({ error: `檔案超過 ${config.maxUploadBytes / 1024 / 1024}MB 限制` });
+    const file = getUploadedFile(req)!;
+    const uploadError = validateUploadedXlsx(file, config.maxUploadBytes, EXCEL_UPLOAD_EXTENSION_ERROR);
+    if (uploadError) {
+      res.status(uploadError.status).json({ error: uploadError.message });
       return;
     }
     const stores = await query<{ site_code: string }>('SELECT site_code FROM stores');
@@ -914,7 +908,7 @@ publicRouter.post(
     try {
       const results = await withTransaction(async (client) => {
          if (idempotencyKey) {
-           await lockImportIdempotencyKey(client, idempotencyKey);
+            await lockImportIdempotencyKey(client, idempotencyKey, 'return');
            const replay = await findImportBatchByIdempotencyKey(client, idempotencyKey, 'return');
            if (replay) {
              if (replay.content_hash !== parsed.contentHash) throw new IdempotencyConflictError();
@@ -986,12 +980,19 @@ publicRouter.post(
             submitted_at: toHKString(row.submitted_at),
           });
         }
-        const batch = await client.query<{ id: string }>(
-          `INSERT INTO import_batches (filename, sheet_name, row_count, success_count, failed_count, results, content_hash, created_by, submission_type, idempotency_key)
-           VALUES ($1, $2, $3, $4, 0, $5::jsonb, $6, 'applicant', 'return', $7) RETURNING id`,
-          [file.originalname, parsed.sheetName ?? RETURN_SHEET, parsed.totalRows, rowsOut.length, JSON.stringify(rowsOut), parsed.contentHash, idempotencyKey ?? null],
-        );
-        return { batchId: batch.rows[0]!.id, rows: rowsOut, successCount: rowsOut.length };
+        const batchId = await createImportBatch(client, {
+          filename: file.originalname,
+          sheetName: parsed.sheetName ?? RETURN_SHEET,
+          rowCount: parsed.totalRows,
+          successCount: rowsOut.length,
+          failedCount: 0,
+          results: rowsOut,
+          contentHash: parsed.contentHash ?? '',
+          createdBy: 'applicant',
+          submissionType: 'return',
+          idempotencyKey,
+        });
+        return { batchId, rows: rowsOut, successCount: rowsOut.length };
       });
       await writeAuditEvent({ eventType: 'excel_import', actorRole: 'applicant', ip, metadata: { filename: file.originalname, submission_type: 'return', batchId: results.batchId, totalRows: parsed.totalRows, successCount: results.successCount } });
       res.status(201).json({ message: `成功匯入 ${results.successCount} 行`, totalRows: parsed.totalRows, successCount: results.successCount, batchId: results.batchId, rows: results.rows });
@@ -1297,17 +1298,10 @@ publicRouter.post(
   excelImportLimiter,
   upload.single('file'),
   asyncHandler(async (req: Request, res: Response) => {
-    const file = (req as Request & { file?: Express.Multer.File }).file;
-    if (!file) {
-      res.status(400).json({ error: '請上載 Excel 檔案' });
-      return;
-    }
-    if (!/\.xlsx$/i.test(file.originalname)) {
-      res.status(400).json({ error: EXCEL_UPLOAD_EXTENSION_ERROR });
-      return;
-    }
-    if (file.size > config.maxUploadBytes) {
-      res.status(400).json({ error: `檔案超過 ${config.maxUploadBytes / 1024 / 1024}MB 限制` });
+    const file = getUploadedFile(req)!;
+    const uploadError = validateUploadedXlsx(file, config.maxUploadBytes, EXCEL_UPLOAD_EXTENSION_ERROR);
+    if (uploadError) {
+      res.status(uploadError.status).json({ error: uploadError.message });
       return;
     }
 
@@ -1382,7 +1376,7 @@ publicRouter.post(
     try {
       results = await withTransaction(async (client) => {
         if (idempotencyKey) {
-          await lockImportIdempotencyKey(client, idempotencyKey);
+          await lockImportIdempotencyKey(client, idempotencyKey, 'urgent');
           const replay = await findImportBatchByIdempotencyKey(client, idempotencyKey, 'urgent');
           if (replay) {
             if (replay.content_hash !== parsed.contentHash) throw new IdempotencyConflictError();
@@ -1458,13 +1452,19 @@ publicRouter.post(
             submitted_at: toHKString(row.submitted_at),
           });
         }
-        const batchId = await client.query<{ id: string }>(
-          `INSERT INTO import_batches (filename, sheet_name, row_count, success_count, failed_count, results, content_hash, created_by, submission_type, idempotency_key)
-           VALUES ($1, $2, $3, $4, 0, $5::jsonb, $6, 'applicant', 'urgent', $7)
-           RETURNING id`,
-          [file.originalname, parsed.sheetName ?? '', parsed.totalRows, successCount, JSON.stringify(rowsOut), parsed.contentHash, idempotencyKey ?? null],
-        );
-        return { batchId: batchId.rows[0]!.id, rows: rowsOut, successCount };
+        const batchId = await createImportBatch(client, {
+          filename: file.originalname,
+          sheetName: parsed.sheetName ?? '',
+          rowCount: parsed.totalRows,
+          successCount,
+          failedCount: 0,
+          results: rowsOut,
+          contentHash: parsed.contentHash ?? '',
+          createdBy: 'applicant',
+          submissionType: 'urgent',
+          idempotencyKey,
+        });
+        return { batchId, rows: rowsOut, successCount };
       });
     } catch (err) {
       if (err instanceof IdempotencyConflictError) {
@@ -1540,17 +1540,10 @@ publicRouter.post(
   excelImportLimiter,
   upload.single('file'),
   asyncHandler(async (req: Request, res: Response) => {
-    const file = (req as Request & { file?: Express.Multer.File }).file;
-    if (!file) {
-      res.status(400).json({ error: '請上載 Excel 檔案' });
-      return;
-    }
-    if (!/\.xlsx$/i.test(file.originalname)) {
-      res.status(400).json({ error: EXCEL_UPLOAD_EXTENSION_ERROR });
-      return;
-    }
-    if (file.size > config.maxUploadBytes) {
-      res.status(400).json({ error: `檔案超過 ${config.maxUploadBytes / 1024 / 1024}MB 限制` });
+    const file = getUploadedFile(req)!;
+    const uploadError = validateUploadedXlsx(file, config.maxUploadBytes, EXCEL_UPLOAD_EXTENSION_ERROR);
+    if (uploadError) {
+      res.status(uploadError.status).json({ error: uploadError.message });
       return;
     }
 
@@ -1620,7 +1613,7 @@ publicRouter.post(
     try {
       results = await withTransaction(async (client) => {
         if (idempotencyKey) {
-          await lockImportIdempotencyKey(client, idempotencyKey);
+          await lockImportIdempotencyKey(client, idempotencyKey, 'normal');
           const replay = await findImportBatchByIdempotencyKey(client, idempotencyKey, 'normal');
           if (replay) {
             if (replay.content_hash !== parsed.contentHash) throw new IdempotencyConflictError();
@@ -1699,21 +1692,19 @@ publicRouter.post(
             submitted_at: toHKString(row.submitted_at),
           });
         }
-        const batchId = await client.query<{ id: string }>(
-          `INSERT INTO import_batches (filename, sheet_name, row_count, success_count, failed_count, results, content_hash, created_by, submission_type, idempotency_key)
-           VALUES ($1, $2, $3, $4, 0, $5::jsonb, $6, 'applicant', 'normal', $7)
-           RETURNING id`,
-          [
-            file.originalname,
-            parsed.sheetName ?? '',
-            parsed.totalRows,
-            successCount,
-            JSON.stringify(rowsOut),
-            parsed.contentHash,
-          idempotencyKey ?? null,
-          ],
-        );
-        return { batchId: batchId.rows[0]!.id, rows: rowsOut, successCount };
+        const batchId = await createImportBatch(client, {
+          filename: file.originalname,
+          sheetName: parsed.sheetName ?? '',
+          rowCount: parsed.totalRows,
+          successCount,
+          failedCount: 0,
+          results: rowsOut,
+          contentHash: parsed.contentHash ?? '',
+          createdBy: 'applicant',
+          submissionType: 'normal',
+          idempotencyKey,
+        });
+        return { batchId, rows: rowsOut, successCount };
       });
     } catch (err) {
       if (err instanceof IdempotencyConflictError) {
@@ -1829,8 +1820,6 @@ publicRouter.get(
   }),
 );
 
-const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
-
 /** GET /api/public/my-applications?site_code=&from=&to=&sku= — recover application numbers by Site Code + date range. */
 publicRouter.get(
   '/my-applications',
@@ -1840,6 +1829,16 @@ publicRouter.get(
     const rawFrom = String(req.query.from ?? '').trim();
     const rawTo = String(req.query.to ?? '').trim();
     const rawSku = String(req.query.sku ?? '').trim();
+    const recoveryCode = req.get('x-recovery-code') ?? '';
+
+    if (!config.publicRecoveryCode) {
+      res.status(503).json({ error: '申請編號恢復功能尚未設定' });
+      return;
+    }
+    if (!isValidPublicRecoveryCode(recoveryCode)) {
+      res.status(403).json({ error: 'Recovery Code 無效' });
+      return;
+    }
 
     if (!siteCode) {
       res.status(400).json({ error: 'Site Code 為必填' });
@@ -1855,7 +1854,7 @@ publicRouter.get(
     let to: string | null = null;
     for (const [label, raw] of [['from', rawFrom], ['to', rawTo]] as const) {
       if (!raw) continue;
-      if (!DATE_RE.test(raw)) {
+      if (!isValidIsoDate(raw)) {
         res.status(400).json({ error: `${label === 'from' ? '由' : '至'}日期格式無效，請使用 YYYY-MM-DD` });
         return;
       }

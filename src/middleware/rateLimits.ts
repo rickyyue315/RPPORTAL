@@ -1,67 +1,33 @@
 import { rateLimit } from 'express-rate-limit';
 import type { Request } from 'express';
+import { PostgresRateLimitStore } from './postgresRateLimitStore.js';
 
 const keyGenerator = (req: Request): string => {
   const ip = req.ip ?? req.socket.remoteAddress ?? 'unknown';
   return `${ip}:${req.path}`;
 };
 
-export const publicSubmitLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
-  limit: 50,
-  standardHeaders: 'draft-7',
-  legacyHeaders: false,
-  keyGenerator,
-  skip: () => process.env.NODE_ENV === 'test',
-  message: { error: '提交次數過多，請稍後再試' },
-});
+function createLimiter(windowMs: number, limit: number, message: string) {
+  return rateLimit({
+    windowMs,
+    limit,
+    standardHeaders: 'draft-7',
+    legacyHeaders: false,
+    keyGenerator,
+    store: new PostgresRateLimitStore(windowMs),
+    skip: () => process.env.NODE_ENV === 'test',
+    message: { error: message },
+  });
+}
 
-export const publicLookupLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
-  limit: 120,
-  standardHeaders: 'draft-7',
-  legacyHeaders: false,
-  keyGenerator,
-  skip: () => process.env.NODE_ENV === 'test',
-  message: { error: '查詢次數過多，請稍後再試' },
-});
+export const publicSubmitLimiter = createLimiter(15 * 60 * 1000, 50, '提交次數過多，請稍後再試');
 
-export const excelImportLimiter = rateLimit({
-  windowMs: 60 * 60 * 1000,
-  limit: 30,
-  standardHeaders: 'draft-7',
-  legacyHeaders: false,
-  keyGenerator,
-  skip: () => process.env.NODE_ENV === 'test',
-  message: { error: '匯入次數過多，請稍後再試' },
-});
+export const publicLookupLimiter = createLimiter(15 * 60 * 1000, 120, '查詢次數過多，請稍後再試');
 
-export const adminLoginLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
-  limit: 20,
-  standardHeaders: 'draft-7',
-  legacyHeaders: false,
-  keyGenerator,
-  skip: () => process.env.NODE_ENV === 'test',
-  message: { error: '登入嘗試次數過多，請稍後再試' },
-});
+export const excelImportLimiter = createLimiter(60 * 60 * 1000, 30, '匯入次數過多，請稍後再試');
 
-export const adminActionLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
-  limit: 200,
-  standardHeaders: 'draft-7',
-  legacyHeaders: false,
-  keyGenerator,
-  skip: () => process.env.NODE_ENV === 'test',
-  message: { error: '操作次數過多，請稍後再試' },
-});
+export const adminLoginLimiter = createLimiter(15 * 60 * 1000, 20, '登入嘗試次數過多，請稍後再試');
 
-export const excelExportLimiter = rateLimit({
-  windowMs: 60 * 60 * 1000,
-  limit: 60,
-  standardHeaders: 'draft-7',
-  legacyHeaders: false,
-  keyGenerator,
-  skip: () => process.env.NODE_ENV === 'test',
-  message: { error: '匯出次數過多，請稍後再試' },
-});
+export const adminActionLimiter = createLimiter(15 * 60 * 1000, 200, '操作次數過多，請稍後再試');
+
+export const excelExportLimiter = createLimiter(60 * 60 * 1000, 60, '匯出次數過多，請稍後再試');

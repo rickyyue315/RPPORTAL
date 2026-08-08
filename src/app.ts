@@ -4,6 +4,7 @@ import helmet from 'helmet';
 import cookieParser from 'cookie-parser';
 import cors from 'cors';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { config } from './config.js';
 import { publicRouter } from './routes/public.js';
 import { adminRouter } from './routes/admin.js';
@@ -11,6 +12,22 @@ import { checkDatabase } from './db/pool.js';
 import { csrfProtection, csrfTokenCookie } from './middleware/csrf.js';
 import { asyncHandler } from './middleware/helpers.js';
 import { toHKString } from './lib/time.js';
+import {
+  ND_CODE_OPTIONS,
+  RETURN_QTY_MAX,
+  RETURN_QTY_MIN,
+  RETURN_REASONS,
+  RP_TYPE_OPTIONS,
+  URGENT_QTY_MAX,
+  URGENT_QTY_MIN,
+  URGENT_REASON_OTHER_CODE,
+  URGENT_REASON_OTHER_MAX,
+  URGENT_REASONS,
+  URGENT_WEB_MAX_ITEMS,
+} from './lib/fields.js';
+import { RF_REMARK_REQUIRED_SITES, SKU_PATTERN } from './lib/validation.js';
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 export function createApp() {
   const app = express();
@@ -47,9 +64,37 @@ export function createApp() {
   app.use(express.json({ limit: '1mb' }));
   app.use(cookieParser());
   app.use(csrfTokenCookie);
+  app.use('/api', (_req: Request, res: Response, next: NextFunction) => {
+    res.setHeader('Cache-Control', 'no-store, private');
+    next();
+  });
+
+  // Browser code consumes the same option source as the API validators. This
+  // prevents labels and business options from drifting across hand-written JS
+  // bundles.
+  app.get('/js/options.js', (_req: Request, res: Response) => {
+    res
+      .type('application/javascript')
+      .set('Cache-Control', 'no-store')
+      .send(`globalThis.NDRF_OPTIONS = ${JSON.stringify({
+        rpTypes: RP_TYPE_OPTIONS,
+        skuPattern: SKU_PATTERN.source,
+        ndCodes: ND_CODE_OPTIONS,
+        rfRemarkRequiredSites: [...RF_REMARK_REQUIRED_SITES],
+        urgentReasons: URGENT_REASONS,
+        urgentQtyMin: URGENT_QTY_MIN,
+        urgentQtyMax: URGENT_QTY_MAX,
+        urgentWebMaxItems: URGENT_WEB_MAX_ITEMS,
+        urgentReasonOtherCode: URGENT_REASON_OTHER_CODE,
+        urgentReasonOtherMax: URGENT_REASON_OTHER_MAX,
+        returnReasons: RETURN_REASONS,
+        returnQtyMin: RETURN_QTY_MIN,
+        returnQtyMax: RETURN_QTY_MAX,
+      })};`);
+  });
 
   app.use(
-    express.static(path.join(process.cwd(), 'public'), {
+    express.static(path.join(__dirname, '..', 'public'), {
       index: 'index.html',
       setHeaders: (res, filePath) => {
         if (filePath.endsWith('.html')) {
@@ -81,7 +126,6 @@ export function createApp() {
   });
 
   // Central error handler — never leaks DB/config details.
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   app.use((err: Error, req: Request, res: Response, _next: NextFunction) => {
     if (err instanceof multer.MulterError) {
       const status = err.code === 'LIMIT_FILE_SIZE' ? 413 : 400;

@@ -41,6 +41,39 @@ export async function withTransaction<T>(
   }
 }
 
+/**
+ * Runs one maintenance operation per database at a time. The session-level
+ * advisory lock is released automatically if the process exits.
+ */
+export async function withAdvisoryLock<T>(
+  key: string,
+  fn: (client: pg.PoolClient) => Promise<T>,
+): Promise<T | null> {
+  const client = await pool.connect();
+  let locked = false;
+  try {
+    const result = await client.query<{ locked: boolean }>(
+      'SELECT pg_try_advisory_lock(hashtextextended($1, 0)::bigint) AS locked',
+      [key],
+    );
+    locked = Boolean(result.rows[0]?.locked);
+    if (!locked) return null;
+    return await fn(client);
+  } finally {
+    if (locked) {
+      try {
+        await client.query(
+          'SELECT pg_advisory_unlock(hashtextextended($1, 0)::bigint)',
+          [key],
+        );
+      } catch (err) {
+        console.error('[db] failed to release advisory lock', err);
+      }
+    }
+    client.release();
+  }
+}
+
 export async function checkDatabase(): Promise<boolean> {
   try {
     await query('SELECT 1');

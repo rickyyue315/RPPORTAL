@@ -181,19 +181,12 @@
           <label>RP Type</label>
           <select id="f_rp_type">
             <option value="">全部</option>
-            <option value="ND">ND</option>
-            <option value="RF">RF</option>
           </select>
         </div>
         <div class="field field--ndcode">
           <label>ND Code</label>
           <select id="f_nd_code">
             <option value="">全部</option>
-            <option value="ND20-SO-Not displayed in small stores">ND20-SO-Not displayed in small stores</option>
-            <option value="ND21-SO-Seasonal item(Winter)">ND21-SO-Seasonal item(Winter)</option>
-            <option value="ND22-SO-Seasonal item(Summer)">ND22-SO-Seasonal item(Summer)</option>
-            <option value="ND23-SO-Due to OM/SUP reason">ND23-SO-Due to OM/SUP reason</option>
-            <option value="ND29-SO-Optimized SKU(Specific store)">ND29-SO-Optimized SKU(Specific store)</option>
           </select>
         </div>
         <div class="field field--appno">
@@ -239,8 +232,6 @@
             <label for="a_rp_type">RP Type <span class="optional">（必填）</span></label>
             <select id="a_rp_type">
               <option value="">—</option>
-              <option value="ND">ND</option>
-              <option value="RF">RF</option>
             </select>
           </div>
           <div id="a_safety_stock_wrap">
@@ -270,15 +261,6 @@
             <label for="a_urgent_reason">Urgent Reason <span class="optional">（必填）</span></label>
             <select id="a_urgent_reason">
               <option value="">請選擇申請原因</option>
-              <option value="1">1. 客人訂購 (RP Team定期隨機抽查核實)</option>
-              <option value="2">2. ROADSHOW</option>
-              <option value="3">3. 追數 (OM指定)</option>
-              <option value="4">4. Promotion</option>
-              <option value="5">5. 新舖落貨(只限開舖第一週)</option>
-              <option value="6">6. 新產品SAP無法落貨</option>
-              <option value="7">7. 大堆頭擺放</option>
-              <option value="8">8. 管理層要求(只限Portal落貨)(缺貨)</option>
-              <option value="9">9. 其他</option>
             </select>
           </div>
           <div class="full" id="a_urgent_reason_other_wrap" style="display:none">
@@ -448,6 +430,7 @@
     </div>
   </main>
 
+  <script src="/js/options.js"></script>
   <script src="/js/api.js"></script>
   <script src="/js/admin.js"></script>
 

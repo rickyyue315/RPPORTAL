@@ -1,20 +1,12 @@
 (() => {
   const $ = (id) => document.getElementById(id);
-  const QTY_MIN = 1;
-  const QTY_MAX = 1000;
-  const MAX_ITEMS = 5;
-  const URGENT_OTHER_CODE = '9';
-  const URGENT_REASONS = [
-    { code: '1', label: '1. 客人訂購 (RP Team定期隨機抽查核實)' },
-    { code: '2', label: '2. ROADSHOW' },
-    { code: '3', label: '3. 追數 (OM指定)' },
-    { code: '4', label: '4. Promotion' },
-    { code: '5', label: '5. 新舖落貨(只限開舖第一週)' },
-    { code: '6', label: '6. 新產品SAP無法落貨' },
-    { code: '7', label: '7. 大堆頭擺放' },
-    { code: '8', label: '8. 管理層要求(只限Portal落貨)(缺貨)' },
-    { code: '9', label: '9. 其他' },
-  ];
+  const options = globalThis.NDRF_OPTIONS || {};
+  const SKU_RE = new RegExp(options.skuPattern || '^(?:\\d{7}|\\d{12})$');
+  const QTY_MIN = options.urgentQtyMin ?? 1;
+  const QTY_MAX = options.urgentQtyMax ?? 1000;
+  const MAX_ITEMS = options.urgentWebMaxItems ?? 5;
+  const URGENT_OTHER_CODE = options.urgentReasonOtherCode ?? '9';
+  const URGENT_REASONS = options.urgentReasons || [];
   function reasonLabel(code) {
     const found = URGENT_REASONS.find((r) => r.code === code);
     return found ? found.label : code;
@@ -150,8 +142,6 @@
     }
     return { site_code: $('site_code').value.trim(), items };
   }
-
-  const SKU_RE = /^(?:\d{7}|\d{12})$/;
 
   function validateForm(d) {
     const errs = [];

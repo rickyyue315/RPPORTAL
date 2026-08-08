@@ -76,26 +76,28 @@ const VERSION_FIELD_LABELS = {
   return_window_key: '申請窗口',
 };
 
-const URGENT_REASON_LABELS = {
-  1: '1. 客人訂購 (RP Team定期隨機抽查核實)',
-  2: '2. ROADSHOW',
-  3: '3. 追數 (OM指定)',
-  4: '4. Promotion',
-  5: '5. 新舖落貨(只限開舖第一週)',
-  6: '6. 新產品SAP無法落貨',
-  7: '7. 大堆頭擺放',
-  8: '8. 管理層要求(只限Portal落貨)(缺貨)',
-  9: '9. 其他',
+const PLATFORM_OPTIONS = globalThis.NDRF_OPTIONS || {
+  rpTypes: [],
+  ndCodes: [],
+  rfRemarkRequiredSites: [],
+  urgentReasons: [],
+  urgentQtyMin: 1,
+  urgentQtyMax: 1000,
+  urgentWebMaxItems: 5,
+  urgentReasonOtherCode: '9',
+  urgentReasonOtherMax: 2000,
+  returnReasons: [],
+  returnQtyMin: 1,
+  returnQtyMax: 9999,
 };
 
-const RETURN_REASON_LABELS = {
-  1: '1. BUYER MEMO指定退貨',
-  2: '2. BUYER 電郵確認可退-期貨',
-  3: '3. BUYER 電郵確認可退-壞貨',
-  4: '4. 供應商確認可退-期貨',
-  5: '5. 供應商確認可退-壞貨',
-  6: '6. 供應商確認可退-下架貨',
-};
+const URGENT_REASON_LABELS = Object.fromEntries(
+  PLATFORM_OPTIONS.urgentReasons.map((reason) => [reason.code, reason.label]),
+);
+
+const RETURN_REASON_LABELS = Object.fromEntries(
+  PLATFORM_OPTIONS.returnReasons.map((reason) => [reason.code, reason.label]),
+);
 
 function versionFieldDisplayValue(field, value) {
   const raw = value === null || value === undefined ? '' : String(value).trim();
@@ -211,13 +213,7 @@ function showAlert(el, type, message) {
   el.innerHTML = `<div class="alert ${type}">${message}</div>`;
 }
 
-const ND_CODE_OPTIONS = [
-  'ND20-SO-Not displayed in small stores',
-  'ND21-SO-Seasonal item(Winter)',
-  'ND22-SO-Seasonal item(Summer)',
-  'ND23-SO-Due to OM/SUP reason',
-  'ND29-SO-Optimized SKU(Specific store)',
-];
+const ND_CODE_OPTIONS = PLATFORM_OPTIONS.ndCodes;
 
 function populateNdCodeDatalists() {
   document.querySelectorAll('datalist[id^="nd_code_list"]').forEach((dl) => {
@@ -229,11 +225,24 @@ function populateNdCodeDatalists() {
   });
 }
 
-const RF_REMARK_REQUIRED_SITES = new Set([
-  'HA19', 'HA21', 'HA33', 'HA37',
-  'HB77', 'HB86', 'HB87', 'HB91', 'HBA5', 'HBA7',
-  'HC13', 'HC44', 'HC68', 'HC70',
-]);
+function populateSelect(id, options, placeholder) {
+  const select = document.getElementById(id);
+  if (!select) return;
+  const current = select.value;
+  select.innerHTML = `<option value="">${escapeHtml(placeholder)}</option>`
+    + options.map((option) => `<option value="${escapeHtml(option.code ?? option)}">${escapeHtml(option.label ?? option)}</option>`).join('');
+  if (current) select.value = current;
+}
+
+function populatePlatformSelects() {
+  const rpTypes = PLATFORM_OPTIONS.rpTypes.map((code) => ({ code, label: code }));
+  ['rp_type', 'f_rp_type', 'a_rp_type'].forEach((id) => populateSelect(id, rpTypes, '—'));
+  populateSelect('f_nd_code', PLATFORM_OPTIONS.ndCodes, '全部');
+  ['f_u_urgent_reason', 'a_urgent_reason'].forEach((id) => populateSelect(id, PLATFORM_OPTIONS.urgentReasons, '請選擇申請原因'));
+  ['f_return_reason', 'a_return_reason', 'reason'].forEach((id) => populateSelect(id, PLATFORM_OPTIONS.returnReasons, '請選擇申請退貨原因'));
+}
+
+const RF_REMARK_REQUIRED_SITES = new Set(PLATFORM_OPTIONS.rfRemarkRequiredSites);
 
 async function loadRfRemarkRequiredStores() {
   const container = document.getElementById('rf_remark_required_stores');
@@ -266,6 +275,10 @@ function validateBusinessFields(fields, siteCode) {
     errors.push({ field: 'rp_type', message: 'RP Type 為必填' });
     return errors;
   }
+  if (!PLATFORM_OPTIONS.rpTypes.includes(rpType)) {
+    errors.push({ field: 'rp_type', message: 'RP Type 必須為 ND 或 RF' });
+    return errors;
+  }
   if (rpType === 'RF') {
     if (!safetyStock) {
       errors.push({ field: 'safety_stock', message: 'RP Type 為 RF 時必須填寫 Safety stock' });
@@ -291,4 +304,5 @@ function validateBusinessFields(fields, siteCode) {
   return errors;
 }
 
+populatePlatformSelects();
 loadRfRemarkRequiredStores();

@@ -20,6 +20,7 @@ RUN npm ci --omit=dev
 COPY --from=build /app/dist ./dist
 COPY --from=build /app/src/db/migrations ./dist/db/migrations
 COPY stores-template.csv ./stores-template.csv
+COPY return-schedule.json ./return-schedule.json
 COPY public ./public
 
 EXPOSE 3000

@@ -17,6 +17,7 @@ import {
   LockedError,
 } from '../src/services/submissions.js';
 import { writeAuditEvent } from '../src/lib/audit.js';
+import { PostgresRateLimitStore } from '../src/middleware/postgresRateLimitStore.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -38,7 +39,7 @@ let db: PGlite;
 beforeAll(async () => {
   db = new PGlite();
   setPoolForTesting(makePglitePool(db));
-  const migrationFiles = ['001_init.sql', '002_drop_rp_type_completed_at.sql', '003_add_submission_type_qty.sql', '004_add_urgent_reason.sql', '005_add_sales_submission_type.sql', '006_add_return_submission_type.sql', '007_add_idempotency_and_import_recovery.sql', '008_add_export_file_archive.sql'];
+  const migrationFiles = ['001_init.sql', '002_drop_rp_type_completed_at.sql', '003_add_submission_type_qty.sql', '004_add_urgent_reason.sql', '005_add_sales_submission_type.sql', '006_add_return_submission_type.sql', '007_add_idempotency_and_import_recovery.sql', '008_add_export_file_archive.sql', '009_architecture_hardening.sql'];
   for (const file of migrationFiles) {
     let sql = await readFile(path.join(__dirname, '..', 'src', 'db', 'migrations', file), 'utf8');
     // PGlite bundles gen_random_uuid; the pgcrypto extension may not be available in WASM builds.
@@ -65,6 +66,17 @@ describe('stores master (integration)', () => {
     expect(store?.shop).toBe('駱克');
     expect(store?.regional).toBe('HK');
     expect(await getStore('ha02')).not.toBeNull();
+  });
+});
+
+describe('shared rate-limit store (integration)', () => {
+  it('increments the same counter across store instances', async () => {
+    const first = new PostgresRateLimitStore(60_000);
+    const second = new PostgresRateLimitStore(60_000);
+    expect((await first.increment('integration-key')).totalHits).toBe(1);
+    expect((await second.increment('integration-key')).totalHits).toBe(2);
+    await first.resetKey('integration-key');
+    expect(await second.get('integration-key')).toBeUndefined();
   });
 });
 

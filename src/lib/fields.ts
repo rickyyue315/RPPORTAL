@@ -34,26 +34,6 @@ export const BUSINESS_FIELD_LABELS: Record<keyof SubmissionBusinessFields, strin
   remark: 'Remark',
 };
 
-/** Map internal field -> SAP column index (0-based into SAP_COLUMNS). */
-export const FIELD_TO_SAP_INDEX: Record<keyof SubmissionBusinessFields, number> = {
-  brand: 3,
-  sku: 4,
-  rp_type: 5,
-  safety_stock: 6,
-  nd_code: 7,
-  remark: 8,
-};
-
-/** Map SAP column name -> internal field. */
-export const SAP_INDEX_TO_FIELD: Record<number, keyof SubmissionBusinessFields> = {
-  3: 'brand',
-  4: 'sku',
-  5: 'rp_type',
-  6: 'safety_stock',
-  7: 'nd_code',
-  8: 'remark',
-};
-
 /** Map template column index (0-based into TEMPLATE_COLUMNS) -> internal field. Shop Code is handled separately. */
 export const TEMPLATE_INDEX_TO_FIELD: Record<number, keyof SubmissionBusinessFields> = {
   1: 'sku',
@@ -63,16 +43,8 @@ export const TEMPLATE_INDEX_TO_FIELD: Record<number, keyof SubmissionBusinessFie
   5: 'remark',
 };
 
-export const RP_TYPE_OPTIONS = ['ND', 'RF'];
-export const REQUESTED_BY_OPTIONS = [
-  'Cora Lai ',
-  'Ice Lin',
-  'Bridget Wong ',
-  'Ricky Yue',
-  'Ting Chan',
-  'Laurent Wong',
-  'Winnie Lin',
-];
+export const RP_TYPE_OPTIONS = ['ND', 'RF'] as const;
+export type RpType = (typeof RP_TYPE_OPTIONS)[number];
 
 export const ND_CODE_OPTIONS = [
   'ND20-SO-Not displayed in small stores',

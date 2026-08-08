@@ -1,3 +1,6 @@
+import { readFileSync } from 'node:fs';
+import { config } from '../config.js';
+
 export interface ReturnWindow {
   key: string;
   applicationStart: string;
@@ -7,108 +10,80 @@ export interface ReturnWindow {
   returnNoDate: string;
 }
 
-/** Full 2026 schedule shown on the public page. */
-export const RETURN_SCHEDULE: readonly ReturnWindow[] = [
-  {
-    key: '2026-01',
-    applicationStart: '2026-01-05',
-    applicationEnd: '2026-01-13',
-    buyerStart: '2026-01-14',
-    buyerEnd: '2026-01-19',
-    returnNoDate: '2026-01-20',
-  },
-  {
-    key: '2026-02',
-    applicationStart: '2026-02-02',
-    applicationEnd: '2026-02-10',
-    buyerStart: '2026-02-11',
-    buyerEnd: '2026-02-16',
-    returnNoDate: '2026-02-17',
-  },
-  {
-    key: '2026-03',
-    applicationStart: '2026-03-02',
-    applicationEnd: '2026-03-10',
-    buyerStart: '2026-03-11',
-    buyerEnd: '2026-03-16',
-    returnNoDate: '2026-03-17',
-  },
-  {
-    key: '2026-04',
-    applicationStart: '2026-04-06',
-    applicationEnd: '2026-04-14',
-    buyerStart: '2026-04-15',
-    buyerEnd: '2026-04-20',
-    returnNoDate: '2026-04-21',
-  },
-  {
-    key: '2026-05',
-    applicationStart: '2026-05-04',
-    applicationEnd: '2026-05-12',
-    buyerStart: '2026-05-13',
-    buyerEnd: '2026-05-18',
-    returnNoDate: '2026-05-19',
-  },
-  {
-    key: '2026-06',
-    applicationStart: '2026-06-08',
-    applicationEnd: '2026-06-16',
-    buyerStart: '2026-06-17',
-    buyerEnd: '2026-06-22',
-    returnNoDate: '2026-06-23',
-  },
-  {
-    key: '2026-07',
-    applicationStart: '2026-07-06',
-    applicationEnd: '2026-07-14',
-    buyerStart: '2026-07-15',
-    buyerEnd: '2026-07-20',
-    returnNoDate: '2026-07-21',
-  },
-  {
-    key: '2026-08',
-    applicationStart: '2026-08-03',
-    applicationEnd: '2026-08-11',
-    buyerStart: '2026-08-12',
-    buyerEnd: '2026-08-17',
-    returnNoDate: '2026-08-18',
-  },
-  {
-    key: '2026-09',
-    applicationStart: '2026-09-07',
-    applicationEnd: '2026-09-15',
-    buyerStart: '2026-09-16',
-    buyerEnd: '2026-09-21',
-    returnNoDate: '2026-09-22',
-  },
-  {
-    key: '2026-10',
-    applicationStart: '2026-10-05',
-    applicationEnd: '2026-10-13',
-    buyerStart: '2026-10-14',
-    buyerEnd: '2026-10-19',
-    returnNoDate: '2026-10-20',
-  },
-  {
-    key: '2026-11',
-    applicationStart: '2026-11-02',
-    applicationEnd: '2026-11-10',
-    buyerStart: '2026-11-11',
-    buyerEnd: '2026-11-16',
-    returnNoDate: '2026-11-17',
-  },
-  {
-    key: '2026-12',
-    applicationStart: '2026-12-07',
-    applicationEnd: '2026-12-15',
-    buyerStart: '2026-12-16',
-    buyerEnd: '2026-12-21',
-    returnNoDate: '2026-12-22',
-  },
-] as const;
+const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
 
-/** Application windows still enforceable from August 2026 onward. */
-export const RETURN_WINDOWS: readonly ReturnWindow[] = RETURN_SCHEDULE.slice(7);
+function isRealIsoDate(value: string): boolean {
+  if (!ISO_DATE.test(value)) return false;
+  const date = new Date(`${value}T00:00:00Z`);
+  return date.toISOString().slice(0, 10) === value;
+}
+
+function loadSchedule(): readonly ReturnWindow[] {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(readFileSync(config.returnSchedulePath, 'utf8')) as unknown;
+  } catch (err) {
+    throw new Error(`Return schedule cannot be loaded from ${config.returnSchedulePath}: ${String(err)}`);
+  }
+
+  if (!Array.isArray(parsed) || parsed.length === 0) {
+    throw new Error('Return schedule must contain at least one window');
+  }
+
+  const keys = new Set<string>();
+  const schedule: ReturnWindow[] = [];
+  for (const [index, item] of parsed.entries()) {
+    if (!item || typeof item !== 'object') {
+      throw new Error(`Return schedule row ${index + 1} is invalid`);
+    }
+    const candidate = item as Partial<ReturnWindow>;
+    const values = [
+      candidate.key,
+      candidate.applicationStart,
+      candidate.applicationEnd,
+      candidate.buyerStart,
+      candidate.buyerEnd,
+      candidate.returnNoDate,
+    ];
+    if (values.some((value) => typeof value !== 'string' || !value)) {
+      throw new Error(`Return schedule row ${index + 1} has missing fields`);
+    }
+    const window = candidate as ReturnWindow;
+    if (keys.has(window.key)) throw new Error(`Return schedule key is duplicated: ${window.key}`);
+    keys.add(window.key);
+    if (![window.applicationStart, window.applicationEnd, window.buyerStart, window.buyerEnd, window.returnNoDate].every(isRealIsoDate)) {
+      throw new Error(`Return schedule row ${index + 1} contains an invalid date`);
+    }
+    if (!(window.applicationStart <= window.applicationEnd
+      && window.applicationEnd < window.buyerStart
+      && window.buyerStart <= window.buyerEnd
+      && window.buyerEnd < window.returnNoDate)) {
+      throw new Error(`Return schedule row ${index + 1} has dates in the wrong order`);
+    }
+    schedule.push(window);
+  }
+  return schedule;
+}
+
+/** Full configured schedule shown on the public page. */
+export const RETURN_SCHEDULE = loadSchedule();
+
+if (!isRealIsoDate(config.returnEnforcementStart)) {
+  throw new Error(`RETURN_ENFORCEMENT_START is not a valid date: ${config.returnEnforcementStart}`);
+}
+
+/** Windows currently enforceable by the application. */
+export const RETURN_WINDOWS: readonly ReturnWindow[] = RETURN_SCHEDULE.filter(
+  (window) => window.applicationEnd >= config.returnEnforcementStart,
+);
+
+const currentYear = new Intl.DateTimeFormat('en-CA', {
+  timeZone: config.timezone,
+  year: 'numeric',
+}).format(new Date());
+if (!RETURN_SCHEDULE.some((window) => window.key.startsWith(`${currentYear}-`))) {
+  throw new Error(`Return schedule has no configured window for current year ${currentYear}`);
+}
 
 export function getReturnWindowByKey(key: string | null | undefined): ReturnWindow | null {
   return RETURN_WINDOWS.find((window) => window.key === key) ?? null;

@@ -7,12 +7,19 @@ import {
   resolveUrgentReasonCode,
   URGENT_REASON_OTHER_CODE,
   URGENT_REASON_OTHER_MAX,
+  RP_TYPE_OPTIONS,
   type SubmissionBusinessFields,
 } from './fields.js';
 
 /** SKU 只容許 7 位或 12 位數字（一個 SKU）。 */
 export const SKU_PATTERN = /^(?:\d{7}|\d{12})$/;
 export const SKU_ERROR = 'SKU 只容許 7 位或 12 位數字，每個申請只能輸入一個 SKU';
+
+export function isValidIsoDate(value: string): boolean {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+  const date = new Date(`${value}T00:00:00Z`);
+  return !Number.isNaN(date.getTime()) && date.toISOString().slice(0, 10) === value;
+}
 
 export function isValidSku(value: string | null | undefined): boolean {
   return SKU_PATTERN.test(normalizeText(value));
@@ -101,6 +108,11 @@ export function validateBusinessFields(
 
   if (!rpType) {
     errors.push({ field: 'rp_type', message: 'RP Type 為必填' });
+    return errors;
+  }
+
+  if (!RP_TYPE_OPTIONS.includes(rpType as (typeof RP_TYPE_OPTIONS)[number])) {
+    errors.push({ field: 'rp_type', message: 'RP Type 必須為 ND 或 RF' });
     return errors;
   }
 

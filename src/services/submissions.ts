@@ -11,7 +11,7 @@ import {
   resolveUrgentReasonCode,
 } from '../lib/fields.js';
 import { validateReturnFields, validateUrgentReason } from '../lib/validation.js';
-import { toHKDateString, hkTodayForDateColumn } from '../lib/time.js';
+import { hkTodayForDateColumn } from '../lib/time.js';
 import { getActiveReturnWindow, isReturnModificationOpen } from '../lib/returnSchedule.js';
 import { normalizeSiteCode } from './stores.js';
 
@@ -60,7 +60,6 @@ export type ActorRole = 'applicant' | 'admin';
 
 export interface CreateSubmissionInput {
   siteCode: string;
-  shopName?: string;
   source: 'web' | 'excel';
   submissionType?: SubmissionType;
   fields: SubmissionBusinessFields;
@@ -1204,8 +1203,4 @@ export async function adminUpdateReturnSubmission(input: {
     );
     return newRow;
   });
-}
-
-export function toHKDateStringSafe(value: string | null): string {
-  return value ? toHKDateString(value) : '';
 }

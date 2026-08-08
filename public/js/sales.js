@@ -5,6 +5,7 @@
   let pendingFile = null;
   let pendingImportKey = null;
   let submitKey = null;
+  const SKU_RE = new RegExp(globalThis.NDRF_OPTIONS?.skuPattern || '^(?:\\d{7}|\\d{12})$');
 
   function readForm() {
     return {
@@ -18,7 +19,7 @@
     const errors = [];
     if (!data.site_code) errors.push('Site Code 為必填');
     if (!data.sku) errors.push('SKU 為必填');
-    else if (!/^(?:\d{7}|\d{12})$/.test(data.sku)) errors.push('SKU 只容許 7 位或 12 位數字，每個申請只能輸入一個 SKU');
+    else if (!SKU_RE.test(data.sku)) errors.push('SKU 只容許 7 位或 12 位數字，每個申請只能輸入一個 SKU');
     return errors;
   }
 

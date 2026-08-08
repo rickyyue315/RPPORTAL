@@ -1,19 +1,10 @@
 import type { NextFunction, Request, Response } from 'express';
-import { config } from '../config.js';
 
 export function getClientIp(req: Request): string {
-  // When behind Zeabur/load balancer, trust the X-Forwarded-For value.
-  const forwarded = req.headers['x-forwarded-for'];
-  if (config.trustProxy && typeof forwarded === 'string') {
-    const first = forwarded.split(',')[0]?.trim();
-    if (first) return first;
-  }
+  // Express already applies the configured trust-proxy hop count and returns
+  // the first untrusted address. Do not parse X-Forwarded-For manually: doing
+  // so would allow clients to spoof the first header value.
   return req.ip ?? req.socket.remoteAddress ?? 'unknown';
-}
-
-export function maskIp(ip: string | null | undefined): string {
-  if (!ip) return '';
-  return ip.split('.').slice(0, 3).join('.') + '.xxx';
 }
 
 export function asyncHandler(

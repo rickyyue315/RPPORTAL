@@ -49,9 +49,19 @@ import {
   returnReasonLabel,
   resolveReturnReasonCode,
 } from '../lib/fields.js';
-import { validateBusinessFields, validateUrgentReason } from '../lib/validation.js';
-import { archiveExportBatchFile, EXPORT_CONTENT_TYPE } from '../services/exportFiles.js';
+import { isValidIsoDate, validateBusinessFields, validateUrgentReason } from '../lib/validation.js';
+import { getUploadedFile, validateUploadedXlsx } from '../lib/upload.js';
+import { EXPORT_CONTENT_TYPE } from '../services/exportFiles.js';
 import { CSRF_COOKIE } from '../middleware/csrf.js';
+import {
+  createLockedExport,
+  exportFilename,
+  findExportRows,
+  type ExportDefinition,
+  type ExportFilters,
+  type ExportSubmissionType,
+} from '../services/exportBatches.js';
+import { createImportBatch } from '../services/importBatches.js';
 
 export const adminRouter = Router();
 
@@ -124,14 +134,6 @@ const businessFieldsSchema = z.object({
   nd_code: z.string().max(300).optional().default(''),
   remark: z.string().max(2000).optional().default(''),
 });
-
-function isValidIsoDate(value: string): boolean {
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
-  const date = new Date(`${value}T00:00:00Z`);
-  return date.toISOString().slice(0, 10) === value;
-}
-
-type ExportSubmissionType = 'normal' | 'urgent' | 'sales' | 'return';
 
 function exportSubmissionType(filters: unknown): ExportSubmissionType {
   if (filters && typeof filters === 'object' && 'submission_type' in filters) {
@@ -681,17 +683,10 @@ adminRouter.post(
   excelImportLimiter,
   upload.single('file'),
   asyncHandler(async (req: Request, res: Response) => {
-    const file = (req as Request & { file?: Express.Multer.File }).file;
-    if (!file) {
-      res.status(400).json({ error: '請上載 Excel 檔案' });
-      return;
-    }
-    if (!/\.xlsx$/i.test(file.originalname)) {
-      res.status(400).json({ error: EXCEL_UPLOAD_EXTENSION_ERROR });
-      return;
-    }
-    if (file.size > config.maxUploadBytes) {
-      res.status(400).json({ error: `檔案超過 ${config.maxUploadBytes / 1024 / 1024}MB 限制` });
+    const file = getUploadedFile(req)!;
+    const uploadError = validateUploadedXlsx(file, config.maxUploadBytes, EXCEL_UPLOAD_EXTENSION_ERROR);
+    if (uploadError) {
+      res.status(uploadError.status).json({ error: uploadError.message });
       return;
     }
 
@@ -775,13 +770,18 @@ adminRouter.post(
           submitted_at: toHKString(row.submitted_at),
         });
       }
-      const batchId = await client.query<{ id: string }>(
-        `INSERT INTO import_batches (filename, sheet_name, row_count, success_count, failed_count, results, content_hash, created_by, submission_type)
-         VALUES ($1, $2, $3, $4, 0, $5::jsonb, $6, $7, 'normal')
-         RETURNING id`,
-        [file.originalname, parsed.sheetName ?? '', parsed.totalRows, successCount, JSON.stringify(rowsOut), parsed.contentHash, req.adminUsername],
-      );
-      return { batchId: batchId.rows[0]!.id, rows: rowsOut, successCount };
+      const batchId = await createImportBatch(client, {
+        filename: file.originalname,
+        sheetName: parsed.sheetName ?? '',
+        rowCount: parsed.totalRows,
+        successCount,
+        failedCount: 0,
+        results: rowsOut,
+        contentHash: parsed.contentHash ?? '',
+        createdBy: req.adminUsername!,
+        submissionType: 'normal',
+      });
+      return { batchId, rows: rowsOut, successCount };
     });
 
     await writeAuditEvent({
@@ -822,6 +822,30 @@ const exportFiltersSchema = z.object({
     ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['to'], message: '由日期不可晚於至日期' });
   }
 });
+
+const EXPORT_DEFINITIONS: Record<ExportSubmissionType, ExportDefinition> = {
+  normal: {
+    submissionType: 'normal',
+    filenamePrefix: 'NDRF_SAP',
+    buildBuffer: (rows) => buildArchivedExportBuffer('normal', rows),
+  },
+  urgent: {
+    submissionType: 'urgent',
+    filenamePrefix: 'Urgent_Order',
+    buildBuffer: (rows) => buildArchivedExportBuffer('urgent', rows),
+  },
+  sales: {
+    submissionType: 'sales',
+    filenamePrefix: 'Sudden_Sales',
+    buildBuffer: (rows) => buildArchivedExportBuffer('sales', rows),
+  },
+  return: {
+    submissionType: 'return',
+    filenamePrefix: 'Return_Goods',
+    buildBuffer: (rows) => buildArchivedExportBuffer('return', rows),
+  },
+};
+
 /** POST /api/admin/export — SAP export + lock. */
 adminRouter.post(
   '/export',
@@ -833,47 +857,23 @@ adminRouter.post(
       res.status(400).json({ error: '篩選條件無效' });
       return;
     }
-    const { from, to, site_code, include_exported } = parsed.data;
-
-    const where: string[] = [];
-    const params: unknown[] = [];
-    let idx = 1;
-    where.push(`submission_type = 'normal'`);
-    if (from) {
-      where.push(`application_date >= $${idx++}`);
-      params.push(from);
-    }
-    if (to) {
-      where.push(`application_date <= $${idx++}`);
-      params.push(to);
-    }
-    if (site_code) {
-      where.push(`site_code = $${idx++}`);
-      params.push(normalizeSiteCode(site_code));
-    }
-    if (!include_exported) {
-      where.push('exported_at IS NULL');
-    }
-    const whereSql = where.length ? `WHERE ${where.join(' AND ')}` : '';
-
-    const rows = await query<SubmissionRow>(
-      `SELECT * FROM submissions ${whereSql} ORDER BY application_date ASC, submitted_at ASC`,
-      params,
-    );
-    if (rows.rows.length === 0) {
+    const definition = EXPORT_DEFINITIONS.normal;
+    const filters = parsed.data as ExportFilters;
+    const rows = await findExportRows(definition.submissionType, filters);
+    if (rows.length === 0) {
       res.status(400).json({ error: '沒有符合條件的申報可以匯出' });
       return;
     }
 
     if (parsed.data.preview) {
-      const buffer = await buildSapExportBuffer(rows.rows);
-      const previewName = `NDRF_SAP_Preview_${toHKDateString(new Date())}.xlsx`;
+      const buffer = await definition.buildBuffer(rows);
+      const previewName = exportFilename(definition, true);
       await writeAuditEvent({
         eventType: 'export_preview',
         actorRole: 'admin',
         actor: req.adminUsername,
         ip: getClientIp(req),
-        metadata: { filename: previewName, count: rows.rows.length, filters: parsed.data, submission_type: 'normal' },
+        metadata: { filename: previewName, count: rows.length, filters: parsed.data, submission_type: 'normal' },
       });
       res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
       res.setHeader('Content-Disposition', `attachment; filename="${previewName}"`);
@@ -881,36 +881,13 @@ adminRouter.post(
       return;
     }
 
-    const filename = `NDRF_SAP_Export_${toHKDateString(new Date())}.xlsx`;
-    const exportResult = await withTransaction(async (client) => {
-      const lockedRows = await client.query<SubmissionRow>(
-        `SELECT * FROM submissions ${whereSql} ORDER BY application_date ASC, submitted_at ASC FOR UPDATE`,
-        params,
-      );
-      if (lockedRows.rows.length === 0) return null;
-
-      const buffer = await buildSapExportBuffer(lockedRows.rows);
-      const batch = await client.query<{ id: string }>(
-        `INSERT INTO export_batches (filename, submission_count, submission_nos, filters, created_by)
-         VALUES ($1, $2, $3::jsonb, $4::jsonb, $5)
-         RETURNING id`,
-        [
-          filename,
-          lockedRows.rows.length,
-          JSON.stringify(lockedRows.rows.map((r) => r.application_no)),
-          JSON.stringify(parsed.data),
-          req.adminUsername,
-        ],
-      );
-      const batchId = batch.rows[0]!.id;
-      await archiveExportBatchFile(client, batchId, filename, buffer, config.exportFileRetentionDays);
-      await client.query(
-        `UPDATE submissions SET exported_at = now(), export_batch_id = $1, locked_at = now(), updated_at = now()
-         WHERE id = ANY($2::uuid[])`,
-        [batchId, lockedRows.rows.map((r) => r.id)],
-      );
-      return { batchId, buffer, count: lockedRows.rows.length };
-    });
+    const filename = exportFilename(definition, false);
+    const exportResult = await createLockedExport(
+      definition,
+      filters,
+      req.adminUsername!,
+      config.exportFileRetentionDays,
+    );
     if (!exportResult) {
       res.status(400).json({ error: '沒有符合條件的申報可以匯出' });
       return;
@@ -952,17 +929,10 @@ adminRouter.post(
   excelImportLimiter,
   upload.single('file'),
   asyncHandler(async (req: Request, res: Response) => {
-    const file = (req as Request & { file?: Express.Multer.File }).file;
-    if (!file) {
-      res.status(400).json({ error: '請上載 Excel 檔案' });
-      return;
-    }
-    if (!/\.xlsx$/i.test(file.originalname)) {
-      res.status(400).json({ error: EXCEL_UPLOAD_EXTENSION_ERROR });
-      return;
-    }
-    if (file.size > config.maxUploadBytes) {
-      res.status(400).json({ error: `檔案超過 ${config.maxUploadBytes / 1024 / 1024}MB 限制` });
+    const file = getUploadedFile(req)!;
+    const uploadError = validateUploadedXlsx(file, config.maxUploadBytes, EXCEL_UPLOAD_EXTENSION_ERROR);
+    if (uploadError) {
+      res.status(uploadError.status).json({ error: uploadError.message });
       return;
     }
 
@@ -1044,13 +1014,18 @@ adminRouter.post(
           submitted_at: toHKString(row.submitted_at),
         });
       }
-      const batchId = await client.query<{ id: string }>(
-        `INSERT INTO import_batches (filename, sheet_name, row_count, success_count, failed_count, results, content_hash, created_by, submission_type)
-         VALUES ($1, $2, $3, $4, 0, $5::jsonb, $6, $7, 'urgent')
-         RETURNING id`,
-        [file.originalname, parsed.sheetName ?? '', parsed.totalRows, successCount, JSON.stringify(rowsOut), parsed.contentHash, req.adminUsername],
-      );
-      return { batchId: batchId.rows[0]!.id, rows: rowsOut, successCount };
+      const batchId = await createImportBatch(client, {
+        filename: file.originalname,
+        sheetName: parsed.sheetName ?? '',
+        rowCount: parsed.totalRows,
+        successCount,
+        failedCount: 0,
+        results: rowsOut,
+        contentHash: parsed.contentHash ?? '',
+        createdBy: req.adminUsername!,
+        submissionType: 'urgent',
+      });
+      return { batchId, rows: rowsOut, successCount };
     });
 
     await writeAuditEvent({
@@ -1087,56 +1062,23 @@ adminRouter.post(
       res.status(400).json({ error: '篩選條件無效' });
       return;
     }
-    const { from, to, site_code, include_exported } = parsed.data;
-
-    const where: string[] = [];
-    const params: unknown[] = [];
-    let idx = 1;
-    where.push(`submission_type = 'urgent'`);
-    if (from) {
-      where.push(`application_date >= $${idx++}`);
-      params.push(from);
-    }
-    if (to) {
-      where.push(`application_date <= $${idx++}`);
-      params.push(to);
-    }
-    if (site_code) {
-      where.push(`site_code = $${idx++}`);
-      params.push(normalizeSiteCode(site_code));
-    }
-    if (!include_exported) {
-      where.push('exported_at IS NULL');
-    }
-    const whereSql = where.length ? `WHERE ${where.join(' AND ')}` : '';
-
-    const rows = await query<SubmissionRow>(
-      `SELECT * FROM submissions ${whereSql} ORDER BY application_date ASC, submitted_at ASC`,
-      params,
-    );
-    if (rows.rows.length === 0) {
+    const definition = EXPORT_DEFINITIONS.urgent;
+    const filters = parsed.data as ExportFilters;
+    const rows = await findExportRows(definition.submissionType, filters);
+    if (rows.length === 0) {
       res.status(400).json({ error: '沒有符合條件的 Urgent Order 可以匯出' });
       return;
     }
 
     if (parsed.data.preview) {
-      const buffer = await buildUrgentExportBuffer(
-        rows.rows.map((r) => ({
-          application_no: r.application_no,
-          site_code: r.site_code,
-          sku: r.sku,
-          qty: r.qty,
-          urgent_reason: r.urgent_reason,
-          urgent_reason_other: r.urgent_reason_other,
-        })),
-      );
-      const previewName = `Urgent_Order_Preview_${toHKDateString(new Date())}.xlsx`;
+      const buffer = await definition.buildBuffer(rows);
+      const previewName = exportFilename(definition, true);
       await writeAuditEvent({
         eventType: 'export_preview',
         actorRole: 'admin',
         actor: req.adminUsername,
         ip: getClientIp(req),
-        metadata: { filename: previewName, count: rows.rows.length, filters: parsed.data, submission_type: 'urgent' },
+        metadata: { filename: previewName, count: rows.length, filters: parsed.data, submission_type: 'urgent' },
       });
       res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
       res.setHeader('Content-Disposition', `attachment; filename="${previewName}"`);
@@ -1144,45 +1086,13 @@ adminRouter.post(
       return;
     }
 
-    const filename = `Urgent_Order_Export_${toHKDateString(new Date())}.xlsx`;
-    const exportResult = await withTransaction(async (client) => {
-      const lockedRows = await client.query<SubmissionRow>(
-        `SELECT * FROM submissions ${whereSql} ORDER BY application_date ASC, submitted_at ASC FOR UPDATE`,
-        params,
-      );
-      if (lockedRows.rows.length === 0) return null;
-
-      const buffer = await buildUrgentExportBuffer(
-        lockedRows.rows.map((r) => ({
-          application_no: r.application_no,
-          site_code: r.site_code,
-          sku: r.sku,
-          qty: r.qty,
-          urgent_reason: r.urgent_reason,
-          urgent_reason_other: r.urgent_reason_other,
-        })),
-      );
-      const batch = await client.query<{ id: string }>(
-        `INSERT INTO export_batches (filename, submission_count, submission_nos, filters, created_by)
-         VALUES ($1, $2, $3::jsonb, $4::jsonb, $5)
-         RETURNING id`,
-        [
-          filename,
-          lockedRows.rows.length,
-          JSON.stringify(lockedRows.rows.map((r) => r.application_no)),
-          JSON.stringify({ ...parsed.data, submission_type: 'urgent' }),
-          req.adminUsername,
-        ],
-      );
-      const batchId = batch.rows[0]!.id;
-      await archiveExportBatchFile(client, batchId, filename, buffer, config.exportFileRetentionDays);
-      await client.query(
-        `UPDATE submissions SET exported_at = now(), export_batch_id = $1, locked_at = now(), updated_at = now()
-         WHERE id = ANY($2::uuid[])`,
-        [batchId, lockedRows.rows.map((r) => r.id)],
-      );
-      return { batchId, buffer, count: lockedRows.rows.length };
-    });
+    const filename = exportFilename(definition, false);
+    const exportResult = await createLockedExport(
+      definition,
+      filters,
+      req.adminUsername!,
+      config.exportFileRetentionDays,
+    );
     if (!exportResult) {
       res.status(400).json({ error: '沒有符合條件的 Urgent Order 可以匯出' });
       return;
@@ -1231,7 +1141,24 @@ adminRouter.get(
        ORDER BY v.changed_at ASC`,
       [config.ipRetentionDays],
     );
-    const buffer = await buildAuditExportBuffer(auditRows.rows as never);
+    const auditEvents = await query<{
+      event_type: string;
+      actor_role: string | null;
+      actor: string | null;
+      application_no: string | null;
+      ip: string | null;
+      metadata: unknown;
+      created_at: string;
+    }>(
+      `SELECT event_type, actor_role, actor, application_no,
+              CASE WHEN created_at > now() - ($1::int * interval '1 day') THEN ip ELSE NULL END AS ip,
+              metadata, created_at
+         FROM audit_events
+        WHERE created_at > now() - ($1::int * interval '1 day')
+        ORDER BY created_at ASC`,
+      [config.auditRetentionDays],
+    );
+    const buffer = await buildAuditExportBuffer(auditRows.rows as never, auditEvents.rows);
     res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
     res.setHeader('Content-Disposition', `attachment; filename="NDRF_Audit_Report_${toHKDateString(new Date())}.xlsx"`);
     res.send(buffer);
@@ -1249,47 +1176,23 @@ adminRouter.post(
       res.status(400).json({ error: '篩選條件無效' });
       return;
     }
-    const { from, to, site_code, include_exported } = parsed.data;
-    const where: string[] = [`submission_type = 'sales'`];
-    const params: unknown[] = [];
-    let idx = 1;
-    if (from) {
-      where.push(`application_date >= $${idx++}`);
-      params.push(from);
-    }
-    if (to) {
-      where.push(`application_date <= $${idx++}`);
-      params.push(to);
-    }
-    if (site_code) {
-      where.push(`site_code = $${idx++}`);
-      params.push(normalizeSiteCode(site_code));
-    }
-    if (!include_exported) where.push('exported_at IS NULL');
-
-    const rows = await query<SubmissionRow>(
-      `SELECT * FROM submissions WHERE ${where.join(' AND ')} ORDER BY application_date ASC, submitted_at ASC`,
-      params,
-    );
-    if (rows.rows.length === 0) {
+    const definition = EXPORT_DEFINITIONS.sales;
+    const filters = parsed.data as ExportFilters;
+    const rows = await findExportRows(definition.submissionType, filters);
+    if (rows.length === 0) {
       res.status(400).json({ error: '沒有符合條件的突發性銷售申報可以匯出' });
       return;
     }
 
     if (parsed.data.preview) {
-      const buffer = await buildSalesExportBuffer(rows.rows.map((row) => ({
-        application_date: row.application_date,
-        requested_by_email: row.requested_by_email,
-        site_code: row.site_code,
-        sku: row.sku,
-      })));
-      const previewName = `Sudden_Sales_Preview_${toHKDateString(new Date())}.xlsx`;
+      const buffer = await definition.buildBuffer(rows);
+      const previewName = exportFilename(definition, true);
       await writeAuditEvent({
         eventType: 'export_preview',
         actorRole: 'admin',
         actor: req.adminUsername,
         ip: getClientIp(req),
-        metadata: { filename: previewName, count: rows.rows.length, filters: parsed.data, submission_type: 'sales' },
+        metadata: { filename: previewName, count: rows.length, filters: parsed.data, submission_type: 'sales' },
       });
       res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
       res.setHeader('Content-Disposition', `attachment; filename="${previewName}"`);
@@ -1297,41 +1200,13 @@ adminRouter.post(
       return;
     }
 
-    const filename = `Sudden_Sales_Export_${toHKDateString(new Date())}.xlsx`;
-    const exportResult = await withTransaction(async (client) => {
-      const lockedRows = await client.query<SubmissionRow>(
-        `SELECT * FROM submissions WHERE ${where.join(' AND ')} ORDER BY application_date ASC, submitted_at ASC FOR UPDATE`,
-        params,
-      );
-      if (lockedRows.rows.length === 0) return null;
-
-      const buffer = await buildSalesExportBuffer(lockedRows.rows.map((row) => ({
-        application_date: row.application_date,
-        requested_by_email: row.requested_by_email,
-        site_code: row.site_code,
-        sku: row.sku,
-      })));
-      const batch = await client.query<{ id: string }>(
-        `INSERT INTO export_batches (filename, submission_count, submission_nos, filters, created_by)
-         VALUES ($1, $2, $3::jsonb, $4::jsonb, $5)
-         RETURNING id`,
-        [
-          filename,
-          lockedRows.rows.length,
-          JSON.stringify(lockedRows.rows.map((row) => row.application_no)),
-          JSON.stringify({ ...parsed.data, submission_type: 'sales' }),
-          req.adminUsername,
-        ],
-      );
-      const batchId = batch.rows[0]!.id;
-      await archiveExportBatchFile(client, batchId, filename, buffer, config.exportFileRetentionDays);
-      await client.query(
-        `UPDATE submissions SET exported_at = now(), export_batch_id = $1, locked_at = now(), updated_at = now()
-         WHERE id = ANY($2::uuid[])`,
-        [batchId, lockedRows.rows.map((row) => row.id)],
-      );
-      return { batchId, buffer, count: lockedRows.rows.length };
-    });
+    const filename = exportFilename(definition, false);
+    const exportResult = await createLockedExport(
+      definition,
+      filters,
+      req.adminUsername!,
+      config.exportFileRetentionDays,
+    );
     if (!exportResult) {
       res.status(400).json({ error: '沒有符合條件的突發性銷售申報可以匯出' });
       return;
@@ -1363,58 +1238,29 @@ adminRouter.post(
       res.status(400).json({ error: '篩選條件無效' });
       return;
     }
-    const { from, to, site_code, include_exported } = parsed.data;
-    const where: string[] = [`submission_type = 'return'`];
-    const params: unknown[] = [];
-    let idx = 1;
-    if (from) { where.push(`application_date >= $${idx++}`); params.push(from); }
-    if (to) { where.push(`application_date <= $${idx++}`); params.push(to); }
-    if (site_code) { where.push(`site_code = $${idx++}`); params.push(normalizeSiteCode(site_code)); }
-    if (!include_exported) where.push('exported_at IS NULL');
-    const whereSql = `WHERE ${where.join(' AND ')}`;
-    const rows = await query<SubmissionRow>(`SELECT * FROM submissions ${whereSql} ORDER BY application_date ASC, submitted_at ASC`, params);
-    if (!rows.rows.length) {
+    const definition = EXPORT_DEFINITIONS.return;
+    const filters = parsed.data as ExportFilters;
+    const rows = await findExportRows(definition.submissionType, filters);
+    if (!rows.length) {
       res.status(400).json({ error: '沒有符合條件的行貨退貨報數可以匯出' });
       return;
     }
-    const exportRows = (items: SubmissionRow[]) => buildReturnExportBuffer(items.map((row) => ({
-      application_no: row.application_no,
-      application_date: row.application_date,
-      site_code: row.site_code,
-      sku: row.sku,
-      qty: row.return_qty,
-      reason: row.return_reason,
-      confirmer_name: row.return_confirmer_name,
-      confirmer_phone: row.return_confirmer_phone,
-    })));
     if (parsed.data.preview) {
-      const buffer = await exportRows(rows.rows);
-      const filename = `Return_Goods_Preview_${toHKDateString(new Date())}.xlsx`;
-      await writeAuditEvent({ eventType: 'export_preview', actorRole: 'admin', actor: req.adminUsername, ip: getClientIp(req), metadata: { filename, count: rows.rows.length, filters: parsed.data, submission_type: 'return' } });
+      const buffer = await definition.buildBuffer(rows);
+      const filename = exportFilename(definition, true);
+      await writeAuditEvent({ eventType: 'export_preview', actorRole: 'admin', actor: req.adminUsername, ip: getClientIp(req), metadata: { filename, count: rows.length, filters: parsed.data, submission_type: 'return' } });
       res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
       res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
       res.send(buffer);
       return;
     }
-    const filename = `Return_Goods_Export_${toHKDateString(new Date())}.xlsx`;
-    const exportResult = await withTransaction(async (client) => {
-      const lockedRows = await client.query<SubmissionRow>(`SELECT * FROM submissions ${whereSql} ORDER BY application_date ASC, submitted_at ASC FOR UPDATE`, params);
-      if (!lockedRows.rows.length) return null;
-      const buffer = await exportRows(lockedRows.rows);
-      const batch = await client.query<{ id: string }>(
-        `INSERT INTO export_batches (filename, submission_count, submission_nos, filters, created_by)
-         VALUES ($1, $2, $3::jsonb, $4::jsonb, $5) RETURNING id`,
-        [filename, lockedRows.rows.length, JSON.stringify(lockedRows.rows.map((row) => row.application_no)), JSON.stringify({ ...parsed.data, submission_type: 'return' }), req.adminUsername],
-      );
-      const batchId = batch.rows[0]!.id;
-      await archiveExportBatchFile(client, batchId, filename, buffer, config.exportFileRetentionDays);
-      await client.query(
-        `UPDATE submissions SET exported_at = now(), export_batch_id = $1, locked_at = now(), updated_at = now()
-         WHERE id = ANY($2::uuid[])`,
-        [batchId, lockedRows.rows.map((row) => row.id)],
-      );
-      return { batchId, buffer, count: lockedRows.rows.length };
-    });
+    const filename = exportFilename(definition, false);
+    const exportResult = await createLockedExport(
+      definition,
+      filters,
+      req.adminUsername!,
+      config.exportFileRetentionDays,
+    );
     if (!exportResult) {
       res.status(400).json({ error: '沒有符合條件的行貨退貨報數可以匯出' });
       return;

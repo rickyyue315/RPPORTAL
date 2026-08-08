@@ -1,47 +1,44 @@
 import { createApp } from './app.js';
 import { config } from './config.js';
 import { migrate } from './db/migrate.js';
-import { query } from './db/pool.js';
+import { withAdvisoryLock } from './db/pool.js';
 import { writeAuditEvent } from './lib/audit.js';
 import { seedStoresFromFile, countStores } from './services/stores.js';
 import { cleanupExpiredExportFiles } from './services/exportFiles.js';
+import { cleanupRetentionData } from './services/retention.js';
 
-async function runIpCleanup(): Promise<void> {
+async function runMaintenanceCleanup(): Promise<void> {
   try {
-    const result = await query(
-      `UPDATE submissions
-       SET created_ip = NULL, created_ip_expires_at = NULL
-       WHERE created_ip IS NOT NULL
-         AND created_ip_expires_at IS NOT NULL
-         AND created_ip_expires_at <= now()`,
-    );
-    // Version-history IPs are anonymous after the same retention window.
-    const versionResult = await query(
-      `UPDATE submission_versions
-       SET ip = NULL
-       WHERE ip IS NOT NULL
-         AND changed_at <= now() - ($1::int * interval '1 day')`,
-      [config.ipRetentionDays],
-    );
-    const total = (result.rowCount ?? 0) + (versionResult.rowCount ?? 0);
-    if (total > 0) {
+    const result = await withAdvisoryLock('ndrf:maintenance', async (client) => {
+      const retention = await cleanupRetentionData(client);
+      const exportFiles = await cleanupExpiredExportFiles(client);
+      return { retention, exportFiles };
+    });
+    if (!result) {
+      console.log('[cleanup] skipped because another instance owns the maintenance lock');
+      return;
+    }
+    const ipTotal = result.retention.submissionIpsCleared
+      + result.retention.versionIpsCleared
+      + result.retention.auditIpsCleared;
+    if (ipTotal > 0) {
       await writeAuditEvent({
         eventType: 'ip_cleanup',
-        metadata: { cleared: total },
+        metadata: { cleared: ipTotal },
       });
-      console.log(`[cleanup] cleared IPs for ${total} records`);
+      console.log(`[cleanup] cleared IPs for ${ipTotal} records`);
+    }
+    const deleted = result.retention.loginAttemptsDeleted
+      + result.retention.auditEventsDeleted
+      + result.retention.sessionsDeleted
+      + result.retention.importBatchesDeleted
+      + result.retention.exportBatchesDeleted
+      + result.retention.rateLimitCountersDeleted;
+    if (deleted > 0 || result.exportFiles > 0) {
+      console.log(`[cleanup] deleted ${deleted} retained records and expired ${result.exportFiles} export files`);
     }
   } catch (err) {
-    console.error('[cleanup] IP cleanup failed', err);
-  }
-}
-
-async function runExportFileCleanup(): Promise<void> {
-  try {
-    const cleared = await cleanupExpiredExportFiles();
-    if (cleared > 0) console.log(`[cleanup] expired ${cleared} export files`);
-  } catch (err) {
-    console.error('[cleanup] export file cleanup failed', err);
+    console.error('[cleanup] maintenance cleanup failed', err);
   }
 }
 
@@ -50,6 +47,9 @@ async function main(): Promise<void> {
 
   if (!config.adminPassword) {
     console.warn('[boot] ADMIN_PASSWORD 未設定 — 管理員登入已停用，後台將拒絕存取');
+  }
+  if (!config.publicRecoveryCode) {
+    console.warn('[boot] PUBLIC_RECOVERY_CODE 未設定 — 公開申請編號恢復功能已停用');
   }
 
   await migrate();
@@ -64,13 +64,9 @@ async function main(): Promise<void> {
 
   // Scheduled IP retention cleanup (daily).
   setInterval(() => {
-    void runIpCleanup();
+    void runMaintenanceCleanup();
   }, 24 * 3600 * 1000);
-  setInterval(() => {
-    void runExportFileCleanup();
-  }, 24 * 3600 * 1000);
-  void runIpCleanup();
-  void runExportFileCleanup();
+  void runMaintenanceCleanup();
 
   const app = createApp();
   app.listen(config.port, () => {

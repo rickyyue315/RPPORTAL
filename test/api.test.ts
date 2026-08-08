@@ -17,6 +17,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 let app: Express;
 let db: PGlite;
 let timeSpy: ReturnType<typeof vi.spyOn>;
+const RECOVERY_CODE = 'test-recovery-code';
 
 function makePglitePool(database: PGlite): never {
   return {
@@ -50,7 +51,7 @@ async function countSubmissions(where = ''): Promise<number> {
 beforeAll(async () => {
   db = new PGlite();
   setPoolForTesting(makePglitePool(db));
-  const migrationFiles = ['001_init.sql', '002_drop_rp_type_completed_at.sql', '003_add_submission_type_qty.sql', '004_add_urgent_reason.sql', '005_add_sales_submission_type.sql', '006_add_return_submission_type.sql', '007_add_idempotency_and_import_recovery.sql', '008_add_export_file_archive.sql'];
+  const migrationFiles = ['001_init.sql', '002_drop_rp_type_completed_at.sql', '003_add_submission_type_qty.sql', '004_add_urgent_reason.sql', '005_add_sales_submission_type.sql', '006_add_return_submission_type.sql', '007_add_idempotency_and_import_recovery.sql', '008_add_export_file_archive.sql', '009_architecture_hardening.sql'];
   for (const file of migrationFiles) {
     let sql = await readFile(path.join(__dirname, '..', 'src', 'db', 'migrations', file), 'utf8');
     sql = sql.replace(/CREATE EXTENSION IF NOT EXISTS pgcrypto;\s*/g, '');
@@ -80,6 +81,16 @@ describe('public API', () => {
   it('rejects an unknown site code', async () => {
     const res = await request(app).get('/api/public/stores/ZZ99');
     expect(res.status).toBe(404);
+  });
+
+  it('rejects an unknown RP Type before persistence', async () => {
+    const res = await request(app).post('/api/public/submit').send({
+      site_code: 'HA02',
+      sku: '1000999',
+      rp_type: 'ZZ',
+    });
+    expect(res.status).toBe(400);
+    expect(res.body.field).toBe('rp_type');
   });
 
   it('supports return-goods schedule and single submission with duplicate protection', async () => {
@@ -331,22 +342,44 @@ describe('public API', () => {
     const no = created.body.submission.application_no;
     const date = String(created.body.submission.application_date).slice(0, 10);
 
-    const found = await request(app).get(`/api/public/my-applications?site_code=HA06&from=${date}&to=${date}`);
+    const found = await request(app)
+      .get(`/api/public/my-applications?site_code=HA06&from=${date}&to=${date}`)
+      .set('x-recovery-code', RECOVERY_CODE);
     expect(found.status).toBe(200);
     expect(found.body.store.shop).toBe('北角');
     expect(found.body.rows.some((r) => r.application_no === no)).toBe(true);
     expect(found.body.rows[0].submission_type).toBe('normal');
     expect(found.body.rows[0].sku).toBe('1000888');
 
-    const other = await request(app).get(`/api/public/my-applications?site_code=HA02&from=${date}&to=${date}`);
+    const other = await request(app)
+      .get(`/api/public/my-applications?site_code=HA02&from=${date}&to=${date}`)
+      .set('x-recovery-code', RECOVERY_CODE);
     expect(other.status).toBe(200);
     expect(other.body.rows.some((r) => r.application_no === no)).toBe(false);
 
-    const missing = await request(app).get('/api/public/my-applications?site_code=ZZ99');
+    const missing = await request(app)
+      .get('/api/public/my-applications?site_code=ZZ99')
+      .set('x-recovery-code', RECOVERY_CODE);
     expect(missing.status).toBe(400);
 
-    const badRange = await request(app).get('/api/public/my-applications?site_code=HA06&from=2026-12-31&to=2026-01-01');
+    const badRange = await request(app)
+      .get('/api/public/my-applications?site_code=HA06&from=2026-12-31&to=2026-01-01')
+      .set('x-recovery-code', RECOVERY_CODE);
     expect(badRange.status).toBe(400);
+
+    const invalidDate = await request(app)
+      .get('/api/public/my-applications?site_code=HA06&from=2026-02-31&to=2026-02-31')
+      .set('x-recovery-code', RECOVERY_CODE);
+    expect(invalidDate.status).toBe(400);
+  });
+
+  it('requires the recovery code before listing application numbers', async () => {
+    const missing = await request(app).get('/api/public/my-applications?site_code=HA06');
+    expect(missing.status).toBe(403);
+    const invalid = await request(app)
+      .get('/api/public/my-applications?site_code=HA06')
+      .set('x-recovery-code', 'wrong-code');
+    expect(invalid.status).toBe(403);
   });
 
   it('downloads the template workbook without login', async () => {
@@ -1555,6 +1588,28 @@ describe('sales public API', () => {
     expect(res.body.rows[0].application_no).toMatch(/^SALES-/);
     expect(res.body.rows[0].site_code).toBe('HA02');
     expect(res.body.rows[1].site_code).toBe('HA06');
+  });
+
+  it('scopes import idempotency keys by submission type', async () => {
+    const normalWorkbook = new ExcelJS.Workbook();
+    const normalSheet = normalWorkbook.addWorksheet(RP_TEAM_SHEET);
+    normalSheet.addRow([...TEMPLATE_COLUMNS]);
+    normalSheet.addRow(['HA02', '1007991', 'ND', '', 'ND20-SO-Not displayed in small stores', '']);
+    const normal = await request(app)
+      .post('/api/public/import')
+      .set('Idempotency-Key', 'same-key-different-types')
+      .attach('file', Buffer.from(await normalWorkbook.xlsx.writeBuffer()), 'normal-cross-type.xlsx');
+    expect(normal.status).toBe(201);
+
+    const salesWorkbook = new ExcelJS.Workbook();
+    const salesSheet = salesWorkbook.addWorksheet(SALES_SHEET);
+    salesSheet.addRow([...SALES_COLUMNS]);
+    salesSheet.addRow(['HA02', '1007992']);
+    const sales = await request(app)
+      .post('/api/public/sales/import')
+      .set('Idempotency-Key', 'same-key-different-types')
+      .attach('file', Buffer.from(await salesWorkbook.xlsx.writeBuffer()), 'sales-cross-type.xlsx');
+    expect(sales.status).toBe(201);
   });
 
   it('downloads the sales import record workbook from a stored batch', async () => {

@@ -6,6 +6,8 @@
   let pendingImportKey = null;
   let submitKey = null;
   let returnWindowOpen = false;
+  const options = globalThis.NDRF_OPTIONS || {};
+  const SKU_RE = new RegExp(options.skuPattern || '^(?:\\d{7}|\\d{12})$');
 
   const fmt = (value) => value ? value.replace(/^(\d{4})-(\d{2})-(\d{2})$/, '$2月$3日') : '';
   const fmtWithWeekday = (value) => {
@@ -44,7 +46,7 @@
     const errors = [];
     if (!data.site_code) errors.push('Site Code 為必填');
     if (!data.sku) errors.push('SKU 為必填');
-    else if (!/^(?:\d{7}|\d{12})$/.test(data.sku)) errors.push('SKU 只容許 7 位或 12 位數字，每個申請只能輸入一個 SKU');
+    else if (!SKU_RE.test(data.sku)) errors.push('SKU 只容許 7 位或 12 位數字，每個申請只能輸入一個 SKU');
     if (!Number.isInteger(data.qty) || data.qty < 1 || data.qty > 9999) errors.push('QTY 必須為 1 至 9999 的整數');
     if (!data.reason) errors.push('REASON 為必填');
     if (!data.confirmer_name) errors.push('確認人姓名為必填');

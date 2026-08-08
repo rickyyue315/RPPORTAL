@@ -42,19 +42,23 @@
           <button type="submit" class="btn">查詢</button>
         </div>
       </form>
-      <div class="btn-row" style="margin-top:8px; display:none">
+      <div class="btn-row" style="margin-top:8px">
         <button type="button" class="btn ghost" id="btn_toggle_recover">唔記得申請編號？</button>
       </div>
       <div id="recover_box" style="display:none">
         <hr>
         <h3>搵返申請編號</h3>
-        <p class="hint">輸入提交時使用嘅 <b>Site Code</b> 及日期範圍（預設為今日），可列出該日嘅申請編號，撳申請編號即可前往查詢／修改。</p>
+         <p class="hint">輸入提交時使用嘅 <b>Site Code</b>、Recovery Code 及日期範圍（預設為今日），可列出該日嘅申請編號，撳申請編號即可前往查詢／修改。</p>
         <div id="recover_error"></div>
         <form id="recover_form">
           <div class="form-grid">
             <div>
               <label for="r_site">Site Code <span class="optional">（必填）</span></label>
               <input type="text" id="r_site" autocomplete="off" placeholder="例如 HA02">
+            </div>
+            <div>
+              <label for="r_recovery_code">Recovery Code <span class="optional">（必填）</span></label>
+              <input type="password" id="r_recovery_code" autocomplete="off">
             </div>
             <div>
               <label for="r_sku">SKU <span class="optional">（可選）</span></label>
@@ -96,8 +100,6 @@
               <label for="f_rp_type">RP Type <span class="optional">（必填）</span></label>
               <select id="f_rp_type">
                 <option value="">—</option>
-                <option value="ND">ND</option>
-                <option value="RF">RF</option>
               </select>
             </div>
             <div id="f_safety_stock_wrap">
@@ -123,15 +125,6 @@
               <label for="f_u_urgent_reason">Urgent Reason <span class="optional">（必填）</span></label>
               <select id="f_u_urgent_reason">
                 <option value="">請選擇申請原因</option>
-                <option value="1">1. 客人訂購 (RP Team定期隨機抽查核實)</option>
-                <option value="2">2. ROADSHOW</option>
-                <option value="3">3. 追數 (OM指定)</option>
-                <option value="4">4. Promotion</option>
-                <option value="5">5. 新舖落貨(只限開舖第一週)</option>
-                <option value="6">6. 新產品SAP無法落貨</option>
-                <option value="7">7. 大堆頭擺放</option>
-                <option value="8">8. 管理層要求(只限Portal落貨)(缺貨)</option>
-                <option value="9">9. 其他</option>
               </select>
             </div>
             <div class="full" id="f_u_other_wrap" style="display:none">
@@ -176,6 +169,7 @@
     </div>
   </main>
 
+  <script src="/js/options.js"></script>
   <script src="/js/api.js"></script>
   <script src="/js/lookup.js"></script>
 

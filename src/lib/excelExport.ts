@@ -570,6 +570,15 @@ export async function buildAuditExportBuffer(
     data_after: Record<string, string | number | null>;
     export_batch_id?: string | null;
   }>,
+  events: Array<{
+    event_type: string;
+    actor_role: string | null;
+    actor: string | null;
+    application_no: string | null;
+    ip: string | null;
+    metadata: unknown;
+    created_at: string;
+  }> = [],
 ): Promise<Buffer> {
   const workbook = new ExcelJS.Workbook();
   const sheet = workbook.addWorksheet('Audit Report');
@@ -608,6 +617,28 @@ export async function buildAuditExportBuffer(
         after,
       ]);
     }
+  }
+
+  const eventSheet = workbook.addWorksheet('Audit Events');
+  eventSheet.addRow([
+    '事件類型',
+    '操作者角色',
+    '操作者',
+    '申請編號',
+    'IP',
+    '事件日期時間 (HK)',
+    'Metadata',
+  ]);
+  for (const event of events) {
+    eventSheet.addRow([
+      event.event_type,
+      event.actor_role ?? '',
+      event.actor ?? '',
+      event.application_no ?? '',
+      event.ip ?? '',
+      toHKDateString(event.created_at),
+      event.metadata === null || event.metadata === undefined ? '' : JSON.stringify(event.metadata),
+    ]);
   }
 
   const buffer = await workbook.xlsx.writeBuffer();

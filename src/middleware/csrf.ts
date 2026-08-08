@@ -41,6 +41,18 @@ export function csrfProtection(req: Request, res: Response, next: NextFunction):
     next();
     return;
   }
+  requireCsrf(req, res, next);
+}
+
+/**
+ * Enforces the double-submit token on any request, including GET endpoints
+ * that release sensitive content (used by the export download route).
+ */
+export function requireCsrf(req: Request, res: Response, next: NextFunction): void {
+  if (!config.csrfEnabled) {
+    next();
+    return;
+  }
   const cookieToken = req.cookies?.[CSRF_COOKIE];
   const headerToken = req.get('x-csrf-token');
   if (!cookieToken || !headerToken || cookieToken !== headerToken) {

@@ -52,7 +52,7 @@ import {
 import { isValidIsoDate, validateBusinessFields, validateUrgentReason } from '../lib/validation.js';
 import { getUploadedFile, validateUploadedXlsx } from '../lib/upload.js';
 import { EXPORT_CONTENT_TYPE } from '../services/exportFiles.js';
-import { CSRF_COOKIE } from '../middleware/csrf.js';
+import { requireCsrf } from '../middleware/csrf.js';
 import {
   createLockedExport,
   exportFilename,
@@ -1311,14 +1311,9 @@ adminRouter.post(
 adminRouter.get(
   '/export-batches/:id/download',
   requireAdmin,
+  requireCsrf,
   excelExportLimiter,
   asyncHandler(async (req: Request, res: Response) => {
-    const cookieToken = req.cookies?.[CSRF_COOKIE];
-    const headerToken = req.get('x-csrf-token');
-    if (config.csrfEnabled && (!cookieToken || !headerToken || cookieToken !== headerToken)) {
-      res.status(403).json({ error: 'CSRF token 無效' });
-      return;
-    }
     const parsedId = z.string().uuid().safeParse(req.params.id);
     if (!parsedId.success) {
       res.status(400).json({ error: '匯出批次編號無效' });

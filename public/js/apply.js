@@ -73,7 +73,7 @@
   function showPreview() {
     const d = readForm();
     const errs = validateForm();
-    showAlert($('form_error'), 'error', errs.map((e) => `<div>${e}</div>`).join(''));
+    showAlert($('form_error'), 'error', errs.map((e) => `<div>${escapeHtml(e)}</div>`).join(''));
     if (errs.length) return;
     previewData = d;
     submitKey = createIdempotencyKey();

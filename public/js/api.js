@@ -240,6 +240,22 @@ function populatePlatformSelects() {
   populateSelect('f_nd_code', PLATFORM_OPTIONS.ndCodes, '全部');
   ['f_u_urgent_reason', 'a_urgent_reason'].forEach((id) => populateSelect(id, PLATFORM_OPTIONS.urgentReasons, '請選擇申請原因'));
   ['f_return_reason', 'a_return_reason', 'reason'].forEach((id) => populateSelect(id, PLATFORM_OPTIONS.returnReasons, '請選擇申請退貨原因'));
+
+  // Keep client-side quantity bounds aligned with the server validators.
+  const urgentQty = document.getElementById('a_qty');
+  if (urgentQty) {
+    urgentQty.min = PLATFORM_OPTIONS.urgentQtyMin;
+    urgentQty.max = PLATFORM_OPTIONS.urgentQtyMax;
+  }
+  const returnQty = document.getElementById('a_return_qty');
+  if (returnQty) {
+    returnQty.min = PLATFORM_OPTIONS.returnQtyMin;
+    returnQty.max = PLATFORM_OPTIONS.returnQtyMax;
+  }
+  const urgentNote = document.getElementById('urgent_note');
+  if (urgentNote) {
+    urgentNote.textContent = `Urgent Order：可修改 SKU、QTY（${PLATFORM_OPTIONS.urgentQtyMin} 至 ${PLATFORM_OPTIONS.urgentQtyMax}）及 Urgent Reason，Site Code 不可修改。選擇「${PLATFORM_OPTIONS.urgentReasonOtherCode}. 其他」時必須填寫 Other Reason。`;
+  }
 }
 
 const RF_REMARK_REQUIRED_SITES = new Set(PLATFORM_OPTIONS.rfRemarkRequiredSites);

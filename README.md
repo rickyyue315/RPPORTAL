@@ -58,8 +58,11 @@ npm run dev
 
 ```bash
 npm test          # 單元 + 整合 + API 測試（使用 PGlite 記憶體 Postgres）
-npm run smoke     # 端到端 smoke test（真實 HTTP + PGlite）
+npm run smoke     # 端到端 smoke test（真實 HTTP + PGlite，任何時間執行均確定）
+npm run schedule:check  # 檢查退貨時間表是否涵蓋今年
 ```
+
+Repository 已配置 GitHub Actions（`.github/workflows/ci.yml`）：push 時自動執行 `npm ci` + typecheck + build + test。
 
 ## 部署至 Zeabur
 
@@ -99,7 +102,7 @@ npm run smoke     # 端到端 smoke test（真實 HTTP + PGlite）
 ## 資料模型
 
 - `stores`：門店主檔（Site Code 唯一）
-- `submissions`：申報主表（`application_no` 唯一、`submission_type` 分 `normal`／`urgent`／`sales`／`return`；`return_qty`、`return_reason`、確認人資料及 `return_window_key` 供行貨退貨報數使用；狀態固定 `received`、匯出鎖定欄位）
+- `submissions`：申報主表（`application_no` 唯一、`submission_type` 分 `normal`／`urgent`／`sales`／`return`；`return_qty`、`return_reason`、確認人資料及 `return_window_key` 供行貨退貨報數使用；狀態固定 `received`（由應用層保證）、匯出鎖定欄位；舊版 `supply_source`／`rp_parameters_change_request` 欄位已由 migration 011 在確認無資料後移除）
 - `submission_versions`：不可變版本歷史（前後資料快照、操作者角色、IP、時間）
 - `import_batches`：Excel 匯入批次、伺服器匯入記錄、申報類型及重試鍵
 - `idempotency_key`：單筆及 Excel 重試對應鍵，避免提交成功但 HTTP 回應遺失時重複寫入
@@ -108,6 +111,15 @@ npm run smoke     # 端到端 smoke test（真實 HTTP + PGlite）
 - `admin_sessions`：管理員登入 session（token 以 SHA-256 hash 儲存，過期自動清理）
 - `admin_login_attempts`：登入嘗試紀錄（失敗鎖定用）
 - `audit_events`：提交／查詢／修改／匯入／匯出／鎖定／登入／IP 清理審計；管理員 Audit Report 同時包含版本歷史及 audit events
+
+## 年度維護
+
+- **行貨退貨時間表**：每年更新 `return-schedule.json`（加入新年度的窗口），並視需要調整 `RETURN_ENFORCEMENT_START`。應用程式啟動時若目前年度沒有配置窗口會直接拒絕啟動（fail-fast），不會靜默關閉功能；可用 `npm run schedule:check` 預先檢查。
+- **Recovery Code**：定期輪換 `PUBLIC_RECOVERY_CODE`，輪換後需重新部署並通知店舖。
+
+## 已知限制
+
+- `npm audit` 報告 2 個 moderate 漏洞（`uuid`，經 `exceljs` 傳遞）。目前**沒有非破壞性修復版本**（`npm audit fix --force` 會把 exceljs 降級到 3.4.0，屬 breaking change）。實際風險低：該漏洞只影響 uuid v3/v5/v6 並傳入 `buf` 的用法，本平台經 exceljs 使用 uuid v4 且不傳 `buf`。建議在 exceljs 釋出修復版後升級，或日後評估替換 Excel 函示庫。
 
 ## 注意事項
 
@@ -119,5 +131,6 @@ npm run smoke     # 端到端 smoke test（真實 HTTP + PGlite）
 - 舊有（加入原因欄位前）的 Urgent Order 原因欄位為空，可於管理後台編輯時補回；匯出時空白原因會以空白顯示。
 - 上載檔內的 `Application Date` 及 `Requested by` 不可信，系統一律以伺服器值及 Site Code 產生值覆蓋。
 - 「同一 Site Code + SKU 每日只可申報一次」以 `application_date`（香港當日日期）計算，申請人修改時若把 SKU 改成同日已存在的組合亦會被拒；管理員匯入／編輯不受限制。
+- 管理員匯入無 Idempotency-Key 需求（與公開匯入不同），但相同內容的檔案（`content_hash`）重複上載會被拒絕（409），避免誤按或網路重試造成重複寫入；修改過內容的檔案不受影響。
 - 錯誤訊息不包含資料庫或內部設定資訊。
 - 一般日誌不記錄申報內容、密碼或完整 IP。

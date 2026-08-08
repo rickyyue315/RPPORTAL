@@ -15,6 +15,7 @@
     "test": "vitest run",
     "migrate": "tsx src/migrate.ts",
     "seed:stores": "tsx src/scripts/seedStores.ts",
+    "schedule:check": "tsx src/scripts/checkReturnSchedule.ts",
     "smoke": "tsx test/smoke.ts"
   },
   "dependencies": {

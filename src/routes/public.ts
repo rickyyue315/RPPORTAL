@@ -72,7 +72,7 @@ import { ipExpiryIso } from '../lib/ip.js';
 import { RETURN_SCHEDULE, RETURN_WINDOWS, getActiveReturnWindow, isReturnModificationOpen } from '../lib/returnSchedule.js';
 import { fingerprintPayload, getIdempotencyKey, hasInvalidIdempotencyKey } from '../lib/idempotency.js';
 import { createImportBatch, findImportBatchByIdempotencyKey, findImportBatchByKey, getPublicImportBatchRecord, importBatchResponse, lockImportIdempotencyKey, type ImportSubmissionType } from '../services/importBatches.js';
-import { isValidPublicRecoveryCode } from '../lib/recovery.js';
+import { isValidPublicRecoveryCode, parseRecoveryCodeHeader } from '../lib/recovery.js';
 import { getUploadedFile, validateUploadedXlsx } from '../lib/upload.js';
 
 export const publicRouter = Router();
@@ -1829,7 +1829,7 @@ publicRouter.get(
     const rawFrom = String(req.query.from ?? '').trim();
     const rawTo = String(req.query.to ?? '').trim();
     const rawSku = String(req.query.sku ?? '').trim();
-    const recoveryCode = req.get('x-recovery-code') ?? '';
+    const recoveryCode = parseRecoveryCodeHeader(req.get('x-recovery-code'));
 
     if (!config.publicRecoveryCode) {
       res.status(503).json({ error: '申請編號恢復功能尚未設定' });

@@ -82,7 +82,7 @@
     btn.textContent = '查詢中…';
     try {
       const data = await api(`/api/public/my-applications?${params.toString()}`, {
-        headers: { 'x-recovery-code': recoveryCode },
+        headers: { 'x-recovery-code': encodeURIComponent(recoveryCode) },
       });
       const rows = data.rows || [];
       const TYPE_LABEL = { normal: '一般 NDRF', urgent: 'Urgent Order', sales: '突發性銷售', return: '行貨退貨' };

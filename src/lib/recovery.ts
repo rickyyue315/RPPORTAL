@@ -11,3 +11,16 @@ export function isValidPublicRecoveryCode(value: string | null | undefined): boo
   const actual = Buffer.from(value.trim(), 'utf8');
   return expected.length > 0 && expected.length === actual.length && timingSafeEqual(expected, actual);
 }
+
+/**
+ * The browser encodes the recovery code before placing it in a header, so the
+ * server must accept both raw and percent-encoded values.
+ */
+export function parseRecoveryCodeHeader(value: string | undefined): string {
+  if (!value) return '';
+  try {
+    return decodeURIComponent(value);
+  } catch {
+    return value;
+  }
+}

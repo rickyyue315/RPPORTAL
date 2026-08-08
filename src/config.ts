@@ -64,7 +64,7 @@ export const config = {
   exportBatchRetentionDays: Math.max(1, int('EXPORT_BATCH_RETENTION_DAYS', 730)),
   returnSchedulePath: process.env.RETURN_SCHEDULE_PATH ?? path.join(__dirname, '..', 'return-schedule.json'),
   returnEnforcementStart: process.env.RETURN_ENFORCEMENT_START ?? '2026-08-01',
-  publicRecoveryCode: process.env.PUBLIC_RECOVERY_CODE ?? '',
+  publicRecoveryCode: (process.env.PUBLIC_RECOVERY_CODE ?? '').trim(),
   storesCsvPath: process.env.STORES_CSV_PATH ?? path.join(__dirname, '..', 'stores-template.csv'),
   corsOrigins: (process.env.CORS_ORIGINS ?? '').split(',').map((s) => s.trim()).filter(Boolean),
 };

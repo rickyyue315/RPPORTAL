@@ -55,6 +55,12 @@ a:hover {
   font-size: 13px;
   opacity: 0.85;
 }
+.topbar .portal-note {
+  margin-top: 6px;
+  font-size: 14px;
+  font-weight: 700;
+  color: #ffe58a;
+}
 .topbar nav {
   display: flex;
   gap: 6px;

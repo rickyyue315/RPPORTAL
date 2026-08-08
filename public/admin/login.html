@@ -4,47 +4,63 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>管理員登入 — NDRF 申報平台</title>
-  <link rel="stylesheet" href="/css/style.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/core@1.1.1/dist/css/tabler.min.css">
+  <style>
+    :root { --tblr-primary: #0f5c9c; }
+    .alert.error { color:#611a15; background:#fdecea; border-color:#f5c6c2; }
+    .alert.success { color:#0a5c36; background:#eafaf1; border-color:#a9dfbf; }
+    .alert.info { color:#0a3d69; background:#eaf2fb; border-color:#a9c7e8; }
+    .alert.warning { color:#7a4d00; background:#fef9e7; border-color:#f9e79f; }
+  </style>
 </head>
 <body>
-  <header class="topbar">
-    <div>
-      <h1>NDRF 管理後台</h1>
-      <div class="subtitle">管理員登入</div>
-      <div class="portal-note">當公司Portal 平台回復正常時，此平台會結束服務，謝謝。</div>
+<div class="page">
+  <header class="navbar navbar-expand-md navbar-dark" style="background:#0f5c9c">
+    <div class="container-xl">
+      <h1 class="navbar-brand navbar-brand-autodark">
+        <span class="d-block lh-1"><strong>NDRF 管理後台</strong></span>
+        <span class="text-white-50" style="font-size:12px;">管理員登入</span>
+      </h1>
+      <div class="navbar-nav flex-row order-md-last ms-auto">
+        <a href="/" class="nav-link text-white-50">公開申請頁</a>
+        <a href="/help.html" class="nav-link text-white-50 d-none d-md-inline-flex">使用說明</a>
+      </div>
     </div>
-    <nav>
-      <a href="/">公開申請頁</a>
-      <a href="/help.html">使用說明</a>
-      <a href="/sales.html">突發性銷售申報</a>
-      <a href="/return.html">行貨退貨報數</a>
-    </nav>
   </header>
-
-  <main class="container">
-    <div class="card" style="max-width:420px;margin:40px auto">
-      <h2>管理員登入</h2>
-      <form id="login_form">
-        <div>
-          <label for="login_username">使用者名稱</label>
-          <input type="text" id="login_username" autocomplete="username" required>
+  <div class="page-wrapper">
+    <div class="page-body">
+      <div class="container-xl">
+        <div class="row justify-content-center">
+          <div class="col-md-6 col-lg-4">
+            <div class="card">
+              <div class="card-header"><h3 class="card-title">管理員登入</h3></div>
+              <div class="card-body">
+                <form id="login_form">
+                  <div class="mb-3">
+                    <label class="form-label" for="login_username">使用者名稱</label>
+                    <input type="text" id="login_username" class="form-control" autocomplete="username" required>
+                  </div>
+                  <div class="mb-3">
+                    <label class="form-label" for="login_password">密碼</label>
+                    <input type="password" id="login_password" class="form-control" autocomplete="current-password" required>
+                  </div>
+                  <div id="login_error"></div>
+                  <div class="d-flex mt-3">
+                    <button class="btn btn-primary w-100" type="submit" id="btn_login">登入</button>
+                  </div>
+                </form>
+              </div>
+            </div>
+          </div>
         </div>
-        <div>
-          <label for="login_password">密碼</label>
-          <input type="password" id="login_password" autocomplete="current-password" required>
-        </div>
-        <div id="login_error"></div>
-        <div class="btn-row">
-          <button class="btn" type="submit" id="btn_login">登入</button>
-        </div>
-      </form>
+      </div>
     </div>
-  </main>
-
-  <script src="/js/options.js"></script>
-  <script src="/js/api.js"></script>
-  <script src="/js/login.js"></script>
-
-  <footer class="site-footer">Developed by RP Team - Ricky Yue</footer>
+  </div>
+  <footer class="footer footer-transparent"><div class="container-xl"><div class="text-center text-secondary small">Developed by RP Team - Ricky Yue</div></div></footer>
+</div>
+<script src="https://cdn.jsdelivr.net/npm/@tabler/core@1.1.1/dist/js/tabler.min.js"></script>
+<script src="/js/options.js"></script>
+<script src="/js/api.js"></script>
+<script src="/js/login.js"></script>
 </body>
 </html>

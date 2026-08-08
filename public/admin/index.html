@@ -4,437 +4,315 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>管理後台 — NDRF 申報平台</title>
-  <link rel="stylesheet" href="/css/style.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/core@1.1.1/dist/css/tabler.min.css">
+  <style>
+    :root { --tblr-primary: #0f5c9c; }
+    .toolbar { display:flex; flex-wrap:wrap; gap:12px; align-items:end; }
+    .toolbar .field { flex:1; min-width:140px; }
+    .toolbar .field--compact{ flex:0 1 160px; min-width:130px; }
+    .toolbar .field--ndcode{ flex:0 1 240px; min-width:210px; }
+    .toolbar .field--appno{ flex:0 1 220px; min-width:180px; }
+    .toolbar .field label{ margin:0 0 4px; font-size:13px; font-weight:600; }
+    .status-badge { display:inline-block; padding:3px 10px; border-radius:12px; font-size:12px; font-weight:600; line-height:1.4; }
+    .status-badge.received { background:#eaf2fb; color:#0a3d69; border:1px solid #a9c7e8; }
+    .status-badge.locked { background:#fdecea; color:#c0392b; border:1px solid #f5c6c2; }
+    .empty { color:#66727f; text-align:center; padding:30px; }
+    .hint { font-size:12px; color:#66727f; margin-top:4px; }
+    .dl { display:grid; grid-template-columns:220px 1fr; row-gap:8px; font-size:14px; }
+    .dl dt { color:#66727f; font-weight:600; }
+    .dl dd { margin:0; }
+    @media(max-width:640px){ .dl{grid-template-columns:1fr;} }
+    #export_confirm_overlay { position:fixed; inset:0; background:rgba(0,0,0,.45); display:none; align-items:center; justify-content:center; z-index:1055; padding:16px; }
+    #export_confirm_overlay .modal-box { background:#fff; border-radius:12px; padding:26px; max-width:460px; width:100%; box-shadow:0 10px 30px rgba(0,0,0,.25); }
+    .file-drop.dragover, #store_drop.dragover { border-color:var(--tblr-primary) !important; background:#f6faff !important; }
+    #store_drop { border-style:dashed; }
+    .alert.error { color:#611a15; background:#fdecea; border-color:#f5c6c2; }
+    .alert.success { color:#0a5c36; background:#eafaf1; border-color:#a9dfbf; }
+    .alert.info { color:#0a3d69; background:#eaf2fb; border-color:#a9c7e8; }
+    .alert.warning { color:#7a4d00; background:#fef9e7; border-color:#f9e79f; }
+    #versions_box table { width:100%; border-collapse:collapse; font-size:13px; }
+    #versions_box th, #versions_box td { border:1px solid #d9dee3; padding:8px 10px; text-align:left; vertical-align:top; }
+    #versions_box th { background:#eef2f6; font-weight:600; }
+  </style>
 </head>
 <body>
-  <header class="topbar">
-    <div>
-      <h1>NDRF 管理後台</h1>
-      <div class="subtitle">申報管理、Excel 匯入／匯出、審計</div>
-      <div class="portal-note">當公司Portal 平台回復正常時，此平台會結束服務，謝謝。</div>
+<div class="page">
+  <header class="navbar navbar-expand-md navbar-dark" style="background:#0f5c9c">
+    <div class="container-xl">
+      <h1 class="navbar-brand navbar-brand-autodark">
+        <span class="d-block lh-1"><strong>NDRF 管理後台</strong></span>
+        <span class="text-white-50" style="font-size:12px;">申報管理、Excel 匯入／匯出、審計</span>
+      </h1>
+      <div class="navbar-nav flex-row order-md-last ms-auto">
+        <a href="/" class="nav-link text-white-50">公開申請頁</a>
+        <a href="#" id="btn_logout" class="nav-link text-white">登出</a>
+      </div>
     </div>
-    <nav>
-      <a href="/">公開申請頁</a>
-      <a href="/sales.html">突發性銷售申報</a>
-      <a href="/return.html">行貨退貨報數</a>
-      <a href="/help.html">使用說明</a>
-      <a href="#" id="btn_logout">登出</a>
-    </nav>
   </header>
+  <div class="page-wrapper">
 
-  <main class="container wide">
-    <div class="dash-stats">
-      <div id="summary_note" class="dash-status">載入中…</div>
-      <div class="dash-group">
-        <div class="dash-group-title">總概覽</div>
-        <div class="dash-grid">
-          <div class="dash-stat dash-stat--primary">
-            <div class="dash-val" id="s_stores_month">—</div>
-            <div class="dash-lbl">本月涉及店舖</div>
+    <div class="page-body">
+      <div class="container-xl">
+        <!-- Dashboard stats -->
+        <div class="row row-deck row-cards mb-3" id="dash_wrap">
+          <div class="col-12">
+            <div class="card">
+              <div class="card-header"><h3 class="card-title">總概覽</h3><span id="summary_note" class="ms-auto text-secondary small">載入中…</span></div>
+              <div class="card-body">
+                <div class="row g-2">
+                  <div class="col-6 col-md-3"><div class="card card-sm"><div class="card-body text-center"><div class="h1 mb-1" id="s_stores_month">—</div><div class="text-secondary small">本月涉及店舖</div></div></div></div>
+                  <div class="col-6 col-md-3"><div class="card card-sm"><div class="card-body text-center"><div class="h1 mb-1" id="s_stores_today">—</div><div class="text-secondary small">今日涉及店舖</div></div></div></div>
+                  <div class="col-6 col-md-3"><div class="card card-sm"><div class="card-body text-center"><div class="h3 mb-1 text-truncate" id="s_earliest_store">—</div><div class="text-secondary small">今日最早提交的店舖</div></div></div></div>
+                  <div class="col-6 col-md-3"><div class="card card-sm"><div class="card-body text-center"><div class="h3 mb-1 text-truncate" id="s_latest_store">—</div><div class="text-secondary small">今日最晚提交的店舖</div></div></div></div>
+                </div>
+              </div>
+            </div>
           </div>
-          <div class="dash-stat dash-stat--primary">
-            <div class="dash-val" id="s_stores_today">—</div>
-            <div class="dash-lbl">今日涉及店舖</div>
+          <div class="col-md-6 col-lg-3">
+            <div class="card">
+              <div class="card-header"><h3 class="card-title">一般 NDRF</h3></div>
+              <div class="card-body">
+                <div class="row g-2 text-center">
+                  <div class="col-4"><div class="h2 mb-0" id="s_normal_total">—</div><div class="text-secondary small">總提交</div></div>
+                  <div class="col-4"><div class="h2 mb-0 text-success" id="s_normal_exported">—</div><div class="text-secondary small">已匯出</div></div>
+                  <div class="col-4"><div class="h2 mb-0" id="s_normal_today">—</div><div class="text-secondary small">今日提交</div></div>
+                  <div class="col-6 mt-2"><div class="h3 mb-0" id="s_normal_today_exported">—</div><div class="text-secondary small">今日已匯出</div></div>
+                  <div class="col-6 mt-2"><div class="h3 mb-0" id="s_normal_stores_today">—</div><div class="text-secondary small">今日店舖數</div></div>
+                </div>
+              </div>
+            </div>
           </div>
-          <div class="dash-stat dash-stat--info">
-            <div class="dash-val dash-val--store" id="s_earliest_store">—</div>
-            <div class="dash-lbl">今日最早提交的店舖</div>
+          <div class="col-md-6 col-lg-3">
+            <div class="card">
+              <div class="card-header"><h3 class="card-title">Urgent Order</h3></div>
+              <div class="card-body">
+                <div class="row g-2 text-center">
+                  <div class="col-4"><div class="h2 mb-0 text-orange" id="s_urgent_total">—</div><div class="text-secondary small">總提交</div></div>
+                  <div class="col-4"><div class="h2 mb-0 text-orange" id="s_urgent_exported">—</div><div class="text-secondary small">已匯出</div></div>
+                  <div class="col-4"><div class="h2 mb-0 text-orange" id="s_urgent_today">—</div><div class="text-secondary small">今日提交</div></div>
+                  <div class="col-6 mt-2"><div class="h3 mb-0" id="s_urgent_today_exported">—</div><div class="text-secondary small">今日已匯出</div></div>
+                  <div class="col-6 mt-2"><div class="h3 mb-0" id="s_urgent_stores_today">—</div><div class="text-secondary small">今日店舖數</div></div>
+                </div>
+              </div>
+            </div>
           </div>
-          <div class="dash-stat dash-stat--info">
-            <div class="dash-val dash-val--store" id="s_latest_store">—</div>
-            <div class="dash-lbl">今日最晚提交的店舖</div>
+          <div class="col-md-6 col-lg-3">
+            <div class="card">
+              <div class="card-header"><h3 class="card-title">突發性銷售申報</h3></div>
+              <div class="card-body">
+                <div class="row g-2 text-center">
+                  <div class="col-4"><div class="h2 mb-0" id="s_sales_total">—</div><div class="text-secondary small">總提交</div></div>
+                  <div class="col-4"><div class="h2 mb-0 text-success" id="s_sales_exported">—</div><div class="text-secondary small">已匯出</div></div>
+                  <div class="col-4"><div class="h2 mb-0" id="s_sales_today">—</div><div class="text-secondary small">今日提交</div></div>
+                  <div class="col-6 mt-2"><div class="h3 mb-0" id="s_sales_today_exported">—</div><div class="text-secondary small">今日已匯出</div></div>
+                  <div class="col-6 mt-2"><div class="h3 mb-0" id="s_sales_stores_today">—</div><div class="text-secondary small">今日店舖數</div></div>
+                </div>
+              </div>
+            </div>
           </div>
-        </div>
-      </div>
-      <div class="dash-group">
-        <div class="dash-group-title">一般 NDRF</div>
-        <div class="dash-grid">
-          <div class="dash-stat dash-stat--primary">
-            <div class="dash-val" id="s_normal_total">—</div>
-            <div class="dash-lbl">總提交</div>
-          </div>
-          <div class="dash-stat dash-stat--ok">
-            <div class="dash-val" id="s_normal_exported">—</div>
-            <div class="dash-lbl">已匯出總數</div>
-          </div>
-          <div class="dash-stat dash-stat--info">
-            <div class="dash-val" id="s_normal_today">—</div>
-            <div class="dash-lbl">今日提交</div>
-          </div>
-          <div class="dash-stat dash-stat--info">
-            <div class="dash-val" id="s_normal_today_exported">—</div>
-            <div class="dash-lbl">今日已匯出</div>
-          </div>
-          <div class="dash-stat dash-stat--info">
-            <div class="dash-val" id="s_normal_stores_today">—</div>
-            <div class="dash-lbl">今日店舖數</div>
-          </div>
-        </div>
-      </div>
-      <div class="dash-group">
-        <div class="dash-group-title">Urgent Order</div>
-        <div class="dash-grid">
-          <div class="dash-stat dash-stat--urgent">
-            <div class="dash-val" id="s_urgent_total">—</div>
-            <div class="dash-lbl">總提交</div>
-          </div>
-          <div class="dash-stat dash-stat--urgent">
-            <div class="dash-val" id="s_urgent_exported">—</div>
-            <div class="dash-lbl">已匯出總數</div>
-          </div>
-          <div class="dash-stat dash-stat--urgent">
-            <div class="dash-val" id="s_urgent_today">—</div>
-            <div class="dash-lbl">今日提交</div>
-          </div>
-          <div class="dash-stat dash-stat--urgent">
-            <div class="dash-val" id="s_urgent_today_exported">—</div>
-            <div class="dash-lbl">今日已匯出</div>
-          </div>
-          <div class="dash-stat dash-stat--urgent">
-            <div class="dash-val" id="s_urgent_stores_today">—</div>
-            <div class="dash-lbl">今日店舖數</div>
-          </div>
-        </div>
-      </div>
-      <div class="dash-group">
-        <div class="dash-group-title">突發性銷售申報</div>
-        <div class="dash-grid">
-          <div class="dash-stat dash-stat--info">
-            <div class="dash-val" id="s_sales_total">—</div>
-            <div class="dash-lbl">總提交</div>
-          </div>
-          <div class="dash-stat dash-stat--ok">
-            <div class="dash-val" id="s_sales_exported">—</div>
-            <div class="dash-lbl">已匯出總數</div>
-          </div>
-          <div class="dash-stat dash-stat--info">
-            <div class="dash-val" id="s_sales_today">—</div>
-            <div class="dash-lbl">今日提交</div>
-          </div>
-          <div class="dash-stat dash-stat--info">
-            <div class="dash-val" id="s_sales_today_exported">—</div>
-            <div class="dash-lbl">今日已匯出</div>
-          </div>
-          <div class="dash-stat dash-stat--info">
-            <div class="dash-val" id="s_sales_stores_today">—</div>
-            <div class="dash-lbl">今日店舖數</div>
+          <div class="col-md-6 col-lg-3">
+            <div class="card">
+              <div class="card-header"><h3 class="card-title">行貨退貨報數</h3></div>
+              <div class="card-body">
+                <div class="row g-2 text-center">
+                  <div class="col-4"><div class="h2 mb-0" id="s_return_total">—</div><div class="text-secondary small">總提交</div></div>
+                  <div class="col-4"><div class="h2 mb-0 text-success" id="s_return_exported">—</div><div class="text-secondary small">已匯出</div></div>
+                  <div class="col-4"><div class="h2 mb-0" id="s_return_today">—</div><div class="text-secondary small">今日提交</div></div>
+                  <div class="col-6 mt-2"><div class="h3 mb-0" id="s_return_today_exported">—</div><div class="text-secondary small">今日已匯出</div></div>
+                  <div class="col-6 mt-2"><div class="h3 mb-0" id="s_return_stores_today">—</div><div class="text-secondary small">今日店舖數</div></div>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
-      </div>
-      <div class="dash-group">
-        <div class="dash-group-title">行貨退貨報數</div>
-        <div class="dash-grid">
-          <div class="dash-stat dash-stat--info"><div class="dash-val" id="s_return_total">—</div><div class="dash-lbl">總提交</div></div>
-          <div class="dash-stat dash-stat--ok"><div class="dash-val" id="s_return_exported">—</div><div class="dash-lbl">已匯出總數</div></div>
-          <div class="dash-stat dash-stat--info"><div class="dash-val" id="s_return_today">—</div><div class="dash-lbl">今日提交</div></div>
-          <div class="dash-stat dash-stat--info"><div class="dash-val" id="s_return_today_exported">—</div><div class="dash-lbl">今日已匯出</div></div>
-          <div class="dash-stat dash-stat--info"><div class="dash-val" id="s_return_stores_today">—</div><div class="dash-lbl">今日店舖數</div></div>
+
+        <!-- Filter + list -->
+        <div class="card">
+          <div class="card-header"><h3 class="card-title">申報清單</h3></div>
+          <div class="card-body">
+            <div class="toolbar mb-3">
+              <div class="field"><label class="form-label">由 (日期)</label><input type="date" id="f_from" class="form-control"></div>
+              <div class="field"><label class="form-label">至 (日期)</label><input type="date" id="f_to" class="form-control"></div>
+              <div class="field"><label class="form-label">Site Code</label><input type="text" id="f_site" class="form-control"></div>
+              <div class="field"><label class="form-label">來源</label><select id="f_source" class="form-select"><option value="">全部</option><option value="web">網頁</option><option value="excel">Excel</option></select></div>
+              <div class="field"><label class="form-label">申報類型</label><select id="f_type" class="form-select"><option value="">全部</option><option value="normal">一般 NDRF</option><option value="urgent">Urgent Order</option><option value="sales">突發性銷售申報</option><option value="return">行貨退貨報數</option></select></div>
+              <div class="field"><label class="form-label">匯出狀態</label><select id="f_exported" class="form-select"><option value="">全部</option><option value="no">未匯出</option><option value="yes">已匯出</option></select></div>
+              <div class="field"><label class="form-label">SKU</label><input type="text" id="f_sku" class="form-control"></div>
+              <div class="field field--compact"><label class="form-label">RP Type</label><select id="f_rp_type" class="form-select"><option value="">全部</option></select></div>
+              <div class="field field--ndcode"><label class="form-label">ND Code</label><select id="f_nd_code" class="form-select"><option value="">全部</option></select></div>
+              <div class="field field--appno"><label class="form-label">申請編號</label><input type="text" id="f_appno" class="form-control form-control-sm"></div>
+              <div class="ms-auto d-flex gap-2 align-items-end">
+                <button class="btn btn-primary" id="btn_filter">篩選</button>
+                <button class="btn" id="btn_reset">重設</button>
+              </div>
+            </div>
+            <div id="list_error"></div>
+            <div class="table-responsive">
+              <table class="table table-vcenter table-hover card-table" id="list_table">
+                <thead><tr><th>申請編號</th><th>Site Code</th><th>SKU</th><th>RP Type</th><th>Safety Qty</th><th>ND Code</th><th>類型</th><th>來源</th><th>申請時間</th><th>修改時間</th><th>狀態</th><th></th></tr></thead>
+                <tbody id="list_body"></tbody>
+              </table>
+            </div>
+            <div class="d-flex align-items-center gap-3 mt-3">
+              <button class="btn btn-sm" id="btn_prev">上一頁</button>
+              <span id="page_info" class="text-secondary small"></span>
+              <button class="btn btn-sm" id="btn_next">下一頁</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Detail -->
+        <div class="card mt-3" id="detail_card" style="display:none">
+          <div class="card-header"><h3 class="card-title" id="detail_title">申報詳情</h3></div>
+          <div class="card-body">
+            <div id="detail_error"></div>
+            <div class="datagrid mb-3" id="detail_header"></div>
+            <h3 class="card-title mt-3">編輯業務欄位</h3>
+            <div id="urgent_note" style="display:none" class="alert alert-info py-2 small">Urgent Order：可修改 SKU、QTY（1 至 1000）及 Urgent Reason，Site Code 不可修改。選擇「9. 其他」時必須填寫 Other Reason。</div>
+            <form id="edit_form">
+              <div id="normal_fields" class="row g-3">
+                <div class="col-md-6"><label class="form-label" for="a_sku_normal">SKU</label><input type="text" id="a_sku_normal" class="form-control"></div>
+                <div class="col-md-6"><label class="form-label" for="a_rp_type">RP Type</label><select id="a_rp_type" class="form-select"><option value="">—</option></select></div>
+                <div class="col-md-6" id="a_safety_stock_wrap"><label class="form-label" for="a_safety_stock">Safety stock</label><input type="text" id="a_safety_stock" class="form-control"></div>
+                <div class="col-md-6" id="a_nd_code_wrap"><label class="form-label" for="a_nd_code">ND Code</label><input type="text" id="a_nd_code" list="nd_code_list" class="form-control"><datalist id="nd_code_list"></datalist></div>
+                <div class="col-12"><label class="form-label" for="a_remark">Remark</label><input type="text" id="a_remark" class="form-control"></div>
+              </div>
+              <div id="urgent_fields" class="row g-3" style="display:none">
+                <div class="col-md-6"><label class="form-label" for="a_sku_urgent">SKU</label><input type="text" id="a_sku_urgent" class="form-control"></div>
+                <div class="col-md-6"><label class="form-label" for="a_qty">QTY (1-1000)</label><input type="number" id="a_qty" min="1" max="1000" step="1" class="form-control"></div>
+                <div class="col-12"><label class="form-label" for="a_urgent_reason">Urgent Reason</label><select id="a_urgent_reason" class="form-select"><option value="">請選擇申請原因</option></select></div>
+                <div class="col-12" id="a_urgent_reason_other_wrap" style="display:none"><label class="form-label" for="a_urgent_reason_other">Other Reason</label><input type="text" id="a_urgent_reason_other" maxlength="2000" class="form-control"></div>
+              </div>
+              <div id="sales_fields" class="row g-3" style="display:none"><div class="col-md-6"><label class="form-label" for="a_sku_sales">SKU</label><input type="text" id="a_sku_sales" class="form-control"></div></div>
+              <div id="return_fields" class="row g-3" style="display:none">
+                <div class="col-md-6"><label class="form-label" for="a_sku_return">SKU</label><input type="text" id="a_sku_return" class="form-control"></div>
+                <div class="col-md-6"><label class="form-label" for="a_return_qty">QTY (1-9999)</label><input type="number" id="a_return_qty" min="1" max="9999" step="1" class="form-control"></div>
+                <div class="col-12"><label class="form-label" for="a_return_reason">REASON</label><select id="a_return_reason" class="form-select"><option value="">請選擇申請退貨原因</option></select></div>
+                <div class="col-md-6"><label class="form-label" for="a_return_name">確認人姓名</label><input type="text" id="a_return_name" maxlength="200" class="form-control"></div>
+                <div class="col-md-6"><label class="form-label" for="a_return_phone">確認人電話</label><input type="text" id="a_return_phone" maxlength="200" class="form-control"></div>
+              </div>
+            </form>
+            <div class="d-flex gap-2 mt-3">
+              <button class="btn btn-primary" id="btn_save_edit">儲存修改</button>
+              <button class="btn" id="btn_close_detail">返回清單</button>
+            </div>
+            <div id="save_edit_error" class="mt-2"></div>
+            <h3 class="card-title mt-4">版本歷史</h3>
+            <div id="versions_box"></div>
+          </div>
+        </div>
+
+        <!-- Exports -->
+        <div class="row row-deck row-cards mt-3">
+          <div class="col-lg-6">
+            <div class="card">
+              <div class="card-header"><h3 class="card-title">SAP Excel 匯出（一般 NDRF）</h3></div>
+              <div class="card-body">
+                <p class="text-secondary small">只會匯出一般 NDRF。匯出後該批會被鎖定，申請人不能再修改。預覽下載不會鎖定。</p>
+                <div class="row g-2 mb-3">
+                  <div class="col-6"><label class="form-label">由 (日期)</label><input type="date" id="e_from" class="form-control"></div>
+                  <div class="col-6"><label class="form-label">至 (日期)</label><input type="date" id="e_to" class="form-control"></div>
+                  <div class="col-6"><label class="form-label">Site Code</label><input type="text" id="e_site" class="form-control"></div>
+                  <div class="col-6"><label class="form-label">包含已匯出</label><select id="e_include" class="form-select"><option value="false">否</option><option value="true">是</option></select></div>
+                </div>
+                <div id="export_info"></div>
+                <div class="d-flex gap-2 mt-2"><button class="btn btn-primary" id="btn_export">匯出並鎖定</button><button class="btn" id="btn_export_preview">預覽下載(不鎖定)</button><button class="btn btn-outline-primary" id="btn_audit">下載審計報表</button></div>
+              </div>
+            </div>
+          </div>
+          <div class="col-lg-6">
+            <div class="card">
+              <div class="card-header"><h3 class="card-title">Urgent Order Excel 匯出</h3></div>
+              <div class="card-body">
+                <p class="text-secondary small">只會匯出 Urgent Order。匯出後鎖定，不能修改。預覽不會鎖定。</p>
+                <div class="row g-2 mb-3">
+                  <div class="col-6"><label class="form-label">由 (日期)</label><input type="date" id="ue_from" class="form-control"></div>
+                  <div class="col-6"><label class="form-label">至 (日期)</label><input type="date" id="ue_to" class="form-control"></div>
+                  <div class="col-6"><label class="form-label">Site Code</label><input type="text" id="ue_site" class="form-control"></div>
+                  <div class="col-6"><label class="form-label">包含已匯出</label><select id="ue_include" class="form-select"><option value="false">否</option><option value="true">是</option></select></div>
+                </div>
+                <div id="urgent_export_info"></div>
+                <div class="d-flex gap-2 mt-2"><button class="btn btn-primary" id="btn_urgent_export">匯出並鎖定</button><button class="btn" id="btn_urgent_export_preview">預覽下載(不鎖定)</button></div>
+              </div>
+            </div>
+          </div>
+          <div class="col-lg-6">
+            <div class="card">
+              <div class="card-header"><h3 class="card-title">突發性銷售申報 Excel 匯出</h3></div>
+              <div class="card-body">
+                <p class="text-secondary small">欄位：Application Date | Requested by | Shop Code | SKU。匯出後鎖定。</p>
+                <div class="row g-2 mb-3">
+                  <div class="col-6"><label class="form-label">由 (日期)</label><input type="date" id="se_from" class="form-control"></div>
+                  <div class="col-6"><label class="form-label">至 (日期)</label><input type="date" id="se_to" class="form-control"></div>
+                  <div class="col-6"><label class="form-label">Site Code</label><input type="text" id="se_site" class="form-control"></div>
+                  <div class="col-6"><label class="form-label">包含已匯出</label><select id="se_include" class="form-select"><option value="false">否</option><option value="true">是</option></select></div>
+                </div>
+                <div id="sales_export_info"></div>
+                <div class="d-flex gap-2 mt-2"><button class="btn btn-primary" id="btn_sales_export">匯出並鎖定</button><button class="btn" id="btn_sales_export_preview">預覽下載(不鎖定)</button></div>
+              </div>
+            </div>
+          </div>
+          <div class="col-lg-6">
+            <div class="card">
+              <div class="card-header"><h3 class="card-title">行貨退貨報數 Excel 匯出</h3></div>
+              <div class="card-body">
+                <p class="text-secondary small">8 欄：申請編號、申請日期、Requested by、SKU、QTY、Reason、確認人姓名、電話。</p>
+                <div class="row g-2 mb-3">
+                  <div class="col-6"><label class="form-label">由 (日期)</label><input type="date" id="re_from" class="form-control"></div>
+                  <div class="col-6"><label class="form-label">至 (日期)</label><input type="date" id="re_to" class="form-control"></div>
+                  <div class="col-6"><label class="form-label">Site Code</label><input type="text" id="re_site" class="form-control"></div>
+                  <div class="col-6"><label class="form-label">包含已匯出</label><select id="re_include" class="form-select"><option value="false">否</option><option value="true">是</option></select></div>
+                </div>
+                <div id="return_export_info"></div>
+                <div class="d-flex gap-2 mt-2"><button class="btn btn-primary" id="btn_return_export">匯出並鎖定</button><button class="btn" id="btn_return_export_preview">預覽下載(不鎖定)</button></div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="card mt-3">
+          <div class="card-header"><h3 class="card-title">正式匯出批次及重新下載</h3></div>
+          <div class="card-body">
+            <p class="text-secondary small">正式匯出檔案保存三個月。若瀏覽器下載中斷，可從這裡重新下載。</p>
+            <div id="export_archive_usage" class="text-secondary small"></div>
+            <div id="export_history_info"></div>
+            <div class="table-responsive">
+              <table class="table table-vcenter"><thead><tr><th>建立時間</th><th>檔案</th><th>類型</th><th>筆數</th><th>保存狀態</th><th>操作</th></tr></thead><tbody id="export_history_body"><tr><td colspan="6" class="text-center text-secondary">載入中…</td></tr></tbody></table>
+            </div>
+          </div>
+        </div>
+
+        <div class="card mt-3">
+          <div class="card-header"><h3 class="card-title">門店主檔</h3></div>
+          <div class="card-body">
+            <div id="store_count" class="text-secondary small"></div>
+            <div class="form-control d-flex align-items-center justify-content-center py-4 text-secondary mt-2" id="store_drop" style="border-style:dashed;cursor:pointer">
+              <span id="store_label">拖曳 stores CSV 檔案到此處，或按一下選擇檔案</span><input type="file" id="store_input" accept=".csv" style="display:none">
+            </div>
+            <div class="mt-3"><button class="btn btn-primary" id="btn_store">上載並取代門店主檔</button></div>
+            <div id="store_result" class="mt-2"></div>
+          </div>
         </div>
       </div>
     </div>
+  </div>
+  <footer class="footer footer-transparent"><div class="container-xl"><div class="text-center text-secondary small">Developed by RP Team - Ricky Yue</div></div></footer>
+</div>
 
-    <div class="card">
-      <h2>申報清單</h2>
-      <div class="toolbar">
-        <div class="field">
-          <label>由 (日期) <span class="optional">（預設今日）</span></label>
-          <input type="date" id="f_from">
-        </div>
-        <div class="field">
-          <label>至 (日期) <span class="optional">（預設今日）</span></label>
-          <input type="date" id="f_to">
-        </div>
-        <div class="field">
-          <label>Site Code</label>
-          <input type="text" id="f_site">
-        </div>
-        <div class="field">
-          <label>來源</label>
-          <select id="f_source">
-            <option value="">全部</option>
-            <option value="web">網頁</option>
-            <option value="excel">Excel</option>
-          </select>
-        </div>
-        <div class="field">
-          <label>申報類型</label>
-          <select id="f_type">
-            <option value="">全部</option>
-            <option value="normal">一般 NDRF</option>
-            <option value="urgent">Urgent Order</option>
-            <option value="sales">突發性銷售申報</option>
-            <option value="return">行貨退貨報數</option>
-          </select>
-        </div>
-        <div class="field">
-          <label>匯出狀態</label>
-          <select id="f_exported">
-            <option value="">全部</option>
-            <option value="no">未匯出</option>
-            <option value="yes">已匯出</option>
-          </select>
-        </div>
-        <div class="field">
-          <label>SKU</label>
-          <input type="text" id="f_sku">
-        </div>
-        <div class="field field--compact">
-          <label>RP Type</label>
-          <select id="f_rp_type">
-            <option value="">全部</option>
-          </select>
-        </div>
-        <div class="field field--ndcode">
-          <label>ND Code</label>
-          <select id="f_nd_code">
-            <option value="">全部</option>
-          </select>
-        </div>
-        <div class="field field--appno">
-          <label>申請編號</label>
-          <input type="text" id="f_appno">
-        </div>
-        <div class="btn-row" style="margin-top:0">
-          <button class="btn" id="btn_filter">篩選</button>
-          <button class="btn secondary" id="btn_reset">重設</button>
-        </div>
-      </div>
-      <div id="list_error"></div>
-      <table id="list_table">
-        <thead>
-          <tr>
-            <th>申請編號</th><th>Site Code</th><th>SKU</th><th>RP Type</th><th>Safety Qty</th><th>ND Code</th><th>類型</th><th>來源</th>
-            <th>申請時間</th><th>修改時間</th><th>狀態</th><th></th>
-          </tr>
-        </thead>
-        <tbody id="list_body"></tbody>
-      </table>
-      <div class="pagination">
-        <button class="btn secondary" id="btn_prev">上一頁</button>
-        <span id="page_info"></span>
-        <button class="btn secondary" id="btn_next">下一頁</button>
-      </div>
+<div id="export_confirm_overlay" style="display:none">
+  <div class="modal-box">
+    <h3>確認匯出及鎖定</h3>
+    <p id="confirm_message" style="white-space:pre-line;margin:0"></p>
+    <div class="d-flex gap-2 justify-content-end mt-4">
+      <button class="btn btn-danger" id="confirm_ok">確認</button>
+      <button class="btn" id="confirm_cancel">取消</button>
     </div>
+  </div>
+</div>
 
-    <div class="card" id="detail_card" style="display:none">
-      <h2 id="detail_title">申報詳情</h2>
-      <div id="detail_error"></div>
-      <div class="dl" id="detail_header"></div>
-
-      <h3>編輯業務欄位</h3>
-      <div id="urgent_note" style="display:none" class="alert info">Urgent Order：可修改 SKU、QTY（1 至 1000）及 Urgent Reason，Site Code 不可修改。選擇「9. 其他」時必須填寫 Other Reason。</div>
-      <form id="edit_form">
-        <div id="normal_fields" class="form-grid">
-          <div>
-            <label for="a_sku_normal">SKU</label>
-            <input type="text" id="a_sku_normal">
-          </div>
-          <div>
-            <label for="a_rp_type">RP Type <span class="optional">（必填）</span></label>
-            <select id="a_rp_type">
-              <option value="">—</option>
-            </select>
-          </div>
-          <div id="a_safety_stock_wrap">
-            <label for="a_safety_stock">Safety stock</label>
-            <input type="text" id="a_safety_stock">
-          </div>
-          <div id="a_nd_code_wrap">
-            <label for="a_nd_code">ND Code</label>
-            <input type="text" id="a_nd_code" list="nd_code_list">
-            <datalist id="nd_code_list"></datalist>
-          </div>
-          <div class="full">
-            <label for="a_remark">Remark</label>
-            <input type="text" id="a_remark">
-          </div>
-        </div>
-        <div id="urgent_fields" class="form-grid" style="display:none">
-          <div>
-            <label for="a_sku_urgent">SKU</label>
-            <input type="text" id="a_sku_urgent">
-          </div>
-          <div>
-            <label for="a_qty">QTY <span class="optional">（1 至 1000）</span></label>
-            <input type="number" id="a_qty" min="1" max="1000" step="1">
-          </div>
-          <div class="full">
-            <label for="a_urgent_reason">Urgent Reason <span class="optional">（必填）</span></label>
-            <select id="a_urgent_reason">
-              <option value="">請選擇申請原因</option>
-            </select>
-          </div>
-          <div class="full" id="a_urgent_reason_other_wrap" style="display:none">
-            <label for="a_urgent_reason_other">Other Reason <span class="optional">（選擇「9. 其他」時必填）</span></label>
-            <input type="text" id="a_urgent_reason_other" maxlength="2000">
-          </div>
-        </div>
-          <div id="sales_fields" class="form-grid" style="display:none">
-          <div>
-            <label for="a_sku_sales">SKU</label>
-            <input type="text" id="a_sku_sales">
-          </div>
-        </div>
-        <div id="return_fields" class="form-grid" style="display:none">
-          <div><label for="a_sku_return">SKU</label><input type="text" id="a_sku_return"></div>
-          <div><label for="a_return_qty">QTY <span class="optional">（1 至 9999）</span></label><input type="number" id="a_return_qty" min="1" max="9999" step="1"></div>
-          <div class="full"><label for="a_return_reason">REASON</label><select id="a_return_reason"><option value="">請選擇申請退貨原因</option></select></div>
-          <div><label for="a_return_name">確認人姓名</label><input type="text" id="a_return_name" maxlength="200"></div>
-         <div><label for="a_return_phone">確認人電話</label><input type="text" id="a_return_phone" maxlength="200"></div>
-        </div>
-       </form>
-      <div class="btn-row">
-        <button class="btn" id="btn_save_edit">儲存修改</button>
-        <button class="btn secondary" id="btn_close_detail">返回清單</button>
-      </div>
-      <div id="save_edit_error"></div>
-
-      <h3>版本歷史</h3>
-      <div id="versions_box"></div>
-    </div>
-    <div class="card">
-      <h2>SAP Excel 匯出（一般 NDRF）</h2>
-      <div class="hint">只會匯出一般 NDRF 申報，Urgent Order 使用下方的獨立匯出。匯出後該批申報會被鎖定，申請人不能再修改。匯出失敗不會鎖定。預覽下載不會鎖定申報。</div>
-      <div class="toolbar">
-        <div class="field">
-          <label>由 (日期) <span class="optional">（預設今日）</span></label>
-          <input type="date" id="e_from">
-        </div>
-        <div class="field">
-          <label>至 (日期) <span class="optional">（預設今日）</span></label>
-          <input type="date" id="e_to">
-        </div>
-        <div class="field">
-          <label>Site Code</label>
-          <input type="text" id="e_site">
-        </div>
-        <div class="field">
-          <label>包含已匯出資料</label>
-          <select id="e_include">
-            <option value="false">否（只匯出未匯出）</option>
-            <option value="true">是</option>
-          </select>
-        </div>
-      </div>
-      <div id="export_info"></div>
-      <div class="btn-row">
-        <button class="btn" id="btn_export">匯出並鎖定</button>
-        <button class="btn secondary" id="btn_export_preview">預覽下載(不鎖定)</button>
-        <button class="btn ghost" id="btn_audit">下載審計報表</button>
-      </div>
-    </div>
-
-    <div class="card">
-      <h2>Urgent Order Excel 匯出</h2>
-      <div class="hint">只會匯出 Urgent Order（欄位：Application No. | Site Code | SKU | QTY | Urgent Reason | Other Reason）。匯出後該批 Urgent Order 會被鎖定，不能修改。匯出失敗不會鎖定。預覽下載不會鎖定申報。</div>
-      <div class="toolbar">
-        <div class="field">
-          <label>由 (日期) <span class="optional">（預設今日）</span></label>
-          <input type="date" id="ue_from">
-        </div>
-        <div class="field">
-          <label>至 (日期) <span class="optional">（預設今日）</span></label>
-          <input type="date" id="ue_to">
-        </div>
-        <div class="field">
-          <label>Site Code</label>
-          <input type="text" id="ue_site">
-        </div>
-        <div class="field">
-          <label>包含已匯出資料</label>
-          <select id="ue_include">
-            <option value="false">否（只匯出未匯出）</option>
-            <option value="true">是</option>
-          </select>
-        </div>
-      </div>
-      <div id="urgent_export_info"></div>
-      <div class="btn-row">
-        <button class="btn" id="btn_urgent_export">匯出並鎖定</button>
-        <button class="btn secondary" id="btn_urgent_export_preview">預覽下載(不鎖定)</button>
-      </div>
-    </div>
-
-    <div class="card">
-      <h2>突發性銷售申報 Excel 匯出</h2>
-      <div class="hint">只會匯出突發性銷售申報，欄位為 Application Date | Requested by | Shop Code | SKU。匯出後該批申報會被鎖定，不能修改；匯出失敗不會鎖定。預覽下載不會鎖定申報。</div>
-      <div class="toolbar">
-        <div class="field">
-          <label>由 (日期) <span class="optional">（預設今日）</span></label>
-          <input type="date" id="se_from">
-        </div>
-        <div class="field">
-          <label>至 (日期) <span class="optional">（預設今日）</span></label>
-          <input type="date" id="se_to">
-        </div>
-        <div class="field">
-          <label>Site Code</label>
-          <input type="text" id="se_site">
-        </div>
-        <div class="field">
-          <label>包含已匯出資料</label>
-          <select id="se_include">
-            <option value="false">否（只匯出未匯出）</option>
-            <option value="true">是</option>
-          </select>
-        </div>
-      </div>
-      <div id="sales_export_info"></div>
-      <div class="btn-row">
-        <button class="btn" id="btn_sales_export">匯出並鎖定</button>
-        <button class="btn secondary" id="btn_sales_export_preview">預覽下載(不鎖定)</button>
-      </div>
-    </div>
-
-    <div class="card">
-      <h2>行貨退貨報數 Excel 匯出</h2>
-      <div class="hint">輸出 8 欄：申請編號、申請日期、Requested by（Site Code）、SKU、QTY、Reason、確認人姓名、確認人電話。預覽不鎖定；正式匯出後店舖不能再修改。</div>
-      <div class="toolbar"><div class="field"><label>由 (日期) <span class="optional">（預設今日）</span></label><input type="date" id="re_from"></div><div class="field"><label>至 (日期) <span class="optional">（預設今日）</span></label><input type="date" id="re_to"></div><div class="field"><label>Site Code</label><input type="text" id="re_site"></div><div class="field"><label>包含已匯出資料</label><select id="re_include"><option value="false">否（只匯出未匯出）</option><option value="true">是</option></select></div></div>
-      <div id="return_export_info"></div><div class="btn-row"><button class="btn" id="btn_return_export">匯出並鎖定</button><button class="btn secondary" id="btn_return_export_preview">預覽下載(不鎖定)</button></div>
-    </div>
-
-    <div class="card">
-      <h2>正式匯出批次及重新下載</h2>
-      <div class="hint">正式匯出檔案保存三個月。若瀏覽器下載中斷，可從這裡重新下載；三個月前的舊批次會嘗試按已鎖定申報資料重新產生。</div>
-      <div class="hint" id="export_archive_usage"></div>
-      <div id="export_history_info"></div>
-      <div class="table-wrap">
-        <table>
-          <thead><tr><th>建立時間</th><th>檔案</th><th>類型</th><th>筆數</th><th>保存狀態</th><th>操作</th></tr></thead>
-          <tbody id="export_history_body"><tr><td colspan="6" class="empty">載入中…</td></tr></tbody>
-        </table>
-      </div>
-    </div>
-
-    <div class="card">
-      <h2>門店主檔</h2>
-      <div class="hint" id="store_count"></div>
-      <div class="file-drop" id="store_drop">
-        <div id="store_label">拖曳 stores CSV 檔案到此處，或按一下選擇檔案</div>
-        <input type="file" id="store_input" accept=".csv" style="display:none">
-      </div>
-      <div class="btn-row">
-        <button class="btn" id="btn_store">上載並取代門店主檔</button>
-      </div>
-      <div id="store_result"></div>
-    </div>
-
-    <div class="modal-overlay" id="export_confirm_overlay" style="display:none">
-      <div class="modal-box">
-        <h3>確認匯出及鎖定</h3>
-        <p id="confirm_message"></p>
-        <div class="btn-row">
-          <button class="btn danger" id="confirm_ok">確認</button>
-          <button class="btn secondary" id="confirm_cancel">取消</button>
-        </div>
-      </div>
-    </div>
-  </main>
-
-  <script src="/js/options.js"></script>
-  <script src="/js/api.js"></script>
-  <script src="/js/admin.js"></script>
-
-  <footer class="site-footer">Developed by RP Team - Ricky Yue</footer>
+<script src="https://cdn.jsdelivr.net/npm/@tabler/core@1.1.1/dist/js/tabler.min.js"></script>
+<script src="/js/options.js"></script>
+<script src="/js/api.js"></script>
+<script src="/js/admin.js"></script>
 </body>
 </html>

@@ -33,6 +33,10 @@
     #versions_box table { width:100%; border-collapse:collapse; font-size:13px; }
     #versions_box th, #versions_box td { border:1px solid #d9dee3; padding:8px 10px; text-align:left; vertical-align:top; }
     #versions_box th { background:#eef2f6; font-weight:600; }
+    .card-actions .btn-action svg { transition: transform .2s ease; }
+    .card-actions .btn-action.collapsed svg { transform: rotate(-90deg); }
+    .col-appno { width: 12%; }
+    .col-sku { width: 16%; }
   </style>
 </head>
 <body>
@@ -128,8 +132,15 @@
 
         <!-- Filter + list -->
         <div class="card">
-          <div class="card-header"><h3 class="card-title">申報清單</h3></div>
-          <div class="card-body">
+          <div class="card-header">
+            <h3 class="card-title">申報清單</h3>
+            <div class="card-actions">
+              <a href="#" class="btn-action" data-bs-toggle="collapse" data-bs-target="#submission-list-collapse" aria-expanded="true" aria-label="摺疊申報清單">
+                <svg xmlns="http://www.w3.org/2000/svg" class="icon" width="24" height="24" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none" stroke-linecap="round" stroke-linejoin="round"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><polyline points="6 9 12 15 18 9" /></svg>
+              </a>
+            </div>
+          </div>
+          <div class="card-body collapse show" id="submission-list-collapse">
             <div class="toolbar mb-3">
               <div class="field"><label class="form-label">由 (日期)</label><input type="date" id="f_from" class="form-control"></div>
               <div class="field"><label class="form-label">至 (日期)</label><input type="date" id="f_to" class="form-control"></div>
@@ -149,7 +160,7 @@
             <div id="list_error"></div>
             <div class="table-responsive">
               <table class="table table-vcenter table-hover card-table" id="list_table">
-                <thead><tr><th>申請編號</th><th>Site Code</th><th>SKU</th><th>RP Type</th><th>Safety Qty</th><th>ND Code</th><th>類型</th><th>來源</th><th>申請時間</th><th>修改時間</th><th>狀態</th><th></th></tr></thead>
+                <thead><tr><th class="col-appno">申請編號</th><th>Site Code</th><th class="col-sku">SKU</th><th>RP Type</th><th>Safety Qty</th><th>ND Code</th><th>類型</th><th>來源</th><th>申請時間</th><th>修改時間</th><th>狀態</th><th></th></tr></thead>
                 <tbody id="list_body"></tbody>
               </table>
             </div>

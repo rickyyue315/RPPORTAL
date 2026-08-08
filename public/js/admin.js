@@ -91,7 +91,7 @@
         : `<span class="status-badge received">已收件</span>`;
       tr.innerHTML = `
         <td>${escapeHtml(s.application_no)}</td>
-        <td>${escapeHtml(s.site_code)}</td>
+        <td>${escapeHtml(s.site_code)}${s.store_shop ? `<div class="hint">${escapeHtml(s.store_shop)}</div>` : ''}</td>
         <td>${escapeHtml(s.sku)}${s.submission_type === 'urgent' ? `<div class="hint">QTY: ${escapeHtml(s.qty)}</div>` : s.submission_type === 'return' ? `<div class="hint">QTY: ${escapeHtml(s.return_qty)}<br>${escapeHtml(s.return_reason_label || '')}</div>` : ''}</td>
         <td>${escapeHtml(s.rp_type || '—')}</td>
         <td>${escapeHtml(s.safety_stock || '—')}</td>

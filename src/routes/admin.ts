@@ -177,13 +177,14 @@ async function buildArchivedExportBuffer(type: ExportSubmissionType, rows: Submi
   return buildSapExportBuffer(rows);
 }
 
-function serializeAdminSubmission(row: SubmissionRow, lastModifiedAt?: string | null) {
+function serializeAdminSubmission(row: SubmissionRow & { store_shop?: string | null }, lastModifiedAt?: string | null) {
   return {
     id: row.id,
     application_no: row.application_no,
     source: row.source,
     submission_type: row.submission_type,
     site_code: row.site_code,
+    store_shop: row.store_shop ?? null,
     requested_by_email: row.requested_by_email,
     application_date: row.application_date,
     submitted_at: toHKString(row.submitted_at),
@@ -295,9 +296,12 @@ const where: string[] = [];
     );
     const total = Number(countResult.rows[0]?.count ?? 0);
 
-    const result = await query<SubmissionRow>(
-      `SELECT * FROM submissions ${whereSql}
-       ORDER BY submitted_at DESC
+    const result = await query<SubmissionRow & { store_shop?: string | null }>(
+      `SELECT s.*, st.shop AS store_shop
+       FROM submissions s
+       LEFT JOIN stores st ON st.site_code = s.site_code
+       ${whereSql}
+       ORDER BY s.submitted_at DESC
        LIMIT $${idx} OFFSET $${idx + 1}`,
       [...params, size, offset],
     );

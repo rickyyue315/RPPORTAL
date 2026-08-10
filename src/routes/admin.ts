@@ -240,48 +240,51 @@ const where: string[] = [];
     const params: unknown[] = [];
     let idx = 1;
 
+    // All filter columns are qualified with `s.` because the list query joins
+    // `stores` (which also has a `site_code` column), so an unqualified
+    // `site_code` would be ambiguous and raise a server error.
     if (from) {
-      where.push(`application_date >= $${idx++}`);
+      where.push(`s.application_date >= $${idx++}`);
       params.push(from);
     }
     if (to) {
-      where.push(`application_date <= $${idx++}`);
+      where.push(`s.application_date <= $${idx++}`);
       params.push(to);
     }
     if (site_code) {
-      where.push(`site_code = $${idx++}`);
+      where.push(`s.site_code = $${idx++}`);
       params.push(normalizeSiteCode(site_code));
     }
     if (source) {
-      where.push(`source = $${idx++}`);
+      where.push(`s.source = $${idx++}`);
       params.push(source);
     }
     if (submission_type === 'normal' || submission_type === 'urgent' || submission_type === 'sales' || submission_type === 'return') {
-      where.push(`submission_type = $${idx++}`);
+      where.push(`s.submission_type = $${idx++}`);
       params.push(submission_type);
     }
     if (exported === 'yes') {
-      where.push(`exported_at IS NOT NULL`);
+      where.push(`s.exported_at IS NOT NULL`);
     } else if (exported === 'no') {
-      where.push(`exported_at IS NULL`);
+      where.push(`s.exported_at IS NULL`);
     }
     if (sku) {
-      where.push(`sku ILIKE $${idx++}`);
+      where.push(`s.sku ILIKE $${idx++}`);
       params.push(`%${sku.trim()}%`);
     }
     if (rp_type) {
       const upper = rp_type.trim().toUpperCase();
       if (upper === 'ND' || upper === 'RF') {
-        where.push(`rp_type = $${idx++}`);
+        where.push(`s.rp_type = $${idx++}`);
         params.push(upper);
       }
     }
     if (nd_code) {
-      where.push(`nd_code = $${idx++}`);
+      where.push(`s.nd_code = $${idx++}`);
       params.push(nd_code.trim());
     }
     if (application_no) {
-      where.push(`application_no = $${idx++}`);
+      where.push(`s.application_no = $${idx++}`);
       params.push(application_no.trim().toUpperCase());
     }
 
@@ -291,7 +294,7 @@ const where: string[] = [];
     const offset = (pageNum - 1) * size;
 
     const countResult = await query<{ count: string }>(
-      `SELECT count(*)::text AS count FROM submissions ${whereSql}`,
+      `SELECT count(*)::text AS count FROM submissions s ${whereSql}`,
       params,
     );
     const total = Number(countResult.rows[0]?.count ?? 0);

@@ -109,7 +109,7 @@ Repository 已配置 GitHub Actions（`.github/workflows/ci.yml`）：push 時�
 - `export_batch_files`：正式匯出 Excel 原檔，保存 90 日後自動清理；`export_batches` metadata 按 `EXPORT_BATCH_RETENTION_DAYS` 清理
 - `admin_sessions`：管理員登入 session（token 以 SHA-256 hash 儲存，過期自動清理）
 - `admin_login_attempts`：登入嘗試紀錄（失敗鎖定用）
-- `om_recovery_codes`：每組 OM（及 master）嘅「搵返申請編號」Recovery Code（SHA-256 hash 儲存，管理後台設定，migration 012）
+- `om_recovery_codes`：每組 OM（及 master）嘅「搵返申請編號」Recovery Code；`code` 明文（僅管理後台顯示原碼）＋ `code_hash`（SHA-256，公開查詢常數時間比對用），管理後台設定（migration 012/013）
 - `audit_events`：提交／查詢／修改／匯入／匯出／鎖定／登入／Recovery Code 管理／IP 清理審計；管理員 Audit Report 同時包含版本歷史及 audit events
 
 ## 年度維護

@@ -308,9 +308,9 @@
         <div class="card mt-3">
           <div class="card-header"><h3 class="card-title">Recovery Code 管理</h3></div>
           <div class="card-body">
-            <p class="text-secondary small">「搵返申請編號」功能按每組 OM 獨立設定 Recovery Code（以 SHA-256 hash 儲存，管理界面唔會顯示原碼）。未設定嘅 OM 會拒絕查詢；master code 適用於所有店舖。</p>
+            <p class="text-secondary small">「搵返申請編號」功能按每組 OM 獨立設定 Recovery Code（master code 適用於所有店舖）。原碼只會喺後台顯示，公開查詢驗證用 SHA-256 hash 比對。</p>
             <div class="table-responsive">
-              <table class="table table-vcenter"><thead><tr><th>範圍</th><th>狀態</th><th>最後更新</th><th>更新人</th><th>操作</th></tr></thead><tbody id="recovery_codes_body"><tr><td colspan="5" class="text-center text-secondary">載入中…</td></tr></tbody></table>
+              <table class="table table-vcenter"><thead><tr><th>範圍</th><th>狀態</th><th>Recovery Code</th><th>最後更新</th><th>更新人</th><th>操作</th></tr></thead><tbody id="recovery_codes_body"><tr><td colspan="6" class="text-center text-secondary">載入中…</td></tr></tbody></table>
             </div>
             <div id="recovery_code_result" class="mt-2"></div>
           </div>

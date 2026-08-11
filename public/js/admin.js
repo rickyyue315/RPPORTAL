@@ -813,25 +813,29 @@
           om: 'master',
           label: 'Master（全平台）',
           set: Boolean(data.master?.set),
+          code: data.master?.code || '',
           updated_at: data.master?.updated_at,
           updated_by: data.master?.updated_by,
         }];
         (data.om_codes || []).forEach((c) => {
-          rows.push({ om: c.om, label: c.om, set: c.set, updated_at: c.updated_at, updated_by: c.updated_by });
+          rows.push({ om: c.om, label: c.om, set: c.set, code: c.code || '', updated_at: c.updated_at, updated_by: c.updated_by });
         });
         const tbody = $('recovery_codes_body');
         if (!rows.length) {
-          tbody.innerHTML = '<tr><td colspan="5" class="text-center text-secondary">門店主檔冇任何 OM。</td></tr>';
+          tbody.innerHTML = '<tr><td colspan="6" class="text-center text-secondary">門店主檔冇任何 OM。</td></tr>';
           return;
         }
         tbody.innerHTML = rows.map((row) => {
           const status = row.set
             ? '<span class="status-badge received">已設定</span>'
             : '<span class="status-badge locked">未設定</span>';
+          const codeCell = row.set
+            ? `<code style="word-break:break-all">${escapeHtml(row.code)}</code>`
+            : '<span class="text-secondary">—</span>';
           const actions = row.set
             ? `<button class="btn ghost btn-recovery-edit" data-scope="${escapeHtml(row.om)}">輪換</button> <button class="btn ghost btn-recovery-del" data-scope="${escapeHtml(row.om)}">清除</button>`
             : `<button class="btn ghost btn-recovery-edit" data-scope="${escapeHtml(row.om)}">設定</button>`;
-          return `<tr><td>${escapeHtml(row.label)}</td><td>${status}</td><td>${escapeHtml(row.updated_at || '—')}</td><td>${escapeHtml(row.updated_by || '—')}</td><td>${actions}</td></tr>`;
+          return `<tr><td>${escapeHtml(row.label)}</td><td>${status}</td><td>${codeCell}</td><td>${escapeHtml(row.updated_at || '—')}</td><td>${escapeHtml(row.updated_by || '—')}</td><td>${actions}</td></tr>`;
         }).join('');
         tbody.querySelectorAll('.btn-recovery-edit').forEach((btn) => {
           btn.addEventListener('click', () => openRecoveryCodeModal(btn.dataset.scope));
@@ -841,7 +845,7 @@
         });
       })
       .catch((err) => {
-        $('recovery_codes_body').innerHTML = `<tr><td colspan="5" class="text-center text-secondary">載入失敗：${escapeHtml(err.message)}</td></tr>`;
+        $('recovery_codes_body').innerHTML = `<tr><td colspan="6" class="text-center text-secondary">載入失敗：${escapeHtml(err.message)}</td></tr>`;
       });
   }
 

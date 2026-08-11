@@ -11,6 +11,7 @@ export type RecoveryCheckResult = 'disabled' | 'ok' | 'om-not-configured' | 'inv
 
 export interface RecoveryCodeRow {
   om: string;
+  code: string | null;
   code_hash: string;
   updated_by: string;
   updated_at: string;
@@ -84,14 +85,18 @@ export async function countRecoveryCodes(): Promise<number> {
   return Number(result.rows[0]?.count ?? 0);
 }
 
-/** Upserts the hashed recovery code for a scope (an OM value or MASTER_RECOVERY_OM). */
+/**
+ * Upserts the recovery code for a scope (an OM value or MASTER_RECOVERY_OM).
+ * Stores both the plaintext (shown only in the admin backend) and its SHA-256
+ * hash (used for constant-time public validation).
+ */
 export async function setRecoveryCode(scope: string, code: string, adminUsername: string): Promise<void> {
   const codeHash = hashRecoveryCode(code);
   await query(
-    `INSERT INTO om_recovery_codes (om, code_hash, updated_by, updated_at)
-     VALUES ($1, $2, $3, now())
-     ON CONFLICT (om) DO UPDATE SET code_hash = EXCLUDED.code_hash, updated_by = EXCLUDED.updated_by, updated_at = now()`,
-    [scope, codeHash, adminUsername],
+    `INSERT INTO om_recovery_codes (om, code, code_hash, updated_by, updated_at)
+     VALUES ($1, $2, $3, $4, now())
+     ON CONFLICT (om) DO UPDATE SET code = EXCLUDED.code, code_hash = EXCLUDED.code_hash, updated_by = EXCLUDED.updated_by, updated_at = now()`,
+    [scope, code, codeHash, adminUsername],
   );
 }
 

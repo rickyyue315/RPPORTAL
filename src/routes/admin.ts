@@ -1501,7 +1501,7 @@ function resolveRecoveryScope(raw: unknown): string {
   return trimmed;
 }
 
-/** GET /api/admin/recovery-codes — list configured recovery code scopes (master + per-OM). Codes are never returned. */
+/** GET /api/admin/recovery-codes — list configured recovery code scopes (master + per-OM) with plaintext codes. */
 adminRouter.get(
   '/recovery-codes',
   requireAdmin,
@@ -1509,13 +1509,13 @@ adminRouter.get(
   asyncHandler(async (_req: Request, res: Response) => {
     const [omRows, codeRows] = await Promise.all([
       query<{ om: string }>(`SELECT DISTINCT om FROM stores WHERE om <> '' ORDER BY om`),
-      query<{ om: string; updated_by: string; updated_at: string }>(
-        'SELECT om, updated_by, updated_at FROM om_recovery_codes WHERE om <> $1 ORDER BY om',
+      query<{ om: string; code: string | null; updated_by: string; updated_at: string }>(
+        'SELECT om, code, updated_by, updated_at FROM om_recovery_codes WHERE om <> $1 ORDER BY om',
         [MASTER_RECOVERY_OM],
       ),
     ]);
-    const masterRows = await query<{ updated_by: string; updated_at: string }>(
-      'SELECT updated_by, updated_at FROM om_recovery_codes WHERE om = $1',
+    const masterRows = await query<{ code: string | null; updated_by: string; updated_at: string }>(
+      'SELECT code, updated_by, updated_at FROM om_recovery_codes WHERE om = $1',
       [MASTER_RECOVERY_OM],
     );
 
@@ -1527,6 +1527,7 @@ adminRouter.get(
     res.json({
       master: {
         set: Boolean(masterRow),
+        code: masterRow?.code ?? null,
         updated_at: masterRow ? toHKString(masterRow.updated_at) : null,
         updated_by: masterRow?.updated_by ?? null,
       },
@@ -1537,6 +1538,7 @@ adminRouter.get(
           return {
             om,
             set: Boolean(row),
+            code: row?.code ?? null,
             updated_at: row ? toHKString(row.updated_at) : null,
             updated_by: row?.updated_by ?? null,
           };

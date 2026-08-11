@@ -30,10 +30,10 @@ function recoveryHash(code: string): string {
 async function seedRecoveryCodes(): Promise<void> {
   const insert = (om: string, code: string) =>
     db.query(
-      `INSERT INTO om_recovery_codes (om, code_hash, updated_by, updated_at)
-       VALUES ($1, $2, 'test', now())
-       ON CONFLICT (om) DO UPDATE SET code_hash = EXCLUDED.code_hash, updated_by = EXCLUDED.updated_by, updated_at = now()`,
-      [om, recoveryHash(code)],
+      `INSERT INTO om_recovery_codes (om, code, code_hash, updated_by, updated_at)
+       VALUES ($1, $2, $3, 'test', now())
+       ON CONFLICT (om) DO UPDATE SET code = EXCLUDED.code, code_hash = EXCLUDED.code_hash, updated_by = EXCLUDED.updated_by, updated_at = now()`,
+      [om, code, recoveryHash(code)],
     );
   await insert(MASTER_RECOVERY_OM, MASTER_RECOVERY_CODE);
   await insert('Ivy', IVY_RECOVERY_CODE);
@@ -72,7 +72,7 @@ async function countSubmissions(where = ''): Promise<number> {
 beforeAll(async () => {
   db = new PGlite();
   setPoolForTesting(makePglitePool(db));
-  const migrationFiles = ['001_init.sql', '002_drop_rp_type_completed_at.sql', '003_add_submission_type_qty.sql', '004_add_urgent_reason.sql', '005_add_sales_submission_type.sql', '006_add_return_submission_type.sql', '007_add_idempotency_and_import_recovery.sql', '008_add_export_file_archive.sql', '009_architecture_hardening.sql', '010_query_optimization.sql', '011_cleanup_legacy_schema.sql', '012_om_recovery_codes.sql'];
+  const migrationFiles = ['001_init.sql', '002_drop_rp_type_completed_at.sql', '003_add_submission_type_qty.sql', '004_add_urgent_reason.sql', '005_add_sales_submission_type.sql', '006_add_return_submission_type.sql', '007_add_idempotency_and_import_recovery.sql', '008_add_export_file_archive.sql', '009_architecture_hardening.sql', '010_query_optimization.sql', '011_cleanup_legacy_schema.sql', '012_om_recovery_codes.sql', '013_recovery_code_plaintext.sql'];
   for (const file of migrationFiles) {
     let sql = await readFile(path.join(__dirname, '..', 'src', 'db', 'migrations', file), 'utf8');
     sql = sql.replace(/CREATE EXTENSION IF NOT EXISTS pgcrypto;\s*/g, '');
@@ -523,18 +523,20 @@ describe('admin API', () => {
       expect(del.status).toBe(401);
     });
 
-    it('lists scopes without returning stored codes', async () => {
+    it('lists scopes and returns the plaintext codes for admins', async () => {
       const agent = request.agent(app);
       await adminLogin(agent);
       const res = await agent.get('/api/admin/recovery-codes');
       expect(res.status).toBe(200);
       expect(res.body.master.set).toBe(true);
+      expect(res.body.master.code).toBe(MASTER_RECOVERY_CODE);
       const ivy = res.body.om_codes.find((c: { om: string }) => c.om === 'Ivy');
       expect(ivy.set).toBe(true);
+      expect(ivy.code).toBe(IVY_RECOVERY_CODE);
       const hippo = res.body.om_codes.find((c: { om: string }) => c.om === 'Hippo');
       expect(hippo.set).toBe(false);
+      expect(hippo.code).toBeNull();
       expect(JSON.stringify(res.body)).not.toContain('code_hash');
-      expect(JSON.stringify(res.body)).not.toContain('test-ivy-code');
     });
 
     it('sets and rotates a code for an OM, enabling recovery for its stores', async () => {
@@ -547,6 +549,10 @@ describe('admin API', () => {
         .set('x-csrf-token', token)
         .send({ code: 'hippo-om-code-123' });
       expect(setRes.status).toBe(200);
+
+      const list = await agent.get('/api/admin/recovery-codes');
+      const hippoRow = list.body.om_codes.find((c: { om: string }) => c.om === 'Hippo');
+      expect(hippoRow.code).toBe('hippo-om-code-123');
 
       const recovery = await request(app)
         .get('/api/public/my-applications?site_code=HBA7')

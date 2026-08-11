@@ -1608,6 +1608,43 @@ describe('urgent admin API', () => {
     expect(res.body.submissions.every((s: { submission_type: string }) => s.submission_type === 'urgent')).toBe(true);
   });
 
+  it('filters submissions by modified=yes / modified=no', async () => {
+    const untouched = await request(app).post('/api/public/urgent/submit').send({
+      site_code: 'HA02',
+      sku: '1006016',
+      qty: 2,
+      urgent_reason: '1',
+    });
+    const untouchedNo = untouched.body.submission.application_no;
+
+    const edited = await request(app).post('/api/public/urgent/submit').send({
+      site_code: 'HA02',
+      sku: '1006017',
+      qty: 3,
+      urgent_reason: '1',
+    });
+    const editedNo = edited.body.submission.application_no;
+    const idRes = await db.query<{ id: string }>('SELECT id FROM submissions WHERE application_no = $1', [editedNo]);
+    const id = idRes.rows[0]!.id;
+
+    const { agent, token } = await urgentAdminAgent();
+    const put = await agent
+      .put(`/api/admin/submissions/${id}`)
+      .set('x-csrf-token', token)
+      .send({ sku: '1006017', qty: 4, urgent_reason: '1' });
+    expect(put.status).toBe(200);
+
+    const modified = await agent.get('/api/admin/submissions?modified=yes&application_no=' + editedNo + '&page=1');
+    expect(modified.status).toBe(200);
+    expect(Number(modified.body.total)).toBe(1);
+
+    const untouchedRes = await agent.get('/api/admin/submissions?modified=no&application_no=' + untouchedNo + '&page=1');
+    expect(untouchedRes.status).toBe(200);
+    expect(Number(untouchedRes.body.total)).toBe(1);
+    const untouchedListed = await agent.get('/api/admin/submissions?modified=yes&application_no=' + untouchedNo + '&page=1');
+    expect(Number(untouchedListed.body.total)).toBe(0);
+  });
+
   it('admin edits urgent sku/qty/reason and rejects out-of-range qty', async () => {
     const created = await request(app).post('/api/public/urgent/submit').send({
       site_code: 'HA02',

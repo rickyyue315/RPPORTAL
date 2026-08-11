@@ -226,6 +226,7 @@ adminRouter.get(
       source,
       submission_type,
       exported,
+      modified,
       sku,
       rp_type,
       nd_code,
@@ -268,6 +269,11 @@ const where: string[] = [];
       where.push(`s.exported_at IS NOT NULL`);
     } else if (exported === 'no') {
       where.push(`s.exported_at IS NULL`);
+    }
+    if (modified === 'yes') {
+      where.push(`EXISTS (SELECT 1 FROM submission_versions v WHERE v.submission_id = s.id AND v.version > 1)`);
+    } else if (modified === 'no') {
+      where.push(`NOT EXISTS (SELECT 1 FROM submission_versions v WHERE v.submission_id = s.id AND v.version > 1)`);
     }
     if (sku) {
       where.push(`s.sku ILIKE $${idx++}`);

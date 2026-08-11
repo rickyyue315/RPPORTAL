@@ -1611,7 +1611,7 @@ describe('urgent admin API', () => {
   it('filters submissions by modified=yes / modified=no', async () => {
     const untouched = await request(app).post('/api/public/urgent/submit').send({
       site_code: 'HA02',
-      sku: '1006016',
+      sku: '1006034',
       qty: 2,
       urgent_reason: '1',
     });
@@ -1619,7 +1619,7 @@ describe('urgent admin API', () => {
 
     const edited = await request(app).post('/api/public/urgent/submit').send({
       site_code: 'HA02',
-      sku: '1006017',
+      sku: '1006035',
       qty: 3,
       urgent_reason: '1',
     });
@@ -1631,7 +1631,7 @@ describe('urgent admin API', () => {
     const put = await agent
       .put(`/api/admin/submissions/${id}`)
       .set('x-csrf-token', token)
-      .send({ sku: '1006017', qty: 4, urgent_reason: '1' });
+      .send({ sku: '1006035', qty: 4, urgent_reason: '1' });
     expect(put.status).toBe(200);
 
     const modified = await agent.get('/api/admin/submissions?modified=yes&application_no=' + editedNo + '&page=1');

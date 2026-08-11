@@ -614,24 +614,28 @@
       setStoreInfo('s_latest_store', data.latest_submission_today);
       setStat('normal', 'total', 's_normal_total');
       setStat('normal', 'exported', 's_normal_exported');
+      setNum('s_normal_not_exported', data.normal.total - data.normal.exported);
       setStat('normal', 'today', 's_normal_today');
       setStat('normal', 'today_exported', 's_normal_today_exported');
       setStat('normal', 'stores_today', 's_normal_stores_today');
       setStat('urgent', 'total', 's_urgent_total');
       setStat('urgent', 'exported', 's_urgent_exported');
+      setNum('s_urgent_not_exported', data.urgent.total - data.urgent.exported);
       setStat('urgent', 'today', 's_urgent_today');
       setStat('urgent', 'today_exported', 's_urgent_today_exported');
       setStat('urgent', 'stores_today', 's_urgent_stores_today');
       setStat('sales', 'total', 's_sales_total');
       setStat('sales', 'exported', 's_sales_exported');
+      setNum('s_sales_not_exported', data.sales.total - data.sales.exported);
       setStat('sales', 'today', 's_sales_today');
       setStat('sales', 'today_exported', 's_sales_today_exported');
-       setStat('sales', 'stores_today', 's_sales_stores_today');
-       setStat('return', 'total', 's_return_total');
-       setStat('return', 'exported', 's_return_exported');
-       setStat('return', 'today', 's_return_today');
-       setStat('return', 'today_exported', 's_return_today_exported');
-       setStat('return', 'stores_today', 's_return_stores_today');
+      setStat('sales', 'stores_today', 's_sales_stores_today');
+      setStat('return', 'total', 's_return_total');
+      setStat('return', 'exported', 's_return_exported');
+      setNum('s_return_not_exported', data.return.total - data.return.exported);
+      setStat('return', 'today', 's_return_today');
+      setStat('return', 'today_exported', 's_return_today_exported');
+      setStat('return', 'stores_today', 's_return_stores_today');
       const note = $('summary_note');
       if (note) {
         if (data.total > 0) {

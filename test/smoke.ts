@@ -10,7 +10,6 @@
  */
 process.env.ADMIN_USERNAME = process.env.ADMIN_USERNAME ?? 'admin';
 process.env.ADMIN_PASSWORD = process.env.ADMIN_PASSWORD ?? 'smoke-password';
-process.env.PUBLIC_RECOVERY_CODE = process.env.PUBLIC_RECOVERY_CODE ?? 'smoke-recovery-code';
 // Config requires DATABASE_URL at import time even though the smoke test runs
 // against an in-memory PGlite; provide a harmless default for local runs.
 process.env.DATABASE_URL = process.env.DATABASE_URL ?? 'postgres://smoke:smoke@localhost:5432/smoke';
@@ -40,7 +39,7 @@ setPoolForTesting({
 console.log('[smoke] PGlite ready');
 
 // Apply migrations manually without the pgcrypto extension line.
-for (const file of ['001_init.sql', '002_drop_rp_type_completed_at.sql', '003_add_submission_type_qty.sql', '004_add_urgent_reason.sql', '005_add_sales_submission_type.sql', '006_add_return_submission_type.sql', '007_add_idempotency_and_import_recovery.sql', '008_add_export_file_archive.sql', '009_architecture_hardening.sql', '010_query_optimization.sql', '011_cleanup_legacy_schema.sql']) {
+for (const file of ['001_init.sql', '002_drop_rp_type_completed_at.sql', '003_add_submission_type_qty.sql', '004_add_urgent_reason.sql', '005_add_sales_submission_type.sql', '006_add_return_submission_type.sql', '007_add_idempotency_and_import_recovery.sql', '008_add_export_file_archive.sql', '009_architecture_hardening.sql', '010_query_optimization.sql', '011_cleanup_legacy_schema.sql', '012_om_recovery_codes.sql']) {
   const sql = (await readFile(path.join(root, 'src', 'db', 'migrations', file), 'utf8')).replace(
     /CREATE EXTENSION IF NOT EXISTS pgcrypto;\s*/g,
     '',
@@ -48,6 +47,17 @@ for (const file of ['001_init.sql', '002_drop_rp_type_completed_at.sql', '003_ad
   await db.exec(sql);
 }
 console.log('[smoke] migrations applied');
+
+// Seed a master recovery code (works for every store) plus an Ivy group code.
+const { createHash } = await import('node:crypto');
+await db.query(
+  `INSERT INTO om_recovery_codes (om, code_hash, updated_by, updated_at) VALUES ($1, $2, 'smoke', now())`,
+  ['__MASTER__', createHash('sha256').update('smoke-recovery-code').digest('hex')],
+);
+await db.query(
+  `INSERT INTO om_recovery_codes (om, code_hash, updated_by, updated_at) VALUES ($1, $2, 'smoke', now())`,
+  ['Ivy', createHash('sha256').update('smoke-ivy-code').digest('hex')],
+);
 
 // Seed stores from the CSV.
 const csvPath = path.join(root, 'stores-template.csv');

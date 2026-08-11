@@ -11,7 +11,7 @@ SASA RP Team 非正常補貨（NDRF）申報平台。申請端免登入，管理
 - 行貨退貨報數（`/return.html`）：填寫 Site Code、SKU、QTY（1 至 9999）、指定退貨原因、確認人姓名及電話；公開單筆或獨立 Excel 批量上載，按外部 `return-schedule.json` 的店舖申請窗口收單，同一窗口同一 Site Code + SKU 只可申請一次
 - Urgent Order 提交時段為每日 00:00 至 14:30（香港時間）：14:30 後單筆提交及 Excel 批量上載均會被拒絕（管理後台不受限），翌日 14:30 前恢復；狀態可經 `GET /api/public/urgent/window` 查詢
 - Urgent Order 申請編號使用 `URGENT-...` 前綴；超出 1000 件的需求改以電郵向相關 Buyer 申請，不在平台處理
-- 申請編號 + Site Code 查詢／修改（匯出前可修改，每次修改新增不可變版本；Urgent Order 查詢不限時，修改限每日 14:30 前；突發性銷售申報查詢及修改均不限時）；忘記申請編號的恢復清單另外需要 `PUBLIC_RECOVERY_CODE`
+- 申請編號 + Site Code 查詢／修改（匯出前可修改，每次修改新增不可變版本；Urgent Order 查詢不限時，修改限每日 14:30 前；突發性銷售申報查詢及修改均不限時）；忘記申請編號的恢復清單另外需要 Recovery Code（每組 OM 獨立，於管理後台設定；另有全平台 master code）
 - 同一 Site Code + SKU 於同一日（香港日期）只可申報一次；一般 NDRF、Urgent 與突發性銷售分開計算。被拒時可用查詢／修改更正，翌日可重新申報；管理後台操作不受此限
 - 管理後台：清單篩選（含申報類型；日期預設今日）、詳情編輯、版本歷史、模板下載、批量匯入、SAP 9 欄匯出、獨立 Urgent 匯出、獨立突發性銷售匯出、完整審計報表、門店主檔管理；概覽及清單每分鐘自動刷新
 - 管理後台另提供行貨退貨報數清單、詳情編輯及 Buyer 8 欄 Excel 預覽／匯出鎖定；系統不記錄 Buyer 審批結果或退貨 NO.
@@ -91,7 +91,6 @@ Repository 已配置 GitHub Actions（`.github/workflows/ci.yml`）：push 時�
 | `LOGIN_ATTEMPT_RETENTION_DAYS` | `90` |
 | `IMPORT_BATCH_RETENTION_DAYS` | `730` |
 | `EXPORT_BATCH_RETENTION_DAYS` | `730` |
-| `PUBLIC_RECOVERY_CODE` | 公開恢復申請編號的共享 Recovery Code |
 | `RETURN_SCHEDULE_PATH` | `./return-schedule.json` |
 | `RETURN_ENFORCEMENT_START` | `2026-08-01` |
 | `CORS_ORIGINS` | 留空（同源）或填允許來源，逗號分隔 |
@@ -110,12 +109,13 @@ Repository 已配置 GitHub Actions（`.github/workflows/ci.yml`）：push 時�
 - `export_batch_files`：正式匯出 Excel 原檔，保存 90 日後自動清理；`export_batches` metadata 按 `EXPORT_BATCH_RETENTION_DAYS` 清理
 - `admin_sessions`：管理員登入 session（token 以 SHA-256 hash 儲存，過期自動清理）
 - `admin_login_attempts`：登入嘗試紀錄（失敗鎖定用）
-- `audit_events`：提交／查詢／修改／匯入／匯出／鎖定／登入／IP 清理審計；管理員 Audit Report 同時包含版本歷史及 audit events
+- `om_recovery_codes`：每組 OM（及 master）嘅「搵返申請編號」Recovery Code（SHA-256 hash 儲存，管理後台設定，migration 012）
+- `audit_events`：提交／查詢／修改／匯入／匯出／鎖定／登入／Recovery Code 管理／IP 清理審計；管理員 Audit Report 同時包含版本歷史及 audit events
 
 ## 年度維護
 
 - **行貨退貨時間表**：每年更新 `return-schedule.json`（加入新年度的窗口），並視需要調整 `RETURN_ENFORCEMENT_START`。應用程式啟動時若目前年度沒有配置窗口會直接拒絕啟動（fail-fast），不會靜默關閉功能；可用 `npm run schedule:check` 預先檢查。
-- **Recovery Code**：定期輪換 `PUBLIC_RECOVERY_CODE`，輪換後需重新部署並通知店舖。
+- **Recovery Code**：於管理後台「Recovery Code 管理」逐組設定／輪換（每組 OM 一個，另有 master code 適用全平台）。輪換後即時生效，無需重新部署，但需通知相關 OM 組店舖；master code 洩漏影響全平台，須妥善保管。
 
 ## 已知限制
 
@@ -123,7 +123,7 @@ Repository 已配置 GitHub Actions（`.github/workflows/ci.yml`）：push 時�
 
 ## 注意事項
 
-- 申請編號為不可猜測隨機值（`NDRF-XXXXXXXX-XXXXXXXX`、`URGENT-XXXXXXXX-XXXXXXXX` 或 `SALES-XXXXXXXX-XXXXXXXX`），查詢必須同時提供 Site Code；使用「搵返申請編號」清單則必須另提供 Recovery Code，且只經 HTTP header 傳送，不放入 URL。
+- 申請編號為不可猜測隨機值（`NDRF-XXXXXXXX-XXXXXXXX`、`URGENT-XXXXXXXX-XXXXXXXX` 或 `SALES-XXXXXXXX-XXXXXXXX`），查詢必須同時提供 Site Code；使用「搵返申請編號」清單則必須另提供 Recovery Code（每組 OM 獨立，或全平台 master code），且只經 HTTP header 傳送，不放入 URL。未設定 code 嘅 OM 會被拒絕（403「此 OM 未設定 Recovery Code」）；全表未有 code 時功能回 503。
 - Urgent Order 的 QTY 必須為 1 至 1000 的整數；網頁單筆／1 至 5 SKU 批次、Excel 模板、申請人修改及管理員修改共用相同驗證規則。網頁批次以單一 transaction 提交，任何一行失敗整批 rollback；每個 SKU 各產生一個申請編號。Urgent Order 必須選擇指定原因（1 至 9）；選擇「9. 其他」時必須填寫 Other Reason，其他選項不得填寫補充原因。
 - Urgent Order Excel 模板使用獨立 `Urgent Order` 工作表（欄位：Site Code、SKU、QTY、Urgent Reason、Other Reason），與 Page 1 的 `RP Team` 9 欄模板完全分開。舊版 3 欄模板不再接受，避免產生無原因的申報。
 - 突發性銷售申報 Excel 模板使用獨立 `突發性銷售申報` 工作表（欄位：Site Code、SKU），只接受這兩個欄名；同一日同一 Site Code + SKU 在同一申報類型內只能提交一次，一般／Urgent／突發性銷售三種類型互不阻擋。

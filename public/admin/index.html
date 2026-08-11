@@ -22,8 +22,8 @@
     .dl dt { color:#66727f; font-weight:600; }
     .dl dd { margin:0; }
     @media(max-width:640px){ .dl{grid-template-columns:1fr;} }
-    #export_confirm_overlay { position:fixed; inset:0; background:rgba(0,0,0,.45); display:none; align-items:center; justify-content:center; z-index:1055; padding:16px; }
-    #export_confirm_overlay .modal-box { background:#fff; border-radius:12px; padding:26px; max-width:460px; width:100%; box-shadow:0 10px 30px rgba(0,0,0,.25); }
+    #export_confirm_overlay, #recovery_code_overlay { position:fixed; inset:0; background:rgba(0,0,0,.45); display:none; align-items:center; justify-content:center; z-index:1055; padding:16px; }
+    #export_confirm_overlay .modal-box, #recovery_code_overlay .modal-box { background:#fff; border-radius:12px; padding:26px; max-width:460px; width:100%; box-shadow:0 10px 30px rgba(0,0,0,.25); }
     .file-drop.dragover, #store_drop.dragover { border-color:var(--tblr-primary) !important; background:#f6faff !important; }
     #store_drop { border-style:dashed; }
     .alert.error { color:#611a15; background:#fdecea; border-color:#f5c6c2; }
@@ -304,10 +304,34 @@
             <div id="store_result" class="mt-2"></div>
           </div>
         </div>
+
+        <div class="card mt-3">
+          <div class="card-header"><h3 class="card-title">Recovery Code 管理</h3></div>
+          <div class="card-body">
+            <p class="text-secondary small">「搵返申請編號」功能按每組 OM 獨立設定 Recovery Code（以 SHA-256 hash 儲存，管理界面唔會顯示原碼）。未設定嘅 OM 會拒絕查詢；master code 適用於所有店舖。</p>
+            <div class="table-responsive">
+              <table class="table table-vcenter"><thead><tr><th>範圍</th><th>狀態</th><th>最後更新</th><th>更新人</th><th>操作</th></tr></thead><tbody id="recovery_codes_body"><tr><td colspan="5" class="text-center text-secondary">載入中…</td></tr></tbody></table>
+            </div>
+            <div id="recovery_code_result" class="mt-2"></div>
+          </div>
+        </div>
       </div>
     </div>
   </div>
   <footer class="footer footer-transparent"><div class="container-xl"><div class="text-center text-secondary small">Developed by RP Team - Ricky Yue</div></div></footer>
+</div>
+
+<div id="recovery_code_overlay" style="display:none">
+  <div class="modal-box">
+    <h3 id="recovery_code_title">設定 Recovery Code</h3>
+    <p class="text-secondary small">範圍：<b id="recovery_code_scope"></b></p>
+    <input type="password" class="form-control" id="recovery_code_input" autocomplete="off" placeholder="12 至 128 位可顯示 ASCII 字符（不含空格）">
+    <div id="recovery_code_form_error" class="mt-2"></div>
+    <div class="d-flex gap-2 justify-content-end mt-4">
+      <button class="btn btn-primary" id="recovery_code_ok">儲存</button>
+      <button class="btn" id="recovery_code_cancel">取消</button>
+    </div>
+  </div>
 </div>
 
 <div id="export_confirm_overlay" style="display:none">

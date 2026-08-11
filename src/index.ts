@@ -3,6 +3,7 @@ import { config } from './config.js';
 import { migrate } from './db/migrate.js';
 import { pool, withAdvisoryLock } from './db/pool.js';
 import { writeAuditEvent } from './lib/audit.js';
+import { countRecoveryCodes } from './lib/recovery.js';
 import { seedStoresFromFile, countStores } from './services/stores.js';
 import { cleanupExpiredExportFiles } from './services/exportFiles.js';
 import { cleanupRetentionData } from './services/retention.js';
@@ -48,11 +49,13 @@ async function main(): Promise<void> {
   if (!config.adminPassword) {
     console.warn('[boot] ADMIN_PASSWORD 未設定 — 管理員登入已停用，後台將拒絕存取');
   }
-  if (!config.publicRecoveryCode) {
-    console.warn('[boot] PUBLIC_RECOVERY_CODE 未設定 — 公開申請編號恢復功能已停用');
-  }
 
   await migrate();
+
+  const recoveryCodeCount = await countRecoveryCodes();
+  if (recoveryCodeCount === 0) {
+    console.warn('[boot] 未設定任何 Recovery Code（om_recovery_codes 表為空）— 公開申請編號恢復功能將回 503');
+  }
 
   const storeCount = await countStores();
   if (storeCount === 0) {

@@ -72,7 +72,7 @@ import { ipExpiryIso } from '../lib/ip.js';
 import { RETURN_SCHEDULE, RETURN_WINDOWS, getActiveReturnWindow, isReturnModificationOpen } from '../lib/returnSchedule.js';
 import { fingerprintPayload, getIdempotencyKey, hasInvalidIdempotencyKey } from '../lib/idempotency.js';
 import { createImportBatch, findImportBatchByIdempotencyKey, findImportBatchByKey, getPublicImportBatchRecord, importBatchResponse, lockImportIdempotencyKey, type ImportSubmissionType } from '../services/importBatches.js';
-import { isValidPublicRecoveryCode, parseRecoveryCodeHeader } from '../lib/recovery.js';
+import { checkRecoveryCodeHashes, listRecoveryCodeHashes, parseRecoveryCodeHeader, recoveryCodeVia } from '../lib/recovery.js';
 import { getUploadedFile, validateUploadedXlsx } from '../lib/upload.js';
 
 export const publicRouter = Router();
@@ -1829,16 +1829,6 @@ publicRouter.get(
     const rawFrom = String(req.query.from ?? '').trim();
     const rawTo = String(req.query.to ?? '').trim();
     const rawSku = String(req.query.sku ?? '').trim();
-    const recoveryCode = parseRecoveryCodeHeader(req.get('x-recovery-code'));
-
-    if (!config.publicRecoveryCode) {
-      res.status(503).json({ error: '申請編號恢復功能尚未設定' });
-      return;
-    }
-    if (!isValidPublicRecoveryCode(recoveryCode)) {
-      res.status(403).json({ error: 'Recovery Code 無效' });
-      return;
-    }
 
     if (!siteCode) {
       res.status(400).json({ error: 'Site Code 為必填' });
@@ -1849,6 +1839,23 @@ publicRouter.get(
       res.status(400).json({ error: `Site Code「${siteCode}」不存在於門店主檔` });
       return;
     }
+
+    const recoveryCode = parseRecoveryCodeHeader(req.get('x-recovery-code'));
+    const recoveryHashes = await listRecoveryCodeHashes();
+    const recoveryStatus = checkRecoveryCodeHashes(recoveryHashes, store.om, recoveryCode);
+    if (recoveryStatus === 'disabled') {
+      res.status(503).json({ error: '申請編號恢復功能尚未設定' });
+      return;
+    }
+    if (recoveryStatus === 'om-not-configured') {
+      res.status(403).json({ error: '此 OM 未設定 Recovery Code' });
+      return;
+    }
+    if (recoveryStatus !== 'ok') {
+      res.status(403).json({ error: 'Recovery Code 無效' });
+      return;
+    }
+    const recoveryVia = recoveryCodeVia(recoveryHashes, store.om, recoveryCode);
 
     let from: string | null = null;
     let to: string | null = null;
@@ -1910,7 +1917,7 @@ publicRouter.get(
       eventType: 'application_no_recovered',
       actorRole: 'applicant',
       ip: getClientIp(req),
-      metadata: { site_code: siteCode, from, to, count: result.rows.length },
+      metadata: { site_code: siteCode, om: store.om, via: recoveryVia, from, to, count: result.rows.length },
     });
 
     res.json({

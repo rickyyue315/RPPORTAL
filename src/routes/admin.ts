@@ -37,6 +37,7 @@ import {
   EXCEL_UPLOAD_EXTENSION_ERROR,
 } from '../lib/excelImport.js';
 import { getStore, normalizeSiteCode, parseStoresCsv, decodeStoresCsvBuffer, replaceStores, listStores } from '../services/stores.js';
+import { MASTER_RECOVERY_OM, setRecoveryCode, deleteRecoveryCode } from '../lib/recovery.js';
 import { toHKString, toHKDateString, hkTodayForDateColumn } from '../lib/time.js';
 import { generateApplicationNo } from '../lib/applicationNo.js';
 import { ipExpiryIso } from '../lib/ip.js';
@@ -1487,5 +1488,114 @@ adminRouter.put(
       metadata: { filename: file.originalname, count },
     });
     res.json({ ok: true, count });
+  }),
+);
+
+const recoveryCodeSchema = z.object({
+  code: z.string().regex(/^[\x21-\x7E]{12,128}$/, 'Recovery Code 必須為 12 至 128 位可顯示 ASCII 字符（不含空格）'),
+});
+
+function resolveRecoveryScope(raw: unknown): string {
+  const trimmed = String(raw ?? '').trim();
+  if (trimmed.toLowerCase() === 'master') return MASTER_RECOVERY_OM;
+  return trimmed;
+}
+
+/** GET /api/admin/recovery-codes — list configured recovery code scopes (master + per-OM). Codes are never returned. */
+adminRouter.get(
+  '/recovery-codes',
+  requireAdmin,
+  adminActionLimiter,
+  asyncHandler(async (_req: Request, res: Response) => {
+    const [omRows, codeRows] = await Promise.all([
+      query<{ om: string }>(`SELECT DISTINCT om FROM stores WHERE om <> '' ORDER BY om`),
+      query<{ om: string; updated_by: string; updated_at: string }>(
+        'SELECT om, updated_by, updated_at FROM om_recovery_codes WHERE om <> $1 ORDER BY om',
+        [MASTER_RECOVERY_OM],
+      ),
+    ]);
+    const masterRows = await query<{ updated_by: string; updated_at: string }>(
+      'SELECT updated_by, updated_at FROM om_recovery_codes WHERE om = $1',
+      [MASTER_RECOVERY_OM],
+    );
+
+    const codes = new Map(codeRows.rows.map((row) => [row.om, row]));
+    const scopes = new Set(omRows.rows.map((r) => r.om));
+    codeRows.rows.forEach((row) => scopes.add(row.om));
+
+    const masterRow = masterRows.rows[0];
+    res.json({
+      master: {
+        set: Boolean(masterRow),
+        updated_at: masterRow ? toHKString(masterRow.updated_at) : null,
+        updated_by: masterRow?.updated_by ?? null,
+      },
+      om_codes: [...scopes]
+        .sort()
+        .map((om) => {
+          const row = codes.get(om);
+          return {
+            om,
+            set: Boolean(row),
+            updated_at: row ? toHKString(row.updated_at) : null,
+            updated_by: row?.updated_by ?? null,
+          };
+        }),
+    });
+  }),
+);
+
+/** PUT /api/admin/recovery-codes/:scope — set or rotate the recovery code for an OM group or 'master'. */
+adminRouter.put(
+  '/recovery-codes/:scope',
+  requireAdmin,
+  adminActionLimiter,
+  asyncHandler(async (req: Request, res: Response) => {
+    const parsed = recoveryCodeSchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ error: parsed.error.issues[0]?.message ?? 'Recovery Code 無效' });
+      return;
+    }
+    const scope = resolveRecoveryScope(req.params.scope);
+    if (!scope || scope.length > 64) {
+      res.status(400).json({ error: '範圍（OM / master）為必填且不可超過 64 字符' });
+      return;
+    }
+    await setRecoveryCode(scope, parsed.data.code, req.adminUsername ?? 'admin');
+    await writeAuditEvent({
+      eventType: 'recovery_code_set',
+      actorRole: 'admin',
+      actor: req.adminUsername,
+      ip: getClientIp(req),
+      metadata: { scope, chars: parsed.data.code.length },
+    });
+    res.json({ ok: true, scope });
+  }),
+);
+
+/** DELETE /api/admin/recovery-codes/:scope — remove the recovery code for an OM group or 'master'. */
+adminRouter.delete(
+  '/recovery-codes/:scope',
+  requireAdmin,
+  adminActionLimiter,
+  asyncHandler(async (req: Request, res: Response) => {
+    const scope = resolveRecoveryScope(req.params.scope);
+    if (!scope || scope.length > 64) {
+      res.status(400).json({ error: '範圍（OM / master）為必填且不可超過 64 字符' });
+      return;
+    }
+    const removed = await deleteRecoveryCode(scope);
+    if (!removed) {
+      res.status(404).json({ error: '該範圍未有設定 Recovery Code' });
+      return;
+    }
+    await writeAuditEvent({
+      eventType: 'recovery_code_deleted',
+      actorRole: 'admin',
+      actor: req.adminUsername,
+      ip: getClientIp(req),
+      metadata: { scope },
+    });
+    res.json({ ok: true, scope });
   }),
 );

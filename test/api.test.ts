@@ -1,5 +1,6 @@
 import { describe, expect, it, beforeAll, afterEach, vi } from 'vitest';
 import request from 'supertest';
+import { createHash } from 'node:crypto';
 import { PGlite } from '@electric-sql/pglite';
 import ExcelJS from 'exceljs';
 import type { Express } from 'express';
@@ -10,6 +11,7 @@ import { setPoolForTesting } from '../src/db/pool.js';
 import { createApp } from '../src/app.js';
 import { replaceStores } from '../src/services/stores.js';
 import { cleanupExpiredExportFiles } from '../src/services/exportFiles.js';
+import { MASTER_RECOVERY_OM } from '../src/lib/recovery.js';
 import { TEMPLATE_COLUMNS, RP_TEAM_SHEET, SHOP_CODE_HEADER, URGENT_COLUMNS, URGENT_SHEET, SALES_COLUMNS, SALES_SHEET, RETURN_COLUMNS, RETURN_SHEET } from '../src/lib/fields.js';
 import * as time from '../src/lib/time.js';
 
@@ -17,7 +19,26 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 let app: Express;
 let db: PGlite;
 let timeSpy: ReturnType<typeof vi.spyOn>;
-const RECOVERY_CODE = 'test-recovery-code';
+const MASTER_RECOVERY_CODE = 'test-master-code';
+const IVY_RECOVERY_CODE = 'test-ivy-code';
+const VIOLET_RECOVERY_CODE = 'test-violet-code';
+
+function recoveryHash(code: string): string {
+  return createHash('sha256').update(code).digest('hex');
+}
+
+async function seedRecoveryCodes(): Promise<void> {
+  const insert = (om: string, code: string) =>
+    db.query(
+      `INSERT INTO om_recovery_codes (om, code_hash, updated_by, updated_at)
+       VALUES ($1, $2, 'test', now())
+       ON CONFLICT (om) DO UPDATE SET code_hash = EXCLUDED.code_hash, updated_by = EXCLUDED.updated_by, updated_at = now()`,
+      [om, recoveryHash(code)],
+    );
+  await insert(MASTER_RECOVERY_OM, MASTER_RECOVERY_CODE);
+  await insert('Ivy', IVY_RECOVERY_CODE);
+  await insert('Violet', VIOLET_RECOVERY_CODE);
+}
 
 function makePglitePool(database: PGlite): never {
   return {
@@ -51,7 +72,7 @@ async function countSubmissions(where = ''): Promise<number> {
 beforeAll(async () => {
   db = new PGlite();
   setPoolForTesting(makePglitePool(db));
-  const migrationFiles = ['001_init.sql', '002_drop_rp_type_completed_at.sql', '003_add_submission_type_qty.sql', '004_add_urgent_reason.sql', '005_add_sales_submission_type.sql', '006_add_return_submission_type.sql', '007_add_idempotency_and_import_recovery.sql', '008_add_export_file_archive.sql', '009_architecture_hardening.sql', '010_query_optimization.sql', '011_cleanup_legacy_schema.sql'];
+  const migrationFiles = ['001_init.sql', '002_drop_rp_type_completed_at.sql', '003_add_submission_type_qty.sql', '004_add_urgent_reason.sql', '005_add_sales_submission_type.sql', '006_add_return_submission_type.sql', '007_add_idempotency_and_import_recovery.sql', '008_add_export_file_archive.sql', '009_architecture_hardening.sql', '010_query_optimization.sql', '011_cleanup_legacy_schema.sql', '012_om_recovery_codes.sql'];
   for (const file of migrationFiles) {
     let sql = await readFile(path.join(__dirname, '..', 'src', 'db', 'migrations', file), 'utf8');
     sql = sql.replace(/CREATE EXTENSION IF NOT EXISTS pgcrypto;\s*/g, '');
@@ -65,6 +86,7 @@ beforeAll(async () => {
       { site_code: 'HBA7', shop: 'AIRSIDE', regional: 'HK', class1: 'C', class2: 'C2', size: 'XS', om: 'Hippo', type: 'M' },
     ],
   );
+  await seedRecoveryCodes();
   app = createApp();
   // Freeze the clock at 09:00 HK so tests are independent of the real wall-clock
   // (the Urgent Order window closes at 14:30 HK). Window tests override this spy.
@@ -350,7 +372,7 @@ describe('public API', () => {
 
     const found = await request(app)
       .get(`/api/public/my-applications?site_code=HA06&from=${date}&to=${date}`)
-      .set('x-recovery-code', RECOVERY_CODE);
+      .set('x-recovery-code', IVY_RECOVERY_CODE);
     expect(found.status).toBe(200);
     expect(found.body.store.shop).toBe('北角');
     expect(found.body.rows.some((r) => r.application_no === no)).toBe(true);
@@ -359,23 +381,23 @@ describe('public API', () => {
 
     const other = await request(app)
       .get(`/api/public/my-applications?site_code=HA02&from=${date}&to=${date}`)
-      .set('x-recovery-code', RECOVERY_CODE);
+      .set('x-recovery-code', IVY_RECOVERY_CODE);
     expect(other.status).toBe(200);
     expect(other.body.rows.some((r) => r.application_no === no)).toBe(false);
 
     const missing = await request(app)
       .get('/api/public/my-applications?site_code=ZZ99')
-      .set('x-recovery-code', RECOVERY_CODE);
+      .set('x-recovery-code', IVY_RECOVERY_CODE);
     expect(missing.status).toBe(400);
 
     const badRange = await request(app)
       .get('/api/public/my-applications?site_code=HA06&from=2026-12-31&to=2026-01-01')
-      .set('x-recovery-code', RECOVERY_CODE);
+      .set('x-recovery-code', IVY_RECOVERY_CODE);
     expect(badRange.status).toBe(400);
 
     const invalidDate = await request(app)
       .get('/api/public/my-applications?site_code=HA06&from=2026-02-31&to=2026-02-31')
-      .set('x-recovery-code', RECOVERY_CODE);
+      .set('x-recovery-code', IVY_RECOVERY_CODE);
     expect(invalidDate.status).toBe(400);
   });
 
@@ -386,6 +408,49 @@ describe('public API', () => {
       .get('/api/public/my-applications?site_code=HA06')
       .set('x-recovery-code', 'wrong-code');
     expect(invalid.status).toBe(403);
+  });
+
+  it('rejects a recovery code from a different OM group', async () => {
+    const res = await request(app)
+      .get('/api/public/my-applications?site_code=HA02')
+      .set('x-recovery-code', VIOLET_RECOVERY_CODE);
+    expect(res.status).toBe(403);
+    expect(res.body.error).toBe('Recovery Code 無效');
+  });
+
+  it('accepts the master recovery code for any store', async () => {
+    const res = await request(app)
+      .get('/api/public/my-applications?site_code=HA19')
+      .set('x-recovery-code', MASTER_RECOVERY_CODE);
+    expect(res.status).toBe(200);
+    expect(res.body.store.shop).toBe('康山');
+  });
+
+  it('rejects recovery for an OM without a configured code', async () => {
+    // 'om-not-configured' only applies when neither the master nor this OM has
+    // a code; temporarily remove the master code to exercise that path.
+    await db.query('DELETE FROM om_recovery_codes WHERE om = $1', [MASTER_RECOVERY_OM]);
+    try {
+      const res = await request(app)
+        .get('/api/public/my-applications?site_code=HBA7')
+        .set('x-recovery-code', IVY_RECOVERY_CODE);
+      expect(res.status).toBe(403);
+      expect(res.body.error).toBe('此 OM 未設定 Recovery Code');
+    } finally {
+      await seedRecoveryCodes();
+    }
+  });
+
+  it('returns 503 when no recovery codes are configured at all', async () => {
+    await db.query('DELETE FROM om_recovery_codes');
+    try {
+      const res = await request(app)
+        .get('/api/public/my-applications?site_code=HA02')
+        .set('x-recovery-code', IVY_RECOVERY_CODE);
+      expect(res.status).toBe(503);
+    } finally {
+      await seedRecoveryCodes();
+    }
   });
 
   it('downloads the template workbook without login', async () => {
@@ -440,6 +505,109 @@ describe('admin API', () => {
     expect(logout.status).toBe(200);
     const me = await agent.get('/api/admin/me');
     expect(me.status).toBe(401);
+  });
+
+  describe('recovery code management', () => {
+    it('requires login for every endpoint', async () => {
+      const list = await request(app).get('/api/admin/recovery-codes');
+      expect(list.status).toBe(401);
+      // Mutations need a valid CSRF pair before the session is checked.
+      const agent = request.agent(app);
+      const token = await csrf(agent);
+      const put = await agent
+        .put('/api/admin/recovery-codes/Ivy')
+        .set('x-csrf-token', token)
+        .send({ code: 'test-ivy-code' });
+      expect(put.status).toBe(401);
+      const del = await agent.delete('/api/admin/recovery-codes/Ivy').set('x-csrf-token', token);
+      expect(del.status).toBe(401);
+    });
+
+    it('lists scopes without returning stored codes', async () => {
+      const agent = request.agent(app);
+      await adminLogin(agent);
+      const res = await agent.get('/api/admin/recovery-codes');
+      expect(res.status).toBe(200);
+      expect(res.body.master.set).toBe(true);
+      const ivy = res.body.om_codes.find((c: { om: string }) => c.om === 'Ivy');
+      expect(ivy.set).toBe(true);
+      const hippo = res.body.om_codes.find((c: { om: string }) => c.om === 'Hippo');
+      expect(hippo.set).toBe(false);
+      expect(JSON.stringify(res.body)).not.toContain('code_hash');
+      expect(JSON.stringify(res.body)).not.toContain('test-ivy-code');
+    });
+
+    it('sets and rotates a code for an OM, enabling recovery for its stores', async () => {
+      const agent = request.agent(app);
+      await adminLogin(agent);
+      const token = await csrf(agent);
+
+      const setRes = await agent
+        .put('/api/admin/recovery-codes/Hippo')
+        .set('x-csrf-token', token)
+        .send({ code: 'hippo-om-code-123' });
+      expect(setRes.status).toBe(200);
+
+      const recovery = await request(app)
+        .get('/api/public/my-applications?site_code=HBA7')
+        .set('x-recovery-code', 'hippo-om-code-123');
+      expect(recovery.status).toBe(200);
+      expect(recovery.body.store.shop).toBe('AIRSIDE');
+
+      const audit = await db.query(`SELECT metadata FROM audit_events WHERE event_type = 'recovery_code_set'`);
+      expect(audit.rows.length).toBeGreaterThan(0);
+
+      const delRes = await agent
+        .delete('/api/admin/recovery-codes/Hippo')
+        .set('x-csrf-token', token);
+      expect(delRes.status).toBe(200);
+
+      const after = await request(app)
+        .get('/api/public/my-applications?site_code=HBA7')
+        .set('x-recovery-code', 'hippo-om-code-123');
+      expect(after.status).toBe(403);
+    });
+
+    it('rejects codes that are too short or not printable ASCII', async () => {
+      const agent = request.agent(app);
+      await adminLogin(agent);
+      const token = await csrf(agent);
+      const short = await agent
+        .put('/api/admin/recovery-codes/Ivy')
+        .set('x-csrf-token', token)
+        .send({ code: 'short' });
+      expect(short.status).toBe(400);
+      const nonAscii = await agent
+        .put('/api/admin/recovery-codes/Ivy')
+        .set('x-csrf-token', token)
+        .send({ code: '測試密碼測試密碼測試密碼' });
+      expect(nonAscii.status).toBe(400);
+    });
+
+    it('supports the master scope through the admin API', async () => {
+      const agent = request.agent(app);
+      await adminLogin(agent);
+      const token = await csrf(agent);
+      const setRes = await agent
+        .put('/api/admin/recovery-codes/master')
+        .set('x-csrf-token', token)
+        .send({ code: 'new-master-code-123' });
+      expect(setRes.status).toBe(200);
+      const ok = await request(app)
+        .get('/api/public/my-applications?site_code=HA02')
+        .set('x-recovery-code', 'new-master-code-123');
+      expect(ok.status).toBe(200);
+      // restore the original master code for the rest of the suite
+      const restore = await agent
+        .put('/api/admin/recovery-codes/master')
+        .set('x-csrf-token', token)
+        .send({ code: MASTER_RECOVERY_CODE });
+      expect(restore.status).toBe(200);
+      const restoredOk = await request(app)
+        .get('/api/public/my-applications?site_code=HA02')
+        .set('x-recovery-code', MASTER_RECOVERY_CODE);
+      expect(restoredOk.status).toBe(200);
+    });
   });
 
   it('lists, exports and locks submissions after login', async () => {

@@ -19,6 +19,8 @@ export type AuditEventType =
   | 'export_error'
   | 'export_locked'
   | 'store_master_updated'
+  | 'recovery_code_set'
+  | 'recovery_code_deleted'
   | 'ip_cleanup';
 
 interface AuditInput {

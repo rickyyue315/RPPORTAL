@@ -804,6 +804,102 @@
     }
   });
 
+  let recoveryScope = null;
+
+  function loadRecoveryCodes() {
+    adminFetch('/api/admin/recovery-codes')
+      .then((data) => {
+        const rows = [{
+          om: 'master',
+          label: 'Master（全平台）',
+          set: Boolean(data.master?.set),
+          updated_at: data.master?.updated_at,
+          updated_by: data.master?.updated_by,
+        }];
+        (data.om_codes || []).forEach((c) => {
+          rows.push({ om: c.om, label: c.om, set: c.set, updated_at: c.updated_at, updated_by: c.updated_by });
+        });
+        const tbody = $('recovery_codes_body');
+        if (!rows.length) {
+          tbody.innerHTML = '<tr><td colspan="5" class="text-center text-secondary">門店主檔冇任何 OM。</td></tr>';
+          return;
+        }
+        tbody.innerHTML = rows.map((row) => {
+          const status = row.set
+            ? '<span class="status-badge received">已設定</span>'
+            : '<span class="status-badge locked">未設定</span>';
+          const actions = row.set
+            ? `<button class="btn ghost btn-recovery-edit" data-scope="${escapeHtml(row.om)}">輪換</button> <button class="btn ghost btn-recovery-del" data-scope="${escapeHtml(row.om)}">清除</button>`
+            : `<button class="btn ghost btn-recovery-edit" data-scope="${escapeHtml(row.om)}">設定</button>`;
+          return `<tr><td>${escapeHtml(row.label)}</td><td>${status}</td><td>${escapeHtml(row.updated_at || '—')}</td><td>${escapeHtml(row.updated_by || '—')}</td><td>${actions}</td></tr>`;
+        }).join('');
+        tbody.querySelectorAll('.btn-recovery-edit').forEach((btn) => {
+          btn.addEventListener('click', () => openRecoveryCodeModal(btn.dataset.scope));
+        });
+        tbody.querySelectorAll('.btn-recovery-del').forEach((btn) => {
+          btn.addEventListener('click', () => removeRecoveryCode(btn.dataset.scope));
+        });
+      })
+      .catch((err) => {
+        $('recovery_codes_body').innerHTML = `<tr><td colspan="5" class="text-center text-secondary">載入失敗：${escapeHtml(err.message)}</td></tr>`;
+      });
+  }
+
+  function openRecoveryCodeModal(scope) {
+    recoveryScope = scope;
+    $('recovery_code_scope').textContent = scope === 'master' ? 'Master（全平台）' : scope;
+    $('recovery_code_title').textContent = '設定 Recovery Code';
+    $('recovery_code_input').value = '';
+    showAlert($('recovery_code_form_error'), '', '');
+    $('recovery_code_overlay').style.display = 'flex';
+    $('recovery_code_input').focus();
+  }
+
+  function closeRecoveryCodeModal() {
+    $('recovery_code_overlay').style.display = 'none';
+  }
+
+  $('recovery_code_ok').addEventListener('click', async () => {
+    const code = $('recovery_code_input').value;
+    if (!code) {
+      showAlert($('recovery_code_form_error'), 'error', '請輸入 Recovery Code');
+      return;
+    }
+    const btn = $('recovery_code_ok');
+    btn.disabled = true;
+    try {
+      await adminFetch(`/api/admin/recovery-codes/${encodeURIComponent(recoveryScope)}`, {
+        method: 'PUT',
+        body: JSON.stringify({ code }),
+      });
+      closeRecoveryCodeModal();
+      showAlert($('recovery_code_result'), 'success', 'Recovery Code 已更新。');
+      loadRecoveryCodes();
+    } catch (err) {
+      showAlert($('recovery_code_form_error'), 'error', escapeHtml(err.message));
+    } finally {
+      btn.disabled = false;
+    }
+  });
+
+  $('recovery_code_cancel').addEventListener('click', closeRecoveryCodeModal);
+  $('recovery_code_overlay').addEventListener('click', (e) => {
+    if (e.target === $('recovery_code_overlay')) closeRecoveryCodeModal();
+  });
+
+  async function removeRecoveryCode(scope) {
+    const label = scope === 'master' ? 'Master（全平台）' : scope;
+    const ok = await confirmExport(`確認清除「${label}」嘅 Recovery Code？清除後該範圍內所有店舖將無法使用「搵返申請編號」。`);
+    if (!ok) return;
+    try {
+      await adminFetch(`/api/admin/recovery-codes/${encodeURIComponent(scope)}`, { method: 'DELETE' });
+      showAlert($('recovery_code_result'), 'success', 'Recovery Code 已清除。');
+      loadRecoveryCodes();
+    } catch (err) {
+      showAlert($('recovery_code_result'), 'error', escapeHtml(err.message));
+    }
+  }
+
   $('btn_logout').addEventListener('click', async (e) => {
     e.preventDefault();
     try {
@@ -823,6 +919,7 @@
     loadSummary();
     loadExportBatches();
     loadStoreCount();
+    loadRecoveryCodes();
   });
   setInterval(() => {
     if (document.visibilityState === 'visible') {

@@ -27,6 +27,14 @@ function bool(name: string, fallback = false): boolean {
   return ['1', 'true', 'yes', 'on'].includes(v.toLowerCase());
 }
 
+function isoDate(name: string, fallback: string): string {
+  const v = process.env[name] ?? fallback;
+  if (!Number.isFinite(Date.parse(v))) {
+    throw new Error(`Invalid ISO date environment variable: ${name}`);
+  }
+  return v;
+}
+
 function proxyTrust(): boolean | number {
   const raw = process.env.TRUST_PROXY?.trim().toLowerCase();
   if (raw === undefined || raw === '') {
@@ -54,6 +62,8 @@ export const config = {
   csrfEnabled: bool('CSRF_ENABLED', true),
   trustProxy: proxyTrust(),
   timezone: process.env.APP_TIMEZONE ?? 'Asia/Hong_Kong',
+  publicWriteSuspensionEnabled: bool('PUBLIC_WRITE_SUSPENSION_ENABLED', true),
+  publicWriteSuspensionAt: isoDate('PUBLIC_WRITE_SUSPENSION_AT', '2026-08-11T23:59:59+08:00'),
   ipRetentionDays: int('IP_RETENTION_DAYS', 365),
   maxUploadBytes: int('MAX_UPLOAD_MB', 5) * 1024 * 1024,
   maxImportRows: int('MAX_IMPORT_ROWS', 1000),

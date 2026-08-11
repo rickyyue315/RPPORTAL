@@ -1,6 +1,6 @@
 (() => {
-  const cfg = {
-    // 日後如需重新開通申報，請將 enabled 改為 false（或把 suspendAt 改為較後時間）。
+  const cfg = globalThis.NDRF_OPTIONS?.publicWriteSuspension ?? {
+    // 後端設定未能載入時，仍以目前的停用時間作安全 fallback。
     enabled: true,
     suspendAt: '2026-08-11T23:59:59+08:00',
   };
@@ -9,7 +9,7 @@
   const suspendAt = new Date(cfg.suspendAt).getTime();
   if (!isFinite(suspendAt) || Date.now() < suspendAt) return;
 
-  const MESSAGE = '此平台申報服務已暫停（2026年8月11日23:59:59 起），提交／修改／預覽／批量上載功能已停用，謝謝。';
+  const MESSAGE = '此平台申報服務已暫停，提交／修改／預覽／批量上載功能已停用，謝謝。';
   const BTN_SELECTOR = '#btn_submit, #btn_preview, #btn_confirm, #btn_save, #btn_import';
 
   function suspend() {

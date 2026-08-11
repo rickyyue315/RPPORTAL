@@ -92,6 +92,10 @@ export function createApp() {
         returnReasons: RETURN_REASONS,
         returnQtyMin: RETURN_QTY_MIN,
         returnQtyMax: RETURN_QTY_MAX,
+        publicWriteSuspension: {
+          enabled: config.publicWriteSuspensionEnabled,
+          suspendAt: config.publicWriteSuspensionAt,
+        },
       })};`);
   });
 

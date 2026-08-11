@@ -67,6 +67,7 @@ import {
 import { isValidIsoDate, RF_REMARK_REQUIRED_SITES, SKU_PATTERN, SKU_ERROR, validateBusinessFields, validateUrgentReason } from '../lib/validation.js';
 import { query, withTransaction } from '../db/pool.js';
 import { config } from '../config.js';
+import { requirePublicWritesOpen } from '../middleware/publicWriteSuspension.js';
 import { generateApplicationNo } from '../lib/applicationNo.js';
 import { ipExpiryIso } from '../lib/ip.js';
 import { RETURN_SCHEDULE, RETURN_WINDOWS, getActiveReturnWindow, isReturnModificationOpen } from '../lib/returnSchedule.js';
@@ -360,6 +361,7 @@ publicRouter.get(
 /** POST /api/public/submit — single web submission. */
 publicRouter.post(
   '/submit',
+  requirePublicWritesOpen,
   publicSubmitLimiter,
   asyncHandler(async (req: Request, res: Response) => {
     const parsed = submitSchema.safeParse(req.body);
@@ -446,6 +448,7 @@ const salesSubmitSchema = z.object({
 /** POST /api/public/sales/submit — sudden sales single web submission. */
 publicRouter.post(
   '/sales/submit',
+  requirePublicWritesOpen,
   publicSubmitLimiter,
   asyncHandler(async (req: Request, res: Response) => {
     const parsed = salesSubmitSchema.safeParse(req.body);
@@ -517,6 +520,7 @@ publicRouter.get(
 /** POST /api/public/sales/import — sudden sales Excel batch upload. */
 publicRouter.post(
   '/sales/import',
+  requirePublicWritesOpen,
   excelImportLimiter,
   upload.single('file'),
   asyncHandler(async (req: Request, res: Response) => {
@@ -760,6 +764,7 @@ publicRouter.get(
 /** POST /api/public/return/submit — single return-goods report. */
 publicRouter.post(
   '/return/submit',
+  requirePublicWritesOpen,
   publicSubmitLimiter,
   asyncHandler(async (req: Request, res: Response) => {
     const parsed = returnSubmitSchema.safeParse(req.body);
@@ -843,6 +848,7 @@ publicRouter.get(
 /** POST /api/public/return/import — return-goods Excel batch upload. */
 publicRouter.post(
   '/return/import',
+  requirePublicWritesOpen,
   excelImportLimiter,
   upload.single('file'),
   asyncHandler(async (req: Request, res: Response) => {
@@ -1057,6 +1063,7 @@ const urgentBatchItemSchema = z.object({
 /** POST /api/public/urgent/submit — single or 1-5 SKU Urgent Order web submission. */
 publicRouter.post(
   '/urgent/submit',
+  requirePublicWritesOpen,
   publicSubmitLimiter,
   asyncHandler(async (req: Request, res: Response) => {
     const rawBody = req.body;
@@ -1295,6 +1302,7 @@ publicRouter.get(
 /** POST /api/public/urgent/import — Excel batch upload for Urgent Orders. */
 publicRouter.post(
   '/urgent/import',
+  requirePublicWritesOpen,
   excelImportLimiter,
   upload.single('file'),
   asyncHandler(async (req: Request, res: Response) => {
@@ -1537,6 +1545,7 @@ publicRouter.get(
 /** POST /api/public/import — Excel batch upload. */
 publicRouter.post(
   '/import',
+  requirePublicWritesOpen,
   excelImportLimiter,
   upload.single('file'),
   asyncHandler(async (req: Request, res: Response) => {
@@ -1963,6 +1972,7 @@ const modifySchema = z.object({
 /** POST /api/public/modify — modify before export lock. */
 publicRouter.post(
   '/modify',
+  requirePublicWritesOpen,
   publicSubmitLimiter,
   asyncHandler(async (req: Request, res: Response) => {
     const parsed = modifySchema.safeParse(req.body);

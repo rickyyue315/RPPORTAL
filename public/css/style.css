@@ -101,6 +101,24 @@ a:hover {
   color: #b9770e;
 }
 
+.suspend-banner {
+  background: #fdecea;
+  border-bottom: 3px solid var(--danger);
+  color: #7a1414;
+  font-size: 18px;
+  font-weight: 700;
+  line-height: 1.6;
+  text-align: center;
+  padding: 14px 24px;
+}
+
+@media (max-width: 640px) {
+  .suspend-banner {
+    font-size: 15px;
+    padding: 12px 16px;
+  }
+}
+
 @media (max-width: 640px) {
   .topbar {
     flex-wrap: wrap;

@@ -1,0 +1,29 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 360" role="img" aria-labelledby="title desc">
+  <title id="title">搵返申請編號</title>
+  <desc id="desc">輸入 Site Code 及 Recovery Code 找回申請編號</desc>
+  <rect width="640" height="360" rx="16" fill="#f4f7fa"/>
+  <rect x="52" y="24" width="536" height="312" rx="12" fill="#fff" stroke="#d9dee3"/>
+  <text x="82" y="62" fill="#0a3d69" font-family="Arial, sans-serif" font-size="19" font-weight="700">搵返申請編號</text>
+  <text x="82" y="98" fill="#1d2733" font-family="Arial, sans-serif" font-size="13" font-weight="700">Site Code</text>
+  <rect x="82" y="106" width="180" height="30" rx="6" fill="#fff" stroke="#d9dee3" stroke-width="2"/>
+  <text x="96" y="126" fill="#1d2733" font-family="Arial, sans-serif" font-size="14">HA02</text>
+  <text x="278" y="98" fill="#1d2733" font-family="Arial, sans-serif" font-size="13" font-weight="700">Recovery Code</text>
+  <rect x="278" y="106" width="180" height="30" rx="6" fill="#fff" stroke="#d9dee3" stroke-width="2"/>
+  <circle cx="300" cy="121" r="3.5" fill="#66727f"/>
+  <circle cx="316" cy="121" r="3.5" fill="#66727f"/>
+  <circle cx="332" cy="121" r="3.5" fill="#66727f"/>
+  <circle cx="348" cy="121" r="3.5" fill="#66727f"/>
+  <text x="82" y="164" fill="#1d2733" font-family="Arial, sans-serif" font-size="13" font-weight="700">SKU（可選）</text>
+  <rect x="82" y="172" width="376" height="30" rx="6" fill="#fff" stroke="#d9dee3" stroke-width="2"/>
+  <text x="96" y="192" fill="#66727f" font-family="Arial, sans-serif" font-size="13">7 位或 12 位數字，可留空</text>
+  <text x="82" y="230" fill="#1d2733" font-family="Arial, sans-serif" font-size="13" font-weight="700">由 (日期)</text>
+  <rect x="82" y="238" width="180" height="30" rx="6" fill="#fff" stroke="#d9dee3" stroke-width="2"/>
+  <text x="96" y="258" fill="#66727f" font-family="Arial, sans-serif" font-size="13">2026-08-11</text>
+  <text x="278" y="230" fill="#1d2733" font-family="Arial, sans-serif" font-size="13" font-weight="700">至 (日期)</text>
+  <rect x="278" y="238" width="180" height="30" rx="6" fill="#fff" stroke="#d9dee3" stroke-width="2"/>
+  <text x="292" y="258" fill="#66727f" font-family="Arial, sans-serif" font-size="13">2026-08-11</text>
+  <rect x="466" y="238" width="100" height="30" rx="6" fill="#0f5c9c"/>
+  <text x="478" y="258" fill="#fff" font-family="Arial, sans-serif" font-size="14" font-weight="700">搵返申請編號</text>
+  <text x="82" y="298" fill="#0a5c36" font-family="Arial, sans-serif" font-size="13" font-weight="700">✓ 搵到 3 筆申報，撳「申請編號」即可前往查詢／修改。</text>
+  <text x="82" y="320" fill="#0f5c9c" font-family="Arial, sans-serif" font-size="13" font-weight="700" text-decoration="underline">NDRF-A1B2C3D4-E5F6G7H8</text>
+</svg>

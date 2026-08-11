@@ -378,6 +378,8 @@ describe('public API', () => {
     expect(found.body.rows.some((r) => r.application_no === no)).toBe(true);
     expect(found.body.rows[0].submission_type).toBe('normal');
     expect(found.body.rows[0].sku).toBe('1000888');
+    expect(found.body.rows[0].rp_type).toBe('ND');
+    expect(found.body.rows[0].qty).toBeNull();
 
     const other = await request(app)
       .get(`/api/public/my-applications?site_code=HA02&from=${date}&to=${date}`)
@@ -465,10 +467,16 @@ describe('public API', () => {
     expect(page.status).toBe(200);
     expect(page.text).toContain('跟著圖示，一步一步完成申報');
     expect(page.text).toContain('/images/help/normal-site.svg');
+    expect(page.text).toContain('/images/help/recover.svg');
+    expect(page.text).toContain('Recovery Code 每組 OM 一個，請向管理員索取');
 
     const image = await request(app).get('/images/help/normal-site.svg');
     expect(image.status).toBe(200);
     expect(image.headers['content-type']).toContain('image/svg+xml');
+
+    const recover = await request(app).get('/images/help/recover.svg');
+    expect(recover.status).toBe(200);
+    expect(recover.headers['content-type']).toContain('image/svg+xml');
   });
 });
 
@@ -1292,6 +1300,15 @@ describe('urgent public API', () => {
     expect(res.body.submission.requested_by_email).toBe('ha02@sasa.com');
     expect(res.body.submission.application_date).toBeTruthy();
     expect(res.body.versions).toHaveLength(1);
+
+    const date = String(created.body.submission.application_date).slice(0, 10);
+    const recovered = await request(app)
+      .get(`/api/public/my-applications?site_code=HA02&from=${date}&to=${date}`)
+      .set('x-recovery-code', IVY_RECOVERY_CODE);
+    expect(recovered.status).toBe(200);
+    const urgentRow = recovered.body.rows.find((r) => r.application_no === no);
+    expect(urgentRow.qty).toBe(4);
+    expect(urgentRow.rp_type).toBeNull();
   });
 
   it('does not reveal urgent submissions to the public lookup without the matching site code', async () => {

@@ -1892,7 +1892,8 @@ publicRouter.get(
 
     const params: unknown[] = [siteCode, from, to];
     let sql = `
-      SELECT application_no, submission_type, site_code, application_date, submitted_at, source, sku, locked_at, exported_at
+      SELECT application_no, submission_type, site_code, application_date, submitted_at, source, sku,
+             qty, return_qty, rp_type, locked_at, exported_at
       FROM submissions
       WHERE site_code = $1 AND application_date >= $2 AND application_date <= $3`;
     if (skuFilter) {
@@ -1909,6 +1910,9 @@ publicRouter.get(
       submitted_at: string;
       source: string;
       sku: string;
+      qty: number | null;
+      return_qty: number | null;
+      rp_type: string | null;
       locked_at: string | null;
       exported_at: string | null;
     }>(sql, params);
@@ -1929,6 +1933,9 @@ publicRouter.get(
         application_date: row.application_date,
         source: row.source,
         sku: row.sku,
+        qty: row.qty,
+        return_qty: row.return_qty,
+        rp_type: row.rp_type,
         locked: Boolean(row.locked_at || row.exported_at),
       })),
     });

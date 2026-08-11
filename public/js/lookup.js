@@ -90,11 +90,17 @@
         $('recover_result').innerHTML = '<div class="alert warning">搵唔到相關申報，請檢查 Site Code、日期範圍或 SKU。</div>';
       } else {
         let html = `<div class="alert success">搵到 ${rows.length} 筆申報，撳「申請編號」即可前往查詢／修改。</div>`;
-        html += '<div class="table-scroll"><table><thead><tr><th>申請編號</th><th>類型</th><th>SKU</th><th>申請日期</th><th>提交時間</th><th>狀態</th></tr></thead><tbody>';
+        html += '<div class="table-scroll"><table><thead><tr><th>申請編號</th><th>類型</th><th>SKU</th><th>QTY</th><th>RP Type</th><th>提交時間</th><th>狀態</th></tr></thead><tbody>';
         rows.forEach((r) => {
           const typeLabel = TYPE_LABEL[r.submission_type] || r.submission_type;
           const status = r.locked ? '已鎖定' : '可修改';
-          html += `<tr><td><a href="#" class="recover-link" data-no="${escapeHtml(r.application_no)}">${escapeHtml(r.application_no)}</a></td><td>${escapeHtml(typeLabel)}</td><td>${escapeHtml(r.sku)}</td><td>${escapeHtml(r.application_date)}</td><td>${escapeHtml(r.submitted_at)}</td><td>${escapeHtml(status)}</td></tr>`;
+          const qty = r.submission_type === 'urgent'
+            ? (r.qty ?? '')
+            : r.submission_type === 'return'
+              ? (r.return_qty ?? '')
+              : '';
+          const rpType = r.submission_type === 'normal' ? (r.rp_type || '') : '';
+          html += `<tr><td><a href="#" class="recover-link" data-no="${escapeHtml(r.application_no)}">${escapeHtml(r.application_no)}</a></td><td>${escapeHtml(typeLabel)}</td><td>${escapeHtml(r.sku)}</td><td>${escapeHtml(qty || '—')}</td><td>${escapeHtml(rpType || '—')}</td><td>${escapeHtml(r.submitted_at)}</td><td>${escapeHtml(status)}</td></tr>`;
         });
         html += '</tbody></table></div>';
         $('recover_result').innerHTML = html;

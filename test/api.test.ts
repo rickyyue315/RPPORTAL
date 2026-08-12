@@ -91,6 +91,9 @@ beforeAll(async () => {
   // Freeze the clock at 09:00 HK so tests are independent of the real wall-clock
   // (the Urgent Order window closes at 14:30 HK). Window tests override this spy.
   timeSpy = vi.spyOn(time, 'hkMinutesNow').mockReturnValue(9 * 60);
+  // Freeze the calendar date inside the August return application window
+  // (2026-08-03..2026-08-11) so return-window tests stay deterministic.
+  vi.spyOn(time, 'hkTodayForDateColumn').mockReturnValue('2026-08-05');
 });
 
 describe('public API', () => {
@@ -1502,15 +1505,18 @@ describe('urgent public API', () => {
     ws.addRow([...URGENT_COLUMNS]);
     ws.addRow(['HA02', '1006116', 2, '1', '']);
     ws.addRow(['HA06', '1006117', 999, '9', 'roadshow 加單']);
+    // Serialize once and reuse the buffer: re-encoding embeds fresh zip entry
+    // timestamps, so the content hash would differ and the retry would 409.
+    const buffer = Buffer.from(await wb.xlsx.writeBuffer());
     const imported = await request(app)
       .post('/api/public/urgent/import')
       .set('Idempotency-Key', key)
-      .attach('file', Buffer.from(await wb.xlsx.writeBuffer()), 'urgent-record.xlsx');
+      .attach('file', buffer, 'urgent-record.xlsx');
     expect(imported.status).toBe(201);
     const retry = await request(app)
       .post('/api/public/urgent/import')
       .set('Idempotency-Key', key)
-      .attach('file', Buffer.from(await wb.xlsx.writeBuffer()), 'urgent-record.xlsx');
+      .attach('file', buffer, 'urgent-record.xlsx');
     expect(retry.status).toBe(200);
     expect(retry.body.batchId).toBe(imported.body.batchId);
 
@@ -1883,15 +1889,16 @@ describe('sales public API', () => {
     const ws = wb.addWorksheet(SALES_SHEET);
     ws.addRow([...SALES_COLUMNS]);
     ws.addRow(['HA02', '1007015']);
+    const buffer = Buffer.from(await wb.xlsx.writeBuffer());
     const imported = await request(app)
       .post('/api/public/sales/import')
       .set('Idempotency-Key', key)
-      .attach('file', Buffer.from(await wb.xlsx.writeBuffer()), 'sales-record.xlsx');
+      .attach('file', buffer, 'sales-record.xlsx');
     expect(imported.status).toBe(201);
     const retry = await request(app)
       .post('/api/public/sales/import')
       .set('Idempotency-Key', key)
-      .attach('file', Buffer.from(await wb.xlsx.writeBuffer()), 'sales-record.xlsx');
+      .attach('file', buffer, 'sales-record.xlsx');
     expect(retry.status).toBe(200);
     expect(retry.body.batchId).toBe(imported.body.batchId);
 

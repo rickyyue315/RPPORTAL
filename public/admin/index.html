@@ -364,7 +364,11 @@
         <div class="card mt-3">
           <div class="card-header"><h3 class="card-title">指定店路由設定</h3></div>
           <div class="card-body">
-            <p class="text-secondary small">指定店的 RF（包括改 Safety）會送 SCT 審批，並要求 Remark 必填。路由在申請建立時 snapshot，改動只影響新申請。</p>
+            <p class="text-secondary small">指定店的 RF（包括改 Safety）會送 SCT 審批，並要求 Remark 必填。路由在申請建立時 snapshot，改動只影響新申請。可在此直接<b>新增或移除</b>指定店。</p>
+            <div class="d-flex gap-2 mb-3 flex-wrap">
+              <div style="min-width:180px"><label class="form-label">新增指定店 Site Code</label><input type="text" id="route_site_new" class="form-control" placeholder="例如 HC99"></div>
+              <div class="align-self-end"><button class="btn btn-primary" id="btn_route_add">新增指定店</button></div>
+            </div>
             <div id="store_routes_result"></div>
             <div class="table-responsive">
               <table class="table table-vcenter"><thead><tr><th>Site Code</th><th>店舖</th><th>SCT 審批</th><th>Remark 必填</th><th>更新時間</th><th>操作</th></tr></thead><tbody id="store_routes_body"><tr><td colspan="6" class="text-center text-secondary">載入中…</td></tr></tbody></table>

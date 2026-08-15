@@ -1902,6 +1902,37 @@ adminRouter.put(
   }),
 );
 
+/** DELETE /api/admin/store-routes/:siteCode — remove a designated store (new submissions revert to normal routing). */
+adminRouter.delete(
+  '/store-routes/:siteCode',
+  requireAdmin,
+  adminActionLimiter,
+  asyncHandler(async (req: Request, res: Response) => {
+    const siteCode = normalizeSiteCode(req.params.siteCode as string);
+    if (!siteCode) {
+      res.status(400).json({ error: 'Site Code 無效' });
+      return;
+    }
+    const before = await getStoreRouteConfig(siteCode);
+    const deleted = await query(
+      'DELETE FROM ndrf_store_routes WHERE site_code = $1 RETURNING site_code',
+      [siteCode],
+    );
+    if (deleted.rows.length === 0) {
+      res.status(404).json({ error: `「${siteCode}」不是指定店` });
+      return;
+    }
+    await writeAuditEvent({
+      eventType: 'store_routes_updated',
+      actorRole: 'admin',
+      actor: req.adminUsername,
+      ip: getClientIp(req),
+      metadata: { site_code: siteCode, action: 'delete', before },
+    });
+    res.json({ ok: true });
+  }),
+);
+
 const rejectionReasonSchema = z.object({
   code: z.string().trim().min(1).max(100),
   label: z.string().trim().min(1).max(300),

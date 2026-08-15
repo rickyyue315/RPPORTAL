@@ -1126,10 +1126,13 @@
         <td><input type="checkbox" data-route-site="${escapeHtml(r.site_code)}" data-route-field="sct" ${r.sct_review_required ? 'checked' : ''}></td>
         <td><input type="checkbox" data-route-site="${escapeHtml(r.site_code)}" data-route-field="remark" ${r.remark_required ? 'checked' : ''}></td>
         <td>${escapeHtml(r.updated_at)}</td>
-        <td><button class="btn ghost btn-route-save" data-site="${escapeHtml(r.site_code)}">儲存</button></td>
+        <td><button class="btn ghost btn-route-save" data-site="${escapeHtml(r.site_code)}">儲存</button> <button class="btn ghost btn-route-del" data-site="${escapeHtml(r.site_code)}">移除</button></td>
       </tr>`).join('');
       tbody.querySelectorAll('.btn-route-save').forEach((btn) => {
         btn.addEventListener('click', () => saveStoreRoute(btn.dataset.site));
+      });
+      tbody.querySelectorAll('.btn-route-del').forEach((btn) => {
+        btn.addEventListener('click', () => removeStoreRoute(btn.dataset.site));
       });
     } catch (err) {
       if ($('store_routes_body')) $('store_routes_body').innerHTML = `<tr><td colspan="6" class="text-center text-secondary">載入失敗：${escapeHtml(err.message)}</td></tr>`;
@@ -1142,6 +1145,40 @@
     adminFetch('/api/admin/store-routes', { method: 'PUT', body: JSON.stringify({ site_code: site, sct_review_required: sct, remark_required: remark }) })
       .then(() => {
         showAlert($('store_routes_result'), 'success', `「${site}」路由設定已更新。`);
+        loadStoreRoutes();
+      })
+      .catch((err) => showAlert($('store_routes_result'), 'error', escapeHtml(err.message)));
+  }
+
+  $('btn_route_add').addEventListener('click', async () => {
+    const site = $('route_site_new').value.trim().toUpperCase();
+    if (!site) {
+      showAlert($('store_routes_result'), 'error', '請輸入 Site Code');
+      return;
+    }
+    const btn = $('btn_route_add');
+    btn.disabled = true;
+    try {
+      await adminFetch('/api/admin/store-routes', {
+        method: 'PUT',
+        body: JSON.stringify({ site_code: site, sct_review_required: true, remark_required: true }),
+      });
+      showAlert($('store_routes_result'), 'success', `「${site}」已加入指定店（SCT 審批 + Remark 必填），只影響新申請。`);
+      $('route_site_new').value = '';
+      loadStoreRoutes();
+    } catch (err) {
+      showAlert($('store_routes_result'), 'error', escapeHtml(err.message));
+    } finally {
+      btn.disabled = false;
+    }
+  });
+
+  function removeStoreRoute(site) {
+    const ok = window.confirm(`確認將「${site}」移出指定店？已建立的申請不受影響，此店之後的新 RF 申請改為普通路由（不需 SCT 審批）。`);
+    if (!ok) return;
+    adminFetch(`/api/admin/store-routes/${encodeURIComponent(site)}`, { method: 'DELETE' })
+      .then(() => {
+        showAlert($('store_routes_result'), 'success', `「${site}」已移出指定店。`);
         loadStoreRoutes();
       })
       .catch((err) => showAlert($('store_routes_result'), 'error', escapeHtml(err.message)));

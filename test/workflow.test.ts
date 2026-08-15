@@ -423,6 +423,51 @@ describe('general NDRF review workflow', () => {
     expect(res.status).toBe(409);
   });
 
+  it('admin can add a designated store and remove it again (only new submissions affected)', async () => {
+    const admin = request.agent(app) as Agent;
+    await adminLogin(admin);
+
+    // Add HA06 as a designated store: RF requires remark and goes to SCT.
+    const added = await admin
+      .put('/api/admin/store-routes')
+      .set('x-csrf-token', admin._csrf ?? '')
+      .send({ site_code: 'HA06', sct_review_required: true, remark_required: true });
+    expect(added.status).toBe(200);
+
+    const store = await storeAgent('HA06');
+    const noRemark = await submitNormal(store, { sku: '1002098', rp_type: 'RF', safety_stock: '5' });
+    expect(noRemark.status).toBe(400);
+    expect(noRemark.body.field).toBe('remark');
+    const designated = await submitNormal(store, { sku: '1002098', rp_type: 'RF', safety_stock: '5', remark: '指定店測試' });
+    expect(designated.status).toBe(201);
+    expect(designated.body.submission.route).toBe('sct');
+    expect(designated.body.submission.workflow_status).toBe('pending');
+
+    // Remove HA06 from the designated list; the existing submission keeps its route.
+    const removed = await admin
+      .delete('/api/admin/store-routes/HA06')
+      .set('x-csrf-token', admin._csrf ?? '');
+    expect(removed.status).toBe(200);
+
+    const stillSct = await db.query<{ ndrf_route: string }>(
+      'SELECT ndrf_route FROM submissions WHERE application_no = $1',
+      [designated.body.submission.application_no],
+    );
+    expect(stillSct.rows[0]!.ndrf_route).toBe('sct');
+
+    // A new submission after removal uses the normal RP route without remark.
+    const normal = await submitNormal(store, { sku: '1002097', rp_type: 'RF', safety_stock: '5' });
+    expect(normal.status).toBe(201);
+    expect(normal.body.submission.route).toBe('rp');
+    expect(normal.body.submission.workflow_status).toBe('ready_for_rp');
+
+    // Removing a non-designated site reports 404.
+    const missing = await admin
+      .delete('/api/admin/store-routes/HA06')
+      .set('x-csrf-token', admin._csrf ?? '');
+    expect(missing.status).toBe(404);
+  });
+
   it('SKU Master replacement fails closed when a pending ND would lose its Buyer', async () => {
     const admin = request.agent(app) as Agent;
     await adminLogin(admin);

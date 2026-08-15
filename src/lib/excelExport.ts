@@ -687,3 +687,79 @@ export async function buildAuditExportBuffer(
   const buffer = await workbook.xlsx.writeBuffer();
   return Buffer.from(buffer);
 }
+
+/**
+ * Buyer pending-review reminder workbook: one summary sheet (per Buyer: pending
+ * submission count + distinct pending SKU count + SKU list) and one detail
+ * sheet (one row per pending ND submission) plus an unassigned sheet.
+ */
+export async function buildReviewPendingBuffer(data: {
+  buyers: Array<{ buyer_username: string; buyer_display_name: string; buyer_active: boolean; pending_submissions: number; pending_skus: number; skus: string[] }>;
+  items: Array<{
+    application_no: string;
+    site_code: string;
+    shop_snapshot: string | null;
+    sku: string;
+    rp_type: string | null;
+    safety_stock: string | null;
+    nd_code: string | null;
+    remark: string | null;
+    submitted_at: string;
+    review_round: number;
+    buyer_username: string | null;
+    buyer_display_name: string | null;
+  }>;
+  unassigned: Array<{
+    application_no: string;
+    site_code: string;
+    shop_snapshot: string | null;
+    sku: string;
+    submitted_at: string;
+  }>;
+}): Promise<Buffer> {
+  const workbook = new ExcelJS.Workbook();
+
+  const summarySheet = workbook.addWorksheet('Buyer 待審摘要');
+  summarySheet.addRow(['Buyer', '顯示名稱', '狀態', '待審筆數', '待審 SKU 數', '待審 SKU 列表']);
+  for (const buyer of data.buyers) {
+    summarySheet.addRow([
+      buyer.buyer_username,
+      buyer.buyer_display_name,
+      buyer.buyer_active ? '啟用' : '停用',
+      buyer.pending_submissions,
+      buyer.pending_skus,
+      buyer.skus.join(', '),
+    ]);
+  }
+  summarySheet.addRow([]);
+  summarySheet.addRow(['合計', '', '', data.items.length, new Set(data.items.map((item) => item.sku)).size, '']);
+
+  const detailSheet = workbook.addWorksheet('待審明細');
+  detailSheet.addRow(['Buyer', 'Buyer 名稱', 'Site Code', '申請編號', 'SKU', 'RP Type', 'Safety stock', 'ND Code', 'Remark', '提交時間 (HK)', '審批回合']);
+  for (const item of data.items) {
+    detailSheet.addRow([
+      item.buyer_username ?? '—',
+      item.buyer_display_name ?? '',
+      item.site_code,
+      item.application_no,
+      item.sku,
+      item.rp_type ?? '',
+      item.safety_stock ?? '',
+      item.nd_code ?? '',
+      item.remark ?? '',
+      toHKDateString(item.submitted_at),
+      item.review_round,
+    ]);
+  }
+
+  if (data.unassigned.length > 0) {
+    const orphanSheet = workbook.addWorksheet('未分配（無 Buyer）');
+    orphanSheet.addRow(['Site Code', '申請編號', 'SKU', '提交時間 (HK)']);
+    for (const item of data.unassigned) {
+      orphanSheet.addRow([item.site_code, item.application_no, item.sku, toHKDateString(item.submitted_at)]);
+    }
+  }
+
+  const buffer = await workbook.xlsx.writeBuffer();
+  return Buffer.from(buffer);
+}

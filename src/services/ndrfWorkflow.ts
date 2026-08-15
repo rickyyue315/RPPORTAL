@@ -895,3 +895,97 @@ async function appendVersion(
   );
   void newRow;
 }
+
+export interface PendingReviewItem {
+  application_no: string;
+  site_code: string;
+  shop_snapshot: string | null;
+  sku: string;
+  rp_type: string | null;
+  safety_stock: string | null;
+  nd_code: string | null;
+  remark: string | null;
+  submitted_at: string;
+  review_round: number;
+  current_review_remark: string | null;
+  buyer_user_id: string | null;
+  buyer_username: string | null;
+  buyer_display_name: string | null;
+  buyer_active: boolean | null;
+}
+
+export interface PendingReviewBuyerSummary {
+  buyer_user_id: string;
+  buyer_username: string;
+  buyer_display_name: string;
+  buyer_active: boolean;
+  pending_submissions: number;
+  pending_skus: number;
+  skus: string[];
+}
+
+export interface PendingReviewSummary {
+  buyers: PendingReviewBuyerSummary[];
+  items: PendingReviewItem[];
+  unassigned: PendingReviewItem[];
+  total_pending_submissions: number;
+  total_pending_skus: number;
+}
+
+/**
+ * Admin reminder data: every pending ND submission and the Buyer who currently
+ * owns the SKU (via the live SKU Master). Unassigned pending items (no Buyer or
+ * deactivated Buyer) are reported separately so Admin can chase the config.
+ */
+export async function listPendingReviewSummary(): Promise<PendingReviewSummary> {
+  const result = await query<PendingReviewItem>(
+    `SELECT s.application_no, s.site_code, s.shop_snapshot, s.sku, s.rp_type,
+            s.safety_stock, s.nd_code, s.remark, s.submitted_at,
+            s.review_round, s.current_review_remark,
+            m.buyer_user_id, u.username AS buyer_username,
+            u.display_name AS buyer_display_name, u.active AS buyer_active
+       FROM submissions s
+       LEFT JOIN sku_master m ON m.sku = s.sku
+       LEFT JOIN portal_users u ON u.id = m.buyer_user_id
+      WHERE s.submission_type = 'normal'
+        AND s.ndrf_route = 'buyer'
+        AND s.workflow_status = 'pending'
+      ORDER BY u.username NULLS LAST, s.sku ASC, s.submitted_at ASC`,
+  );
+  const items = result.rows;
+  const unassigned = items.filter((row) => !row.buyer_user_id || row.buyer_active === false);
+
+  const byBuyer = new Map<string, PendingReviewBuyerSummary>();
+  const skuByBuyer = new Map<string, Set<string>>();
+  for (const row of items) {
+    if (!row.buyer_user_id || row.buyer_active === false) continue;
+    let summary = byBuyer.get(row.buyer_user_id);
+    if (!summary) {
+      summary = {
+        buyer_user_id: row.buyer_user_id,
+        buyer_username: row.buyer_username ?? '',
+        buyer_display_name: row.buyer_display_name ?? '',
+        buyer_active: row.buyer_active ?? false,
+        pending_submissions: 0,
+        pending_skus: 0,
+        skus: [],
+      };
+      byBuyer.set(row.buyer_user_id, summary);
+      skuByBuyer.set(row.buyer_user_id, new Set());
+    }
+    summary.pending_submissions++;
+    skuByBuyer.get(row.buyer_user_id)!.add(row.sku);
+  }
+  for (const summary of byBuyer.values()) {
+    summary.skus = [...skuByBuyer.get(summary.buyer_user_id)!].sort();
+    summary.pending_skus = summary.skus.length;
+  }
+  const buyers = [...byBuyer.values()].sort((a, b) => a.buyer_username.localeCompare(b.buyer_username));
+  return {
+    buyers,
+    items,
+    unassigned,
+    total_pending_submissions: items.length,
+    total_pending_skus: new Set(items.map((row) => row.sku)).size,
+  };
+}

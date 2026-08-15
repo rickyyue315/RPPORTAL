@@ -361,6 +361,21 @@
           </div>
         </div>
 
+
+        <div class="card mt-3">
+          <div class="card-header"><h3 class="card-title">Buyer 待審批提醒</h3></div>
+          <div class="card-body">
+            <p class="text-secondary small">列出目前有待審 ND 的 Buyer、未審批筆數及未審 SKU 列表，方便提醒跟進。</p>
+            <div class="d-flex gap-2 mb-3">
+              <button class="btn btn-primary" id="btn_review_pending_export">下載提醒 Excel</button>
+              <button class="btn" id="btn_review_pending_refresh">重新整理</button>
+            </div>
+            <div id="review_pending_result"></div>
+            <div class="table-responsive">
+              <table class="table table-vcenter"><thead><tr><th>Buyer</th><th>顯示名稱</th><th>狀態</th><th>待審筆數</th><th>待審 SKU 數</th><th>SKU 列表</th></tr></thead><tbody id="review_pending_body"><tr><td colspan="6" class="text-center text-secondary">載入中…</td></tr></tbody></table>
+            </div>
+          </div>
+        </div>
         <div class="card mt-3">
           <div class="card-header"><h3 class="card-title">指定店路由設定</h3></div>
           <div class="card-body">

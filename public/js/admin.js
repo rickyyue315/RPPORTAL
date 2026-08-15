@@ -1234,6 +1234,63 @@
     }
   });
 
+  /* Buyer pending review reminder ----------------------------------------- */
+
+  async function loadReviewPending() {
+    try {
+      const data = await adminFetch('/api/admin/review-pending');
+      const tbody = $('review_pending_body');
+      if (!tbody) return;
+      if (!data.buyers.length && !data.unassigned.length) {
+        tbody.innerHTML = '<tr><td colspan="6" class="text-center text-secondary">目前沒有待審批的 ND 申請。</td></tr>';
+        return;
+      }
+      tbody.innerHTML = data.buyers.map((b) => `<tr>
+        <td>${escapeHtml(b.buyer_username)}</td>
+        <td>${escapeHtml(b.buyer_display_name || '—')}</td>
+        <td>${b.buyer_active ? '<span class="status-badge received">啟用</span>' : '<span class="status-badge locked">停用</span>'}</td>
+        <td>${b.pending_submissions}</td>
+        <td>${b.pending_skus}</td>
+        <td class="text-secondary" style="font-size:12px;word-break:break-all" title="${escapeHtml(b.skus.join(', '))}">${escapeHtml(b.skus.join(', '))}</td>
+      </tr>`).join('')
+        + (data.unassigned.length
+          ? `<tr><td colspan="6" class="text-danger">⚠ 有 ${data.unassigned.length} 筆待審申請未分配 Buyer 或所屬 Buyer 已停用（請檢查 SKU Master 或帳戶狀態）</td></tr>`
+          : '')
+        + `<tr><td colspan="6" class="text-secondary small">合計：${data.total_pending_submissions} 筆申請／${data.total_pending_skus} 個 SKU</td></tr>`;
+    } catch (err) {
+      if ($('review_pending_body')) $('review_pending_body').innerHTML = `<tr><td colspan="6" class="text-center text-secondary">載入失敗：${escapeHtml(err.message)}</td></tr>`;
+    }
+  }
+
+  async function downloadReviewPending() {
+    try {
+      const token = await getCsrf();
+      const response = await fetch('/api/admin/review-pending/export', {
+        headers: { 'x-csrf-token': token },
+      });
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ error: '下載失敗' }));
+        throw new Error(errorData.error || '下載失敗');
+      }
+      const blob = await response.blob();
+      const disposition = response.headers.get('Content-Disposition') || '';
+      const match = disposition.match(/filename="([^"]+)"/);
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement('a');
+      anchor.href = url;
+      anchor.download = match ? match[1] : 'Buyer_Pending_Review.xlsx';
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      URL.revokeObjectURL(url);
+      showAlert($('review_pending_result'), 'success', '提醒 Excel 已下載。');
+    } catch (err) {
+      showAlert($('review_pending_result'), 'error', escapeHtml(err.message));
+    }
+  }
+
+  $('btn_review_pending_export').addEventListener('click', downloadReviewPending);
+  $('btn_review_pending_refresh').addEventListener('click', loadReviewPending);
   $('btn_logout').addEventListener('click', async (e) => {
     e.preventDefault();
     try {
@@ -1258,6 +1315,7 @@
     loadSkuMaster();
     loadStoreRoutes();
     loadRejectionReasons();
+    loadReviewPending();
   });
   setInterval(() => {
     if (document.visibilityState === 'visible') {

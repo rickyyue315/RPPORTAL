@@ -568,3 +568,39 @@ describe('legacy cutover', () => {
     expect(legacy.rows[0]).toMatchObject({ ndrf_route: 'legacy', workflow_status: 'legacy', active_workflow: false });
   });
 });
+
+  it('admin review-pending report lists pending ND by Buyer and exports a reminder workbook', async () => {
+    const buyer1Res = await db.query<{ id: string }>('SELECT id FROM portal_users WHERE username = $1', ['BUYER1']);
+    await db.query(
+      `INSERT INTO sku_master (sku, buyer_user_id, updated_by) VALUES ('1002088', $1, 'test')
+       ON CONFLICT (sku) DO UPDATE SET buyer_user_id = EXCLUDED.buyer_user_id, updated_by = 'test', updated_at = now()`,
+      [buyer1Res.rows[0]!.id],
+    );
+    const appNo = `NDRF-RP-${Date.now()}`;
+    await db.query(
+      `INSERT INTO submissions (
+         application_no, source, submission_type, site_code, requested_by_email, application_date,
+         brand, sku, rp_type, nd_code, status, ndrf_route, workflow_status, active_workflow, review_round
+       ) VALUES ($1, 'web', 'normal', 'HA02', 'ha02@sasa.com', '2026-08-05', '', '1002088', 'ND', 'ND20-SO-Not displayed in small stores',
+         'received', 'buyer', 'pending', true, 1)`,
+      [appNo],
+    );
+
+    const agent = request.agent(app) as Agent;
+    await adminLogin(agent);
+
+    const summary = await agent.get('/api/admin/review-pending');
+    expect(summary.status).toBe(200);
+    expect(summary.body.total_pending_submissions).toBeGreaterThanOrEqual(1);
+    const buyer = summary.body.buyers.find((b: { buyer_username: string }) => b.buyer_username === 'BUYER1');
+    expect(buyer).toBeDefined();
+    expect(buyer.pending_skus).toBeGreaterThanOrEqual(1);
+    expect(buyer.skus).toContain('1002088');
+    expect(summary.body.items.some((i: { application_no: string }) => i.application_no === appNo)).toBe(true);
+
+    const workbook = await agent.get('/api/admin/review-pending/export');
+    expect(workbook.status).toBe(200);
+    expect(workbook.headers['content-type']).toContain('spreadsheetml');
+    expect(Number(workbook.headers['content-length'])).toBeGreaterThan(1000);
+    expect(workbook.headers['content-disposition']).toContain('Buyer_Pending_Review');
+  });

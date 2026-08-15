@@ -24,6 +24,7 @@ import {
   adminEditWorkflowSubmission,
   adminWorkflowOverride,
   getReviewEvents,
+  listPendingReviewSummary,
   getStoreRouteConfig,
   listRejectionReasons,
   WorkflowConfigurationError,
@@ -58,6 +59,7 @@ import {
   buildUrgentExportBuffer,
   buildSalesExportBuffer,
   buildReturnExportBuffer,
+  buildReviewPendingBuffer,
 } from '../lib/excelExport.js';
 import {
   parseImportWorkbook,
@@ -1933,6 +1935,43 @@ adminRouter.delete(
   }),
 );
 
+
+/** GET /api/admin/review-pending — Buyer pending ND review reminder (counts + SKU list). */
+adminRouter.get(
+  '/review-pending',
+  requireAdmin,
+  adminActionLimiter,
+  asyncHandler(async (_req: Request, res: Response) => {
+    const data = await listPendingReviewSummary();
+    res.json({
+      ...data,
+      buyers: data.buyers.map((buyer) => ({ ...buyer })),
+      items: data.items.map((item) => ({
+        ...item,
+        submitted_at: toHKString(item.submitted_at),
+      })),
+      unassigned: data.unassigned.map((item) => ({
+        ...item,
+        submitted_at: toHKString(item.submitted_at),
+      })),
+    });
+  }),
+);
+
+/** GET /api/admin/review-pending/export — downloadable Buyer reminder workbook. */
+adminRouter.get(
+  '/review-pending/export',
+  requireAdmin,
+  excelExportLimiter,
+  asyncHandler(async (_req: Request, res: Response) => {
+    const data = await listPendingReviewSummary();
+    const buffer = await buildReviewPendingBuffer(data);
+    const stamp = toHKString(new Date()).replace(/[^0-9]/g, '');
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition', `attachment; filename="Buyer_Pending_Review_${stamp}.xlsx"`);
+    res.send(buffer);
+  }),
+);
 const rejectionReasonSchema = z.object({
   code: z.string().trim().min(1).max(100),
   label: z.string().trim().min(1).max(300),

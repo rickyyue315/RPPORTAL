@@ -25,6 +25,7 @@ import {
   adminWorkflowOverride,
   getReviewEvents,
   listPendingReviewSummary,
+  runBuyerAutoApproveJob,
   getStoreRouteConfig,
   listRejectionReasons,
   WorkflowConfigurationError,
@@ -218,6 +219,9 @@ function serializeAdminSubmission(row: SubmissionRow & { store_shop?: string | n
           : null,
         review_round: (row as SubmissionRow & { review_round?: number }).review_round ?? 0,
         review_remark: (row as SubmissionRow & { current_review_remark?: string | null }).current_review_remark ?? null,
+        auto_approved_at: (row as SubmissionRow & { auto_approved_at?: string | null }).auto_approved_at
+          ? toHKString((row as SubmissionRow & { auto_approved_at?: string | null }).auto_approved_at!)
+          : null,
       }
     : null;
   return {
@@ -270,6 +274,7 @@ adminRouter.get(
       exported,
       modified,
       workflow_status,
+      auto_approved,
       sku,
       rp_type,
       nd_code,
@@ -316,6 +321,11 @@ const where: string[] = [];
     if (workflow_status === 'pending' || workflow_status === 'ready_for_rp' || workflow_status === 'accepted' || workflow_status === 'rejected' || workflow_status === 'legacy') {
       where.push(`s.workflow_status = $${idx++}`);
       params.push(workflow_status);
+    }
+    if (auto_approved === 'yes') {
+      where.push(`s.auto_approved_at IS NOT NULL`);
+    } else if (auto_approved === 'no') {
+      where.push(`s.auto_approved_at IS NULL`);
     }
     if (modified === 'yes') {
       where.push(`EXISTS (SELECT 1 FROM submission_versions v WHERE v.submission_id = s.id AND v.version > 1)`);
@@ -1970,6 +1980,24 @@ adminRouter.get(
     res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
     res.setHeader('Content-Disposition', `attachment; filename="Buyer_Pending_Review_${stamp}.xlsx"`);
     res.send(buffer);
+  }),
+);
+
+/** POST /api/admin/review-pending/auto-approve — run the Buyer SLA auto-approval now. */
+adminRouter.post(
+  '/review-pending/auto-approve',
+  requireAdmin,
+  adminActionLimiter,
+  asyncHandler(async (req: Request, res: Response) => {
+    const result = await runBuyerAutoApproveJob();
+    await writeAuditEvent({
+      eventType: 'buyer_auto_approved',
+      actorRole: 'admin',
+      actor: req.adminUsername,
+      ip: getClientIp(req),
+      metadata: { triggered: 'manual', ...result },
+    });
+    res.json({ ok: true, ...result });
   }),
 );
 const rejectionReasonSchema = z.object({

@@ -989,3 +989,64 @@ export async function listPendingReviewSummary(): Promise<PendingReviewSummary> 
     total_pending_skus: new Set(items.map((row) => row.sku)).size,
   };
 }
+export const AUTO_APPROVE_REMARK = 'Buyer 未有回復，默認同意';
+
+export interface BuyerAutoApproveResult {
+  approved: number;
+  skipped: number;
+}
+
+/**
+ * Company SLA rule: pending ND submissions whose Buyer has not replied within
+ * `ndrfAutoApproveDays` are auto-approved (default agreement). Each approval
+ * writes an immutable `auto_accept` review event (actor_role = system) with the
+ * remark "Buyer 未有回復，默認同意" and marks `auto_approved_at` so Admin can
+ * follow up. Rows that already have a decision for the round are never touched.
+ */
+export async function runBuyerAutoApproveJob(): Promise<BuyerAutoApproveResult> {
+  return withTransaction(async (client) => {
+    const rows = await client.query<WorkflowRow>(
+      `SELECT * FROM submissions
+        WHERE submission_type = 'normal'
+          AND ndrf_route = 'buyer'
+          AND workflow_status = 'pending'
+          AND locked_at IS NULL
+          AND exported_at IS NULL
+          AND submitted_at <= now() - ($1::int * interval '1 day')
+        FOR UPDATE SKIP LOCKED`,
+      [config.ndrfAutoApproveDays],
+    );
+    let approved = 0;
+    let skipped = 0;
+    for (const row of rows.rows) {
+      const decided = await client.query(
+        `SELECT 1 FROM ndrf_review_events
+          WHERE submission_id = $1 AND review_round = $2
+            AND event_type IN ('accept', 'reject', 'auto_accept')
+          LIMIT 1`,
+        [row.id, row.review_round],
+      );
+      if (decided.rows.length > 0) {
+        skipped++;
+        continue;
+      }
+      await client.query(
+        `INSERT INTO ndrf_review_events
+           (submission_id, review_round, event_type, actor_role, actor, remark, ip, ip_expires_at)
+         VALUES ($1, $2, 'auto_accept', 'system', 'auto-approve', $3, NULL, NULL)`,
+        [row.id, row.review_round, AUTO_APPROVE_REMARK],
+      );
+      await client.query(
+        `UPDATE submissions
+            SET workflow_status = 'accepted',
+                current_review_remark = $1,
+                auto_approved_at = now(),
+                updated_at = now()
+          WHERE id = $2`,
+        [AUTO_APPROVE_REMARK, row.id],
+      );
+      approved++;
+    }
+    return { approved, skipped };
+  });
+}

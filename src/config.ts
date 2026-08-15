@@ -80,6 +80,10 @@ export const config = {
   // new Store web submit/import; Admin management, review, export and override
   // remain available regardless of this flag.
   normalNdrfPortalEnabled: bool('NORMAL_NDRF_PORTAL_ENABLED', true),
+  // Company rule: Buyer must review an ND within N days; no reply => system
+  // auto-approves (default agreement) and flags the row for Admin follow-up.
+  ndrfAutoApproveEnabled: bool('NDRF_AUTO_APPROVE_ENABLED', true),
+  ndrfAutoApproveDays: Math.max(1, int('NDRF_AUTO_APPROVE_DAYS', 7)),
   // Reject cooldown before the same Site + SKU + RP Type can be re-applied.
   ndrfRejectCooldownHours: Math.max(1, int('NDRF_REJECT_COOLDOWN_HOURS', 30 * 24)),
 };

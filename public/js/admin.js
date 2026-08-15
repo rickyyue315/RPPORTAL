@@ -54,7 +54,7 @@
   function buildQuery() {
     const params = new URLSearchParams();
     const idMap = { application_no: 'appno', submission_type: 'type', site_code: 'site', rp_type: 'rp_type', nd_code: 'nd_code' };
-    ['from', 'to', 'site_code', 'source', 'submission_type', 'exported', 'workflow_status', 'sku', 'rp_type', 'nd_code', 'application_no', 'modified'].forEach((k) => {
+    ['from', 'to', 'site_code', 'source', 'submission_type', 'exported', 'workflow_status', 'auto_approved', 'sku', 'rp_type', 'nd_code', 'application_no', 'modified'].forEach((k) => {
       const v = $(`f_${idMap[k] || k}`).value.trim();
       if (v) params.set(k, v);
     });
@@ -89,7 +89,7 @@
       const status = s.locked
         ? `<span class="status-badge locked">已鎖定</span>`
         : s.workflow
-          ? workflowBadge(s.workflow.status)
+          ? workflowBadge(s.workflow.status) + (s.workflow.auto_approved_at ? ` <span class="status-badge received" title="Buyer 逾期未回覆，系統默認同意（${escapeHtml(s.workflow.auto_approved_at)}）">SLA 自動批准</span>` : '')
           : `<span class="status-badge received">已收件</span>`;
       tr.innerHTML = `
         <td>${escapeHtml(s.application_no)}</td>
@@ -124,7 +124,7 @@
   });
   $('btn_reset').addEventListener('click', () => {
     ['site', 'sku', 'appno'].forEach((id) => ($(`f_${id}`).value = ''));
-    ['source', 'type', 'exported', 'modified', 'workflow_status'].forEach((id) => ($(`f_${id}`).value = ''));
+    ['source', 'type', 'exported', 'modified', 'workflow_status', 'auto_approved'].forEach((id) => ($(`f_${id}`).value = ''));
     ['rp_type', 'nd_code'].forEach((id) => ($(`f_${id}`).value = ''));
     $('f_from').value = todayInHongKong();
     $('f_to').value = todayInHongKong();
@@ -945,7 +945,8 @@
       <div class="datagrid-item"><div class="datagrid-title">路由</div><div class="datagrid-content">${escapeHtml(ROUTE_LABEL[wf.route] ?? wf.route ?? '—')}</div></div>
       <div class="datagrid-item"><div class="datagrid-title">審批回合</div><div class="datagrid-content">${wf.review_round}</div></div>
       ${wf.rejected_at ? `<div class="datagrid-item"><div class="datagrid-title">拒絕時間</div><div class="datagrid-content">${escapeHtml(wf.rejected_at)}</div></div>` : ''}
-      ${wf.review_remark ? `<div class="datagrid-item"><div class="datagrid-title">Review Remark</div><div class="datagrid-content">${escapeHtml(wf.review_remark)}</div></div>` : ''}`;
+      ${wf.review_remark ? `<div class="datagrid-item"><div class="datagrid-title">Review Remark</div><div class="datagrid-content">${escapeHtml(wf.review_remark)}</div></div>` : ''}
+      ${wf.auto_approved_at ? `<div class="datagrid-item"><div class="datagrid-title">SLA 自動批准時間</div><div class="datagrid-content">${escapeHtml(wf.auto_approved_at)}（Buyer 逾期未回覆，默認同意）</div></div>` : ''}`;
     const events = data.reviewEvents || [];
     $('workflow_events').innerHTML = events.length
       ? '<table class="table table-vcenter"><thead><tr><th>時間</th><th>事件</th><th>回合</th><th>操作者</th><th>詳情</th></tr></thead><tbody>'
@@ -1291,6 +1292,26 @@
 
   $('btn_review_pending_export').addEventListener('click', downloadReviewPending);
   $('btn_review_pending_refresh').addEventListener('click', loadReviewPending);
+  async function runAutoApprove() {
+    const ok = window.confirm('確認立即執行「Buyer 逾期自動批准」？\n\n規則：ND 申請超過 ' + (globalThis.NDRF_OPTIONS?.autoApproveDays ?? 7) + ' 日 Buyer 未有回覆，系統會視為默認同意（Accept），並在審批時間線註明「Buyer 未有回復，默認同意」。\n已匯出、已鎖定或已有決定的申請不會被影響。');
+    if (!ok) return;
+    const btn = $('btn_auto_approve');
+    btn.disabled = true;
+    btn.textContent = '執行中…';
+    try {
+      const data = await adminFetch('/api/admin/review-pending/auto-approve', { method: 'POST', body: JSON.stringify({}) });
+      showAlert($('review_pending_result'), 'success', `已完成：自動批准 ${data.approved} 筆（跳過 ${data.skipped} 筆）。`);
+      loadReviewPending();
+      loadList();
+    } catch (err) {
+      showAlert($('review_pending_result'), 'error', escapeHtml(err.message));
+    } finally {
+      btn.disabled = false;
+      btn.textContent = '執行逾期自動批准（Buyer 7 日未回覆 → 默認同意）';
+    }
+  }
+
+  $('btn_auto_approve').addEventListener('click', runAutoApprove);
   $('btn_logout').addEventListener('click', async (e) => {
     e.preventDefault();
     try {

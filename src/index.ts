@@ -7,6 +7,7 @@ import { countRecoveryCodes } from './lib/recovery.js';
 import { seedStoresFromFile, countStores } from './services/stores.js';
 import { cleanupExpiredExportFiles } from './services/exportFiles.js';
 import { cleanupRetentionData } from './services/retention.js';
+import { runBuyerAutoApproveJob } from './services/ndrfWorkflow.js';
 
 async function runMaintenanceCleanup(): Promise<void> {
   try {
@@ -65,11 +66,40 @@ async function main(): Promise<void> {
     console.log(`[boot] seeded ${seeded} stores`);
   }
 
-  // Scheduled IP retention cleanup (daily).
+
+/**
+ * Company SLA: Buyer must review ND within the configured days; otherwise the
+ * system auto-approves (default agreement) and flags the row for Admin.
+ */
+async function runBuyerAutoApproveScheduler(): Promise<void> {
+  if (!config.ndrfAutoApproveEnabled) return;
+  try {
+    const result = await withAdvisoryLock('ndrf:buyer-auto-approve', async () => {
+      return await runBuyerAutoApproveJob();
+    });
+    if (!result) {
+      console.log('[auto-approve] skipped because another instance owns the lock');
+      return;
+    }
+    if (result.approved > 0) {
+      await writeAuditEvent({
+        eventType: 'buyer_auto_approved',
+        actor: 'auto-approve',
+        metadata: { approved: result.approved, skipped: result.skipped },
+      });
+      console.log(`[auto-approve] auto-approved ${result.approved} submissions (${result.skipped} skipped)`);
+    }
+  } catch (err) {
+    console.error('[auto-approve] failed', err);
+  }
+}
+  // Scheduled maintenance (daily): IP retention cleanup + Buyer SLA auto-approve.
   setInterval(() => {
     void runMaintenanceCleanup();
+    void runBuyerAutoApproveScheduler();
   }, 24 * 3600 * 1000);
   void runMaintenanceCleanup();
+  void runBuyerAutoApproveScheduler();
 
   const app = createApp();
   const server = app.listen(config.port, () => {

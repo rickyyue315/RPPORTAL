@@ -103,7 +103,7 @@ let db: PGlite;
 beforeAll(async () => {
   db = new PGlite();
   setPoolForTesting(await makePool(db));
-  const migrationFiles = ['001_init.sql', '002_drop_rp_type_completed_at.sql', '003_add_submission_type_qty.sql', '004_add_urgent_reason.sql', '005_add_sales_submission_type.sql', '006_add_return_submission_type.sql', '007_add_idempotency_and_import_recovery.sql', '008_add_export_file_archive.sql', '009_architecture_hardening.sql', '010_query_optimization.sql', '011_cleanup_legacy_schema.sql', '012_om_recovery_codes.sql', '013_recovery_code_plaintext.sql', '014_ndrf_workflow_portal.sql'];
+  const migrationFiles = ['001_init.sql', '002_drop_rp_type_completed_at.sql', '003_add_submission_type_qty.sql', '004_add_urgent_reason.sql', '005_add_sales_submission_type.sql', '006_add_return_submission_type.sql', '007_add_idempotency_and_import_recovery.sql', '008_add_export_file_archive.sql', '009_architecture_hardening.sql', '010_query_optimization.sql', '011_cleanup_legacy_schema.sql', '012_om_recovery_codes.sql', '013_recovery_code_plaintext.sql', '014_ndrf_workflow_portal.sql', '015_buyer_auto_approve.sql'];
   for (const file of migrationFiles) {
     let sql = await readFile(path.join(__dirname, '..', 'src', 'db', 'migrations', file), 'utf8');
     sql = sql.replace(/CREATE EXTENSION IF NOT EXISTS pgcrypto;\s*/g, '');
@@ -604,3 +604,92 @@ describe('legacy cutover', () => {
     expect(Number(workbook.headers['content-length'])).toBeGreaterThan(1000);
     expect(workbook.headers['content-disposition']).toContain('Buyer_Pending_Review');
   });
+describe('Buyer SLA auto-approve (7 日未回覆 → 默認同意)', () => {
+  it('auto-approves overdue pending ND with an immutable event and flags Admin', async () => {
+    const buyer1Res = await db.query<{ id: string }>('SELECT id FROM portal_users WHERE username = $1', ['BUYER1']);
+    await db.query(
+      `INSERT INTO sku_master (sku, buyer_user_id, updated_by) VALUES ('1002095', $1, 'test')
+       ON CONFLICT (sku) DO UPDATE SET buyer_user_id = EXCLUDED.buyer_user_id, updated_by = 'test', updated_at = now()`,
+      [buyer1Res.rows[0]!.id],
+    );
+    // Overdue: submitted 8 days ago.
+    const overdueNo = `NDRF-SLA-${Date.now()}`;
+    await db.query(
+      `INSERT INTO submissions (
+         application_no, source, submission_type, site_code, requested_by_email, application_date,
+         brand, sku, rp_type, nd_code, status, ndrf_route, workflow_status, active_workflow, review_round,
+         submitted_at
+       ) VALUES ($1, 'web', 'normal', 'HA02', 'ha02@sasa.com', '2026-08-05', '', '1002095', 'ND', 'ND20-SO-Not displayed in small stores',
+         'received', 'buyer', 'pending', true, 1, now() - interval '8 days')`,
+      [overdueNo],
+    );
+    // Not overdue yet: submitted 1 day ago.
+    const freshNo = `NDRF-FRESH-${Date.now()}`;
+    await db.query(
+      `INSERT INTO submissions (
+         application_no, source, submission_type, site_code, requested_by_email, application_date,
+         brand, sku, rp_type, nd_code, status, ndrf_route, workflow_status, active_workflow, review_round,
+         submitted_at
+       ) VALUES ($1, 'web', 'normal', 'HA02', 'ha02@sasa.com', '2026-08-05', '', '1002096', 'ND', 'ND20-SO-Not displayed in small stores',
+         'received', 'buyer', 'pending', true, 1, now() - interval '1 day')`,
+      [freshNo],
+    );
+
+    const { runBuyerAutoApproveJob, AUTO_APPROVE_REMARK } = await import('../src/services/ndrfWorkflow.js');
+    const result = await runBuyerAutoApproveJob();
+    expect(result.approved).toBeGreaterThanOrEqual(1);
+
+    const overdue = await db.query<{ workflow_status: string; auto_approved_at: string | null; current_review_remark: string | null }>(
+      'SELECT workflow_status, auto_approved_at, current_review_remark FROM submissions WHERE application_no = $1',
+      [overdueNo],
+    );
+    expect(overdue.rows[0]!.workflow_status).toBe('accepted');
+    expect(overdue.rows[0]!.auto_approved_at).toBeTruthy();
+    expect(overdue.rows[0]!.current_review_remark).toBe(AUTO_APPROVE_REMARK);
+
+    const fresh = await db.query<{ workflow_status: string; auto_approved_at: string | null }>(
+      'SELECT workflow_status, auto_approved_at FROM submissions WHERE application_no = $1',
+      [freshNo],
+    );
+    expect(fresh.rows[0]!.workflow_status).toBe('pending');
+    expect(fresh.rows[0]!.auto_approved_at).toBeNull();
+
+    const event = await db.query<{ event_type: string; actor_role: string; remark: string }>(
+      `SELECT event_type, actor_role, e.remark AS remark FROM ndrf_review_events e
+        JOIN submissions s ON s.id = e.submission_id
+       WHERE s.application_no = $1 AND e.event_type = 'auto_accept'`,
+      [overdueNo],
+    );
+    expect(event.rows[0]).toBeDefined();
+    expect(event.rows[0]!.actor_role).toBe('system');
+    expect(event.rows[0]!.remark).toBe(AUTO_APPROVE_REMARK);
+
+    // Idempotent: running again does not touch the approved row.
+    const again = await runBuyerAutoApproveJob();
+    const eventCount = await db.query<{ count: string }>(
+      `SELECT count(*)::text AS count FROM ndrf_review_events e
+        JOIN submissions s ON s.id = e.submission_id
+       WHERE s.application_no = $1 AND e.event_type = 'auto_accept'`,
+      [overdueNo],
+    );
+    expect(eventCount.rows[0]!.count).toBe('1');
+    void again;
+  });
+
+  it('admin sees the auto-approved flag and can trigger the job manually', async () => {
+    const agent = request.agent(app) as Agent;
+    await adminLogin(agent);
+
+    const list = await agent.get('/api/admin/submissions?workflow_status=accepted&auto_approved=yes&page=1');
+    expect(list.status).toBe(200);
+    const autoRow = list.body.submissions.find((s: { workflow: { auto_approved_at: string | null } }) => s.workflow?.auto_approved_at);
+    expect(autoRow).toBeDefined();
+
+    const trigger = await agent
+      .post('/api/admin/review-pending/auto-approve')
+      .set('x-csrf-token', agent._csrf ?? '')
+      .send({});
+    expect(trigger.status).toBe(200);
+    expect(typeof trigger.body.approved).toBe('number');
+  });
+});

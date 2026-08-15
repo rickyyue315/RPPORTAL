@@ -12,10 +12,10 @@
     <div>
       <h1>NDRF 申報平台</h1>
       <div class="subtitle">圖文使用說明</div>
-      <div class="portal-note">公司Portal 平台已於今日下午回復正常，此平台將會於2026年8月11日晚上23點59分後結束服務，當所有申請處理完成後才刪除資料，請店舖不用重複於公司Portal重複申請，謝謝。</div>
+      <div class="portal-note">一般 NDRF 申報已改為帳戶登入；Urgent、突發性銷售及行貨退貨仍可直接於公開頁面使用。</div>
     </div>
     <nav aria-label="主要導覽">
-      <a href="/">一般申報</a>
+      <a href="/portal/">一般申報（登入）</a>
       <a href="/urgent.html">Urgent Order</a>
       <a href="/sales.html">突發性銷售申報</a>
       <a href="/return.html">行貨退貨報數</a>
@@ -27,27 +27,32 @@
   <main class="container">
     <section class="help-hero" aria-labelledby="help-title">
       <h2 id="help-title">跟著圖示，一步一步完成申報</h2>
-      <p>第一次使用也不用擔心。先選擇你要做的申報類型，再按照圖示及步驟操作。圖片為介面示意圖，實際畫面可能因手機或電腦螢幕大小略有不同。</p>
+      <p>第一次使用也不用擔心。一般 NDRF 申報需要登入帳戶；Urgent、突發性銷售及行貨退貨仍然直接填寫即可。先選擇你要做的申報類型，再按照圖示及步驟操作。圖片為介面示意圖，實際畫面可能因手機或電腦螢幕大小略有不同。</p>
     </section>
 
     <nav class="help-toc" aria-label="說明章節">
-      <a href="#normal">1. 一般申報<small>ND／RF 單筆申報</small></a>
-      <a href="#excel">2. Excel 批量<small>一次提交多間店舖</small></a>
-      <a href="#urgent">3. Urgent Order<small>緊急補貨申報</small></a>
-      <a href="#sales">4. 突發性銷售申報<small>只填 Site Code 及 SKU</small></a>
-      <a href="#return">5. 行貨退貨報數<small>申請退行貨及 Excel 批量</small></a>
-      <a href="#lookup">6. 查詢／修改<small>查看申請進度及資料</small></a>
+      <a href="#normal">1. 一般申報<small>登入 Store Portal，ND／RF 申報</small></a>
+      <a href="#excel">2. Excel 批量<small>登入後一次上載多筆</small></a>
+      <a href="#portal-status">3. 申請進度<small>查看審批狀態及結果</small></a>
+      <a href="#urgent">4. Urgent Order<small>緊急補貨申報</small></a>
+      <a href="#sales">5. 突發性銷售申報<small>只填 Site Code 及 SKU</small></a>
+      <a href="#return">6. 行貨退貨報數<small>申請退行貨及 Excel 批量</small></a>
+      <a href="#lookup">7. 查詢／修改<small>Urgent／銷售／退貨</small></a>
+      <a href="#reviewer">8. Buyer／SCT 審批<small>審批工作檯操作</small></a>
     </nav>
 
     <section class="card help-section" id="normal" aria-labelledby="normal-title">
       <h2 id="normal-title">1. 一般申報（ND／RF）</h2>
-      <p class="help-section-intro">適合提交一般 NDRF 申報。先填寫基本資料，再按 RP Type 填寫相應欄位。</p>
+      <p class="help-section-intro">一般 NDRF 申報已改為網上帳戶申請。請使用 RP Team 派發的帳戶登入 Store Portal；帳戶已綁定店舖，不需也不能輸入其他 Site Code。</p>
 
       <div class="help-step">
-        <img src="/images/help/normal-site.svg" alt="輸入 Site Code 後顯示店舖資訊的示意圖" width="640" height="360">
+        <div class="help-placeholder">
+          <strong>登入頁面</strong>
+          <span>前往 /portal/ 輸入帳戶及密碼</span>
+        </div>
         <div>
-          <h3><span class="help-step-number">1</span>輸入並確認店舖</h3>
-          <p>在 <b>Site Code</b> 輸入店舖編號，例如 <b>HA02</b>。稍等片刻，系統會顯示店舖名稱；請先確認顯示的店舖正確。</p>
+          <h3><span class="help-step-number">1</span>登入 Store Portal</h3>
+          <p>在平台首頁按「<b>前往 Store Portal 登入</b>」，輸入使用者名稱（通常為店舖 <b>Site Code</b>）及密碼。首次登入請使用管理員派發的<b>一次性密碼</b>，登入後必須立即更改密碼才能繼續申報。</p>
         </div>
       </div>
 
@@ -55,7 +60,7 @@
         <img src="/images/help/normal-rules.svg" alt="填寫 SKU、選擇 RP Type 及按規則填寫欄位的示意圖" width="640" height="360" loading="lazy" decoding="async">
         <div>
           <h3><span class="help-step-number">2</span>填寫 SKU 及 RP Type</h3>
-          <p><b>SKU</b> 及 <b>RP Type</b> 必須填寫。選擇 ND 或 RF 後，按下列規則填寫：</p>
+          <p>登入後於「單筆申報」填寫資料。<b>Site Code 已自動綁定</b>，只需填寫 <b>SKU</b> 及 <b>RP Type</b>（均為必填）。選擇 ND 或 RF 後，按下列規則填寫：</p>
           <div class="help-rules">
             <div class="help-rule"><strong>選擇 ND</strong><p>必須填寫 ND Code。可選項目只有：</p><div class="help-code-list"><span class="help-code">ND20</span><span class="help-code">ND21</span><span class="help-code">ND22</span><span class="help-code">ND23</span><span class="help-code">ND29</span></div></div>
             <div class="help-rule"><strong>選擇 RF</strong><p>必須填寫大於 0 的 Safety stock；指定店舖另須填寫 Remark。</p></div>
@@ -64,39 +69,66 @@
       </div>
 
       <div class="help-step">
-        <img src="/images/help/normal-submit.svg" alt="按預覽確認資料後提交的示意圖" width="640" height="360" loading="lazy" decoding="async">
+        <img src="/images/help/normal-submit.svg" alt="提交申請及記下申請編號的示意圖" width="640" height="360" loading="lazy" decoding="async">
         <div>
-          <h3><span class="help-step-number">3</span>預覽、確認及記下申請編號</h3>
-          <p>按「預覽」後，逐項核對資料。確認正確後按「確認提交」。成功後會顯示申請編號，請立即記下，日後查詢或修改時需要使用。</p>
+          <h3><span class="help-step-number">3</span>提交及記下申請編號</h3>
+          <p>確認資料無誤後按「提交」。成功後會顯示申請編號，請立即記下或複製。提交後可於「我的申請」查看審批狀態。</p>
         </div>
       </div>
 
-      <div class="help-note"><b>小提示：</b>如果只想調整 Safety stock，也要將 RP Type 選擇為 RF，並填寫新的 Safety stock。</div>
+      <div class="help-note"><b>小提示：</b>如果只想調整 Safety stock，也要將 RP Type 選擇為 RF，並填寫新的 Safety stock。ND 申請會交由負責該 SKU 的 Buyer 審批；指定店舖的 RF（包括改 Safety）會交由 SCT 審批。</div>
     </section>
 
     <section class="card help-section" id="excel" aria-labelledby="excel-title">
       <h2 id="excel-title">2. Excel 批量上載</h2>
-      <p class="help-section-intro">如果要一次提交多筆申報，可使用 Excel 模板。請不要更改工作表名稱及第一行欄名。</p>
+      <p class="help-section-intro">登入 Store Portal 後，可在「Excel 批量上載」一次提交多筆申報。請不要更改工作表名稱及第一行欄名。</p>
       <div class="help-step">
         <img src="/images/help/excel.svg" alt="下載 Excel 模板、填寫資料並上載的示意圖" width="640" height="360" loading="lazy" decoding="async">
         <div>
-          <h3><span class="help-step-number">1</span>下載模板並填寫</h3>
-          <p>按「下載模板 (.xlsx)」，在 <b>RP Team</b> 工作表逐行填寫資料。每一行代表一筆申報；保留第一行欄名，不要自行改名或刪除欄位。<b>.xlsx</b> 是 Excel 活頁簿格式，支援 Excel 2007 或更新版本，包括 Excel 2019、Excel 2021、Excel 2024 及 Microsoft 365；舊式 <b>.xls</b> 檔案請先另存為 <b>.xlsx</b>。</p>
+          <h3><span class="help-step-number">1</span>登入後下載模板並填寫</h3>
+          <p>登入後按「下載模板 (.xlsx)」，在 <b>RP Team</b> 工作表逐行填寫資料。每一行代表一筆申報；保留第一行欄名，不要自行改名或刪除欄位。<b>Shop Code 必須為本店 Site Code</b>，其他店舖的行會令整份檔案被拒絕。支援 Excel 2007 或更新版本（包括 Excel 2019、Excel 2021、Excel 2024 及 Microsoft 365）；舊式 <b>.xls</b> 檔案請先另存為 <b>.xlsx</b>。</p>
         </div>
       </div>
       <div class="help-step">
         <img src="/images/help/excel-upload.svg" alt="選擇 Excel 檔案後按上載並匯入的示意圖" width="640" height="360" loading="lazy" decoding="async">
         <div>
           <h3><span class="help-step-number">2</span>上載並核對結果</h3>
-          <p>將檔案拖到上載框，或按一下選擇檔案，再按「上載並匯入」。系統會先完整檢查整份檔案；如有任何錯誤，整份檔案都不會寫入。成功後請記下每筆申請編號。</p>
-          <div class="help-note">Excel 批量上載的欄位規則與一般單筆申報相同：ND 要填 ND Code；RF 要填大於 0 的 Safety stock，指定店舖轉 RF 要填 Remark。</div>
+          <p>將檔案拖到上載框，或按一下選擇檔案，再按「上載並匯入」。系統會先完整檢查整份檔案；如有任何錯誤，整份檔案都不會寫入。成功後可下載匯入記錄 Excel，內含每筆申請編號。</p>
+          <div class="help-note">Excel 批量上載的欄位規則與單筆申報相同：ND 要填 ND Code；RF 要填大於 0 的 Safety stock，指定店舖轉 RF 要填 Remark。</div>
+        </div>
+      </div>
+    </section>
+
+    <section class="card help-section" id="portal-status" aria-labelledby="portal-status-title">
+      <h2 id="portal-status-title">3. 申請進度及審批狀態</h2>
+      <p class="help-section-intro">一般 NDRF 提交後不再使用公開查詢，請登入 Store Portal 於「我的申請」查看審批狀態及結果。</p>
+      <div class="help-step">
+        <img src="/images/help/lookup.svg" alt="在我的申請查看申請狀態的示意圖" width="640" height="360" loading="lazy" decoding="async">
+        <div>
+          <h3><span class="help-step-number">1</span>於「我的申請」查看</h3>
+          <p>登入後向下捲動至「我的申請」，會列出本店全部一般 NDRF 申請及狀態。按「詳情」可查看申請資料及<b>審批時間線</b>。</p>
+          <div class="help-rules">
+            <div class="help-rule"><strong>待審批</strong><p>ND 等待負責 Buyer 審批；指定店舖的 RF 等待 SCT 審批。</p></div>
+            <div class="help-rule"><strong>可供 RP 匯出</strong><p>普通店舖的 RF 已可直接交由 RP 處理。</p></div>
+            <div class="help-rule"><strong>已批准 / 已拒絕</strong><p>審批完成。被拒絕時可查看原因及補充說明。</p></div>
+          </div>
+        </div>
+      </div>
+      <div class="help-step">
+        <div class="help-placeholder">
+          <strong>重新申請</strong>
+          <span>Rejected 後於冷卻期屆滿才可再申請</span>
+        </div>
+        <div>
+          <h3><span class="help-step-number">2</span>重新申請須知</h3>
+          <p>同一 Site Code + SKU + RP Type 已有<b>未匯出、未鎖定</b>的有效申請時，不可重複提交。申請被拒絕後，同一組合需等待 <b>30 日冷卻期</b>方可重新申請（冷卻期以拒絕時間起計）。申請被管理員匯出後會鎖定，不可再修改。</p>
         </div>
       </div>
     </section>
 
     <section class="card help-section" id="urgent" aria-labelledby="urgent-title">
-      <h2 id="urgent-title">3. Urgent Order</h2>
-      <p class="help-section-intro">Urgent Order 用於緊急補貨，與一般 NDRF 申報分開處理。</p>
+      <h2 id="urgent-title">4. Urgent Order</h2>
+      <p class="help-section-intro">Urgent Order 用於緊急補貨，與一般 NDRF 申報分開處理，不需登入帳戶。</p>
       <div class="help-step">
         <img src="/images/help/urgent.svg" alt="填寫 Urgent Order 的 Site Code、SKU、QTY 及原因的示意圖" width="640" height="360" loading="lazy" decoding="async">
         <div>
@@ -115,8 +147,8 @@
     </section>
 
     <section class="card help-section" id="sales" aria-labelledby="sales-title">
-      <h2 id="sales-title">4. 突發性銷售申報</h2>
-      <p class="help-section-intro">突發性銷售申報只需填寫 Site Code 及 SKU，沒有提交時間限制。</p>
+      <h2 id="sales-title">5. 突發性銷售申報</h2>
+      <p class="help-section-intro">突發性銷售申報只需填寫 Site Code 及 SKU，沒有提交時間限制，不需登入帳戶。</p>
       <div class="help-step">
         <img src="/images/help/sales-site.svg" alt="填寫突發性銷售申報的 Site Code 及 SKU 的示意圖" width="640" height="360" loading="lazy" decoding="async">
         <div>
@@ -135,8 +167,8 @@
     </section>
 
     <section class="card help-section" id="return" aria-labelledby="return-title">
-      <h2 id="return-title">5. 行貨退貨報數</h2>
-      <p class="help-section-intro">行貨退貨報數用於提交需要 Buyer 審批的行貨退貨申請。單筆申請及 Excel 批量上載使用相同欄位及驗證規則。</p>
+      <h2 id="return-title">6. 行貨退貨報數</h2>
+      <p class="help-section-intro">行貨退貨報數用於提交需要 Buyer 審批的行貨退貨申請，不需登入帳戶。單筆申請及 Excel 批量上載使用相同欄位及驗證規則。</p>
       <div class="help-step">
         <img src="/images/help/return-window.svg" alt="查看行貨退貨申請窗口及庫存分析報表的示意圖" width="640" height="360">
         <div>
@@ -187,8 +219,8 @@
     </section>
 
     <section class="card help-section" id="lookup" aria-labelledby="lookup-title">
-      <h2 id="lookup-title">6. 查詢／修改</h2>
-      <p class="help-section-intro">提交成功後，可使用申請編號及 Site Code 找回申報資料。</p>
+      <h2 id="lookup-title">7. 查詢／修改（Urgent／銷售／退貨）</h2>
+      <p class="help-section-intro">公開「查詢／修改」頁只適用於 <b>URGENT-</b>、<b>SALES-</b> 及 <b>RETURN-</b> 開頭的申請。一般 NDRF 請登入 Store Portal 於「我的申請」查看，不會在公開查詢顯示。</p>
       <div class="help-step">
         <img src="/images/help/lookup.svg" alt="使用申請編號及 Site Code 查詢資料的示意圖" width="640" height="360" loading="lazy" decoding="async">
         <div>
@@ -207,12 +239,47 @@
         <img src="/images/help/recover.svg" alt="唔記得申請編號時用 Recovery Code 找回申請編號的示意圖" width="640" height="360" loading="lazy" decoding="async">
         <div>
           <h3><span class="help-step-number">3</span>唔記得申請編號？用 Recovery Code 搵返</h3>
-          <p>喺「查詢／修改」頁撳「<b>唔記得申請編號？</b>」，輸入提交時使用嘅 <b>Site Code</b>、<b>Recovery Code</b> 及日期範圍（預設為今日），即可列出該日嘅申請編號，撳申請編號即可前往查詢／修改。<b>Recovery Code 每組 OM 一個，請向管理員索取</b>；如用唔啱自己組嘅 Code，會顯示「Recovery Code 無效」。</p>
+          <p>喺「查詢／修改」頁撳「<b>唔記得申請編號？</b>」，輸入提交時使用嘅 <b>Site Code</b>、<b>Recovery Code</b> 及日期範圍（預設為今日），即可列出該日嘅申請編號，撳申請編號即可前往查詢／修改。<b>Recovery Code 每組 OM 一個，請向管理員索取</b>；如用唔啱自己組嘅 Code，會顯示「Recovery Code 無效」。此功能只適用於 Urgent、突發性銷售及行貨退貨申請，一般 NDRF 請登入帳戶查看。</p>
         </div>
       </div>
     </section>
 
-    <p class="help-footer">如需重新開始，按頁面上方的「一般申報」、「Urgent Order」、「突發性銷售申報」或「行貨退貨報數」即可返回。</p>
+    <section class="card help-section" id="reviewer" aria-labelledby="reviewer-title">
+      <h2 id="reviewer-title">8. Buyer／SCT 審批工作檯</h2>
+      <p class="help-section-intro">Buyer 負責 ND 申請審批；SCT 負責指定店舖 RF（包括改 Safety）審批。使用 RP Team 派發的帳戶登入後即可審批。</p>
+      <div class="help-step">
+        <div class="help-placeholder">
+          <strong>待審批清單</strong>
+          <span>登入 /portal/ 後自動顯示</span>
+        </div>
+        <div>
+          <h3><span class="help-step-number">1</span>登入並查看待審批申請</h3>
+          <p>在平台首頁按「前往 Store Portal 登入」，輸入 <b>Buyer／SCT 帳戶</b>登入（首次登入須更改密碼）。「待審批申請」只會列出<b>屬於自己負責</b>的申請：Buyer 看到 SKU Master 分配的 SKU；SCT 看到指定店舖的 RF。</p>
+        </div>
+      </div>
+      <div class="help-step">
+        <div class="help-placeholder">
+          <strong>Accept／Reject</strong>
+          <span>Reject 必須選原因及填寫補充說明</span>
+        </div>
+        <div>
+          <h3><span class="help-step-number">2</span>填寫 Review Remark 及作出決定</h3>
+          <p>按「詳情」查看申請資料及審批時間線。可填寫 <b>Review Remark</b> 後按「批准 (Accept)」；按「拒絕 (Reject)」時<b>必須選擇原因類別並填寫補充說明</b>（選擇「其他」時必須填寫補充說明）。決定一經提交即生效，同一申請不會重複審批。</p>
+        </div>
+      </div>
+      <div class="help-step">
+        <div class="help-placeholder">
+          <strong>Reopen 由管理員處理</strong>
+          <span>資料更正後開啟新審批回合</span>
+        </div>
+        <div>
+          <h3><span class="help-step-number">3</span>Rejected 申請更正後重新審批</h3>
+          <p>被拒絕的申請如需更正，由管理員在後台以 <b>Reopen</b> 開啟新審批回合（原拒絕紀錄保留），並遞增審批回合編號。Reopen 後申請會回到待審批清單，重新審批。</p>
+        </div>
+      </div>
+    </section>
+
+    <p class="help-footer">如需重新開始：一般 NDRF 按頁面上方「一般申報（登入）」登入；Urgent、突發性銷售及行貨退貨直接按對應頁面即可。</p>
   </main>
 
   <footer class="site-footer">Developed by RP Team - Ricky Yue</footer>

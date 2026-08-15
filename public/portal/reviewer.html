@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Reviewer Portal — NDRF 審批</title>
+  <link rel="stylesheet" href="/css/style.css">
+  <link rel="stylesheet" href="/portal/css/portal.css">
+</head>
+<body>
+  <header class="topbar">
+    <div>
+      <h1>NDRF Reviewer Portal</h1>
+      <div class="subtitle" id="reviewer_header">審批工作檯</div>
+    </div>
+    <nav>
+      <a href="/portal/reviewer.html" class="active">待審批</a>
+      <a href="#" id="history_link">已處理</a>
+      <a href="#" id="logout_link">登出</a>
+      <a href="/">平台首頁</a>
+    </nav>
+  </header>
+
+  <main class="container portal-main">
+    <div class="card" id="queue_card">
+      <h2>待審批申請</h2>
+      <div id="queue_list"><div class="loading">載入中…</div></div>
+    </div>
+
+    <div class="card" id="history_card" style="display:none">
+      <h2>已處理申請 <button class="btn ghost" id="btn_back_queue">返回待審批</button></h2>
+      <div id="history_list"><div class="loading">載入中…</div></div>
+    </div>
+
+    <div class="card" id="detail_card" style="display:none">
+      <h2>申請詳情 <button class="btn ghost" id="btn_close_detail">關閉</button></h2>
+      <div id="detail_body"></div>
+    </div>
+  </main>
+
+  <script src="/js/options.js"></script>
+  <script src="/js/api.js"></script>
+  <script src="/portal/js/portal.js"></script>
+  <script src="/portal/js/reviewer.js"></script>
+  <footer class="site-footer">Developed by RP Team - Ricky Yue</footer>
+</body>
+</html>

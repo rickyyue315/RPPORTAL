@@ -14,13 +14,41 @@ import { config } from '../config.js';
 import {
   getSubmissionById,
   listVersions,
-  adminUpdateSubmission,
   adminUpdateUrgentSubmission,
   adminUpdateSalesSubmission,
   adminUpdateReturnSubmission,
   LockedError,
   type SubmissionRow,
 } from '../services/submissions.js';
+import {
+  adminEditWorkflowSubmission,
+  adminWorkflowOverride,
+  getReviewEvents,
+  getStoreRouteConfig,
+  listRejectionReasons,
+  WorkflowConfigurationError,
+  WorkflowLockedError,
+  ReviewDecisionError,
+  ActiveSubmissionConflictError,
+  CooldownActiveError,
+  type WorkflowRow,
+} from '../services/ndrfWorkflow.js';
+import {
+  createNormalSubmissionBatch,
+  type CreateNormalSubmissionInput,
+} from '../services/ndrfWorkflow.js';
+import {
+  createBuyerOrSctAccount,
+  resetPortalUserPassword,
+  syncStorePortalAccounts,
+} from '../services/storeAccounts.js';
+import {
+  assertBuyerHasNoSkus,
+  assertSctHasNoPending,
+  listSkuMaster,
+  listSkuMasterBatches,
+  replaceSkuMaster,
+} from '../services/skuMaster.js';
 import { query, withTransaction } from '../db/pool.js';
 import {
   generateTemplateWorkbook,
@@ -50,7 +78,7 @@ import {
   returnReasonLabel,
   resolveReturnReasonCode,
 } from '../lib/fields.js';
-import { isValidIsoDate, validateBusinessFields, validateUrgentReason } from '../lib/validation.js';
+import { isValidIsoDate, validateUrgentReason } from '../lib/validation.js';
 import { getUploadedFile, validateUploadedXlsx } from '../lib/upload.js';
 import { EXPORT_CONTENT_TYPE } from '../services/exportFiles.js';
 import { requireCsrf } from '../middleware/csrf.js';
@@ -178,7 +206,18 @@ async function buildArchivedExportBuffer(type: ExportSubmissionType, rows: Submi
   return buildSapExportBuffer(rows);
 }
 
-function serializeAdminSubmission(row: SubmissionRow & { store_shop?: string | null }, lastModifiedAt?: string | null) {
+function serializeAdminSubmission(row: SubmissionRow & { store_shop?: string | null; workflow_status?: string | null }, lastModifiedAt?: string | null) {
+  const workflow = row.workflow_status
+    ? {
+        route: (row as SubmissionRow & { ndrf_route?: string | null }).ndrf_route ?? null,
+        status: row.workflow_status,
+        rejected_at: (row as SubmissionRow & { rejected_at?: string | null }).rejected_at
+          ? toHKString((row as SubmissionRow & { rejected_at?: string | null }).rejected_at!)
+          : null,
+        review_round: (row as SubmissionRow & { review_round?: number }).review_round ?? 0,
+        review_remark: (row as SubmissionRow & { current_review_remark?: string | null }).current_review_remark ?? null,
+      }
+    : null;
   return {
     id: row.id,
     application_no: row.application_no,
@@ -210,6 +249,7 @@ function serializeAdminSubmission(row: SubmissionRow & { store_shop?: string | n
     return_confirmer_name: row.return_confirmer_name,
     return_confirmer_phone: row.return_confirmer_phone,
     return_window_key: row.return_window_key,
+    workflow,
   };
 }
 
@@ -227,6 +267,7 @@ adminRouter.get(
       submission_type,
       exported,
       modified,
+      workflow_status,
       sku,
       rp_type,
       nd_code,
@@ -269,6 +310,10 @@ const where: string[] = [];
       where.push(`s.exported_at IS NOT NULL`);
     } else if (exported === 'no') {
       where.push(`s.exported_at IS NULL`);
+    }
+    if (workflow_status === 'pending' || workflow_status === 'ready_for_rp' || workflow_status === 'accepted' || workflow_status === 'rejected' || workflow_status === 'legacy') {
+      where.push(`s.workflow_status = $${idx++}`);
+      params.push(workflow_status);
     }
     if (modified === 'yes') {
       where.push(`EXISTS (SELECT 1 FROM submission_versions v WHERE v.submission_id = s.id AND v.version > 1)`);
@@ -456,7 +501,7 @@ adminRouter.get(
   }),
 );
 
-/** GET /api/admin/submissions/:id — detail + versions. */
+/** GET /api/admin/submissions/:id — detail + versions + workflow events. */
 adminRouter.get(
   '/submissions/:id',
   requireAdmin,
@@ -469,9 +514,26 @@ adminRouter.get(
     }
     const versions = await listVersions(row.id);
     const store = await getStore(row.site_code);
+    const events = row.submission_type === 'normal' && (row as WorkflowRow).workflow_status
+      ? await getReviewEvents(row.id)
+      : [];
     res.json({
       submission: serializeAdminSubmission(row),
       store: store ?? null,
+      rejectionReasons: await listRejectionReasons(true),
+      reviewEvents: events.map((event) => ({
+        event_type: event.event_type,
+        actor_role: event.actor_role,
+        actor: event.actor,
+        review_round: event.review_round,
+        remark: event.remark,
+        reject_reason_code: event.reject_reason_code,
+        reject_reason_label: event.reject_reason_label,
+        reject_reason_note: event.reject_reason_note,
+        reason: event.reason,
+        ip: event.ip,
+        created_at: toHKString(event.created_at),
+      })),
       versions: versions.map((v) => ({
         version: v.version,
         actor_role: v.actor_role,
@@ -641,26 +703,25 @@ adminRouter.put(
       res.status(400).json({ error: first?.message ?? '輸入資料無效', field: first?.path[0] ?? null });
       return;
     }
-    const businessErrors = validateBusinessFields(parsed.data, row.site_code);
-    if (businessErrors.length) {
-      res.status(400).json({
-        error: businessErrors[0]!.message,
-        field: businessErrors[0]!.field,
-        errors: businessErrors,
-      });
-      return;
-    }
     let updated: SubmissionRow;
     try {
-      updated = await adminUpdateSubmission(
-        row.id,
-        parsed.data,
+      updated = await adminEditWorkflowSubmission({
+        adminUsername: req.adminUsername!,
+        submissionId: row.id,
+        fields: parsed.data,
         ip,
-        req.adminUsername!,
-      );
+      });
     } catch (err) {
-      if (err instanceof LockedError) {
+      if (err instanceof LockedError || err instanceof WorkflowLockedError) {
         res.status(409).json({ error: err.message });
+        return;
+      }
+      if (err instanceof ReviewDecisionError || err instanceof WorkflowConfigurationError || err instanceof ActiveSubmissionConflictError || err instanceof CooldownActiveError) {
+        res.status(409).json({ error: err.message, field: (err as Error & { field?: string }).field ?? null });
+        return;
+      }
+      if (err instanceof Error && (err as Error & { field?: string }).field) {
+        res.status(400).json({ error: err.message, field: (err as Error & { field?: string }).field });
         return;
       }
       throw err;
@@ -742,77 +803,54 @@ adminRouter.post(
     }
 
     const ip = getClientIp(req);
-    const applicationDate = hkTodayForDateColumn();
-    const results = await withTransaction(async (client) => {
-      const rowsOut: Array<{
-        row: number;
-        application_no: string;
-        site_code: string;
-        sku: string;
-        rp_type: string;
-        safety_stock: string;
-        nd_code: string;
-        remark: string;
-        submitted_at: string;
-      }> = [];
-      let successCount = 0;
-      for (const r of parsed.rows!) {
-        const appNo = generateApplicationNo();
-        const requestedByEmail = `${r.siteCode.toLowerCase()}@sasa.com`;
-        const insert = await client.query<SubmissionRow>(
-          `INSERT INTO submissions (
-             application_no, source, site_code, requested_by_email, application_date,
-             brand, sku, rp_type, safety_stock, nd_code, remark, created_ip, created_ip_expires_at
-           ) VALUES ($1,'excel',$2,$3,$4,
-             $5,$6,$7,$8,$9,$10,$11,$12)
-           RETURNING *`,
-          [
-            appNo,
-            r.siteCode,
-            requestedByEmail,
-            applicationDate,
-            r.fields.brand,
-            r.fields.sku,
-            r.fields.rp_type,
-            r.fields.safety_stock,
-            r.fields.nd_code,
-            r.fields.remark,
-            ip,
-            ip ? ipExpiryIso() : null,
-          ],
-        );
-        const row = insert.rows[0]!;
-        await client.query(
-          `INSERT INTO submission_versions
-             (submission_id, version, data_before, data_after, actor_role, actor, ip, change_source)
-           VALUES ($1, 1, NULL, $2, 'admin', $3, $4, 'excel_import')`,
-          [row.id, JSON.stringify(r.fields), req.adminUsername, ip],
-        );
-        successCount++;
-        rowsOut.push({
-          row: r.rowNumber,
-          application_no: row.application_no,
-          site_code: row.site_code,
-          sku: row.sku,
-          rp_type: r.fields.rp_type,
-          safety_stock: r.fields.safety_stock,
-          nd_code: r.fields.nd_code,
-          remark: r.fields.remark,
-          submitted_at: toHKString(row.submitted_at),
-        });
+    const items: CreateNormalSubmissionInput[] = parsed.rows!.map((r) => ({
+      siteCode: r.siteCode,
+      source: 'excel',
+      fields: r.fields,
+      ip,
+      changeSource: 'admin_excel_import',
+      actorRole: 'admin',
+      actor: req.adminUsername!,
+      shopName: '',
+    }));
+    let rows: WorkflowRow[];
+    try {
+      rows = await createNormalSubmissionBatch(items);
+    } catch (err) {
+      if (err instanceof WorkflowConfigurationError || err instanceof ActiveSubmissionConflictError || err instanceof CooldownActiveError) {
+        res.status(409).json({ error: err.message });
+        return;
       }
+      if (err instanceof Error && (err as Error & { field?: string }).field) {
+        res.status(400).json({ error: err.message, field: (err as Error & { field?: string }).field });
+        return;
+      }
+      throw err;
+    }
+    const rowsOut = rows.map((row, index) => ({
+      row: parsed.rows![index]!.rowNumber,
+      application_no: row.application_no,
+      site_code: row.site_code,
+      sku: row.sku,
+      rp_type: row.rp_type ?? '',
+      safety_stock: row.safety_stock ?? '',
+      nd_code: row.nd_code ?? '',
+      remark: row.remark ?? '',
+      submitted_at: toHKString(row.submitted_at),
+    }));
+    const results = await withTransaction(async (client) => {
       const batchId = await createImportBatch(client, {
         filename: file.originalname,
         sheetName: parsed.sheetName ?? '',
         rowCount: parsed.totalRows,
-        successCount,
+        successCount: rowsOut.length,
         failedCount: 0,
         results: rowsOut,
         contentHash: parsed.contentHash ?? '',
         createdBy: req.adminUsername!,
         submissionType: 'normal',
       });
-      return { batchId, rows: rowsOut, successCount };
+      return { batchId, rows: rowsOut, successCount: rowsOut.length };
     });
 
     await writeAuditEvent({
@@ -1206,7 +1244,30 @@ adminRouter.get(
         ORDER BY created_at ASC`,
       [config.auditRetentionDays],
     );
-    const buffer = await buildAuditExportBuffer(auditRows.rows as never, auditEvents.rows);
+    const reviewEvents = await query<{
+      application_no: string | null;
+      event_type: string;
+      actor_role: string;
+      actor: string;
+      review_round: number;
+      reject_reason_label: string | null;
+      reject_reason_note: string | null;
+      remark: string | null;
+      reason: string | null;
+      ip: string | null;
+      created_at: string;
+    }>(
+      `SELECT s.application_no, e.event_type, e.actor_role, e.actor, e.review_round,
+              e.reject_reason_label, e.reject_reason_note, e.remark, e.reason,
+              CASE WHEN e.created_at > now() - ($1::int * interval '1 day') THEN e.ip ELSE NULL END AS ip,
+              e.created_at
+         FROM ndrf_review_events e
+         JOIN submissions s ON s.id = e.submission_id
+        WHERE e.created_at > now() - ($1::int * interval '1 day')
+        ORDER BY e.created_at ASC`,
+      [config.ipRetentionDays],
+    );
+    const buffer = await buildAuditExportBuffer(auditRows.rows as never, auditEvents.rows, reviewEvents.rows);
     res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
     res.setHeader('Content-Disposition', `attachment; filename="NDRF_Audit_Report_${toHKDateString(new Date())}.xlsx"`);
     res.send(buffer);
@@ -1494,6 +1555,463 @@ adminRouter.put(
       metadata: { filename: file.originalname, count },
     });
     res.json({ ok: true, count });
+  }),
+);
+
+/** POST /api/admin/stores/sync-accounts — synchronise Store portal accounts with the store master. */
+adminRouter.post(
+  '/stores/sync-accounts',
+  requireAdmin,
+  adminActionLimiter,
+  asyncHandler(async (req: Request, res: Response) => {
+    const result = await syncStorePortalAccounts(req.adminUsername!);
+    await writeAuditEvent({
+      eventType: 'store_accounts_synced',
+      actorRole: 'admin',
+      actor: req.adminUsername,
+      ip: getClientIp(req),
+      metadata: {
+        created: result.created.length,
+        reactivated: result.reactivated.length,
+        deactivated: result.deactivated.length,
+        unchanged: result.unchanged,
+      },
+    });
+    res.json(result);
+  }),
+);
+
+/** GET /api/admin/portal/users — list portal accounts. */
+adminRouter.get(
+  '/portal/users',
+  requireAdmin,
+  adminActionLimiter,
+  asyncHandler(async (_req: Request, res: Response) => {
+    const result = await query<{
+      id: string;
+      username: string;
+      display_name: string;
+      role: string;
+      site_code: string | null;
+      must_change_password: boolean;
+      active: boolean;
+      created_at: string;
+    }>(
+      `SELECT id, username, display_name, role, site_code, must_change_password, active, created_at
+         FROM portal_users
+        ORDER BY role, site_code, username`,
+    );
+    res.json({ users: result.rows.map((row) => ({ ...row, created_at: toHKString(row.created_at) })) });
+  }),
+);
+
+const portalUserCreateSchema = z.object({
+  username: z.string().trim().min(1).max(40),
+  display_name: z.string().trim().max(200).optional().default(''),
+  role: z.enum(['buyer', 'sct']),
+});
+
+/** POST /api/admin/portal/users — create a Buyer or SCT account (one-time password). */
+adminRouter.post(
+  '/portal/users',
+  requireAdmin,
+  adminActionLimiter,
+  asyncHandler(async (req: Request, res: Response) => {
+    const parsed = portalUserCreateSchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ error: parsed.error.issues[0]?.message ?? '帳戶資料無效' });
+      return;
+    }
+    try {
+      const account = await createBuyerOrSctAccount({
+        username: parsed.data.username,
+        displayName: parsed.data.display_name,
+        role: parsed.data.role,
+        adminUsername: req.adminUsername!,
+      });
+      await writeAuditEvent({
+        eventType: 'portal_user_created',
+        actorRole: 'admin',
+        actor: req.adminUsername,
+        ip: getClientIp(req),
+        metadata: { username: account.username, role: parsed.data.role },
+      });
+      res.status(201).json({ ...account });
+    } catch (err) {
+      if (err instanceof Error && (err as { code?: string }).code === '23505') {
+        res.status(409).json({ error: '此使用者名稱已存在' });
+        return;
+      }
+      throw err;
+    }
+  }),
+);
+
+const portalUserUpdateSchema = z.object({
+  display_name: z.string().trim().max(200).optional(),
+  active: z.boolean().optional(),
+});
+
+/** PUT /api/admin/portal/users/:id — update display name or activate/deactivate. */
+adminRouter.put(
+  '/portal/users/:id',
+  requireAdmin,
+  adminActionLimiter,
+  asyncHandler(async (req: Request, res: Response) => {
+    const parsed = portalUserUpdateSchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ error: parsed.error.issues[0]?.message ?? '帳戶資料無效' });
+      return;
+    }
+    const userId = req.params.id as string;
+    const existing = await query<{ id: string; username: string; role: string; active: boolean }>(
+      'SELECT id, username, role, active FROM portal_users WHERE id = $1',
+      [userId],
+    );
+    const user = existing.rows[0];
+    if (!user) {
+      res.status(404).json({ error: '找不到帳戶' });
+      return;
+    }
+    const sets: string[] = [];
+    const params: unknown[] = [];
+    let idx = 1;
+    if (parsed.data.display_name !== undefined) {
+      sets.push(`display_name = $${idx++}`);
+      params.push(parsed.data.display_name);
+    }
+    if (parsed.data.active !== undefined) {
+      try {
+        if (parsed.data.active === false && user.role === 'buyer') {
+          await assertBuyerHasNoSkus(userId);
+        }
+        if (parsed.data.active === false && user.role === 'sct') {
+          await assertSctHasNoPending(userId);
+        }
+      } catch (err) {
+        if (err instanceof WorkflowConfigurationError) {
+          res.status(409).json({ error: err.message });
+          return;
+        }
+        throw err;
+      }
+      sets.push(`active = $${idx++}`);
+      params.push(parsed.data.active);
+    }
+    if (sets.length === 0) {
+      res.status(400).json({ error: '沒有需要更新的欄位' });
+      return;
+    }
+    sets.push(`updated_at = now()`);
+    params.push(userId);
+    await query(`UPDATE portal_users SET ${sets.join(', ')} WHERE id = $${idx}`, params);
+    if (parsed.data.active === false) {
+      await query('DELETE FROM portal_sessions WHERE user_id = $1', [userId]);
+    }
+    await writeAuditEvent({
+      eventType: 'portal_user_updated',
+      actorRole: 'admin',
+      actor: req.adminUsername,
+      ip: getClientIp(req),
+      metadata: { username: user.username, changes: parsed.data },
+    });
+    res.json({ ok: true });
+  }),
+);
+
+/** POST /api/admin/portal/users/:id/reset-password — reset to a one-time password. */
+adminRouter.post(
+  '/portal/users/:id/reset-password',
+  requireAdmin,
+  adminActionLimiter,
+  asyncHandler(async (req: Request, res: Response) => {
+    const existing = await query<{ id: string; username: string }>(
+      'SELECT id, username FROM portal_users WHERE id = $1',
+      [req.params.id as string],
+    );
+    const user = existing.rows[0];
+    if (!user) {
+      res.status(404).json({ error: '找不到帳戶' });
+      return;
+    }
+    const password = await resetPortalUserPassword(user.id);
+    await writeAuditEvent({
+      eventType: 'portal_password_reset',
+      actorRole: 'admin',
+      actor: req.adminUsername,
+      ip: getClientIp(req),
+      metadata: { username: user.username },
+    });
+    res.json({ ok: true, username: user.username, initial_password: password });
+  }),
+);
+
+/** GET /api/admin/sku-master — list current SKU Master and change batches. */
+adminRouter.get(
+  '/sku-master',
+  requireAdmin,
+  adminActionLimiter,
+  asyncHandler(async (_req: Request, res: Response) => {
+    const [rows, batches] = await Promise.all([listSkuMaster(), listSkuMasterBatches()]);
+    res.json({
+      rows: rows.map((row) => ({ ...row, updated_at: toHKString(row.updated_at) })),
+      batches: batches.map((batch) => ({ ...batch, created_at: toHKString(batch.created_at) })),
+    });
+  }),
+);
+
+function parseSkuMasterCsv(content: string): { ok: boolean; rows?: Array<{ sku: string; buyerUsername: string }>; errors?: string[] } {
+  const lines = content.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+  if (lines.length < 2) return { ok: false, errors: ['CSV 沒有資料列'] };
+  const header = lines[0]!.split(',').map((h) => h.trim().replace(/^"|"$/g, '').toUpperCase());
+  const skuIdx = header.indexOf('SKU');
+  const buyerIdx = header.findIndex((h) => h.includes('BUYER') || h === 'BUYER USERNAME' || h === 'BUYER_USERNAME' || h === 'USERNAME');
+  if (skuIdx < 0 || buyerIdx < 0) {
+    return { ok: false, errors: ['CSV 欄名必須包含 SKU 及 Buyer（Buyer Username）'] };
+  }
+  const errors: string[] = [];
+  const rows: Array<{ sku: string; buyerUsername: string }> = [];
+  for (let r = 1; r < lines.length; r++) {
+    const cells = lines[r]!.split(',').map((cell) => cell.trim().replace(/^"|"$/g, ''));
+    if (!cells[skuIdx] && !cells[buyerIdx]) continue;
+    const sku = cells[skuIdx] ?? '';
+    const buyer = cells[buyerIdx] ?? '';
+    if (!sku || !buyer) {
+      errors.push(`列 ${r + 1}: SKU 及 Buyer 均為必填`);
+      continue;
+    }
+    rows.push({ sku, buyerUsername: buyer });
+  }
+  if (errors.length) return { ok: false, errors };
+  if (!rows.length) return { ok: false, errors: ['CSV 沒有有效資料列'] };
+  return { ok: true, rows };
+}
+
+/** PUT /api/admin/sku-master — replace the whole SKU Master from CSV (validated, fail-closed). */
+adminRouter.put(
+  '/sku-master',
+  requireAdmin,
+  adminActionLimiter,
+  upload.single('file'),
+  asyncHandler(async (req: Request, res: Response) => {
+    const file = (req as Request & { file?: Express.Multer.File }).file;
+    if (!file) {
+      res.status(400).json({ error: '請上載 SKU Master CSV' });
+      return;
+    }
+    if (!/\.csv$/i.test(file.originalname)) {
+      res.status(400).json({ error: '只接受 .csv 檔案' });
+      return;
+    }
+    const content = new TextDecoder('utf-8', { fatal: false }).decode(file.buffer);
+    const parsed = parseSkuMasterCsv(content);
+    if (!parsed.ok || !parsed.rows) {
+      res.status(400).json({ error: 'SKU Master 無效', errors: parsed.errors ?? [] });
+      return;
+    }
+    try {
+      const result = await replaceSkuMaster({
+        rows: parsed.rows,
+        adminUsername: req.adminUsername!,
+      });
+      await writeAuditEvent({
+        eventType: 'sku_master_updated',
+        actorRole: 'admin',
+        actor: req.adminUsername,
+        ip: getClientIp(req),
+        metadata: { filename: file.originalname, count: result.count },
+      });
+      res.json({ ok: true, ...result });
+    } catch (err) {
+      if (err instanceof WorkflowConfigurationError) {
+        res.status(409).json({ error: err.message });
+        return;
+      }
+      throw err;
+    }
+  }),
+);
+
+/** GET /api/admin/store-routes — list designated store routing settings. */
+adminRouter.get(
+  '/store-routes',
+  requireAdmin,
+  adminActionLimiter,
+  asyncHandler(async (_req: Request, res: Response) => {
+    const result = await query<{
+      site_code: string;
+      shop: string | null;
+      sct_review_required: boolean;
+      remark_required: boolean;
+      updated_by: string;
+      updated_at: string;
+    }>(
+      `SELECT r.site_code, st.shop, r.sct_review_required, r.remark_required, r.updated_by, r.updated_at
+         FROM ndrf_store_routes r
+         LEFT JOIN stores st ON st.site_code = r.site_code
+        ORDER BY r.site_code`,
+    );
+    res.json({
+      routes: result.rows.map((row) => ({ ...row, updated_at: toHKString(row.updated_at) })),
+    });
+  }),
+);
+
+const storeRouteSchema = z.object({
+  site_code: z.string().trim().min(1).max(20),
+  sct_review_required: z.boolean().optional(),
+  remark_required: z.boolean().optional(),
+});
+
+/** PUT /api/admin/store-routes — upsert designated store routing settings. */
+adminRouter.put(
+  '/store-routes',
+  requireAdmin,
+  adminActionLimiter,
+  asyncHandler(async (req: Request, res: Response) => {
+    const parsed = storeRouteSchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ error: parsed.error.issues[0]?.message ?? '路由設定無效' });
+      return;
+    }
+    const siteCode = normalizeSiteCode(parsed.data.site_code);
+    const existing = await getStoreRouteConfig(siteCode);
+    await query(
+      `INSERT INTO ndrf_store_routes (site_code, sct_review_required, remark_required, updated_by, updated_at)
+       VALUES ($1, $2, $3, $4, now())
+       ON CONFLICT (site_code) DO UPDATE SET
+         sct_review_required = COALESCE($2, ndrf_store_routes.sct_review_required),
+         remark_required = COALESCE($3, ndrf_store_routes.remark_required),
+         updated_by = EXCLUDED.updated_by,
+         updated_at = now()`,
+      [
+        siteCode,
+        parsed.data.sct_review_required ?? false,
+        parsed.data.remark_required ?? false,
+        req.adminUsername,
+      ],
+    );
+    await writeAuditEvent({
+      eventType: 'store_routes_updated',
+      actorRole: 'admin',
+      actor: req.adminUsername,
+      ip: getClientIp(req),
+      metadata: { site_code: siteCode, before: existing, after: parsed.data },
+    });
+    res.json({ ok: true });
+  }),
+);
+
+const rejectionReasonSchema = z.object({
+  code: z.string().trim().min(1).max(100),
+  label: z.string().trim().min(1).max(300),
+  sort_order: z.number().int().optional(),
+  active: z.boolean().optional(),
+});
+
+/** GET /api/admin/rejection-reasons — list reject reason catalogue. */
+adminRouter.get(
+  '/rejection-reasons',
+  requireAdmin,
+  adminActionLimiter,
+  asyncHandler(async (_req: Request, res: Response) => {
+    const result = await query<{
+      code: string;
+      label: string;
+      sort_order: number;
+      active: boolean;
+      updated_by: string;
+      updated_at: string;
+    }>('SELECT code, label, sort_order, active, updated_by, updated_at FROM ndrf_rejection_reasons ORDER BY sort_order, code');
+    res.json({ reasons: result.rows.map((row) => ({ ...row, updated_at: toHKString(row.updated_at) })) });
+  }),
+);
+
+/** PUT /api/admin/rejection-reasons — upsert a reject reason category. */
+adminRouter.put(
+  '/rejection-reasons',
+  requireAdmin,
+  adminActionLimiter,
+  asyncHandler(async (req: Request, res: Response) => {
+    const parsed = rejectionReasonSchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ error: parsed.error.issues[0]?.message ?? '原因設定無效' });
+      return;
+    }
+    const before = await query<{ code: string }>('SELECT code FROM ndrf_rejection_reasons WHERE code = $1', [parsed.data.code]);
+    await query(
+      `INSERT INTO ndrf_rejection_reasons (code, label, sort_order, active, updated_by, updated_at)
+       VALUES ($1, $2, $3, $4, $5, now())
+       ON CONFLICT (code) DO UPDATE SET
+         label = EXCLUDED.label,
+         sort_order = EXCLUDED.sort_order,
+         active = EXCLUDED.active,
+         updated_by = EXCLUDED.updated_by,
+         updated_at = now()`,
+      [
+        parsed.data.code,
+        parsed.data.label,
+        parsed.data.sort_order ?? 0,
+        parsed.data.active ?? true,
+        req.adminUsername,
+      ],
+    );
+    await writeAuditEvent({
+      eventType: 'rejection_reason_updated',
+      actorRole: 'admin',
+      actor: req.adminUsername,
+      ip: getClientIp(req),
+      metadata: { code: parsed.data.code, created: before.rows.length === 0 },
+    });
+    res.json({ ok: true });
+  }),
+);
+
+const overrideSchema = z.object({
+  action: z.enum(['override_ready', 'override_accept', 'override_reject', 'reopen']),
+  reason: z.string().trim().min(1).max(2000),
+});
+
+/** POST /api/admin/submissions/:id/override — workflow override/reopen with mandatory reason. */
+adminRouter.post(
+  '/submissions/:id/override',
+  requireAdmin,
+  adminActionLimiter,
+  asyncHandler(async (req: Request, res: Response) => {
+    const parsed = overrideSchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ error: parsed.error.issues[0]?.message ?? 'Override 輸入無效' });
+      return;
+    }
+    try {
+      const row = await adminWorkflowOverride({
+        adminUsername: req.adminUsername!,
+        submissionId: req.params.id as string,
+        action: parsed.data.action,
+        reason: parsed.data.reason,
+        ip: getClientIp(req),
+      });
+      await writeAuditEvent({
+        eventType: 'workflow_override',
+        actorRole: 'admin',
+        actor: req.adminUsername,
+        submissionId: row.id,
+        applicationNo: row.application_no,
+        ip: getClientIp(req),
+        metadata: { action: parsed.data.action, reason: parsed.data.reason },
+      });
+      res.json({ submission: serializeAdminSubmission(row) });
+    } catch (err) {
+      if (err instanceof WorkflowLockedError || err instanceof ReviewDecisionError || err instanceof WorkflowConfigurationError) {
+        res.status(409).json({ error: err.message });
+        return;
+      }
+      if (err instanceof Error && err.message === '找不到申報') {
+        res.status(404).json({ error: '找不到申報' });
+        return;
+      }
+      throw err;
+    }
   }),
 );
 

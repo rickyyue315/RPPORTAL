@@ -76,4 +76,10 @@ export const config = {
   returnEnforcementStart: process.env.RETURN_ENFORCEMENT_START ?? '2026-08-01',
   storesCsvPath: process.env.STORES_CSV_PATH ?? path.join(__dirname, '..', 'stores-template.csv'),
   corsOrigins: (process.env.CORS_ORIGINS ?? '').split(',').map((s) => s.trim()).filter(Boolean),
+  // General NDRF portal (Store/Buyer/SCT accounts) cutover switch. Only affects
+  // new Store web submit/import; Admin management, review, export and override
+  // remain available regardless of this flag.
+  normalNdrfPortalEnabled: bool('NORMAL_NDRF_PORTAL_ENABLED', true),
+  // Reject cooldown before the same Site + SKU + RP Type can be re-applied.
+  ndrfRejectCooldownHours: Math.max(1, int('NDRF_REJECT_COOLDOWN_HOURS', 30 * 24)),
 };

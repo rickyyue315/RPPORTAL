@@ -39,7 +39,7 @@ setPoolForTesting({
 console.log('[smoke] PGlite ready');
 
 // Apply migrations manually without the pgcrypto extension line.
-for (const file of ['001_init.sql', '002_drop_rp_type_completed_at.sql', '003_add_submission_type_qty.sql', '004_add_urgent_reason.sql', '005_add_sales_submission_type.sql', '006_add_return_submission_type.sql', '007_add_idempotency_and_import_recovery.sql', '008_add_export_file_archive.sql', '009_architecture_hardening.sql', '010_query_optimization.sql', '011_cleanup_legacy_schema.sql', '012_om_recovery_codes.sql', '013_recovery_code_plaintext.sql']) {
+for (const file of ['001_init.sql', '002_drop_rp_type_completed_at.sql', '003_add_submission_type_qty.sql', '004_add_urgent_reason.sql', '005_add_sales_submission_type.sql', '006_add_return_submission_type.sql', '007_add_idempotency_and_import_recovery.sql', '008_add_export_file_archive.sql', '009_architecture_hardening.sql', '010_query_optimization.sql', '011_cleanup_legacy_schema.sql', '012_om_recovery_codes.sql', '013_recovery_code_plaintext.sql', '014_ndrf_workflow_portal.sql']) {
   const sql = (await readFile(path.join(root, 'src', 'db', 'migrations', file), 'utf8')).replace(
     /CREATE EXTENSION IF NOT EXISTS pgcrypto;\s*/g,
     '',
@@ -63,6 +63,37 @@ await db.query(
 const csvPath = path.join(root, 'stores-template.csv');
 await seedStoresFromFile(csvPath);
 console.log('[smoke] stores seeded');
+
+// Seed a Store portal account and a small SKU Master so the portal flow works.
+const { hashPassword } = await import('../src/services/portalAuth.js');
+const smokePwHash = await hashPassword('SmokeTest1!AAAA');
+await db.query(
+  `INSERT INTO portal_users (username, display_name, role, site_code, password_hash, must_change_password, active, created_by)
+   VALUES ('HA02', '駱克', 'store', 'HA02', $1, false, true, 'smoke')
+   ON CONFLICT (username) DO NOTHING`,
+  [smokePwHash],
+);
+const smokeBuyer = await db.query<{ id: string }>(
+  `INSERT INTO portal_users (username, display_name, role, password_hash, must_change_password, active, created_by)
+   VALUES ('BUYER1', 'Smoke Buyer', 'buyer', $1, false, true, 'smoke')
+   ON CONFLICT (username) DO UPDATE SET active = true
+   RETURNING id`,
+  [smokePwHash],
+);
+await db.query(
+  `INSERT INTO portal_users (username, display_name, role, password_hash, must_change_password, active, created_by)
+   VALUES ('SCT1', 'Smoke SCT', 'sct', $1, false, true, 'smoke')
+   ON CONFLICT (username) DO NOTHING`,
+  [smokePwHash],
+);
+for (const sku of ['1005020', '1005051', '1002001']) {
+  await db.query(
+    `INSERT INTO sku_master (sku, buyer_user_id, updated_by) VALUES ($1, $2, 'smoke')
+     ON CONFLICT (sku) DO NOTHING`,
+    [sku, smokeBuyer.rows[0]!.id],
+  );
+}
+console.log('[smoke] portal users + sku master seeded');
 
 const app = createApp();
 const server = app.listen(0, async () => {
@@ -105,17 +136,41 @@ const server = app.listen(0, async () => {
     const storeJson = await store.json();
     check('store lookup HA02', storeJson.store?.shop === '駱克');
 
-    const submit = await fetch(`${base}/api/public/submit`, {
+    // Portal login + normal NDRF submission (RF -> ready_for_rp).
+    const portalCsrf = await fetch(`${base}/api/csrf`);
+    const portalCsrfJson = await portalCsrf.json();
+    collectCookie(portalCsrf);
+    const portalLoginRes = await fetch(`${base}/api/portal/auth/login`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ site_code: 'HA02', sku: '1005020', brand: 'Test', rp_type: 'ND', nd_code: 'ND20-SO-Not displayed in small stores' }),
+      headers: {
+        'Content-Type': 'application/json',
+        cookie: cookieJar,
+        'x-csrf-token': portalCsrfJson.token,
+      },
+      body: JSON.stringify({ username: 'HA02', password: 'SmokeTest1!AAAA' }),
+    });
+    collectCookie(portalLoginRes);
+    check('portal login', portalLoginRes.status === 200);
+
+    const submit = await fetch(`${base}/api/portal/store/submit`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        cookie: cookieJar,
+        'x-csrf-token': portalCsrfJson.token,
+      },
+      body: JSON.stringify({ brand: 'Test', sku: '1005020', rp_type: 'RF', safety_stock: '5' }),
     });
     const submitJson = await submit.json();
-    check('web submit', submit.status === 201 && /^NDRF-/.test(submitJson.submission.application_no));
+    check('portal web submit', submit.status === 201 && /^NDRF-/.test(submitJson.submission.application_no));
 
     const appNo = submitJson.submission.application_no;
-    const query = await fetch(`${base}/api/public/query?application_no=${appNo}&site_code=HA02`);
-    check('query by app no', query.status === 200);
+    const storeList = await fetch(`${base}/api/portal/store/submissions`, { headers: { cookie: cookieJar } });
+    const storeListJson = await storeList.json();
+    check('store dashboard list', storeList.status === 200 && storeListJson.submissions.some((s: { application_no: string }) => s.application_no === appNo));
+
+    const blockedPublicQuery = await fetch(`${base}/api/public/query?application_no=${appNo}&site_code=HA02`);
+    check('normal query blocked on public API', blockedPublicQuery.status === 403);
 
     const urgent = await fetch(`${base}/api/public/urgent/submit`, {
       method: 'POST',
@@ -272,12 +327,23 @@ const server = app.listen(0, async () => {
     });
     check('admin sales export + lock', salesExportRes.status === 200 && Number(salesExportRes.headers.get('content-length')) > 1000);
 
-    const locked = await fetch(`${base}/api/public/modify`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ application_no: appNo, site_code: 'HA02', sku: '1002001' }),
+    const locked = await fetch(`${base}/api/admin/submissions?application_no=${appNo}&page=1`, {
+      headers: { cookie: cookieJar },
     });
-    check('locked submission rejects modify', locked.status === 409);
+    const lockedJson = await locked.json();
+    const lockedRow = lockedJson.submissions?.[0];
+    const lockedEdit = lockedRow
+      ? await fetch(`${base}/api/admin/submissions/${lockedRow.id}`, {
+          method: 'PUT',
+          headers: {
+            'Content-Type': 'application/json',
+            cookie: cookieJar,
+            'x-csrf-token': csrfJson.token,
+          },
+          body: JSON.stringify({ sku: '1005020', rp_type: 'RF', safety_stock: '9' }),
+        })
+      : null;
+    check('locked submission rejects admin edit', lockedEdit?.status === 409);
 
     const audit = await fetch(`${base}/api/admin/audit`, { headers: { cookie: cookieJar } });
     check('audit export', audit.status === 200 && Number(audit.headers.get('content-length')) > 100);

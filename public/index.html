@@ -11,10 +11,10 @@
     <div>
       <h1>NDRF 申報平台</h1>
       <div class="subtitle">SASA RP Team 非正常情況NDRF申報平台</div>
-      <div class="portal-note">公司Portal 平台已於今日下午回復正常，此平台將會於2026年8月11日晚上23點59分後結束服務，當所有申請處理完成後才刪除資料，請店舖不用重複於公司Portal重複申請，謝謝。</div>
+      <div class="portal-note">一般 NDRF 申報已改為帳戶登入；Urgent、突發性銷售及行貨退貨仍可直接於本頁使用。</div>
     </div>
     <nav>
-      <a href="/" class="active" aria-current="page">一般申報</a>
+      <a href="/portal/">一般申報（登入）</a>
       <a href="/urgent.html">Urgent Order</a>
       <a href="/sales.html">突發性銷售申報</a>
       <a href="/return.html">行貨退貨報數</a>
@@ -23,113 +23,17 @@
     </nav>
   </header>
 
-  <div class="announce-banner" role="alert">
-    SKU申請ND的申報，我們會待HKBI回復正常後才處理，現階段只會收集ND的申請。RF/改Safety的申請我們會正常處理。
-  </div>
-
   <main class="container">
-    <div class="apply-layout">
-      <aside class="card rf-remark-card">
-        <h2>轉 RF 必須填寫 Remark</h2>
-        <div class="hint">以下店舖轉 RF 時，Remark 為必填。</div>
-        <div id="rf_remark_required_stores" class="rf-store-list" aria-live="polite">
-          <div class="loading">載入中…</div>
-        </div>
-      </aside>
-
-      <div class="card">
-        <h2>單筆申報</h2>
-        <p class="hint">只有 <b>Site Code</b>、<b>SKU</b> 及 <b>RP Type</b> 為必填。RP Type 為 <b>RF</b> 時必須填寫 Safety stock（大於 0）且 <b>不可填寫 ND Code</b>；RP Type 為 <b>ND</b> 時必須填寫 <b>系統提供的 ND Code</b> 且不可填寫 Safety stock。部分店舖轉 RF 時必須填寫 Remark。</p>
-        <div id="form_error"></div>
-        <form id="apply_form">
-          <div class="form-grid">
-          <div>
-            <label for="site_code">Site Code <span class="optional">（必填）</span></label>
-            <input type="text" id="site_code" autocomplete="off" placeholder="例如 HA02">
-            <div class="hint">輸入後自動驗證門店。</div>
-          </div>
-          <div>
-            <label>門店資訊</label>
-            <div id="store_info" class="hint" style="padding-top:9px">—</div>
-          </div>
-          <div>
-            <label for="sku">SKU <span class="optional">（必填）</span></label>
-            <input type="text" id="sku">
-            <div class="hint">只可輸入一個 SKU（7 位或 12 位數字）。</div>
-          </div>
-          <div>
-            <label for="rp_type">RP Type <span class="optional">（必填）</span></label>
-            <select id="rp_type">
-              <option value="">—</option>
-            </select>
-          </div>
-          <div id="safety_stock_wrap">
-            <label for="safety_stock">Safety stock</label>
-            <input type="text" id="safety_stock">
-          </div>
-          <div id="nd_code_wrap">
-            <label for="nd_code">ND Code</label>
-            <input type="text" id="nd_code" list="nd_code_list">
-            <datalist id="nd_code_list"></datalist>
-          </div>
-          <div class="full">
-            <label for="remark">Remark</label>
-            <input type="text" id="remark">
-          </div>
-          </div>
-          <div class="btn-row">
-            <button type="submit" class="btn" id="btn_submit">提交</button>
-            <button type="button" class="btn secondary" id="btn_preview">預覽</button>
-          </div>
-        </form>
-
-        <div id="preview_box" style="display:none">
-          <hr>
-          <h3>提交預覽</h3>
-          <div class="dl" id="preview_body"></div>
-          <div class="hint" style="margin:12px 0 0">確認提交成功後會顯示「申請編號」，請立即記低／複製，日後查詢或修改需要用到。</div>
-          <div class="btn-row">
-            <button class="btn" id="btn_confirm">確認提交</button>
-            <button class="btn secondary" id="btn_cancel_preview">返回修改</button>
-          </div>
-          <div id="confirm_error"></div>
-        </div>
-      </div>
-    </div>
-
-    <div class="card" id="result_card" style="display:none">
-      <h2>已收件</h2>
-      <div class="result-box">
-        <div class="result-banner">✓ 申報已成功收件</div>
-        <div>申請時間：<b id="res_time"></b></div>
-        <div class="app-no-label" style="margin-top:8px">申請編號：</div>
-        <div class="app-no-row">
-          <div class="app-no" id="res_no"></div>
-          <button type="button" class="btn ghost btn-copy" id="btn_copy_no" data-copy-target="res_no">複製</button>
-        </div>
-        <div class="alert warning" style="margin-top:12px">
-          <b>⚠️ 請務必抄低／截圖此申請編號</b> — 之後如需修改，必須於「<a href="/lookup.html">查詢／修改</a>」頁輸入「<b>申請編號 + Site Code</b>」先搵得返紀錄。<b>冇編號就無法自行修改</b>，請即按「複製」或截圖備存（匯出後會鎖定，不能再改）。
-        </div>
-      </div>
+    <div class="card portal-gate-card">
+      <h2>一般 NDRF 申報（ND / RF / 改 Safety）</h2>
+      <p class="hint">一般 NDRF 申報已改為網上帳戶申請。請使用 RP Team 派發的帳戶登入；登入後即可單筆申報、Excel 批量上載、查詢申請狀態及審批結果。</p>
       <div class="btn-row">
-        <button class="btn" id="btn_again">再提交一筆</button>
+        <a class="btn" href="/portal/">前往 Store Portal 登入</a>
+        <a class="btn ghost" href="/help.html">使用說明</a>
       </div>
-    </div>
-
-    <div class="card">
-      <h2>Excel 批量上載</h2>
-      <p class="hint">使用固定模板（工作表 <b>RP Team</b>），一行代表一筆申請。只接受 Excel 活頁簿（<b>.xlsx</b>），支援 Excel 2007 或更新版本（包括 Excel 2019、Excel 2021、Excel 2024 及 Microsoft 365）；整份檔案會先完整驗證，任何錯誤都不會寫入資料。</p>
-      <div class="btn-row" style="margin-top:0">
-        <a class="btn ghost" href="/api/public/template">下載模板 (.xlsx)</a>
+      <div class="alert warning" style="margin-top:16px">
+        <b>申請後如需查詢／修改</b>：一般 NDRF 請於登入後於「我的申請」查看；Rejected 的申請只可查看原因，於指定冷卻期後方可重新申請。
       </div>
-      <div class="file-drop" id="file_drop">
-        <div id="file_label">拖曳 .xlsx 檔案到此處，或按一下選擇檔案</div>
-        <input type="file" id="file_input" accept=".xlsx" style="display:none">
-      </div>
-      <div class="btn-row">
-        <button class="btn" id="btn_import">上載並匯入</button>
-      </div>
-      <div id="import_result"></div>
     </div>
 
     <div class="card">
@@ -137,11 +41,6 @@
       <p class="hint" style="margin-top:0">第一次使用？請到獨立的<a href="/help.html#normal">圖文使用說明</a>，按照圖片逐步完成申報。</p>
     </div>
   </main>
-
-  <script src="/js/options.js"></script>
-  <script src="/js/api.js"></script>
-  <script src="/js/apply.js"></script>
-  <script src="/js/service-suspension.js"></script>
 
   <footer class="site-footer">Developed by RP Team - Ricky Yue</footer>
 </body>

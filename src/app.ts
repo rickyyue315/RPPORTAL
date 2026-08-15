@@ -8,6 +8,7 @@ import { fileURLToPath } from 'node:url';
 import { config } from './config.js';
 import { publicRouter } from './routes/public.js';
 import { adminRouter } from './routes/admin.js';
+import { portalRouter } from './routes/portal.js';
 import { checkDatabase } from './db/pool.js';
 import { csrfProtection, csrfTokenCookie } from './middleware/csrf.js';
 import { asyncHandler } from './middleware/helpers.js';
@@ -26,7 +27,7 @@ import {
   URGENT_REASONS,
   URGENT_WEB_MAX_ITEMS,
 } from './lib/fields.js';
-import { RF_REMARK_REQUIRED_SITES, SKU_PATTERN } from './lib/validation.js';
+import { SKU_PATTERN, RF_REMARK_REQUIRED_SITES } from './lib/validation.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -125,6 +126,7 @@ export function createApp() {
 
   app.use('/api/public', publicRouter);
   app.use('/api/admin', csrfProtection, adminRouter);
+  app.use('/api/portal', csrfProtection, portalRouter);
 
   // 404 for API
   app.use('/api', (_req: Request, res: Response) => {

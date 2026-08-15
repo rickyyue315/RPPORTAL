@@ -579,6 +579,19 @@ export async function buildAuditExportBuffer(
     metadata: unknown;
     created_at: string;
   }> = [],
+  reviewEvents: Array<{
+    application_no: string | null;
+    event_type: string;
+    actor_role: string;
+    actor: string;
+    review_round: number;
+    reject_reason_label: string | null;
+    reject_reason_note: string | null;
+    remark: string | null;
+    reason: string | null;
+    ip: string | null;
+    created_at: string;
+  }> = [],
 ): Promise<Buffer> {
   const workbook = new ExcelJS.Workbook();
   const sheet = workbook.addWorksheet('Audit Report');
@@ -638,6 +651,36 @@ export async function buildAuditExportBuffer(
       event.ip ?? '',
       toHKDateString(event.created_at),
       event.metadata === null || event.metadata === undefined ? '' : JSON.stringify(event.metadata),
+    ]);
+  }
+
+  const reviewSheet = workbook.addWorksheet('Review Events');
+  reviewSheet.addRow([
+    '申請編號',
+    '事件',
+    '審批回合',
+    '操作者角色',
+    '操作者',
+    'IP',
+    'Reject 原因',
+    '補充說明',
+    'Review Remark',
+    'Override/Reopen 原因',
+    '日期時間 (HK)',
+  ]);
+  for (const event of reviewEvents) {
+    reviewSheet.addRow([
+      event.application_no ?? '',
+      event.event_type,
+      event.review_round,
+      event.actor_role,
+      event.actor,
+      event.ip ?? '',
+      event.reject_reason_label ?? '',
+      event.reject_reason_note ?? '',
+      event.remark ?? '',
+      event.reason ?? '',
+      toHKDateString(event.created_at),
     ]);
   }
 

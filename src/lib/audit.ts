@@ -21,11 +21,25 @@ export type AuditEventType =
   | 'store_master_updated'
   | 'recovery_code_set'
   | 'recovery_code_deleted'
-  | 'ip_cleanup';
+  | 'ip_cleanup'
+  | 'portal_login'
+  | 'portal_logout'
+  | 'portal_password_changed'
+  | 'portal_submission_created'
+  | 'portal_review_remark'
+  | 'portal_review_decision'
+  | 'portal_user_created'
+  | 'portal_user_updated'
+  | 'portal_password_reset'
+  | 'store_accounts_synced'
+  | 'sku_master_updated'
+  | 'store_routes_updated'
+  | 'rejection_reason_updated'
+  | 'workflow_override';
 
 interface AuditInput {
   eventType: AuditEventType;
-  actorRole?: 'applicant' | 'admin';
+  actorRole?: 'applicant' | 'admin' | 'store' | 'buyer' | 'sct';
   actor?: string;
   submissionId?: string;
   applicationNo?: string;

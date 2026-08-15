@@ -200,14 +200,27 @@ export function parseStoresCsv(content: string): {
   if (stores.length === 0) return { ok: false, errors: ['CSV 沒有有效門店'] };
   return { ok: true, stores };
 }
+/**
+ * Replaces the store master with upserts instead of delete/reinsert so that
+ * submissions, portal accounts and routing settings that reference Site Codes
+ * are never destroyed. Removed Site Codes simply disappear from the master.
+ */
 export async function replaceStores(stores: Store[]): Promise<number> {
   return withTransaction(async (client) => {
-    await client.query('DELETE FROM stores');
     let count = 0;
     for (const s of stores) {
       await client.query(
         `INSERT INTO stores (site_code, shop, regional, class1, class2, size, om, type)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+         ON CONFLICT (site_code) DO UPDATE SET
+           shop = EXCLUDED.shop,
+           regional = EXCLUDED.regional,
+           class1 = EXCLUDED.class1,
+           class2 = EXCLUDED.class2,
+           size = EXCLUDED.size,
+           om = EXCLUDED.om,
+           type = EXCLUDED.type,
+           updated_at = now()`,
         [s.site_code, s.shop, s.regional, s.class1, s.class2, s.size, s.om, s.type],
       );
       count++;

@@ -14,6 +14,7 @@ import { cleanupExpiredExportFiles } from '../src/services/exportFiles.js';
 import { MASTER_RECOVERY_OM } from '../src/lib/recovery.js';
 import { TEMPLATE_COLUMNS, RP_TEAM_SHEET, SHOP_CODE_HEADER, URGENT_COLUMNS, URGENT_SHEET, SALES_COLUMNS, SALES_SHEET, RETURN_COLUMNS, RETURN_SHEET } from '../src/lib/fields.js';
 import * as time from '../src/lib/time.js';
+import { hashPassword } from '../src/services/portalAuth.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 let app: Express;
@@ -22,6 +23,7 @@ let timeSpy: ReturnType<typeof vi.spyOn>;
 const MASTER_RECOVERY_CODE = 'test-master-code';
 const IVY_RECOVERY_CODE = 'test-ivy-code';
 const VIOLET_RECOVERY_CODE = 'test-violet-code';
+const STORE_TEST_PASSWORD = 'StoreTest1!ABCD';
 
 function recoveryHash(code: string): string {
   return createHash('sha256').update(code).digest('hex');
@@ -38,6 +40,86 @@ async function seedRecoveryCodes(): Promise<void> {
   await insert(MASTER_RECOVERY_OM, MASTER_RECOVERY_CODE);
   await insert('Ivy', IVY_RECOVERY_CODE);
   await insert('Violet', VIOLET_RECOVERY_CODE);
+}
+
+/** Seeds Store/Buyer/SCT portal accounts plus a SKU Master covering the SKUs the suite uses. */
+async function seedPortalUsers(): Promise<void> {
+  const pwHash = await hashPassword(STORE_TEST_PASSWORD);
+  for (const site of ['HA02', 'HA06', 'HA19', 'HBA7']) {
+    await db.query(
+      `INSERT INTO portal_users (username, display_name, role, site_code, password_hash, must_change_password, active, created_by)
+       VALUES ($1, $1, 'store', $2, $3, false, true, 'test')
+       ON CONFLICT (username) DO NOTHING`,
+      [site, site, pwHash],
+    );
+  }
+  const buyer1 = await db.query<{ id: string }>(
+    `INSERT INTO portal_users (username, display_name, role, password_hash, must_change_password, active, created_by)
+     VALUES ('BUYER1', 'Buyer One', 'buyer', $1, false, true, 'test')
+     ON CONFLICT (username) DO UPDATE SET active = true
+     RETURNING id`,
+    [pwHash],
+  );
+  await db.query(
+    `INSERT INTO portal_users (username, display_name, role, password_hash, must_change_password, active, created_by)
+     VALUES ('BUYER2', 'Buyer Two', 'buyer', $1, false, true, 'test')
+     ON CONFLICT (username) DO NOTHING`,
+    [pwHash],
+  );
+  await db.query(
+    `INSERT INTO portal_users (username, display_name, role, password_hash, must_change_password, active, created_by)
+     VALUES ('SCT1', 'SCT One', 'sct', $1, false, true, 'test')
+     ON CONFLICT (username) DO NOTHING`,
+    [pwHash],
+  );
+  const skus = [
+    '1000001', '1000002', '1000003', '1000004', '1000005', '1000006', '1000007', '1000011', '1000123',
+    '1000777', '1000888', '1000999', '1003001', '1003002', '1003003', '1003004', '1003005', '1003006',
+    '1003007', '1003008', '1003009', '1003014', '1004001', '1004002', '1004101', '1004102', '1004103',
+    '1004104', '1004105', '1004106', '1004107', '1004108', '1005012', '1007991', '1008001',
+    '1008999', '1009001',
+    '1009115', '1009131', '110079623001',
+  ];
+  for (const sku of skus) {
+    await db.query(
+      `INSERT INTO sku_master (sku, buyer_user_id, updated_by)
+       VALUES ($1, $2, 'test')
+       ON CONFLICT (sku) DO NOTHING`,
+      [sku, buyer1.rows[0]!.id],
+    );
+  }
+}
+
+async function portalLogin(agent: ReturnType<typeof request.agent>, username: string): Promise<string> {
+  const token = await csrf(agent);
+  const res = await agent
+    .post('/api/portal/auth/login')
+    .set('x-csrf-token', token)
+    .send({ username, password: STORE_TEST_PASSWORD });
+  expect(res.status).toBe(200);
+  return token;
+}
+
+type PortalAgent = ReturnType<typeof request.agent> & { _portalCsrf?: string };
+
+/** Creates and logs in a Store portal agent bound to a Site Code. */
+async function storeAgent(site: string): Promise<PortalAgent> {
+  const agent = request.agent(app) as PortalAgent;
+  agent._portalCsrf = await portalLogin(agent, site);
+  return agent;
+}
+
+/** Submits a general NDRF via the Store portal (site_code comes from the session). */
+async function submitNormal(
+  agent: PortalAgent,
+  payload: Record<string, unknown>,
+  key?: string,
+): Promise<ReturnType<typeof request.post>> {
+  const { site_code: _ignored, ...body } = payload;
+  void _ignored;
+  let req = agent.post('/api/portal/store/submit').set('x-csrf-token', agent._portalCsrf ?? '');
+  if (key) req = req.set('Idempotency-Key', key);
+  return req.send(body);
 }
 
 function makePglitePool(database: PGlite): never {
@@ -72,7 +154,7 @@ async function countSubmissions(where = ''): Promise<number> {
 beforeAll(async () => {
   db = new PGlite();
   setPoolForTesting(makePglitePool(db));
-  const migrationFiles = ['001_init.sql', '002_drop_rp_type_completed_at.sql', '003_add_submission_type_qty.sql', '004_add_urgent_reason.sql', '005_add_sales_submission_type.sql', '006_add_return_submission_type.sql', '007_add_idempotency_and_import_recovery.sql', '008_add_export_file_archive.sql', '009_architecture_hardening.sql', '010_query_optimization.sql', '011_cleanup_legacy_schema.sql', '012_om_recovery_codes.sql', '013_recovery_code_plaintext.sql'];
+  const migrationFiles = ['001_init.sql', '002_drop_rp_type_completed_at.sql', '003_add_submission_type_qty.sql', '004_add_urgent_reason.sql', '005_add_sales_submission_type.sql', '006_add_return_submission_type.sql', '007_add_idempotency_and_import_recovery.sql', '008_add_export_file_archive.sql', '009_architecture_hardening.sql', '010_query_optimization.sql', '011_cleanup_legacy_schema.sql', '012_om_recovery_codes.sql', '013_recovery_code_plaintext.sql', '014_ndrf_workflow_portal.sql'];
   for (const file of migrationFiles) {
     let sql = await readFile(path.join(__dirname, '..', 'src', 'db', 'migrations', file), 'utf8');
     sql = sql.replace(/CREATE EXTENSION IF NOT EXISTS pgcrypto;\s*/g, '');
@@ -87,6 +169,7 @@ beforeAll(async () => {
     ],
   );
   await seedRecoveryCodes();
+  await seedPortalUsers();
   app = createApp();
   // Freeze the clock at 09:00 HK so tests are independent of the real wall-clock
   // (the Urgent Order window closes at 14:30 HK). Window tests override this spy.
@@ -115,7 +198,8 @@ describe('public API', () => {
   });
 
   it('rejects an unknown RP Type before persistence', async () => {
-    const res = await request(app).post('/api/public/submit').send({
+    const agent = await storeAgent('HA02');
+    const res = await submitNormal(agent, {
       site_code: 'HA02',
       sku: '1000999',
       rp_type: 'ZZ',
@@ -172,17 +256,21 @@ describe('public API', () => {
     await db.query(`DELETE FROM submissions WHERE submission_type = 'return'`);
   });
 
-  it('rejects submit with unknown site code', async () => {
-    const res = await request(app).post('/api/public/submit').send({
-      site_code: 'ZZ99',
+  it('binds every submission to the logged-in site regardless of body site_code', async () => {
+    const agent = await storeAgent('HA02');
+    const res = await submitNormal(agent, {
+      site_code: 'HA06',
       sku: '1000123',
+      rp_type: 'ND',
+      nd_code: 'ND20-SO-Not displayed in small stores',
     });
-    expect(res.status).toBe(400);
-    expect(res.body.field).toBe('site_code');
+    expect(res.status).toBe(201);
+    expect(res.body.submission.site_code).toBe('HA02');
   });
 
   it('rejects submit with missing SKU', async () => {
-    const res = await request(app).post('/api/public/submit').send({
+    const agent = await storeAgent('HA02');
+    const res = await submitNormal(agent, {
       site_code: 'HA02',
       sku: '',
     });
@@ -191,7 +279,8 @@ describe('public API', () => {
   });
 
   it('rejects submit with multiple comma-separated SKUs', async () => {
-    const res = await request(app).post('/api/public/submit').send({
+    const agent = await storeAgent('HA02');
+    const res = await submitNormal(agent, {
       site_code: 'HA02',
       sku: '123456789012 , 123456789011',
       rp_type: 'ND',
@@ -203,8 +292,9 @@ describe('public API', () => {
   });
 
   it('rejects submit with SKU of invalid length or characters', async () => {
+    const agent = await storeAgent('HA02');
     for (const sku of ['123456', '1234567890', 'ABC1234567', '1234567890123']) {
-      const res = await request(app).post('/api/public/submit').send({
+      const res = await submitNormal(agent, {
         site_code: 'HA02',
         sku,
         rp_type: 'ND',
@@ -216,7 +306,8 @@ describe('public API', () => {
   });
 
   it('accepts submit with 7-digit and 12-digit SKUs', async () => {
-    const seven = await request(app).post('/api/public/submit').send({
+    const agent = await storeAgent('HA06');
+    const seven = await submitNormal(agent, {
       site_code: 'HA06',
       sku: '1008001',
       rp_type: 'ND',
@@ -225,7 +316,7 @@ describe('public API', () => {
     expect(seven.status).toBe(201);
     expect(seven.body.submission.sku).toBe('1008001');
 
-    const twelve = await request(app).post('/api/public/submit').send({
+    const twelve = await submitNormal(agent, {
       site_code: 'HA06',
       sku: '110079623001',
       rp_type: 'ND',
@@ -236,7 +327,8 @@ describe('public API', () => {
   });
 
   it('rejects submit with missing RP Type', async () => {
-    const res = await request(app).post('/api/public/submit').send({
+    const agent = await storeAgent('HA02');
+    const res = await submitNormal(agent, {
       site_code: 'HA02',
       sku: '1000001',
     });
@@ -245,7 +337,8 @@ describe('public API', () => {
   });
 
   it('rejects ND submit without ND Code', async () => {
-    const res = await request(app).post('/api/public/submit').send({
+    const agent = await storeAgent('HA02');
+    const res = await submitNormal(agent, {
       site_code: 'HA02',
       sku: '1000002',
       rp_type: 'ND',
@@ -255,7 +348,8 @@ describe('public API', () => {
   });
 
   it('rejects RF submit without Safety stock', async () => {
-    const res = await request(app).post('/api/public/submit').send({
+    const agent = await storeAgent('HA02');
+    const res = await submitNormal(agent, {
       site_code: 'HA02',
       sku: '1000003',
       rp_type: 'RF',
@@ -265,8 +359,9 @@ describe('public API', () => {
   });
 
   it('rejects RF submit with Safety stock not greater than 0', async () => {
+    const agent = await storeAgent('HA02');
     for (const safetyStock of ['0', '-5', 'abc']) {
-      const res = await request(app).post('/api/public/submit').send({
+      const res = await submitNormal(agent, {
         site_code: 'HA02',
         sku: '1000004',
         rp_type: 'RF',
@@ -278,17 +373,20 @@ describe('public API', () => {
   });
 
   it('accepts RF submit with positive Safety stock for a non-listed store', async () => {
-    const res = await request(app).post('/api/public/submit').send({
+    const agent = await storeAgent('HA02');
+    const res = await submitNormal(agent, {
       site_code: 'HA02',
       sku: '1000005',
       rp_type: 'RF',
       safety_stock: '3.5',
     });
     expect(res.status).toBe(201);
+    expect(res.body.submission.workflow_status).toBe('ready_for_rp');
   });
 
   it('rejects RF submit for a listed store without Remark', async () => {
-    const res = await request(app).post('/api/public/submit').send({
+    const agent = await storeAgent('HA19');
+    const res = await submitNormal(agent, {
       site_code: 'HA19',
       sku: '1000006',
       rp_type: 'RF',
@@ -299,7 +397,8 @@ describe('public API', () => {
   });
 
   it('accepts RF submit for a listed store with Remark', async () => {
-    const res = await request(app).post('/api/public/submit').send({
+    const agent = await storeAgent('HBA7');
+    const res = await submitNormal(agent, {
       site_code: 'HBA7',
       sku: '1000007',
       rp_type: 'RF',
@@ -307,10 +406,13 @@ describe('public API', () => {
       remark: '轉 RF 原因',
     });
     expect(res.status).toBe(201);
+    expect(res.body.submission.route).toBe('sct');
+    expect(res.body.submission.workflow_status).toBe('pending');
   });
 
   it('accepts a valid submission', async () => {
-    const res = await request(app).post('/api/public/submit').send({
+    const agent = await storeAgent('HA02');
+    const res = await submitNormal(agent, {
       site_code: 'HA02',
       brand: 'NEG - NEOGENCE',
       sku: '110079623001',
@@ -326,23 +428,26 @@ describe('public API', () => {
 
   it('replays a single web submission after a lost response', async () => {
     const key = 'normal-retry-test-key';
+    const agent = await storeAgent('HA19');
     const payload = {
       site_code: 'HA19',
       sku: '1008999',
       rp_type: 'ND',
       nd_code: 'ND20-SO-Not displayed in small stores',
     };
-    const first = await request(app).post('/api/public/submit').set('Idempotency-Key', key).send(payload);
+    const first = await submitNormal(agent, payload, key);
     expect(first.status).toBe(201);
-    const retry = await request(app).post('/api/public/submit').set('Idempotency-Key', key).send(payload);
+    const retry = await submitNormal(agent, payload, key);
     expect(retry.status).toBe(200);
     expect(retry.body.replayed).toBe(true);
     expect(retry.body.submission.application_no).toBe(first.body.submission.application_no);
     const stored = await db.query<{ count: string }>('SELECT count(*)::text AS count FROM submissions WHERE idempotency_key = $1', [key]);
     expect(stored.rows[0]?.count).toBe('1');
   });
-  it('queries a submission with application_no + site_code', async () => {
-    const created = await request(app).post('/api/public/submit').send({
+
+  it('queries a normal submission through the store dashboard instead of public lookup', async () => {
+    const agent = await storeAgent('HA06');
+    const created = await submitNormal(agent, {
       site_code: 'HA06',
       sku: '1000999',
       rp_type: 'ND',
@@ -350,10 +455,21 @@ describe('public API', () => {
       remark: 'test',
     });
     const no = created.body.submission.application_no;
-    const res = await request(app).get(`/api/public/query?application_no=${no}&site_code=HA06`);
-    expect(res.status).toBe(200);
-    expect(res.body.submission.application_no).toBe(no);
-    expect(res.body.submission.site_code).toBe('HA06');
+
+    const blocked = await request(app).get(`/api/public/query?application_no=${no}&site_code=HA06`);
+    expect(blocked.status).toBe(403);
+
+    const list = await agent.get('/api/portal/store/submissions');
+    expect(list.status).toBe(200);
+    const row = list.body.submissions.find((s: { application_no: string }) => s.application_no === no);
+    expect(row).toBeDefined();
+    expect(row.site_code).toBe('HA06');
+
+    const detail = await agent.get(`/api/portal/store/submissions/${row.id}`);
+    expect(detail.status).toBe(200);
+    expect(detail.body.submission.application_no).toBe(no);
+    expect(detail.body.submission.workflow_status).toBe('pending');
+    expect(detail.body.submission.route).toBe('buyer');
   });
 
   it('does not reveal whether an application number exists', async () => {
@@ -363,11 +479,11 @@ describe('public API', () => {
   });
 
   it('recovers application numbers by site code + date range', async () => {
-    const created = await request(app).post('/api/public/submit').send({
+    const created = await request(app).post('/api/public/urgent/submit').send({
       site_code: 'HA06',
       sku: '1000888',
-      rp_type: 'ND',
-      nd_code: 'ND20-SO-Not displayed in small stores',
+      qty: 5,
+      urgent_reason: '1',
     });
     expect(created.status).toBe(201);
     const no = created.body.submission.application_no;
@@ -379,10 +495,9 @@ describe('public API', () => {
     expect(found.status).toBe(200);
     expect(found.body.store.shop).toBe('北角');
     expect(found.body.rows.some((r) => r.application_no === no)).toBe(true);
-    expect(found.body.rows[0].submission_type).toBe('normal');
+    expect(found.body.rows[0].submission_type).toBe('urgent');
     expect(found.body.rows[0].sku).toBe('1000888');
-    expect(found.body.rows[0].rp_type).toBe('ND');
-    expect(found.body.rows[0].qty).toBeNull();
+    expect(found.body.rows[0].qty).toBe(5);
 
     const other = await request(app)
       .get(`/api/public/my-applications?site_code=HA02&from=${date}&to=${date}`)
@@ -631,13 +746,14 @@ describe('admin API', () => {
     const agent = request.agent(app);
     await adminLogin(agent);
 
-    // Create two submissions to export
+    // Create two ready-for-RP submissions (normal store RF) to export.
     for (const [index, site] of ['HA02', 'HA06'].entries()) {
-      await request(app).post('/api/public/submit').send({
+      const store = await storeAgent(site);
+      await submitNormal(store, {
         site_code: site,
         sku: `100400${index + 1}`,
-        rp_type: 'ND',
-        nd_code: 'ND20-SO-Not displayed in small stores',
+        rp_type: 'RF',
+        safety_stock: '5',
       });
     }
 
@@ -690,7 +806,8 @@ describe('admin API', () => {
   });
 
   it('rebuilds a legacy export batch that has no archived binary', async () => {
-    const created = await request(app).post('/api/public/submit').send({
+    const store = await storeAgent('HBA7');
+    const created = await submitNormal(store, {
       site_code: 'HBA7',
       sku: '1009131',
       rp_type: 'ND',
@@ -719,11 +836,12 @@ describe('admin API', () => {
     });
 
     it('derives last_modified_at from version history (null until modified)', async () => {
-      const created = await request(app).post('/api/public/submit').send({
+      const store = await storeAgent('HA02');
+      const created = await submitNormal(store, {
         site_code: 'HA02',
         sku: '1004101',
-        rp_type: 'ND',
-        nd_code: 'ND20-SO-Not displayed in small stores',
+        rp_type: 'RF',
+        safety_stock: '5',
       });
       const no = created.body.submission.application_no;
 
@@ -732,14 +850,14 @@ describe('admin API', () => {
       const rowBefore = before.body.submissions.find((s) => s.application_no === no);
       expect(rowBefore.last_modified_at).toBeNull();
 
-      const modify = await request(app).post('/api/public/modify').send({
-        application_no: no,
-        site_code: 'HA02',
-        sku: '1004102',
-        rp_type: 'ND',
-        nd_code: 'ND20-SO-Not displayed in small stores',
-      });
-      expect(modify.status).toBe(200);
+      const idRes = await db.query<{ id: string }>('SELECT id FROM submissions WHERE application_no = $1', [no]);
+      const id = idRes.rows[0]!.id;
+      const token = await csrf(agent);
+      const adminEdit = await agent
+        .put(`/api/admin/submissions/${id}`)
+        .set('x-csrf-token', token)
+        .send({ sku: '1004102', rp_type: 'RF', safety_stock: '6' });
+      expect(adminEdit.status).toBe(200);
 
       const after = await agent.get(`/api/admin/submissions?application_no=${no}&page=1`);
       const rowAfter = after.body.submissions.find((s) => s.application_no === no);
@@ -755,11 +873,12 @@ describe('admin API', () => {
     });
 
     it('preview export downloads without locking or writing batches', async () => {
-      await request(app).post('/api/public/submit').send({
+      const store = await storeAgent('HA06');
+      await submitNormal(store, {
         site_code: 'HA06',
         sku: '1004103',
-        rp_type: 'ND',
-        nd_code: 'ND20-SO-Not displayed in small stores',
+        rp_type: 'RF',
+        safety_stock: '5',
       });
 
       const token = await csrf(agent);
@@ -782,12 +901,13 @@ describe('admin API', () => {
       expect(Number(batchesAfter.rows[0]!.count)).toBe(Number(batchesBefore.rows[0]!.count));
     });
 
-    it('previewed submission remains modifiable by the applicant', async () => {
-      const created = await request(app).post('/api/public/submit').send({
+    it('previewed submission remains modifiable by admin (not the applicant)', async () => {
+      const store = await storeAgent('HA06');
+      const created = await submitNormal(store, {
         site_code: 'HA06',
         sku: '1004104',
-        rp_type: 'ND',
-        nd_code: 'ND20-SO-Not displayed in small stores',
+        rp_type: 'RF',
+        safety_stock: '5',
       });
       const no = created.body.submission.application_no;
 
@@ -799,15 +919,14 @@ describe('admin API', () => {
         .send({ preview: true });
       expect(preview.status).toBe(200);
 
-      const modify = await request(app).post('/api/public/modify').send({
-        application_no: no,
-        site_code: 'HA06',
-        sku: '1004105',
-        rp_type: 'ND',
-        nd_code: 'ND20-SO-Not displayed in small stores',
-      });
-      expect(modify.status).toBe(200);
-      expect(modify.body.submission.sku).toBe('1004105');
+      const idRes = await db.query<{ id: string }>('SELECT id FROM submissions WHERE application_no = $1', [no]);
+      const id = idRes.rows[0]!.id;
+      const edit = await agent
+        .put(`/api/admin/submissions/${id}`)
+        .set('x-csrf-token', token)
+        .send({ sku: '1004105', rp_type: 'RF', safety_stock: '7' });
+      expect(edit.status).toBe(200);
+      expect(edit.body.submission.sku).toBe('1004105');
     });
   });
 
@@ -865,13 +984,15 @@ describe('admin API', () => {
     const before = await agent.get('/api/admin/summary');
     expect(before.status).toBe(200);
 
-    const submit = (site_code: string, sku: string) =>
-      request(app).post('/api/public/submit').send({
-        site_code,
+    const submit = async (site: string, sku: string) => {
+      const store = await storeAgent(site);
+      return submitNormal(store, {
+        site_code: site,
         sku,
         rp_type: 'ND',
         nd_code: 'ND20-SO-Not displayed in small stores',
       });
+    };
     const one = await submit('HA02', '1004106');
     const two = await submit('HA02', '1004107');
     const three = await submit('HA19', '1004108');
@@ -1713,6 +1834,9 @@ describe('urgent admin API', () => {
 
   it('urgent export locks urgent only; SAP export excludes urgent', async () => {
     await request(app).post('/api/public/urgent/submit').send({ site_code: 'HA06', sku: '1006009', qty: 3, urgent_reason: '1' });
+    // A ready-for-RP normal submission so the SAP export has content.
+    const store = await storeAgent('HA02');
+    await submitNormal(store, { site_code: 'HA02', sku: '1005012', rp_type: 'RF', safety_stock: '5' });
     const { agent, token } = await urgentAdminAgent();
 
     const sap = await agent
@@ -1862,13 +1986,13 @@ describe('sales public API', () => {
   });
 
   it('scopes import idempotency keys by submission type', async () => {
+    const store = await storeAgent('HA02');
     const normalWorkbook = new ExcelJS.Workbook();
     const normalSheet = normalWorkbook.addWorksheet(RP_TEAM_SHEET);
     normalSheet.addRow([...TEMPLATE_COLUMNS]);
     normalSheet.addRow(['HA02', '1007991', 'ND', '', 'ND20-SO-Not displayed in small stores', '']);
-    const normal = await request(app)
-      .post('/api/public/import')
-      .set('Idempotency-Key', 'same-key-different-types')
+    const normal = await store
+      .post('/api/portal/store/import').set('x-csrf-token', (store as PortalAgent)._portalCsrf ?? '').set('Idempotency-Key', 'same-key-different-types')
       .attach('file', Buffer.from(await normalWorkbook.xlsx.writeBuffer()), 'normal-cross-type.xlsx');
     expect(normal.status).toBe(201);
 
@@ -1977,11 +2101,12 @@ describe('sales admin API', () => {
 
   it('sales export locks sales only; SAP export excludes sales', async () => {
     await request(app).post('/api/public/sales/submit').send({ site_code: 'HA06', sku: '1005011' });
-    await request(app).post('/api/public/submit').send({
+    const store = await storeAgent('HA02');
+    await submitNormal(store, {
       site_code: 'HA02',
       sku: '1005012',
-      rp_type: 'ND',
-      nd_code: 'ND20-SO-Not displayed in small stores',
+      rp_type: 'RF',
+      safety_stock: '5',
     });
     const agent = request.agent(app);
     await adminLogin(agent);
@@ -2009,32 +2134,38 @@ describe('sales admin API', () => {
   });
 });
 
-describe('daily duplicate rule', () => {
+describe('general NDRF active/duplicate rules', () => {
   const ND = { rp_type: 'ND', nd_code: 'ND20-SO-Not displayed in small stores' };
 
-  it('blocks a second normal submission for the same site+sku on the same day', async () => {
-    const first = await request(app).post('/api/public/submit').send({ site_code: 'HA02', sku: '1003001', ...ND });
+  it('blocks a second active submission for the same site+sku+rp type', async () => {
+    const agent = await storeAgent('HA02');
+    const first = await submitNormal(agent, { site_code: 'HA02', sku: '1003001', ...ND });
     expect(first.status).toBe(201);
-    const dup = await request(app).post('/api/public/submit').send({ site_code: 'HA02', sku: '1003001', ...ND });
+    const dup = await submitNormal(agent, { site_code: 'HA02', sku: '1003001', ...ND });
     expect(dup.status).toBe(409);
-    expect(dup.body.field).toBe('sku');
+    expect(dup.body.error).toContain('已有未匯出的有效申請');
   });
 
   it('allows the same sku on a different site code', async () => {
-    const res = await request(app).post('/api/public/submit').send({ site_code: 'HA06', sku: '1003001', ...ND });
+    const agent = await storeAgent('HA06');
+    const res = await submitNormal(agent, { site_code: 'HA06', sku: '1003001', ...ND });
     expect(res.status).toBe(201);
   });
 
   it('allows the same site+sku once for normal and once for urgent, but not urgent twice', async () => {
-    const urgent = await request(app).post('/api/public/urgent/submit').send({ site_code: 'HA02', sku: '1003001', qty: 5, urgent_reason: '1' });
+    const store = await storeAgent('HA02');
+    const normal = await submitNormal(store, { site_code: 'HA02', sku: '1003002', ...ND });
+    expect(normal.status).toBe(201);
+    const urgent = await request(app).post('/api/public/urgent/submit').send({ site_code: 'HA02', sku: '1003002', qty: 5, urgent_reason: '1' });
     expect(urgent.status).toBe(201);
-    const urgentDup = await request(app).post('/api/public/urgent/submit').send({ site_code: 'HA02', sku: '1003001', qty: 6, urgent_reason: '2' });
+    const urgentDup = await request(app).post('/api/public/urgent/submit').send({ site_code: 'HA02', sku: '1003002', qty: 6, urgent_reason: '2' });
     expect(urgentDup.status).toBe(409);
     expect(urgentDup.body.field).toBe('sku');
   });
 
   it('allows the same site+sku for sales alongside normal and urgent, but not sales twice', async () => {
-    const normal = await request(app).post('/api/public/submit').send({ site_code: 'HA06', sku: '1003009', ...ND });
+    const store = await storeAgent('HA06');
+    const normal = await submitNormal(store, { site_code: 'HA06', sku: '1003009', ...ND });
     expect(normal.status).toBe(201);
     const urgent = await request(app).post('/api/public/urgent/submit').send({ site_code: 'HA06', sku: '1003009', qty: 5, urgent_reason: '1' });
     expect(urgent.status).toBe(201);
@@ -2080,25 +2211,35 @@ describe('daily duplicate rule', () => {
     expect(await countSubmissions(`WHERE submission_type = 'sales'`)).toBe(beforeTotal);
   });
 
-  it('blocks modify changing sku to one already submitted today, allows a new sku', async () => {
-    const a = await request(app).post('/api/public/submit').send({ site_code: 'HA02', sku: '1003005', ...ND });
-    await request(app).post('/api/public/submit').send({ site_code: 'HA02', sku: '1003006', ...ND });
+  it('blocks admin edit moving a pending submission onto an active key', async () => {
+    const store = await storeAgent('HA02');
+    const a = await submitNormal(store, { site_code: 'HA02', sku: '1003005', ...ND });
+    await submitNormal(store, { site_code: 'HA02', sku: '1003006', ...ND });
     const no = a.body.submission.application_no;
+    const idRes = await db.query<{ id: string }>('SELECT id FROM submissions WHERE application_no = $1', [no]);
+    const id = idRes.rows[0]!.id;
 
-    const blocked = await request(app)
-      .post('/api/public/modify')
-      .send({ application_no: no, site_code: 'HA02', sku: '1003006', ...ND });
+    const agent = request.agent(app);
+    await adminLogin(agent);
+    const token = await csrf(agent);
+    const blocked = await agent
+      .put(`/api/admin/submissions/${id}`)
+      .set('x-csrf-token', token)
+      .send({ sku: '1003006', ...ND });
     expect(blocked.status).toBe(409);
+    expect(blocked.body.error).toContain('已有未匯出的有效申請');
 
-    const ok = await request(app)
-      .post('/api/public/modify')
-      .send({ application_no: no, site_code: 'HA02', sku: '1003007', ...ND });
+    const ok = await agent
+      .put(`/api/admin/submissions/${id}`)
+      .set('x-csrf-token', token)
+      .send({ sku: '1003007', ...ND });
     expect(ok.status).toBe(200);
     expect(ok.body.submission.sku).toBe('1003007');
   });
 
-  it('rejects a public import row duplicating an existing today submission without writing', async () => {
-    await request(app).post('/api/public/submit').send({ site_code: 'HA02', sku: '1003004', ...ND });
+  it('rejects a store import row duplicating an existing active submission without writing', async () => {
+    const store = await storeAgent('HA02');
+    await submitNormal(store, { site_code: 'HA02', sku: '1003004', ...ND });
     const beforeTotal = await countSubmissions();
 
     const wb = new ExcelJS.Workbook();
@@ -2107,14 +2248,15 @@ describe('daily duplicate rule', () => {
     ws.addRow(['HA02', '1003004', 'ND', '', 'ND20-SO-Not displayed in small stores', '']);
     const buffer = Buffer.from(await wb.xlsx.writeBuffer());
 
-    const res = await request(app).post('/api/public/import').attach('file', buffer, 'dup-import.xlsx');
+    const res = await store.post('/api/portal/store/import').set('x-csrf-token', (store as PortalAgent)._portalCsrf ?? '').attach('file', buffer, 'dup-import.xlsx');
     expect(res.status).toBe(400);
     expect(res.body.errors?.some((e: { field: string }) => e.field === 'SKU')).toBe(true);
 
     expect(await countSubmissions()).toBe(beforeTotal);
   });
 
-  it('rejects a public import file with duplicate rows inside the file without writing', async () => {
+  it('rejects a store import file with duplicate rows inside the file without writing', async () => {
+    const store = await storeAgent('HA02');
     const beforeTotal = await countSubmissions();
 
     const wb = new ExcelJS.Workbook();
@@ -2124,14 +2266,16 @@ describe('daily duplicate rule', () => {
     ws.addRow(['HA02', '1003014', 'ND', '', 'ND20-SO-Not displayed in small stores', '']);
     const buffer = Buffer.from(await wb.xlsx.writeBuffer());
 
-    const res = await request(app).post('/api/public/import').attach('file', buffer, 'dup-inline.xlsx');
-    expect(res.status).toBe(400);
-    expect(res.body.errors?.length).toBeGreaterThan(0);
+    const res = await store.post('/api/portal/store/import').set('x-csrf-token', (store as PortalAgent)._portalCsrf ?? '').attach('file', buffer, 'dup-inline.xlsx');
+    expect(res.status).toBe(409);
 
     expect(await countSubmissions()).toBe(beforeTotal);
   });
 
-  it('allows admin import of rows duplicating existing today submissions (exempt)', async () => {
+  it('rejects admin import of rows duplicating an active submission', async () => {
+    const store = await storeAgent('HA02');
+    await submitNormal(store, { site_code: 'HA02', sku: '1003001', ...ND });
+
     const agent = request.agent(app);
     await adminLogin(agent);
     const token = await csrf(agent);
@@ -2140,50 +2284,40 @@ describe('daily duplicate rule', () => {
     const ws = wb.addWorksheet(RP_TEAM_SHEET);
     ws.addRow([...TEMPLATE_COLUMNS]);
     ws.addRow(['HA02', '1003001', 'ND', '', 'ND20-SO-Not displayed in small stores', '']);
-    ws.addRow(['HA02', '1003001', 'ND', '', 'ND20-SO-Not displayed in small stores', '']);
     const buffer = Buffer.from(await wb.xlsx.writeBuffer());
 
     const res = await agent
       .post('/api/admin/import')
       .set('x-csrf-token', token)
       .attach('file', buffer, 'admin-dup.xlsx');
-    expect(res.status).toBe(201);
-    expect(res.body.successCount).toBe(2);
+    expect(res.status).toBe(409);
   });
 
-  it('allows admin edit to change sku to a duplicate combination (exempt)', async () => {
-    const a = await request(app).post('/api/public/submit').send({ site_code: 'HA02', sku: '1003002', ...ND });
-    await request(app).post('/api/public/submit').send({ site_code: 'HA02', sku: '1003003', ...ND });
-    const no = a.body.submission.application_no;
-    const idRes = await db.query<{ id: string }>('SELECT id FROM submissions WHERE application_no = $1', [no]);
-    const id = idRes.rows[0]!.id;
+  it('allows re-submission after the active submission has been exported', async () => {
+    const store = await storeAgent('HA02');
+    const created = await submitNormal(store, { site_code: 'HA02', sku: '1003008', rp_type: 'RF', safety_stock: '5' });
+    expect(created.status).toBe(201);
 
     const agent = request.agent(app);
     await adminLogin(agent);
     const token = await csrf(agent);
-    const res = await agent
-      .put(`/api/admin/submissions/${id}`)
+    const exportRes = await agent
+      .post('/api/admin/export')
       .set('x-csrf-token', token)
-      .send({ sku: '1003003', ...ND });
-    expect(res.status).toBe(200);
-    expect(res.body.submission.sku).toBe('1003003');
-  });
+      .send({ include_exported: false });
+    expect(exportRes.status).toBe(200);
 
-  it('allows re-submission on the next day', async () => {
-    await request(app).post('/api/public/submit').send({ site_code: 'HA02', sku: '1003008', ...ND });
-    await db.query(
-      `UPDATE submissions SET application_date = application_date - 1
-       WHERE site_code = 'HA02' AND sku = '1003008' AND submission_type = 'normal'`,
-    );
-    const res = await request(app).post('/api/public/submit').send({ site_code: 'HA02', sku: '1003008', ...ND });
+    const res = await submitNormal(store, { site_code: 'HA02', sku: '1003008', rp_type: 'RF', safety_stock: '6' });
     expect(res.status).toBe(201);
   });
 });
 
-  it('serializes concurrent public submissions for the same duplicate key', async () => {
+  it('serializes concurrent store submissions for the same duplicate key', async () => {
+    const firstAgent = await storeAgent('HA19');
+    const secondAgent = await storeAgent('HA19');
     const responses = await Promise.all([
-      request(app).post('/api/public/submit').send({ site_code: 'HA19', sku: '1009115', rp_type: 'RF', safety_stock: '5', remark: '同鍵測試' }),
-      request(app).post('/api/public/submit').send({ site_code: 'HA19', sku: '1009115', rp_type: 'RF', safety_stock: '5', remark: '同鍵測試' }),
+      submitNormal(firstAgent, { site_code: 'HA19', sku: '1009115', rp_type: 'RF', safety_stock: '5', remark: '同鍵測試' }),
+      submitNormal(secondAgent, { site_code: 'HA19', sku: '1009115', rp_type: 'RF', safety_stock: '5', remark: '同鍵測試' }),
     ]);
     expect(responses.map((response) => response.status).sort()).toEqual([201, 409]);
     const count = await db.query<{ count: string }>(
@@ -2262,9 +2396,10 @@ describe('urgent submission window (14:30 cutoff)', () => {
     expect(await countSubmissions()).toBe(beforeTotal);
   });
 
-  it('still accepts normal submissions after 14:30', async () => {
+  it('still accepts normal submissions after 14:30 (portal is independent of the urgent window)', async () => {
     timeSpy.mockReturnValue(23 * 60 + 59);
-    const res = await request(app).post('/api/public/submit').send({
+    const store = await storeAgent('HA02');
+    const res = await submitNormal(store, {
       site_code: 'HA02',
       sku: '1000011',
       ...ND,
@@ -2287,7 +2422,8 @@ describe('urgent submission window (14:30 cutoff)', () => {
 });
 
 describe('SKU format validation', () => {
-  it('rejects a public normal import with a multi-SKU cell without writing anything', async () => {
+  it('rejects a store normal import with a multi-SKU cell without writing anything', async () => {
+    const store = await storeAgent('HA02');
     const beforeTotal = await countSubmissions();
 
     const wb = new ExcelJS.Workbook();
@@ -2296,7 +2432,7 @@ describe('SKU format validation', () => {
     ws.addRow(['HA02', '123456789012 , 123456789011', 'ND', '', 'ND20-SO-Not displayed in small stores', '']);
     const buffer = Buffer.from(await wb.xlsx.writeBuffer());
 
-    const res = await request(app).post('/api/public/import').attach('file', buffer, 'multi-sku.xlsx');
+    const res = await store.post('/api/portal/store/import').set('x-csrf-token', (store as PortalAgent)._portalCsrf ?? '').attach('file', buffer, 'multi-sku.xlsx');
     expect(res.status).toBe(400);
     expect(res.body.errors?.some((e: { field: string }) => e.field === 'SKU')).toBe(true);
 
@@ -2335,7 +2471,7 @@ describe('SKU format validation', () => {
     expect(await countSubmissions()).toBe(beforeTotal);
   });
 
-  it('allows admin import of rows with non-conforming SKUs (exempt)', async () => {
+  it('rejects admin import of rows with non-conforming SKUs (workflow validates)', async () => {
     const agent = request.agent(app);
     await adminLogin(agent);
     const token = await csrf(agent);
@@ -2350,13 +2486,13 @@ describe('SKU format validation', () => {
       .post('/api/admin/import')
       .set('x-csrf-token', token)
       .attach('file', buffer, 'admin-nonconforming.xlsx');
-    expect(res.status).toBe(201);
-    expect(res.body.successCount).toBe(1);
-    expect(res.body.rows[0].sku).toBe('NOT-SKU-123');
+    expect(res.status).toBe(400);
+    expect(res.body.field).toBe('sku');
   });
 
-  it('allows admin edit to set a non-conforming SKU (exempt)', async () => {
-    const created = await request(app).post('/api/public/submit').send({
+  it('rejects admin edit to set a non-conforming SKU (workflow validates)', async () => {
+    const store = await storeAgent('HA02');
+    const created = await submitNormal(store, {
       site_code: 'HA02',
       sku: '1009001',
       rp_type: 'ND',
@@ -2373,7 +2509,7 @@ describe('SKU format validation', () => {
       .put(`/api/admin/submissions/${id}`)
       .set('x-csrf-token', token)
       .send({ sku: 'ADMIN-FREE-FORM', rp_type: 'ND', nd_code: 'ND20-SO-Not displayed in small stores' });
-    expect(res.status).toBe(200);
-    expect(res.body.submission.sku).toBe('ADMIN-FREE-FORM');
+    expect(res.status).toBe(400);
+    expect(res.body.field).toBe('sku');
   });
 });

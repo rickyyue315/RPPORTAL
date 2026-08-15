@@ -54,7 +54,7 @@
   function buildQuery() {
     const params = new URLSearchParams();
     const idMap = { application_no: 'appno', submission_type: 'type', site_code: 'site', rp_type: 'rp_type', nd_code: 'nd_code' };
-    ['from', 'to', 'site_code', 'source', 'submission_type', 'exported', 'sku', 'rp_type', 'nd_code', 'application_no', 'modified'].forEach((k) => {
+    ['from', 'to', 'site_code', 'source', 'submission_type', 'exported', 'workflow_status', 'sku', 'rp_type', 'nd_code', 'application_no', 'modified'].forEach((k) => {
       const v = $(`f_${idMap[k] || k}`).value.trim();
       if (v) params.set(k, v);
     });
@@ -88,7 +88,9 @@
       const tr = document.createElement('tr');
       const status = s.locked
         ? `<span class="status-badge locked">已鎖定</span>`
-        : `<span class="status-badge received">已收件</span>`;
+        : s.workflow
+          ? workflowBadge(s.workflow.status)
+          : `<span class="status-badge received">已收件</span>`;
       tr.innerHTML = `
         <td>${escapeHtml(s.application_no)}</td>
         <td>${escapeHtml(s.site_code)}${s.store_shop ? `<div class="hint">${escapeHtml(s.store_shop)}</div>` : ''}</td>
@@ -122,7 +124,7 @@
   });
   $('btn_reset').addEventListener('click', () => {
     ['site', 'sku', 'appno'].forEach((id) => ($(`f_${id}`).value = ''));
-    ['source', 'type', 'exported', 'modified'].forEach((id) => ($(`f_${id}`).value = ''));
+    ['source', 'type', 'exported', 'modified', 'workflow_status'].forEach((id) => ($(`f_${id}`).value = ''));
     ['rp_type', 'nd_code'].forEach((id) => ($(`f_${id}`).value = ''));
     $('f_from').value = todayInHongKong();
     $('f_to').value = todayInHongKong();
@@ -207,6 +209,8 @@
 
     $('btn_save_edit').disabled = s.locked;
     $('btn_save_edit').textContent = s.locked ? '已鎖定，不能修改' : '儲存修改';
+
+    renderWorkflowSection(data);
 
     const box = $('versions_box');
     box.innerHTML = '';
@@ -908,6 +912,291 @@
     }
   }
 
+  /* ------------------------------------------------------------------ */
+  /* General NDRF workflow management                                   */
+  /* ------------------------------------------------------------------ */
+
+  const WORKFLOW_STATUS_LABEL = {
+    legacy: 'Legacy',
+    pending: '待審批',
+    ready_for_rp: '可供 RP 匯出',
+    accepted: '已批准',
+    rejected: '已拒絕',
+  };
+  const ROUTE_LABEL = { buyer: 'Buyer', sct: 'SCT', rp: 'RP', legacy: 'Legacy' };
+
+  function workflowBadge(status) {
+    return `<span class="status-badge ${status === 'rejected' ? 'locked' : 'received'}">${escapeHtml(WORKFLOW_STATUS_LABEL[status] ?? status ?? '—')}</span>`;
+  }
+
+  function renderWorkflowSection(data) {
+    const s = data.submission;
+    const wf = s.workflow;
+    const section = $('workflow_section');
+    if (!section) return;
+    if (!wf) {
+      section.style.display = 'none';
+      return;
+    }
+    section.style.display = '';
+    const blocked = Boolean(s.locked);
+    $('workflow_header').innerHTML = `
+      <div class="datagrid-item"><div class="datagrid-title">狀態</div><div class="datagrid-content">${workflowBadge(wf.status)}</div></div>
+      <div class="datagrid-item"><div class="datagrid-title">路由</div><div class="datagrid-content">${escapeHtml(ROUTE_LABEL[wf.route] ?? wf.route ?? '—')}</div></div>
+      <div class="datagrid-item"><div class="datagrid-title">審批回合</div><div class="datagrid-content">${wf.review_round}</div></div>
+      ${wf.rejected_at ? `<div class="datagrid-item"><div class="datagrid-title">拒絕時間</div><div class="datagrid-content">${escapeHtml(wf.rejected_at)}</div></div>` : ''}
+      ${wf.review_remark ? `<div class="datagrid-item"><div class="datagrid-title">Review Remark</div><div class="datagrid-content">${escapeHtml(wf.review_remark)}</div></div>` : ''}`;
+    const events = data.reviewEvents || [];
+    $('workflow_events').innerHTML = events.length
+      ? '<table class="table table-vcenter"><thead><tr><th>時間</th><th>事件</th><th>回合</th><th>操作者</th><th>詳情</th></tr></thead><tbody>'
+        + events.map((e) => `<tr><td>${escapeHtml(e.created_at)}</td><td>${escapeHtml(e.event_type)}</td><td>${e.review_round}</td><td>${escapeHtml(e.actor)}</td><td>${escapeHtml(e.reject_reason_label ? `${e.reject_reason_label}${e.reject_reason_note ? `（${e.reject_reason_note}）` : ''}` : (e.remark || e.reason || ''))}</td></tr>`).join('')
+        + '</tbody></table>'
+      : '<div class="text-secondary small">暫無審批紀錄</div>';
+
+    ['btn_wf_reopen', 'btn_wf_accept', 'btn_wf_ready', 'btn_wf_reject'].forEach((id) => {
+      const btn = $(id);
+      if (!btn) return;
+      btn.disabled = blocked;
+    });
+    showAlert($('workflow_result'), '', '');
+  }
+
+  function workflowOverride(action) {
+    const label = { reopen: 'Reopen', override_accept: 'Override 為已批准', override_ready: 'Override 為可供 RP', override_reject: 'Override 為已拒絕' }[action];
+    const reason = window.prompt(`請填寫「${label}」的原因（必填）：`);
+    if (reason === null) return;
+    if (!reason.trim()) {
+      showAlert($('workflow_result'), 'error', '必須填寫原因');
+      return;
+    }
+    adminFetch(`/api/admin/submissions/${currentDetail.submission.id}/override`, {
+      method: 'POST',
+      body: JSON.stringify({ action, reason: reason.trim() }),
+    })
+      .then(async () => {
+        showAlert($('workflow_result'), 'success', '已執行。');
+        await loadDetail(currentDetail.submission.id);
+        loadList();
+      })
+      .catch((err) => showAlert($('workflow_result'), 'error', escapeHtml(err.message)));
+  }
+
+  $('btn_wf_reopen').addEventListener('click', () => workflowOverride('reopen'));
+  $('btn_wf_accept').addEventListener('click', () => workflowOverride('override_accept'));
+  $('btn_wf_ready').addEventListener('click', () => workflowOverride('override_ready'));
+  $('btn_wf_reject').addEventListener('click', () => workflowOverride('override_reject'));
+
+  /* Portal users ------------------------------------------------------ */
+
+  async function loadPortalUsers() {
+    try {
+      const data = await adminFetch('/api/admin/portal/users');
+      const tbody = $('portal_users_body');
+      if (!tbody) return;
+      tbody.innerHTML = data.users.map((u) => `<tr>
+        <td>${escapeHtml(u.username)}</td>
+        <td>${escapeHtml(u.display_name || '—')}</td>
+        <td>${escapeHtml(u.role)}</td>
+        <td>${escapeHtml(u.site_code || '—')}</td>
+        <td>${u.active ? '<span class="status-badge received">啟用</span>' : '<span class="status-badge locked">停用</span>'}</td>
+        <td>${u.must_change_password ? '是' : '否'}</td>
+        <td>
+          <button class="btn ghost btn-pu-toggle" data-id="${u.id}" data-active="${u.active}">${u.active ? '停用' : '啟用'}</button>
+          <button class="btn ghost btn-pu-reset" data-id="${u.id}">重設密碼</button>
+        </td>
+      </tr>`).join('');
+      tbody.querySelectorAll('.btn-pu-toggle').forEach((btn) => {
+        btn.addEventListener('click', () => togglePortalUser(btn.dataset.id, btn.dataset.active === 'true'));
+      });
+      tbody.querySelectorAll('.btn-pu-reset').forEach((btn) => {
+        btn.addEventListener('click', () => resetPortalUser(btn.dataset.id));
+      });
+    } catch (err) {
+      if ($('portal_users_body')) $('portal_users_body').innerHTML = `<tr><td colspan="7" class="text-center text-secondary">載入失敗：${escapeHtml(err.message)}</td></tr>`;
+    }
+  }
+
+  async function togglePortalUser(id, currentlyActive) {
+    try {
+      await adminFetch(`/api/admin/portal/users/${id}`, { method: 'PUT', body: JSON.stringify({ active: !currentlyActive }) });
+      showAlert($('portal_users_result'), 'success', '帳戶狀態已更新。');
+      loadPortalUsers();
+    } catch (err) {
+      showAlert($('portal_users_result'), 'error', escapeHtml(err.message));
+    }
+  }
+
+  async function resetPortalUser(id) {
+    try {
+      const data = await adminFetch(`/api/admin/portal/users/${id}/reset-password`, { method: 'POST', body: JSON.stringify({}) });
+      const text = await window.prompt(`「${data.username}」的新一次性密碼（只顯示一次）：`, data.initial_password);
+      showAlert($('portal_users_result'), text !== null ? 'success' : 'info', text !== null ? '密碼已重設，請交予帳戶持有人。' : '密碼已重設（一次性密碼只於建立時顯示）。');
+      loadPortalUsers();
+    } catch (err) {
+      showAlert($('portal_users_result'), 'error', escapeHtml(err.message));
+    }
+  }
+
+  $('btn_pu_create').addEventListener('click', async () => {
+    const username = $('pu_username').value.trim();
+    const displayName = $('pu_display').value.trim();
+    const role = $('pu_role').value;
+    if (!username) {
+      showAlert($('portal_users_result'), 'error', '請輸入使用者名稱');
+      return;
+    }
+    try {
+      const data = await adminFetch('/api/admin/portal/users', { method: 'POST', body: JSON.stringify({ username, display_name: displayName, role }) });
+      const pw = await window.prompt(`帳戶「${data.username}」已建立。一次性密碼（只顯示一次）：`, data.initial_password);
+      showAlert($('portal_users_result'), 'success', '帳戶已建立。');
+      $('pu_username').value = '';
+      $('pu_display').value = '';
+      loadPortalUsers();
+    } catch (err) {
+      showAlert($('portal_users_result'), 'error', escapeHtml(err.message));
+    }
+  });
+
+  $('btn_store_sync').addEventListener('click', async () => {
+    const btn = $('btn_store_sync');
+    btn.disabled = true;
+    try {
+      const data = await adminFetch('/api/admin/stores/sync-accounts', { method: 'POST', body: JSON.stringify({}) });
+      let html = `<div class="alert success">同步完成：新增 ${data.created.length}、重新啟用 ${data.reactivated.length}、停用 ${data.deactivated.length}、不變 ${data.unchanged}</div>`;
+      if (data.created.length) {
+        html += '<div class="alert warning">以下帳戶使用一次性密碼（只顯示一次）：<ul>' + data.created.map((c) => `<li><b>${escapeHtml(c.username)}</b>：<code>${escapeHtml(c.initial_password)}</code></li>`).join('') + '</ul></div>';
+      }
+      if (data.deactivated.length) html += `<div class="alert info">已停用（不在門店主檔）：${escapeHtml(data.deactivated.join(', '))}</div>`;
+      showAlert($('portal_users_result'), '', html);
+      loadPortalUsers();
+    } catch (err) {
+      showAlert($('portal_users_result'), 'error', escapeHtml(err.message));
+    } finally {
+      btn.disabled = false;
+    }
+  });
+
+  /* SKU Master -------------------------------------------------------- */
+
+  async function loadSkuMaster() {
+    try {
+      const data = await adminFetch('/api/admin/sku-master');
+      const tbody = $('sku_master_body');
+      if (!tbody) return;
+      tbody.innerHTML = data.rows.length
+        ? data.rows.map((r) => `<tr><td>${escapeHtml(r.sku)}</td><td>${escapeHtml(r.buyer_display_name || r.buyer_username)}</td><td>${r.buyer_active ? '<span class="status-badge received">啟用</span>' : '<span class="status-badge locked">停用</span>'}</td><td>${escapeHtml(r.updated_at)}</td></tr>`).join('')
+        : '<tr><td colspan="4" class="text-center text-secondary">尚未設定 SKU Master — ND 提交會被阻止。</td></tr>';
+    } catch (err) {
+      if ($('sku_master_body')) $('sku_master_body').innerHTML = `<tr><td colspan="4" class="text-center text-secondary">載入失敗：${escapeHtml(err.message)}</td></tr>`;
+    }
+  }
+
+  $('btn_sku_upload').addEventListener('click', async () => {
+    const file = $('sku_input').files[0];
+    if (!file) {
+      showAlert($('sku_result'), 'error', '請選擇 SKU Master CSV');
+      return;
+    }
+    const btn = $('btn_sku_upload');
+    btn.disabled = true;
+    const fd = new FormData();
+    fd.append('file', file);
+    try {
+      const data = await adminFetch('/api/admin/sku-master', { method: 'PUT', body: fd });
+      showAlert($('sku_result'), 'success', `SKU Master 已整批取代（${data.count} 個 SKU）。`);
+      $('sku_input').value = '';
+      loadSkuMaster();
+    } catch (err) {
+      showAlert($('sku_result'), 'error', escapeHtml(err.message));
+    } finally {
+      btn.disabled = false;
+    }
+  });
+
+  /* Store routes ------------------------------------------------------ */
+
+  async function loadStoreRoutes() {
+    try {
+      const data = await adminFetch('/api/admin/store-routes');
+      const tbody = $('store_routes_body');
+      if (!tbody) return;
+      tbody.innerHTML = data.routes.map((r) => `<tr>
+        <td>${escapeHtml(r.site_code)}</td>
+        <td>${escapeHtml(r.shop || '—')}</td>
+        <td><input type="checkbox" data-route-site="${escapeHtml(r.site_code)}" data-route-field="sct" ${r.sct_review_required ? 'checked' : ''}></td>
+        <td><input type="checkbox" data-route-site="${escapeHtml(r.site_code)}" data-route-field="remark" ${r.remark_required ? 'checked' : ''}></td>
+        <td>${escapeHtml(r.updated_at)}</td>
+        <td><button class="btn ghost btn-route-save" data-site="${escapeHtml(r.site_code)}">儲存</button></td>
+      </tr>`).join('');
+      tbody.querySelectorAll('.btn-route-save').forEach((btn) => {
+        btn.addEventListener('click', () => saveStoreRoute(btn.dataset.site));
+      });
+    } catch (err) {
+      if ($('store_routes_body')) $('store_routes_body').innerHTML = `<tr><td colspan="6" class="text-center text-secondary">載入失敗：${escapeHtml(err.message)}</td></tr>`;
+    }
+  }
+
+  function saveStoreRoute(site) {
+    const sct = document.querySelector(`input[data-route-site="${CSS.escape(site)}"][data-route-field="sct"]`)?.checked ?? false;
+    const remark = document.querySelector(`input[data-route-site="${CSS.escape(site)}"][data-route-field="remark"]`)?.checked ?? false;
+    adminFetch('/api/admin/store-routes', { method: 'PUT', body: JSON.stringify({ site_code: site, sct_review_required: sct, remark_required: remark }) })
+      .then(() => {
+        showAlert($('store_routes_result'), 'success', `「${site}」路由設定已更新。`);
+        loadStoreRoutes();
+      })
+      .catch((err) => showAlert($('store_routes_result'), 'error', escapeHtml(err.message)));
+  }
+
+  /* Rejection reasons -------------------------------------------------- */
+
+  async function loadRejectionReasons() {
+    try {
+      const data = await adminFetch('/api/admin/rejection-reasons');
+      const tbody = $('rejection_body');
+      if (!tbody) return;
+      tbody.innerHTML = data.reasons.map((r) => `<tr>
+        <td>${escapeHtml(r.code)}</td>
+        <td>${escapeHtml(r.label)}</td>
+        <td>${r.sort_order}</td>
+        <td>${r.active ? '<span class="status-badge received">啟用</span>' : '<span class="status-badge locked">停用</span>'}</td>
+        <td>${escapeHtml(r.updated_by || '—')}</td>
+        <td><button class="btn ghost btn-rr-toggle" data-code="${escapeHtml(r.code)}" data-active="${r.active}">${r.active ? '停用' : '啟用'}</button></td>
+      </tr>`).join('');
+      tbody.querySelectorAll('.btn-rr-toggle').forEach((btn) => {
+        btn.addEventListener('click', () => {
+          adminFetch('/api/admin/rejection-reasons', {
+            method: 'PUT',
+            body: JSON.stringify({ code: btn.dataset.code, label: '', sort_order: 0, active: btn.dataset.active === 'false' }),
+          }).then(() => { showAlert($('rejection_result'), 'success', '已更新。'); loadRejectionReasons(); }).catch((err) => showAlert($('rejection_result'), 'error', escapeHtml(err.message)));
+        });
+      });
+    } catch (err) {
+      if ($('rejection_body')) $('rejection_body').innerHTML = `<tr><td colspan="6" class="text-center text-secondary">載入失敗：${escapeHtml(err.message)}</td></tr>`;
+    }
+  }
+
+  $('btn_rr_upsert').addEventListener('click', async () => {
+    const code = $('rr_code').value.trim();
+    const label = $('rr_label').value.trim();
+    if (!code || !label) {
+      showAlert($('rejection_result'), 'error', '請填寫 Code 及顯示名稱');
+      return;
+    }
+    try {
+      await adminFetch('/api/admin/rejection-reasons', {
+        method: 'PUT',
+        body: JSON.stringify({ code, label, sort_order: Number($('rr_sort').value) || 0, active: true }),
+      });
+      showAlert($('rejection_result'), 'success', '原因類別已儲存。');
+      $('rr_code').value = '';
+      $('rr_label').value = '';
+      $('rr_sort').value = '0';
+      loadRejectionReasons();
+    } catch (err) {
+      showAlert($('rejection_result'), 'error', escapeHtml(err.message));
+    }
+  });
+
   $('btn_logout').addEventListener('click', async (e) => {
     e.preventDefault();
     try {
@@ -928,6 +1217,10 @@
     loadExportBatches();
     loadStoreCount();
     loadRecoveryCodes();
+    loadPortalUsers();
+    loadSkuMaster();
+    loadStoreRoutes();
+    loadRejectionReasons();
   });
   setInterval(() => {
     if (document.visibilityState === 'visible') {

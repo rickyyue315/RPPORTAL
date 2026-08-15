@@ -17,6 +17,8 @@ export interface ImportBatchRow {
   created_by: string;
   submission_type: ImportSubmissionType;
   idempotency_key: string | null;
+  portal_user_id: string | null;
+  site_code: string | null;
   created_at: string;
 }
 
@@ -31,6 +33,8 @@ export interface CreateImportBatchInput {
   createdBy: string;
   submissionType: ImportSubmissionType;
   idempotencyKey?: string | null;
+  portalUserId?: string | null;
+  siteCode?: string | null;
 }
 
 export async function createImportBatch(
@@ -40,8 +44,8 @@ export async function createImportBatch(
   const result = await executor.query<{ id: string }>(
     `INSERT INTO import_batches
        (filename, sheet_name, row_count, success_count, failed_count, results,
-        content_hash, created_by, submission_type, idempotency_key)
-     VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7, $8, $9, $10)
+        content_hash, created_by, submission_type, idempotency_key, portal_user_id, site_code)
+     VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7, $8, $9, $10, $11, $12)
      RETURNING id`,
     [
       input.filename,
@@ -54,6 +58,8 @@ export async function createImportBatch(
       input.createdBy,
       input.submissionType,
       input.idempotencyKey ?? null,
+      input.portalUserId ?? null,
+      input.siteCode ?? null,
     ],
   );
   return result.rows[0]!.id;
@@ -89,7 +95,7 @@ export async function findImportBatchByIdempotencyKey(
 ): Promise<ImportBatchRow | null> {
   const result = await executor.query<ImportBatchRow>(
     `SELECT id, filename, sheet_name, row_count, success_count, failed_count,
-            results, content_hash, created_by, submission_type, idempotency_key, created_at
+            results, content_hash, created_by, submission_type, idempotency_key, portal_user_id, site_code, created_at
        FROM import_batches
       WHERE idempotency_key = $1 AND submission_type = $2
       LIMIT 1`,
@@ -104,7 +110,7 @@ export async function findImportBatchByKey(
 ): Promise<ImportBatchRow | null> {
   const result = await query<ImportBatchRow>(
     `SELECT id, filename, sheet_name, row_count, success_count, failed_count,
-            results, content_hash, created_by, submission_type, idempotency_key, created_at
+            results, content_hash, created_by, submission_type, idempotency_key, portal_user_id, site_code, created_at
        FROM import_batches
       WHERE idempotency_key = $1 AND submission_type = $2
       LIMIT 1`,
@@ -125,7 +131,7 @@ export async function findImportBatchByContentHash(
 ): Promise<ImportBatchRow | null> {
   const result = await query<ImportBatchRow>(
     `SELECT id, filename, sheet_name, row_count, success_count, failed_count,
-            results, content_hash, created_by, submission_type, idempotency_key, created_at
+            results, content_hash, created_by, submission_type, idempotency_key, portal_user_id, site_code, created_at
        FROM import_batches
       WHERE content_hash = $1 AND submission_type = $2 AND created_by = $3
       LIMIT 1`,
@@ -140,10 +146,47 @@ export async function getPublicImportBatchRecord(
 ): Promise<ImportBatchRow | null> {
   const result = await query<ImportBatchRow>(
     `SELECT id, filename, sheet_name, row_count, success_count, failed_count,
-            results, content_hash, created_by, submission_type, idempotency_key, created_at
+            results, content_hash, created_by, submission_type, idempotency_key, portal_user_id, site_code, created_at
        FROM import_batches
       WHERE id = $1 AND idempotency_key = $2 AND submission_type = $3 AND created_by = 'applicant'`,
     [batchId, key, submissionType],
+  );
+  return result.rows[0] ?? null;
+}
+
+/**
+ * Store-scoped import batch record lookup for the normal NDRF portal. The
+ * portal_user_id is verified server-side so one store can never read or replay
+ * another store's batch, even with a guessed batch UUID or idempotency key.
+ */
+export async function getPortalImportBatchRecord(
+  batchId: string,
+  key: string,
+  portalUserId: string,
+): Promise<ImportBatchRow | null> {
+  const result = await query<ImportBatchRow>(
+    `SELECT id, filename, sheet_name, row_count, success_count, failed_count,
+            results, content_hash, created_by, submission_type, idempotency_key, portal_user_id, site_code, created_at
+       FROM import_batches
+      WHERE id = $1 AND idempotency_key = $2 AND submission_type = 'normal'
+        AND portal_user_id = $3`,
+    [batchId, key, portalUserId],
+  );
+  return result.rows[0] ?? null;
+}
+
+export async function findPortalImportBatchByIdempotencyKey(
+  executor: Queryable,
+  key: string,
+  portalUserId: string,
+): Promise<ImportBatchRow | null> {
+  const result = await executor.query<ImportBatchRow>(
+    `SELECT id, filename, sheet_name, row_count, success_count, failed_count,
+            results, content_hash, created_by, submission_type, idempotency_key, portal_user_id, site_code, created_at
+       FROM import_batches
+      WHERE idempotency_key = $1 AND submission_type = 'normal' AND portal_user_id = $2
+      LIMIT 1`,
+    [key, portalUserId],
   );
   return result.rows[0] ?? null;
 }

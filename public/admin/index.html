@@ -152,6 +152,7 @@
               <div class="field"><label class="form-label">來源</label><select id="f_source" class="form-select"><option value="">全部</option><option value="web">網頁</option><option value="excel">Excel</option></select></div>
               <div class="field"><label class="form-label">申報類型</label><select id="f_type" class="form-select"><option value="">全部</option><option value="normal">一般 NDRF</option><option value="urgent">Urgent Order</option><option value="sales">突發性銷售申報</option><option value="return">行貨退貨報數</option></select></div>
               <div class="field"><label class="form-label">匯出狀態</label><select id="f_exported" class="form-select"><option value="">全部</option><option value="no">未匯出</option><option value="yes">已匯出</option></select></div>
+              <div class="field"><label class="form-label">審批狀態（一般 NDRF）</label><select id="f_workflow_status" class="form-select"><option value="">全部</option><option value="pending">待審批</option><option value="ready_for_rp">可供 RP</option><option value="accepted">已批准</option><option value="rejected">已拒絕</option><option value="legacy">Legacy</option></select></div>
               <div class="field"><label class="form-label">曾經修改</label><select id="f_modified" class="form-select"><option value="">全部</option><option value="yes">有</option><option value="no">沒有</option></select></div>
               <div class="field"><label class="form-label">SKU</label><input type="text" id="f_sku" class="form-control"></div>
               <div class="field field--compact"><label class="form-label">RP Type</label><select id="f_rp_type" class="form-select"><option value="">全部</option></select></div>
@@ -213,6 +214,21 @@
               <button class="btn" id="btn_close_detail">返回清單</button>
             </div>
             <div id="save_edit_error" class="mt-2"></div>
+            <div id="workflow_section" style="display:none">
+              <h3 class="card-title mt-4">審批流程（一般 NDRF）</h3>
+              <div class="datagrid mb-3" id="workflow_header"></div>
+              <h4 class="card-title">審批時間線</h4>
+              <div id="workflow_events"></div>
+              <h4 class="card-title">Override / Reopen</h4>
+              <p class="text-secondary small">Override/Reopen 必須填寫原因；已匯出並鎖定的申請不可操作。Reopen 會開啟新的審批回合。</p>
+              <div class="d-flex gap-2 flex-wrap">
+                <button class="btn btn-outline-primary" id="btn_wf_reopen">Reopen</button>
+                <button class="btn btn-outline-primary" id="btn_wf_accept">Override 為已批准</button>
+                <button class="btn btn-outline-primary" id="btn_wf_ready">Override 為可供 RP</button>
+                <button class="btn btn-outline-danger" id="btn_wf_reject">Override 為已拒絕</button>
+              </div>
+              <div id="workflow_result" class="mt-2"></div>
+            </div>
             <h3 class="card-title mt-4">版本歷史</h3>
             <div id="versions_box"></div>
           </div>
@@ -294,6 +310,81 @@
             <div id="export_history_info"></div>
             <div class="table-responsive">
               <table class="table table-vcenter"><thead><tr><th>建立時間</th><th>檔案</th><th>類型</th><th>筆數</th><th>保存狀態</th><th>操作</th></tr></thead><tbody id="export_history_body"><tr><td colspan="6" class="text-center text-secondary">載入中…</td></tr></tbody></table>
+            </div>
+          </div>
+        </div>
+
+        <div class="card mt-3">
+          <div class="card-header"><h3 class="card-title">Portal 帳戶管理（一般 NDRF）</h3></div>
+          <div class="card-body">
+            <p class="text-secondary small">Store 帳戶由門店主檔同步建立；Buyer／SCT 帳戶在此建立。新帳戶使用一次性密碼，首次登入須更改密碼。</p>
+            <div class="d-flex gap-2 mb-3 flex-wrap">
+              <div class="flex-grow-1" style="min-width:200px">
+                <label class="form-label">使用者名稱（Buyer／SCT）</label>
+                <input type="text" id="pu_username" class="form-control" placeholder="例如 BUYER3">
+              </div>
+              <div class="flex-grow-1" style="min-width:200px">
+                <label class="form-label">顯示名稱</label>
+                <input type="text" id="pu_display" class="form-control">
+              </div>
+              <div>
+                <label class="form-label">角色</label>
+                <select id="pu_role" class="form-select"><option value="buyer">Buyer</option><option value="sct">SCT</option></select>
+              </div>
+              <div class="align-self-end">
+                <button class="btn btn-primary" id="btn_pu_create">建立帳戶</button>
+              </div>
+            </div>
+            <div class="d-flex gap-2 mb-3">
+              <button class="btn btn-outline-primary" id="btn_store_sync">按門店主檔同步 Store 帳戶</button>
+            </div>
+            <div id="portal_users_result"></div>
+            <div class="table-responsive">
+              <table class="table table-vcenter"><thead><tr><th>使用者名稱</th><th>顯示名稱</th><th>角色</th><th>Site Code</th><th>狀態</th><th>需改密碼</th><th>操作</th></tr></thead><tbody id="portal_users_body"><tr><td colspan="7" class="text-center text-secondary">載入中…</td></tr></tbody></table>
+            </div>
+          </div>
+        </div>
+
+        <div class="card mt-3">
+          <div class="card-header"><h3 class="card-title">SKU Master（ND 的 Buyer 分工）</h3></div>
+          <div class="card-body">
+            <p class="text-secondary small">每個 SKU 對應一位 Buyer。整批上載前會先檢查現有待審 ND 是否都有負責 Buyer；若新檔會令任何待審 ND 失去負責人，整批會被拒絕。</p>
+            <div class="d-flex gap-2 mb-3">
+              <input type="file" id="sku_input" accept=".csv" class="form-control" style="max-width:360px">
+              <button class="btn btn-primary" id="btn_sku_upload">上載並整批取代</button>
+            </div>
+            <div class="hint">CSV 欄名：SKU, Buyer Username</div>
+            <div id="sku_result"></div>
+            <div class="table-responsive">
+              <table class="table table-vcenter"><thead><tr><th>SKU</th><th>Buyer</th><th>Buyer 狀態</th><th>更新時間</th></tr></thead><tbody id="sku_master_body"><tr><td colspan="4" class="text-center text-secondary">載入中…</td></tr></tbody></table>
+            </div>
+          </div>
+        </div>
+
+        <div class="card mt-3">
+          <div class="card-header"><h3 class="card-title">指定店路由設定</h3></div>
+          <div class="card-body">
+            <p class="text-secondary small">指定店的 RF（包括改 Safety）會送 SCT 審批，並要求 Remark 必填。路由在申請建立時 snapshot，改動只影響新申請。</p>
+            <div id="store_routes_result"></div>
+            <div class="table-responsive">
+              <table class="table table-vcenter"><thead><tr><th>Site Code</th><th>店舖</th><th>SCT 審批</th><th>Remark 必填</th><th>更新時間</th><th>操作</th></tr></thead><tbody id="store_routes_body"><tr><td colspan="6" class="text-center text-secondary">載入中…</td></tr></tbody></table>
+            </div>
+          </div>
+        </div>
+
+        <div class="card mt-3">
+          <div class="card-header"><h3 class="card-title">Reject 原因類別</h3></div>
+          <div class="card-body">
+            <p class="text-secondary small">Reviewer Reject 時必須選擇原因類別並填寫補充說明；原因 label 會 snapshot 到審批歷史，改名或停用不會影響舊紀錄。</p>
+            <div class="d-flex gap-2 mb-3 flex-wrap">
+              <div style="min-width:140px"><label class="form-label">Code</label><input type="text" id="rr_code" class="form-control" placeholder="例如 duplicate"></div>
+              <div class="flex-grow-1" style="min-width:220px"><label class="form-label">顯示名稱</label><input type="text" id="rr_label" class="form-control" placeholder="例如 重複申請"></div>
+              <div style="min-width:120px"><label class="form-label">排序</label><input type="number" id="rr_sort" class="form-control" value="0"></div>
+              <div class="align-self-end"><button class="btn btn-primary" id="btn_rr_upsert">新增／更新</button></div>
+            </div>
+            <div id="rejection_result"></div>
+            <div class="table-responsive">
+              <table class="table table-vcenter"><thead><tr><th>Code</th><th>顯示名稱</th><th>排序</th><th>啟用</th><th>更新人</th><th>操作</th></tr></thead><tbody id="rejection_body"><tr><td colspan="6" class="text-center text-secondary">載入中…</td></tr></tbody></table>
             </div>
           </div>
         </div>

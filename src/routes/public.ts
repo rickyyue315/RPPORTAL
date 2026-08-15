@@ -35,7 +35,6 @@ import {
 import { writeAuditEvent } from '../lib/audit.js';
 import { toHKString, hkTodayForDateColumn, hkMinutesNow, hkHM } from '../lib/time.js';
 import {
-  parseImportWorkbook,
   parseUrgentImportWorkbook,
   parseSalesImportWorkbook,
   parseReturnImportWorkbook,
@@ -47,7 +46,6 @@ import {
   generateUrgentTemplateWorkbook,
   generateSalesTemplateWorkbook,
   generateReturnTemplateWorkbook,
-  buildImportRecordBuffer,
   buildUrgentImportRecordBuffer,
   buildSalesImportRecordBuffer,
   buildReturnImportRecordBuffer,
@@ -210,12 +208,6 @@ const businessFieldSchema = z.object({
   nd_code: z.string().max(300).optional().default(''),
   remark: z.string().max(2000).optional().default(''),
 });
-
-const submitSchema = z.object({
-  site_code: z.string().trim().min(1, 'Site Code 為必填').max(20),
-  ...businessFieldSchema.shape,
-});
-
 function serializeSubmission(row: SubmissionRow) {
   return {
     application_no: row.application_no,
@@ -358,85 +350,19 @@ publicRouter.get(
   }),
 );
 
-/** POST /api/public/submit — single web submission. */
+/**
+ * POST /api/public/submit — general NDRF web submission moved to the Store
+ * portal. Rejecting here (instead of only hiding the form) ensures anonymous
+ * requests can never bypass the Store account workflow.
+ */
 publicRouter.post(
   '/submit',
-  requirePublicWritesOpen,
   publicSubmitLimiter,
-  asyncHandler(async (req: Request, res: Response) => {
-    const parsed = submitSchema.safeParse(req.body);
-    if (!parsed.success) {
-      const first = parsed.error.issues[0];
-      res.status(400).json({
-        error: first?.message ?? '輸入資料無效',
-        field: first?.path[0] ?? null,
-      });
-      return;
-    }
-    const data = parsed.data;
-    const idempotencyKey = requestIdempotencyKey(req, res);
-    if (idempotencyKey === false) return;
-    const idempotencyFingerprint = fingerprintPayload(data);
-    if (await replaySingleSubmission(idempotencyKey, idempotencyFingerprint, 'normal', serializeSubmission, res)) return;
-    const siteCode = normalizeSiteCode(data.site_code);
-    const store = await getStore(siteCode);
-    if (!store) {
-      res.status(400).json({ error: `Site Code「${siteCode}」不存在於門店主檔`, field: 'site_code' });
-      return;
-    }
-
-    const businessFields = {
-      brand: data.brand,
-      sku: data.sku,
-      rp_type: data.rp_type,
-      safety_stock: data.safety_stock,
-      nd_code: data.nd_code,
-      remark: data.remark,
-    };
-    const businessErrors = validateBusinessFields(businessFields, siteCode);
-    if (businessErrors.length) {
-      res.status(400).json({
-        error: businessErrors[0]!.message,
-        field: businessErrors[0]!.field,
-        errors: businessErrors,
-      });
-      return;
-    }
-
-    const ip = getClientIp(req);
-    let row: SubmissionRow;
-    try {
-      row = await createSubmission({
-        siteCode,
-        source: 'web',
-        fields: businessFields,
-        ip,
-        changeSource: 'web_submit',
-        idempotencyKey,
-        idempotencyFingerprint,
-      });
-    } catch (err) {
-      if (err instanceof IdempotencyConflictError) {
-        res.status(409).json({ error: err.message });
-        return;
-      }
-      if (err instanceof DuplicateSubmissionError) {
-        res.status(409).json({ error: err.message, field: 'sku' });
-        return;
-      }
-      throw err;
-    }
-
-    await writeAuditEvent({
-      eventType: 'submission_created',
-      actorRole: 'applicant',
-      submissionId: row.id,
-      applicationNo: row.application_no,
-      ip,
-      metadata: { source: 'web', shop: store.shop },
+  asyncHandler(async (_req: Request, res: Response) => {
+    res.status(410).json({
+      error: '一般 NDRF 申報已改為網上帳戶申請，請登入 Store Portal 提交',
+      code: 'NORMAL_NDRF_REQUIRES_PORTAL',
     });
-
-    res.status(201).json({ submission: serializeSubmission(row), store: { shop: store.shop } });
   }),
 );
 
@@ -1542,232 +1468,39 @@ publicRouter.get(
   }),
 );
 
-/** POST /api/public/import — Excel batch upload. */
+/** POST /api/public/import — general NDRF Excel upload moved to the Store portal. */
 publicRouter.post(
   '/import',
-  requirePublicWritesOpen,
   excelImportLimiter,
   upload.single('file'),
-  asyncHandler(async (req: Request, res: Response) => {
-    const file = getUploadedFile(req)!;
-    const uploadError = validateUploadedXlsx(file, config.maxUploadBytes, EXCEL_UPLOAD_EXTENSION_ERROR);
-    if (uploadError) {
-      res.status(uploadError.status).json({ error: uploadError.message });
-      return;
-    }
-
-    const stores = await query<{ site_code: string }>('SELECT site_code FROM stores');
-    const storeCodes = new Set(stores.rows.map((s) => s.site_code));
-
-    const parsed = await parseImportWorkbook(file.buffer, storeCodes, config.maxImportRows);
-    const idempotencyKey = requestIdempotencyKey(req, res);
-    if (idempotencyKey === false) return;
-    if (idempotencyKey) {
-      const replay = await findImportBatchByKey(idempotencyKey, 'normal');
-      if (replay) {
-        if (replay.content_hash !== parsed.contentHash) {
-          res.status(409).json({ error: '此重試鍵已用於另一個 Excel 檔案' });
-          return;
-        }
-        res.status(200).json(importBatchResponse(replay));
-        return;
-      }
-    }
-    if (!parsed.ok || !parsed.rows) {
-      await writeAuditEvent({
-        eventType: 'excel_import_error',
-        actorRole: 'applicant',
-        ip: getClientIp(req),
-        metadata: {
-          filename: file.originalname,
-          errors: parsed.errors ?? [],
-        },
-      });
-      res.status(400).json({
-        error: '匯入失敗',
-        totalRows: parsed.totalRows,
-        errors: parsed.errors ?? [],
-      });
-      return;
-    }
-
-    const existing = await query<{ site_code: string; sku: string }>(
-      `SELECT site_code, sku FROM submissions
-       WHERE application_date = $1::date AND submission_type = 'normal'`,
-      [hkTodayForDateColumn()],
-    );
-    const existingKeys = new Set(existing.rows.map((s) => `${s.site_code}|${s.sku}`));
-    const dupErrors = findDuplicateImportErrors(
-      parsed.rows.map((r) => ({ rowNumber: r.rowNumber, siteCode: r.siteCode, sku: r.fields.sku })),
-      existingKeys,
-    );
-    if (dupErrors.length) {
-      await writeAuditEvent({
-        eventType: 'excel_import_error',
-        actorRole: 'applicant',
-        ip: getClientIp(req),
-        metadata: { filename: file.originalname, errors: dupErrors },
-      });
-      res.status(400).json({
-        error: '匯入失敗',
-        totalRows: parsed.totalRows,
-        errors: dupErrors,
-      });
-      return;
-    }
-
-    const ip = getClientIp(req);
-    const applicationDate = hkTodayForDateColumn();
-    let results;
-    try {
-      results = await withTransaction(async (client) => {
-        if (idempotencyKey) {
-          await lockImportIdempotencyKey(client, idempotencyKey, 'normal');
-          const replay = await findImportBatchByIdempotencyKey(client, idempotencyKey, 'normal');
-          if (replay) {
-            if (replay.content_hash !== parsed.contentHash) throw new IdempotencyConflictError();
-            return { batchId: replay.id, rows: replay.results, successCount: replay.success_count, replayed: true };
-          }
-        }
-        await lockDuplicateSubmissionKeys(client, parsed.rows!.map((r) => ({
-          siteCode: r.siteCode,
-          sku: r.fields.sku,
-          submissionType: 'normal' as const,
-          date: applicationDate,
-        })));
-        const seen = new Set<string>();
-        const rowsOut: Array<{
-          row: number;
-          application_no: string;
-          site_code: string;
-          sku: string;
-          rp_type: string;
-          safety_stock: string;
-          nd_code: string;
-          remark: string;
-          submitted_at: string;
-        }> = [];
-        let successCount = 0;
-        for (const r of parsed.rows!) {
-          const duplicateKey = `${r.siteCode}|${r.fields.sku}`;
-          if (seen.has(duplicateKey)) throw new DuplicateSubmissionError();
-          seen.add(duplicateKey);
-          await assertNoDuplicate(client, {
-            siteCode: r.siteCode,
-            sku: r.fields.sku,
-            submissionType: 'normal',
-            date: applicationDate,
-          });
-          const appNo = generateApplicationNo();
-          const requestedByEmail = `${r.siteCode.toLowerCase()}@sasa.com`;
-          const insert = await client.query<SubmissionRow>(
-            `INSERT INTO submissions (
-               application_no, source, site_code, requested_by_email, application_date,
-               brand, sku, rp_type, safety_stock, nd_code, remark, created_ip, created_ip_expires_at
-             ) VALUES ($1,'excel',$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
-             RETURNING *`,
-            [
-              appNo,
-              r.siteCode,
-              requestedByEmail,
-              applicationDate,
-              r.fields.brand,
-              r.fields.sku,
-              r.fields.rp_type,
-              r.fields.safety_stock,
-              r.fields.nd_code,
-              r.fields.remark,
-              ip,
-              ip ? ipExpiryIso() : null,
-            ],
-          );
-          const row = insert.rows[0]!;
-          await client.query(
-            `INSERT INTO submission_versions
-               (submission_id, version, data_before, data_after, actor_role, actor, ip, change_source)
-             VALUES ($1, 1, NULL, $2, 'applicant', NULL, $3, 'excel_import')`,
-            [row.id, JSON.stringify(r.fields), ip],
-          );
-          successCount++;
-          rowsOut.push({
-            row: r.rowNumber,
-            application_no: row.application_no,
-            site_code: row.site_code,
-            sku: row.sku,
-            rp_type: r.fields.rp_type,
-            safety_stock: r.fields.safety_stock,
-            nd_code: r.fields.nd_code,
-            remark: r.fields.remark,
-            submitted_at: toHKString(row.submitted_at),
-          });
-        }
-        const batchId = await createImportBatch(client, {
-          filename: file.originalname,
-          sheetName: parsed.sheetName ?? '',
-          rowCount: parsed.totalRows,
-          successCount,
-          failedCount: 0,
-          results: rowsOut,
-          contentHash: parsed.contentHash ?? '',
-          createdBy: 'applicant',
-          submissionType: 'normal',
-          idempotencyKey,
-        });
-        return { batchId, rows: rowsOut, successCount };
-      });
-    } catch (err) {
-      if (err instanceof IdempotencyConflictError) {
-         res.status(409).json({ error: err.message });
-         return;
-       }
-       if (err instanceof DuplicateSubmissionError) {
-        res.status(409).json({ error: err.message, field: 'sku' });
-        return;
-      }
-      throw err;
-    }
-
-    await writeAuditEvent({
-      eventType: 'excel_import',
-      actorRole: 'applicant',
-      ip,
-      metadata: {
-        filename: file.originalname,
-        batchId: results.batchId,
-        totalRows: parsed.totalRows,
-        successCount: results.successCount,
-      },
-    });
-
-    res.status(201).json({
-      message: `成功匯入 ${results.successCount} 行`,
-      totalRows: parsed.totalRows,
-      successCount: results.successCount,
-      batchId: results.batchId,
-      rows: results.rows,
+  asyncHandler(async (_req: Request, res: Response) => {
+    res.status(410).json({
+      error: '一般 NDRF Excel 上載已改為網上帳戶申請，請登入 Store Portal 上載',
+      code: 'NORMAL_NDRF_REQUIRES_PORTAL',
     });
   }),
 );
 
-/** Download a server-backed normal NDRF import record. */
+/** Download a server-backed normal NDRF import record (portal-only now). */
 publicRouter.get(
   '/import/record/:batchId',
   excelExportLimiter,
-  asyncHandler(async (req: Request, res: Response) => {
-    await servePublicImportRecord(req, res, 'normal', req.params.batchId as string, (rows) => buildImportRecordBuffer(rows as never), 'NDRF_Import_Record.xlsx');
+  asyncHandler(async (_req: Request, res: Response) => {
+    res.status(410).json({
+      error: '一般 NDRF 匯入記錄已移至 Store Portal，請登入後下載',
+      code: 'NORMAL_NDRF_REQUIRES_PORTAL',
+    });
   }),
 );
 
 publicRouter.post(
   '/import/record',
   excelExportLimiter,
-  asyncHandler(async (req: Request, res: Response) => {
-    const parsed = z.object({ batch_id: z.string().uuid() }).safeParse(req.body);
-    if (!parsed.success) {
-      res.status(400).json({ error: '需要提供有效的 batch_id' });
-      return;
-    }
-    await servePublicImportRecord(req, res, 'normal', parsed.data.batch_id, (rows) => buildImportRecordBuffer(rows as never), 'NDRF_Import_Record.xlsx');
+  asyncHandler(async (_req: Request, res: Response) => {
+    res.status(410).json({
+      error: '一般 NDRF 匯入記錄已移至 Store Portal，請登入後下載',
+      code: 'NORMAL_NDRF_REQUIRES_PORTAL',
+    });
   }),
 );
 /** GET /api/public/query?application_no=&site_code= — view submission. */
@@ -1793,6 +1526,16 @@ publicRouter.get(
         metadata: { found: false },
       });
       res.status(404).json({ error: '找不到相符申報，請檢查申請編號及 Site Code' });
+      return;
+    }
+    if (row.submission_type === 'normal') {
+      await writeAuditEvent({
+        eventType: 'submission_queried',
+        actorRole: 'applicant',
+        ip: getClientIp(req),
+        metadata: { found: true, submission_type: 'normal', blocked: true },
+      });
+      res.status(403).json({ error: '一般 NDRF 請登入 Store Portal 查詢', code: 'NORMAL_NDRF_REQUIRES_PORTAL' });
       return;
     }
 
@@ -1904,7 +1647,8 @@ publicRouter.get(
       SELECT application_no, submission_type, site_code, application_date, submitted_at, source, sku,
              qty, return_qty, rp_type, locked_at, exported_at
       FROM submissions
-      WHERE site_code = $1 AND application_date >= $2 AND application_date <= $3`;
+      WHERE site_code = $1 AND application_date >= $2 AND application_date <= $3
+        AND submission_type <> 'normal'`;
     if (skuFilter) {
       params.push(skuFilter);
       sql += ` AND sku = $${params.length}`;
@@ -2148,6 +1892,11 @@ publicRouter.post(
         }
         throw err;
       }
+      return;
+    }
+
+    if (existing.submission_type === 'normal') {
+      res.status(403).json({ error: '一般 NDRF 修改已移至 Store Portal（受審批流程管理）', code: 'NORMAL_NDRF_REQUIRES_PORTAL' });
       return;
     }
 

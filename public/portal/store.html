@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Store Portal — 一般 NDRF 申報</title>
+  <link rel="stylesheet" href="/css/style.css">
+  <link rel="stylesheet" href="/portal/css/portal.css">
+</head>
+<body>
+  <header class="topbar">
+    <div>
+      <h1>NDRF Store Portal</h1>
+      <div class="subtitle" id="store_header">一般 NDRF 申報</div>
+    </div>
+    <nav>
+      <a href="/portal/store.html" class="active">申報</a>
+      <a href="#" id="logout_link">登出</a>
+      <a href="/">平台首頁</a>
+    </nav>
+  </header>
+
+  <main class="container portal-main">
+    <div class="card">
+      <h2>單筆申報</h2>
+      <p class="hint">此帳戶已綁定 Site Code（<b id="site_code_display"></b>），不需也不能輸入其他 Site Code。</p>
+      <div id="form_error"></div>
+      <form id="apply_form">
+        <div class="form-grid">
+          <div>
+            <label for="brand">Brand</label>
+            <input type="text" id="brand">
+          </div>
+          <div>
+            <label for="sku">SKU <span class="optional">（必填）</span></label>
+            <input type="text" id="sku">
+            <div class="hint">只可輸入一個 SKU（7 位或 12 位數字）。</div>
+          </div>
+          <div>
+            <label for="rp_type">RP Type <span class="optional">（必填）</span></label>
+            <select id="rp_type"><option value="">—</option></select>
+          </div>
+          <div id="safety_stock_wrap">
+            <label for="safety_stock">Safety stock</label>
+            <input type="text" id="safety_stock">
+          </div>
+          <div id="nd_code_wrap">
+            <label for="nd_code">ND Code</label>
+            <input type="text" id="nd_code" list="nd_code_list">
+            <datalist id="nd_code_list"></datalist>
+          </div>
+          <div class="full">
+            <label for="remark">Remark</label>
+            <input type="text" id="remark">
+          </div>
+        </div>
+        <div class="btn-row">
+          <button type="submit" class="btn">提交</button>
+        </div>
+      </form>
+      <div id="submit_result" style="margin-top:12px"></div>
+    </div>
+
+    <div class="card">
+      <h2>Excel 批量上載</h2>
+      <p class="hint">固定模板（工作表 <b>RP Team</b>）。上載檔案中的 <b>Shop Code</b> 必須為本店 Site Code，其他店舖的行會被整批拒絕。</p>
+      <div class="btn-row" style="margin-top:0">
+        <a class="btn ghost" href="/api/portal/store/template">下載模板 (.xlsx)</a>
+      </div>
+      <div class="file-drop" id="file_drop">
+        <div id="file_label">拖曳 .xlsx 檔案到此處，或按一下選擇檔案</div>
+        <input type="file" id="file_input" accept=".xlsx" style="display:none">
+      </div>
+      <div class="btn-row">
+        <button class="btn" id="btn_import">上載並匯入</button>
+      </div>
+      <div id="import_result"></div>
+    </div>
+
+    <div class="card">
+      <h2>我的申請</h2>
+      <div id="submission_list"><div class="loading">載入中…</div></div>
+    </div>
+
+    <div class="card" id="detail_card" style="display:none">
+      <h2>申請詳情 <button class="btn ghost" id="btn_close_detail">關閉</button></h2>
+      <div id="detail_body"></div>
+    </div>
+  </main>
+
+  <script src="/js/options.js"></script>
+  <script src="/js/api.js"></script>
+  <script src="/portal/js/portal.js"></script>
+  <script src="/portal/js/store.js"></script>
+  <footer class="site-footer">Developed by RP Team - Ricky Yue</footer>
+</body>
+</html>

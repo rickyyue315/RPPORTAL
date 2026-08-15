@@ -95,10 +95,15 @@ function isPositiveNumber(value: string): boolean {
 /**
  * Business validation shared by web submit, web modify, admin edit and Excel import.
  * Returns an array of field-level errors (empty means valid).
+ *
+ * `remarkRequired` is passed by the workflow service from `ndrf_store_routes`
+ * (the database is the runtime source of truth). When omitted the legacy
+ * hardcoded set is used so pre-existing callers keep their behaviour.
  */
 export function validateBusinessFields(
   fields: SubmissionBusinessFields,
   siteCode: string,
+  options?: { remarkRequired?: boolean },
 ): BusinessValidationError[] {
   const errors: BusinessValidationError[] = [];
   const rpType = normalizeText(fields.rp_type);
@@ -125,7 +130,8 @@ export function validateBusinessFields(
     if (ndCode) {
       errors.push({ field: 'nd_code', message: 'RP Type 為 RF 時不可填寫 ND Code' });
     }
-    if (RF_REMARK_REQUIRED_SITES.has(normalizeText(siteCode).toUpperCase()) && !remark) {
+    const remarkRequired = options?.remarkRequired ?? RF_REMARK_REQUIRED_SITES.has(normalizeText(siteCode).toUpperCase());
+    if (remarkRequired && !remark) {
       errors.push({ field: 'remark', message: '此店舖轉 RF 時必須填寫 Remark' });
     }
   } else if (rpType === 'ND') {

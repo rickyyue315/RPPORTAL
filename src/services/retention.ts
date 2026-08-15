@@ -5,9 +5,12 @@ export interface RetentionCleanupResult {
   submissionIpsCleared: number;
   versionIpsCleared: number;
   auditIpsCleared: number;
+  reviewEventIpsCleared: number;
   auditEventsDeleted: number;
   loginAttemptsDeleted: number;
+  portalLoginAttemptsDeleted: number;
   sessionsDeleted: number;
+  portalSessionsDeleted: number;
   importBatchesDeleted: number;
   exportBatchesDeleted: number;
   rateLimitCountersDeleted: number;
@@ -36,6 +39,13 @@ export async function cleanupRetentionData(client: pg.PoolClient): Promise<Reten
         AND created_at <= now() - ($1::int * interval '1 day')`,
     [config.ipRetentionDays],
   );
+  const reviewEvents = await client.query(
+    `UPDATE ndrf_review_events
+        SET ip = NULL
+      WHERE ip IS NOT NULL
+        AND created_at <= now() - ($1::int * interval '1 day')`,
+    [config.ipRetentionDays],
+  );
   const auditEvents = await client.query(
     `DELETE FROM audit_events
       WHERE created_at <= now() - ($1::int * interval '1 day')`,
@@ -46,8 +56,16 @@ export async function cleanupRetentionData(client: pg.PoolClient): Promise<Reten
       WHERE attempted_at <= now() - ($1::int * interval '1 day')`,
     [config.loginAttemptRetentionDays],
   );
+  const portalLoginAttempts = await client.query(
+    `DELETE FROM portal_login_attempts
+      WHERE attempted_at <= now() - ($1::int * interval '1 day')`,
+    [config.loginAttemptRetentionDays],
+  );
   const sessions = await client.query(
     'DELETE FROM admin_sessions WHERE expires_at <= now()',
+  );
+  const portalSessions = await client.query(
+    'DELETE FROM portal_sessions WHERE expires_at <= now()',
   );
   const imports = await client.query(
     `DELETE FROM import_batches
@@ -68,9 +86,12 @@ export async function cleanupRetentionData(client: pg.PoolClient): Promise<Reten
     submissionIpsCleared: submissions.rowCount ?? 0,
     versionIpsCleared: versions.rowCount ?? 0,
     auditIpsCleared: audits.rowCount ?? 0,
+    reviewEventIpsCleared: reviewEvents.rowCount ?? 0,
     auditEventsDeleted: auditEvents.rowCount ?? 0,
     loginAttemptsDeleted: loginAttempts.rowCount ?? 0,
+    portalLoginAttemptsDeleted: portalLoginAttempts.rowCount ?? 0,
     sessionsDeleted: sessions.rowCount ?? 0,
+    portalSessionsDeleted: portalSessions.rowCount ?? 0,
     importBatchesDeleted: imports.rowCount ?? 0,
     exportBatchesDeleted: exports.rowCount ?? 0,
     rateLimitCountersDeleted: rateLimits.rowCount ?? 0,

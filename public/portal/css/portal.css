@@ -1,0 +1,66 @@
+/* NDRF Portal (Store / Buyer / SCT) shared styles */
+.portal-login-body {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 100vh;
+  background: var(--bg, #f5f7fa);
+}
+
+.portal-login-card {
+  width: min(420px, 92vw);
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  padding: 28px;
+  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.08);
+}
+
+.portal-login-card label {
+  display: block;
+  margin: 12px 0 4px;
+  font-weight: 600;
+}
+
+.portal-login-card input {
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.portal-main .card {
+  margin-bottom: 20px;
+}
+
+.badge {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.badge-pending { background: #fef3c7; color: #92400e; }
+.badge-ready_for_rp { background: #dbeafe; color: #1e40af; }
+.badge-accepted { background: #d1fae5; color: #065f46; }
+.badge-rejected { background: #fee2e2; color: #991b1b; }
+.badge-legacy { background: #e2e8f0; color: #475569; }
+.badge-unknown { background: #f1f5f9; color: #64748b; }
+
+.tl-item {
+  border-left: 3px solid #cbd5e1;
+  padding: 4px 0 12px 14px;
+  margin-left: 4px;
+}
+
+.review-actions textarea,
+.review-actions select {
+  width: 100%;
+  box-sizing: border-box;
+  margin: 4px 0 8px;
+}
+
+.file-drop.dragover {
+  border-color: #2563eb;
+  background: #eff6ff;
+}

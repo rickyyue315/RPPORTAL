@@ -31,6 +31,7 @@ import {
   WorkflowConfigurationError,
   WorkflowLockedError,
   ReviewDecisionError,
+  SubmissionNotFoundError,
   ActiveSubmissionConflictError,
   CooldownActiveError,
   type WorkflowRow,
@@ -2100,11 +2101,11 @@ adminRouter.post(
       });
       res.json({ submission: serializeAdminSubmission(row) });
     } catch (err) {
-      if (err instanceof WorkflowLockedError || err instanceof ReviewDecisionError || err instanceof WorkflowConfigurationError) {
+      if (err instanceof WorkflowLockedError || err instanceof ReviewDecisionError || err instanceof WorkflowConfigurationError || err instanceof ActiveSubmissionConflictError) {
         res.status(409).json({ error: err.message });
         return;
       }
-      if (err instanceof Error && err.message === '找不到申報') {
+      if (err instanceof SubmissionNotFoundError) {
         res.status(404).json({ error: '找不到申報' });
         return;
       }

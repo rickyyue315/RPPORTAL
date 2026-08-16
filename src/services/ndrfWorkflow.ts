@@ -9,8 +9,10 @@ import { hkTodayForDateColumn } from '../lib/time.js';
 import { normalizeSiteCode } from './stores.js';
 import type { SubmissionRow } from './submissions.js';
 
-export type NdrfRoute = 'buyer' | 'sct' | 'rp' | 'legacy';
-export type WorkflowStatus = 'legacy' | 'pending' | 'ready_for_rp' | 'accepted' | 'rejected';
+export const NDRF_ROUTES = ['buyer', 'sct', 'rp', 'legacy'] as const;
+export const WORKFLOW_STATUSES = ['legacy', 'pending', 'ready_for_rp', 'accepted', 'rejected'] as const;
+export type NdrfRoute = (typeof NDRF_ROUTES)[number];
+export type WorkflowStatus = (typeof WORKFLOW_STATUSES)[number];
 export type ReviewActorRole = 'store' | 'buyer' | 'sct' | 'admin';
 
 type Queryable = Pick<pg.PoolClient, 'query'>;
@@ -27,6 +29,24 @@ export class WorkflowConfigurationError extends Error {
   constructor(message: string) {
     super(message);
     this.name = 'WorkflowConfigurationError';
+  }
+}
+
+export class SubmissionNotFoundError extends Error {
+  constructor() {
+    super('找不到申報');
+    this.name = 'SubmissionNotFoundError';
+  }
+}
+
+/** Carries the offending form field so routes can report it to the client. */
+export class FieldValidationError extends Error {
+  constructor(
+    message: string,
+    readonly field: string | undefined,
+  ) {
+    super(message);
+    this.name = 'FieldValidationError';
   }
 }
 
@@ -71,6 +91,7 @@ export interface WorkflowRow extends SubmissionRow {
   active_workflow: boolean;
   rejected_at: string | null;
   review_round: number;
+  round_started_at: string | null;
   current_review_remark: string | null;
   created_by_portal_user_id: string | null;
   shop_snapshot: string | null;
@@ -232,9 +253,10 @@ export async function lockWorkflowSubmissionKey(
 
 export async function assertNoActiveOrCooldown(
   client: Queryable,
-  params: { siteCode: string; sku: string; rpType: string; excludeId?: string },
+  params: { siteCode: string; sku: string; rpType: string; excludeId?: string; checkCooldown?: boolean },
 ): Promise<void> {
   const { siteCode, sku, rpType, excludeId } = params;
+  const checkCooldown = params.checkCooldown ?? true;
   const active = await client.query(
     `SELECT 1 FROM submissions
       WHERE site_code = $1 AND sku = $2 AND rp_type = $3 AND active_workflow
@@ -244,6 +266,8 @@ export async function assertNoActiveOrCooldown(
     [siteCode, normalizeText(sku), rpType, excludeId ?? null],
   );
   if (active.rows.length > 0) throw new ActiveSubmissionConflictError();
+
+  if (!checkCooldown) return;
 
   const cooldown = await client.query(
     `SELECT 1 FROM submissions
@@ -297,9 +321,7 @@ export async function insertNormalWorkflowRow(
   const remarkRequired = configResult.rows[0]?.remark_required ?? false;
   const fieldErrors = validateNormalBusinessFields(input.fields, siteCode, remarkRequired);
   if (fieldErrors.length) {
-    const err = new Error(fieldErrors[0]!.message);
-    (err as Error & { field?: string }).field = fieldErrors[0]!.field;
-    throw err;
+    throw new FieldValidationError(fieldErrors[0]!.message, fieldErrors[0]!.field);
   }
 
   const route = await resolveWorkflowRoute(client, input.fields, siteCode);
@@ -455,7 +477,11 @@ export async function listReviewerQueue(
 export async function listReviewerHistory(
   userId: string,
   role: 'buyer' | 'sct',
+  options: { limit?: number; offset?: number } = {},
 ): Promise<NormalSubmissionListItem[]> {
+  // Both values are coerced to integers and clamped before interpolation.
+  const limit = Math.min(500, Math.max(1, Math.trunc(options.limit ?? 200)));
+  const offset = Math.max(0, Math.trunc(options.offset ?? 0));
   const buyerScope = role === 'buyer'
     ? `AND sku IN (SELECT sku FROM sku_master WHERE buyer_user_id = $1)`
     : `AND ndrf_route = 'sct'`;
@@ -466,7 +492,7 @@ export async function listReviewerHistory(
         AND ndrf_route = ${role === 'buyer' ? "'buyer'" : "'sct'"}
         ${buyerScope}
       ORDER BY submitted_at DESC
-      LIMIT 200`,
+      LIMIT ${limit} OFFSET ${offset}`,
     role === 'buyer' ? [userId] : [],
   );
   return result.rows.map((row) => ({ ...row, locked: Boolean(row.exported_at || row.locked_at) }));
@@ -523,7 +549,7 @@ async function loadReviewerRow(
 ): Promise<WorkflowRow> {
   const result = await client.query<WorkflowRow>('SELECT * FROM submissions WHERE id = $1 FOR UPDATE', [submissionId]);
   const row = result.rows[0];
-  if (!row) throw new Error('找不到申報');
+  if (!row) throw new SubmissionNotFoundError();
   if (row.submission_type !== 'normal' || !row.workflow_status) {
     throw new ReviewDecisionError('此申報不支援一般 NDRF 審批流程');
   }
@@ -688,11 +714,26 @@ export async function adminWorkflowOverride(input: OverrideInput): Promise<Workf
   return withTransaction(async (client) => {
     const result = await client.query<WorkflowRow>('SELECT * FROM submissions WHERE id = $1 FOR UPDATE', [input.submissionId]);
     const row = result.rows[0];
-    if (!row) throw new Error('找不到申報');
+    if (!row) throw new SubmissionNotFoundError();
     if (row.submission_type !== 'normal' || !row.workflow_status || row.workflow_status === 'legacy') {
       throw new ReviewDecisionError('此申報不支援 workflow override');
     }
     if (row.locked_at || row.exported_at) throw new WorkflowLockedError();
+
+    // Restoring an active row must not collide with the Site+SKU+RP Type
+    // uniqueness guard (e.g. the store re-submitted after the cooldown while
+    // this row was still rejected). The advisory lock serialises against a
+    // concurrent store submit; the cooldown itself is irrelevant for override.
+    if (input.action !== 'override_reject') {
+      await lockWorkflowSubmissionKey(client, row.site_code, row.sku, row.rp_type ?? '');
+      await assertNoActiveOrCooldown(client, {
+        siteCode: row.site_code,
+        sku: row.sku,
+        rpType: row.rp_type ?? '',
+        excludeId: row.id,
+        checkCooldown: false,
+      });
+    }
 
     let nextStatus: WorkflowStatus;
     let nextRound = row.review_round;
@@ -725,24 +766,35 @@ export async function adminWorkflowOverride(input: OverrideInput): Promise<Workf
       ],
     );
 
-    const updated = await client.query<WorkflowRow>(
-      `UPDATE submissions
-          SET workflow_status = $1,
-              review_round = $2,
-              active_workflow = $3,
-              rejected_at = CASE WHEN $1 = 'rejected' THEN now() ELSE NULL END,
-              current_review_remark = NULL,
-              updated_at = now()
-        WHERE id = $4
-        RETURNING *`,
-      [
-        nextStatus,
-        nextRound,
-        nextStatus === 'rejected' ? false : true,
-        row.id,
-      ],
-    );
-    return updated.rows[0]!;
+    try {
+      const updated = await client.query<WorkflowRow>(
+        `UPDATE submissions
+            SET workflow_status = $1,
+                review_round = $2,
+                active_workflow = $3,
+                rejected_at = CASE WHEN $1 = 'rejected' THEN now() ELSE NULL END,
+                current_review_remark = NULL,
+                round_started_at = CASE WHEN $5 THEN now() ELSE round_started_at END,
+                updated_at = now()
+          WHERE id = $4
+          RETURNING *`,
+        [
+          nextStatus,
+          nextRound,
+          nextStatus === 'rejected' ? false : true,
+          row.id,
+          input.action === 'reopen',
+        ],
+      );
+      return updated.rows[0]!;
+    } catch (err) {
+      // Last-resort guard: the partial unique index on active rows can still
+      // reject a race we did not foresee; translate it into a clean 409.
+      if ((err as { code?: string }).code === '23505') {
+        throw new ActiveSubmissionConflictError();
+      }
+      throw err;
+    }
   });
 }
 
@@ -776,11 +828,13 @@ export async function adminEditWorkflowSubmission(input: AdminEditInput): Promis
   return withTransaction(async (client) => {
     const result = await client.query<WorkflowRow>('SELECT * FROM submissions WHERE id = $1 FOR UPDATE', [input.submissionId]);
     const row = result.rows[0];
-    if (!row) throw new Error('找不到申報');
+    if (!row) throw new SubmissionNotFoundError();
     if (row.submission_type !== 'normal') throw new ReviewDecisionError('此申報不支援一般 NDRF workflow 編輯');
 
     if (row.workflow_status === 'legacy' || row.workflow_status === null) {
-      // Legacy / manual rows keep the field-only behaviour.
+      // Legacy / manual rows keep the field-only behaviour, but exported rows
+      // are still immutable (the SAP export must always match the database).
+      if (row.locked_at || row.exported_at) throw new WorkflowLockedError();
       const before = {
         brand: row.brand,
         sku: row.sku,
@@ -825,9 +879,7 @@ export async function adminEditWorkflowSubmission(input: AdminEditInput): Promis
     const remarkRequired = configResult.rows[0]?.remark_required ?? false;
     const fieldErrors = validateNormalBusinessFields(input.fields, siteCode, remarkRequired);
     if (fieldErrors.length) {
-      const err = new Error(fieldErrors[0]!.message);
-      (err as Error & { field?: string }).field = fieldErrors[0]!.field;
-      throw err;
+      throw new FieldValidationError(fieldErrors[0]!.message, fieldErrors[0]!.field);
     }
     const route = await resolveWorkflowRoute(client, input.fields, siteCode);
     await lockWorkflowSubmissionKey(client, siteCode, input.fields.sku, input.fields.rp_type || '');
@@ -1012,7 +1064,7 @@ export async function runBuyerAutoApproveJob(): Promise<BuyerAutoApproveResult> 
           AND workflow_status = 'pending'
           AND locked_at IS NULL
           AND exported_at IS NULL
-          AND submitted_at <= now() - ($1::int * interval '1 day')
+          AND COALESCE(round_started_at, submitted_at) <= now() - ($1::int * interval '1 day')
         FOR UPDATE SKIP LOCKED`,
       [config.ndrfAutoApproveDays],
     );

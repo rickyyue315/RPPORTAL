@@ -93,11 +93,16 @@ async function runBuyerAutoApproveScheduler(): Promise<void> {
     console.error('[auto-approve] failed', err);
   }
 }
-  // Scheduled maintenance (daily): IP retention cleanup + Buyer SLA auto-approve.
+  // Scheduled maintenance: IP retention cleanup daily, Buyer SLA auto-approve
+  // hourly. Auto-approve is idempotent per row (SKIP LOCKED + unique decision
+  // index), so a short interval is safe and avoids a restart pushing the SLA
+  // check out by up to 24 hours.
   setInterval(() => {
     void runMaintenanceCleanup();
-    void runBuyerAutoApproveScheduler();
   }, 24 * 3600 * 1000);
+  setInterval(() => {
+    void runBuyerAutoApproveScheduler();
+  }, 3600 * 1000);
   void runMaintenanceCleanup();
   void runBuyerAutoApproveScheduler();
 

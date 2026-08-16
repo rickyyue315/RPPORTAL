@@ -109,7 +109,9 @@ export async function validatePortalSession(token: string): Promise<PortalUserRo
   if (!token) return null;
   const result = await query<PortalUserRow>(
     `UPDATE portal_sessions ps
-        SET last_seen_at = now()
+        SET last_seen_at = CASE
+              WHEN ps.last_seen_at IS NULL OR ps.last_seen_at < now() - interval '5 minutes'
+              THEN now() ELSE ps.last_seen_at END
        FROM portal_users u
       WHERE ps.token_hash = $1
         AND ps.expires_at > now()
@@ -133,9 +135,9 @@ export async function portalLogin(
 
   const recent = await query<{ cnt: string }>(
     `SELECT count(*)::text AS cnt FROM portal_login_attempts
-      WHERE ip = $1 AND success = false
-        AND attempted_at > now() - (interval '1 minute' * $2::int)`,
-    [ip, config.loginLockMinutes],
+      WHERE (ip = $1 OR username = $2) AND success = false
+        AND attempted_at > now() - (interval '1 minute' * $3::int)`,
+    [ip, normalized, config.loginLockMinutes],
   );
   if (Number(recent.rows[0]?.cnt ?? 0) >= config.loginLockThreshold) {
     return { ok: false, reason: '登入失敗次數過多，帳號已暫時鎖定' };
@@ -160,15 +162,23 @@ export async function portalLogin(
       'INSERT INTO portal_login_attempts (ip, username, attempted_at, success) VALUES ($1, $2, now(), false)',
       [ip, normalized],
     );
-    return { ok: false, reason: '帳號已停用，請聯絡管理員' };
+    // Deliberately the same message as a wrong password so the response does
+    // not reveal that the password itself was correct.
+    return { ok: false, reason: '使用者名稱或密碼不正確' };
   }
 
-  await query(
-    'INSERT INTO portal_login_attempts (ip, username, attempted_at, success) VALUES ($1, $2, now(), true)',
-    [ip, normalized],
-  );
   const session = await createPortalSession(user.id);
   return { ok: true, user, token: session.token };
+}
+
+/**
+ * New passwords need 8-128 characters and at least three of: lower case,
+ * upper case, digit, symbol. Initial generated passwords already satisfy this.
+ */
+function meetsPasswordPolicy(password: string): boolean {
+  if (password.length < 8 || password.length > 128) return false;
+  const classes = [/[a-z]/, /[A-Z]/, /\d/, /[^A-Za-z0-9]/].filter((re) => re.test(password));
+  return classes.length >= 3;
 }
 
 /** Changes the current user's password; requires the current password to match. */
@@ -184,8 +194,8 @@ export async function changePortalPassword(
   if (!(await verifyPassword(currentPassword, user.password_hash))) {
     return { ok: false, reason: '現有密碼不正確' };
   }
-  if (newPassword.length < 8 || newPassword.length > 128) {
-    return { ok: false, reason: '新密碼必須為 8 至 128 個字符' };
+  if (!meetsPasswordPolicy(newPassword)) {
+    return { ok: false, reason: '新密碼必須為 8 至 128 個字符，並包含大寫字母、小寫字母、數字及符號中至少三類' };
   }
   await setUserPassword(userId, newPassword, false);
   return { ok: true };

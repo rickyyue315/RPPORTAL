@@ -37,9 +37,11 @@ import {
   updateReviewRemark,
   validateNormalBusinessFields,
   assertNoActiveOrCooldown,
+  assertReviewerScope,
   ActiveSubmissionConflictError,
   CooldownActiveError,
   ReviewDecisionError,
+  SubmissionNotFoundError,
   WorkflowConfigurationError,
   WorkflowLockedError,
   WorkflowPermissionError,
@@ -47,7 +49,9 @@ import {
   type WorkflowRow,
 } from '../services/ndrfWorkflow.js';
 import { writeAuditEvent } from '../lib/audit.js';
+import { normalizeText } from '../lib/fields.js';
 import { toHKString } from '../lib/time.js';
+import { CSRF_COOKIE } from '../middleware/csrf.js';
 import {
   EXCEL_UPLOAD_EXTENSION_ERROR,
   parseImportWorkbook,
@@ -72,6 +76,14 @@ const upload = multer({
     headerPairs: 200,
   },
 });
+
+/** Batch import preflight collected per-row errors; nothing was inserted. */
+export class ImportPreflightError extends Error {
+  constructor(readonly importErrors: Array<{ row: number; field: string; reason: string }>) {
+    super('匯入失敗');
+    this.name = 'ImportPreflightError';
+  }
+}
 
 const businessFieldSchema = z.object({
   brand: z.string().max(500).optional().default(''),
@@ -107,6 +119,7 @@ function serializeWorkflowRow(row: WorkflowRow | NormalSubmissionListItem) {
     workflow_status: row.workflow_status,
     rejected_at: 'rejected_at' in row && row.rejected_at ? toHKString(row.rejected_at) : null,
     review_round: 'review_round' in row ? row.review_round : 0,
+    round_started_at: 'round_started_at' in row && row.round_started_at ? toHKString(row.round_started_at) : null,
     review_remark: 'current_review_remark' in row ? row.current_review_remark : null,
     locked: Boolean(row.exported_at || ('locked_at' in row ? row.locked_at : false)),
     exported_at: row.exported_at ? toHKString(row.exported_at) : null,
@@ -196,6 +209,8 @@ portalRouter.post(
       });
     }
     res.clearCookie(PORTAL_SESSION_COOKIE);
+    // Rotate the double-submit token so a stale page cannot reuse it.
+    res.clearCookie(CSRF_COOKIE);
     res.json({ ok: true });
   }),
 );
@@ -296,7 +311,17 @@ portalRouter.post(
       return;
     }
     const idempotencyKey = getIdempotencyKey(req);
-    const idempotencyFingerprint = fingerprintPayload({ ...data, site_code: siteCode });
+    // Fingerprint the normalized values so a retry that only differs by
+    // whitespace/case still replays instead of failing with a 409.
+    const idempotencyFingerprint = fingerprintPayload({
+      brand: normalizeText(data.brand),
+      sku: normalizeText(data.sku),
+      rp_type: normalizeText(data.rp_type),
+      safety_stock: normalizeText(data.safety_stock),
+      nd_code: normalizeText(data.nd_code),
+      remark: normalizeText(data.remark),
+      site_code: siteCode,
+    });
     if (await storeReplaySubmission(idempotencyKey, idempotencyFingerprint, siteCode, req.portalUser!.id, res)) return;
     const store = await getStore(siteCode);
     const ip = getClientIp(req);
@@ -430,10 +455,23 @@ portalRouter.post(
         // Preflight: collect every field/active/cooldown error before inserting
         // anything so the batch is all-or-nothing with per-row reasons.
         const preflightErrors: Array<{ row: number; field: string; reason: string }> = [];
-        const routeConfig = await getStoreRouteConfig(siteCode);
+        // Read the remark requirement through the transaction client so the
+        // check is consistent with the inserts that follow.
+        const routeResult = await client.query<{ remark_required: boolean }>(
+          'SELECT remark_required FROM ndrf_store_routes WHERE site_code = $1',
+          [siteCode],
+        );
+        const remarkRequired = routeResult.rows[0]?.remark_required ?? false;
+        const seenKeys = new Set<string>();
         for (const item of parsed.rows!) {
-          for (const fe of validateNormalBusinessFields(item.fields, siteCode, routeConfig.remark_required)) {
+          for (const fe of validateNormalBusinessFields(item.fields, siteCode, remarkRequired)) {
             preflightErrors.push({ row: item.rowNumber, field: fe.field === 'sku' ? 'SKU' : fe.field, reason: fe.message });
+          }
+          const batchKey = `${siteCode}|${normalizeText(item.fields.sku)}|${normalizeText(item.fields.rp_type)}`;
+          if (seenKeys.has(batchKey)) {
+            preflightErrors.push({ row: item.rowNumber, field: 'SKU', reason: '同一 Excel 內 Site Code + SKU + RP Type 重複' });
+          } else {
+            seenKeys.add(batchKey);
           }
           try {
             await assertNoActiveOrCooldown(client, {
@@ -450,9 +488,7 @@ portalRouter.post(
           }
         }
         if (preflightErrors.length > 0) {
-          const err = new Error('匯入失敗');
-          (err as Error & { importErrors?: unknown[] }).importErrors = preflightErrors;
-          throw err;
+          throw new ImportPreflightError(preflightErrors);
         }
 
         const rowsOut: Array<{ row: number; application_no: string; site_code: string; sku: string; submitted_at: string }> = [];
@@ -504,18 +540,18 @@ portalRouter.post(
         res.status(409).json({ error: err.message });
         return;
       }
-      if (err instanceof Error && (err as Error & { importErrors?: unknown[] }).importErrors) {
+      if (err instanceof ImportPreflightError) {
         await writeAuditEvent({
           eventType: 'excel_import_error',
           actorRole: 'store',
           actor: req.portalUser!.username,
           ip,
-          metadata: { filename: file.originalname, site_code: siteCode, errors: (err as Error & { importErrors: unknown[] }).importErrors },
+          metadata: { filename: file.originalname, site_code: siteCode, errors: err.importErrors },
         });
         res.status(400).json({
           error: '匯入失敗',
           totalRows: parsed.totalRows,
-          errors: (err as Error & { importErrors: unknown[] }).importErrors,
+          errors: err.importErrors,
         });
         return;
       }
@@ -596,7 +632,7 @@ portalRouter.get(
   adminActionLimiter,
   asyncHandler(async (req: Request, res: Response) => {
     const row = await getNormalSubmissionById(req.params.id as string);
-    if (!row || row.site_code !== req.storeSiteCode!) {
+    if (!row || row.site_code !== req.storeSiteCode! || row.submission_type !== 'normal') {
       res.status(404).json({ error: '找不到申報' });
       return;
     }
@@ -641,7 +677,15 @@ portalRouter.get(
   adminActionLimiter,
   asyncHandler(async (req: Request, res: Response) => {
     const user = req.portalUser!;
-    const rows = await listReviewerHistory(user.id, user.role as 'buyer' | 'sct');
+    const parsed = historyPageSchema.safeParse(req.query);
+    if (!parsed.success) {
+      res.status(400).json({ error: '分頁參數無效' });
+      return;
+    }
+    const rows = await listReviewerHistory(user.id, user.role as 'buyer' | 'sct', {
+      limit: parsed.data.limit,
+      offset: parsed.data.offset,
+    });
     res.json({ submissions: rows.map(serializeWorkflowRow) });
   }),
 );
@@ -656,9 +700,21 @@ portalRouter.get(
       res.status(404).json({ error: '找不到申報' });
       return;
     }
-    if (req.portalUser!.role === 'sct' && row.ndrf_route !== 'sct') {
-      res.status(403).json({ error: '此申請不是指定店 SCT 審批的申請' });
-      return;
+    try {
+      // Same ownership check as the decision/remark endpoints: buyers may only
+      // read submissions for SKUs they currently own, SCT only SCT-routed rows.
+      await withTransaction((client) =>
+        assertReviewerScope(client, {
+          id: req.portalUser!.id,
+          role: req.portalUser!.role as 'buyer' | 'sct',
+        }, row),
+      );
+    } catch (err) {
+      if (err instanceof WorkflowPermissionError) {
+        res.status(403).json({ error: err.message });
+        return;
+      }
+      throw err;
     }
     const events = await getReviewEvents(row.id);
     res.json({
@@ -678,6 +734,11 @@ portalRouter.get(
     });
   }),
 );
+
+const historyPageSchema = z.object({
+  limit: z.coerce.number().int().min(1).max(500).optional(),
+  offset: z.coerce.number().int().min(0).max(100000).optional(),
+});
 
 const remarkSchema = z.object({
   remark: z.string().max(4000).optional().default(''),
@@ -718,7 +779,7 @@ portalRouter.put(
         res.status(409).json({ error: err.message });
         return;
       }
-      if (err instanceof Error && err.message === '找不到申報') {
+      if (err instanceof SubmissionNotFoundError) {
         res.status(404).json({ error: '找不到申報' });
         return;
       }
@@ -784,7 +845,7 @@ portalRouter.post(
         res.status(409).json({ error: err.message });
         return;
       }
-      if (err instanceof Error && err.message === '找不到申報') {
+      if (err instanceof SubmissionNotFoundError) {
         res.status(404).json({ error: '找不到申報' });
         return;
       }

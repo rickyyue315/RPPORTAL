@@ -163,8 +163,7 @@ export async function assertBuyerHasNoSkus(userId: string): Promise<void> {
 export async function assertSctHasNoPending(_userId: string): Promise<void> {
   const result = await query<{ cnt: string }>(
     `SELECT count(*)::text AS cnt FROM submissions
-      WHERE submission_type = 'normal' AND ndrf_route = 'sct' AND workflow_status = 'pending'
-        AND created_by_portal_user_id IS NOT NULL`,
+      WHERE submission_type = 'normal' AND ndrf_route = 'sct' AND workflow_status = 'pending'`,
   );
   if (Number(result.rows[0]?.cnt ?? 0) > 0) {
     throw new WorkflowConfigurationError('仍有指定店 RF 待 SCT 審批，請先完成審批或改由 Admin override 後再停用');

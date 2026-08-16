@@ -103,7 +103,7 @@ let db: PGlite;
 beforeAll(async () => {
   db = new PGlite();
   setPoolForTesting(await makePool(db));
-  const migrationFiles = ['001_init.sql', '002_drop_rp_type_completed_at.sql', '003_add_submission_type_qty.sql', '004_add_urgent_reason.sql', '005_add_sales_submission_type.sql', '006_add_return_submission_type.sql', '007_add_idempotency_and_import_recovery.sql', '008_add_export_file_archive.sql', '009_architecture_hardening.sql', '010_query_optimization.sql', '011_cleanup_legacy_schema.sql', '012_om_recovery_codes.sql', '013_recovery_code_plaintext.sql', '014_ndrf_workflow_portal.sql', '015_buyer_auto_approve.sql'];
+  const migrationFiles = ['001_init.sql', '002_drop_rp_type_completed_at.sql', '003_add_submission_type_qty.sql', '004_add_urgent_reason.sql', '005_add_sales_submission_type.sql', '006_add_return_submission_type.sql', '007_add_idempotency_and_import_recovery.sql', '008_add_export_file_archive.sql', '009_architecture_hardening.sql', '010_query_optimization.sql', '011_cleanup_legacy_schema.sql', '012_om_recovery_codes.sql', '013_recovery_code_plaintext.sql', '014_ndrf_workflow_portal.sql', '015_buyer_auto_approve.sql', '016_round_started_at.sql'];
   for (const file of migrationFiles) {
     let sql = await readFile(path.join(__dirname, '..', 'src', 'db', 'migrations', file), 'utf8');
     sql = sql.replace(/CREATE EXTENSION IF NOT EXISTS pgcrypto;\s*/g, '');
@@ -618,9 +618,9 @@ describe('Buyer SLA auto-approve (7 日未回覆 → 默認同意)', () => {
       `INSERT INTO submissions (
          application_no, source, submission_type, site_code, requested_by_email, application_date,
          brand, sku, rp_type, nd_code, status, ndrf_route, workflow_status, active_workflow, review_round,
-         submitted_at
+         submitted_at, round_started_at
        ) VALUES ($1, 'web', 'normal', 'HA02', 'ha02@sasa.com', '2026-08-05', '', '1002095', 'ND', 'ND20-SO-Not displayed in small stores',
-         'received', 'buyer', 'pending', true, 1, now() - interval '8 days')`,
+         'received', 'buyer', 'pending', true, 1, now() - interval '8 days', now() - interval '8 days')`,
       [overdueNo],
     );
     // Not overdue yet: submitted 1 day ago.
@@ -629,9 +629,9 @@ describe('Buyer SLA auto-approve (7 日未回覆 → 默認同意)', () => {
       `INSERT INTO submissions (
          application_no, source, submission_type, site_code, requested_by_email, application_date,
          brand, sku, rp_type, nd_code, status, ndrf_route, workflow_status, active_workflow, review_round,
-         submitted_at
+         submitted_at, round_started_at
        ) VALUES ($1, 'web', 'normal', 'HA02', 'ha02@sasa.com', '2026-08-05', '', '1002096', 'ND', 'ND20-SO-Not displayed in small stores',
-         'received', 'buyer', 'pending', true, 1, now() - interval '1 day')`,
+         'received', 'buyer', 'pending', true, 1, now() - interval '1 day', now() - interval '1 day')`,
       [freshNo],
     );
 
@@ -691,5 +691,218 @@ describe('Buyer SLA auto-approve (7 日未回覆 → 默認同意)', () => {
       .send({});
     expect(trigger.status).toBe(200);
     expect(typeof trigger.body.approved).toBe('number');
+  });
+});
+
+
+describe('NDRF workflow regression fixes', () => {
+  it('closes the buyer detail IDOR: a buyer cannot read another buyers submission detail', async () => {
+    const buyer2Res = await db.query<{ id: string }>('SELECT id FROM portal_users WHERE username = $1', ['BUYER2']);
+    await db.query(
+      `INSERT INTO sku_master (sku, buyer_user_id, updated_by) VALUES ('1002021', $1, 'test')
+       ON CONFLICT (sku) DO UPDATE SET buyer_user_id = EXCLUDED.buyer_user_id, updated_by = 'test', updated_at = now()`,
+      [buyer2Res.rows[0]!.id],
+    );
+    const store = await storeAgent('HA06');
+    const created = await submitNormal(store, { sku: '1002021', rp_type: 'ND', nd_code: 'ND20-SO-Not displayed in small stores' });
+    expect(created.status).toBe(201);
+    const idRes = await db.query<{ id: string }>('SELECT id FROM submissions WHERE application_no = $1', [created.body.submission.application_no]);
+    const id = idRes.rows[0]!.id;
+
+    const wrongBuyer = buyerAgent();
+    await portalLogin(wrongBuyer, 'BUYER1');
+    const detail = await wrongBuyer.get(`/api/portal/reviewer/submissions/${id}`);
+    expect(detail.status).toBe(403);
+
+    const owner = buyerAgent();
+    await portalLogin(owner, 'BUYER2');
+    const own = await owner.get(`/api/portal/reviewer/submissions/${id}`);
+    expect(own.status).toBe(200);
+    expect(own.body.submission.id).toBe(id);
+  });
+
+  it('reopened rounds restart the SLA clock and are not auto-approved instantly', async () => {
+    const buyer1Res = await db.query<{ id: string }>('SELECT id FROM portal_users WHERE username = $1', ['BUYER1']);
+    await db.query(
+      `INSERT INTO sku_master (sku, buyer_user_id, updated_by) VALUES ('1002022', $1, 'test')
+       ON CONFLICT (sku) DO UPDATE SET buyer_user_id = EXCLUDED.buyer_user_id, updated_by = 'test', updated_at = now()`,
+      [buyer1Res.rows[0]!.id],
+    );
+    const store = await storeAgent('HA02');
+    const created = await submitNormal(store, { sku: '1002022', rp_type: 'ND', nd_code: 'ND20-SO-Not displayed in small stores' });
+    const idRes = await db.query<{ id: string }>('SELECT id FROM submissions WHERE application_no = $1', [created.body.submission.application_no]);
+    const id = idRes.rows[0]!.id;
+
+    const buyer = buyerAgent();
+    await portalLogin(buyer, 'BUYER1');
+    const rejected = await buyer
+      .post(`/api/portal/reviewer/submissions/${id}/decision`)
+      .set('x-csrf-token', buyer._csrf ?? '')
+      .send({ decision: 'reject', reject_reason_code: 'data_error', reject_reason_note: '資料有誤' });
+    expect(rejected.status).toBe(201);
+
+    const admin = request.agent(app) as Agent;
+    await adminLogin(admin);
+    const reopen = await admin
+      .post(`/api/admin/submissions/${id}/override`)
+      .set('x-csrf-token', admin._csrf ?? '')
+      .send({ action: 'reopen', reason: '資料已更正' });
+    expect(reopen.status).toBe(200);
+
+    // Make the ORIGINAL submission time very old: a job that measured from
+    // submitted_at would auto-approve this freshly reopened round immediately.
+    await db.query(`UPDATE submissions SET submitted_at = now() - interval '20 days' WHERE id = $1`, [id]);
+
+    const { runBuyerAutoApproveJob } = await import('../src/services/ndrfWorkflow.js');
+    await runBuyerAutoApproveJob();
+
+    const after = await db.query<{ workflow_status: string; round_started_at: string | null }>(
+      'SELECT workflow_status, round_started_at FROM submissions WHERE id = $1',
+      [id],
+    );
+    expect(after.rows[0]!.workflow_status).toBe('pending');
+    expect(after.rows[0]!.round_started_at).toBeTruthy();
+  });
+
+  it('admin reopen is refused when another active row already holds the Site+SKU+RP Type', async () => {
+    const site = 'HA02';
+    const sku = '1002023';
+    const buyer1Res = await db.query<{ id: string }>('SELECT id FROM portal_users WHERE username = $1', ['BUYER1']);
+    await db.query(
+      `INSERT INTO sku_master (sku, buyer_user_id, updated_by) VALUES ($1, $2, 'test')
+       ON CONFLICT (sku) DO UPDATE SET buyer_user_id = EXCLUDED.buyer_user_id, updated_by = 'test', updated_at = now()`,
+      [sku, buyer1Res.rows[0]!.id],
+    );
+    await db.query(
+      `INSERT INTO submissions (application_no, source, submission_type, site_code, requested_by_email, application_date,
+         sku, rp_type, status, ndrf_route, workflow_status, active_workflow, review_round)
+       VALUES ('NDRF-OVR-ACTIVE', 'web', 'normal', $1, $2, '2026-08-05', $3, 'ND', 'received', 'buyer', 'pending', true, 1)`,
+      [site, `${site.toLowerCase()}@sasa.com`, sku],
+    );
+    const rejectedRes = await db.query<{ id: string }>(
+      `INSERT INTO submissions (application_no, source, submission_type, site_code, requested_by_email, application_date,
+         sku, rp_type, status, ndrf_route, workflow_status, active_workflow, review_round, rejected_at)
+       VALUES ('NDRF-OVR-REJECTED', 'web', 'normal', $1, $2, '2026-08-05', $3, 'ND', 'received', 'buyer', 'rejected', false, 1, $4)
+       RETURNING id`,
+      [site, `${site.toLowerCase()}@sasa.com`, sku, new Date(Date.now() - 31 * 24 * 3600 * 1000).toISOString()],
+    );
+
+    const admin = request.agent(app) as Agent;
+    await adminLogin(admin);
+    const res = await admin
+      .post(`/api/admin/submissions/${rejectedRes.rows[0]!.id}/override`)
+      .set('x-csrf-token', admin._csrf ?? '')
+      .send({ action: 'reopen', reason: '測試衝突' });
+    expect(res.status).toBe(409);
+  });
+
+  it('SCT deactivation is blocked while pending SCT rows exist regardless of creator', async () => {
+    await db.query(
+      `INSERT INTO submissions (application_no, source, submission_type, site_code, requested_by_email, application_date,
+         sku, rp_type, status, ndrf_route, workflow_status, active_workflow, review_round)
+       VALUES ('NDRF-SCT-GUARD', 'web', 'normal', 'HA19', 'ha19@sasa.com', '2026-08-05', '1002024', 'RF', 'received', 'sct', 'pending', true, 1)`,
+    );
+    const sctRes = await db.query<{ id: string }>('SELECT id FROM portal_users WHERE username = $1', ['SCT1']);
+    const admin = request.agent(app) as Agent;
+    await adminLogin(admin);
+    const res = await admin
+      .put(`/api/admin/portal/users/${sctRes.rows[0]!.id}`)
+      .set('x-csrf-token', admin._csrf ?? '')
+      .send({ active: false });
+    expect(res.status).toBe(409);
+  });
+
+  it('legacy rows cannot be edited after they are exported/locked', async () => {
+    const inserted = await db.query<{ id: string }>(
+      `INSERT INTO submissions (application_no, source, submission_type, site_code, requested_by_email, application_date,
+         sku, rp_type, status, ndrf_route, workflow_status, active_workflow, review_round, locked_at, exported_at)
+       VALUES ('NDRF-LEGACY-LOCK', 'web', 'normal', 'HA02', 'ha02@sasa.com', '2026-08-05', '1002025', 'ND', 'received',
+         'legacy', 'legacy', false, 1, now(), now())
+       RETURNING id`,
+    );
+    const admin = request.agent(app) as Agent;
+    await adminLogin(admin);
+    const res = await admin
+      .put(`/api/admin/submissions/${inserted.rows[0]!.id}`)
+      .set('x-csrf-token', admin._csrf ?? '')
+      .send({ brand: 'X', sku: '1002025', rp_type: 'ND', safety_stock: '', nd_code: 'ND20-SO-Not displayed in small stores', remark: '' });
+    expect(res.status).toBe(409);
+  });
+
+  it('store cannot read non-normal submissions of its site', async () => {
+    const inserted = await db.query<{ id: string }>(
+      `INSERT INTO submissions (application_no, source, submission_type, site_code, requested_by_email, application_date,
+         sku, status, return_qty, return_reason, return_confirmer_name, return_confirmer_phone, return_window_key)
+       VALUES ('NDRF-RETURN-GUARD', 'web', 'return', 'HA02', 'ha02@sasa.com', '2026-08-05', '1002026', 'received',
+         1, '1', '測試', '99998888', 'window-1')
+       RETURNING id`,
+    );
+    const store = await storeAgent('HA02');
+    const res = await store.get(`/api/portal/store/submissions/${inserted.rows[0]!.id}`);
+    expect(res.status).toBe(404);
+  });
+
+  it('same idempotency key with only whitespace differences replays instead of 409', async () => {
+    const buyer1Res = await db.query<{ id: string }>('SELECT id FROM portal_users WHERE username = $1', ['BUYER1']);
+    await db.query(
+      `INSERT INTO sku_master (sku, buyer_user_id, updated_by) VALUES ('1002027', $1, 'test')
+       ON CONFLICT (sku) DO UPDATE SET buyer_user_id = EXCLUDED.buyer_user_id, updated_by = 'test', updated_at = now()`,
+      [buyer1Res.rows[0]!.id],
+    );
+    const store = await storeAgent('HA02');
+    const key = 'fp-retry-whitespace-1';
+    const first = await store
+      .post('/api/portal/store/submit')
+      .set('x-csrf-token', store._csrf ?? '')
+      .set('Idempotency-Key', key)
+      .send({ brand: 'ABC', sku: '1002027', rp_type: 'ND', nd_code: 'ND20-SO-Not displayed in small stores' });
+    expect(first.status).toBe(201);
+
+    const retry = await store
+      .post('/api/portal/store/submit')
+      .set('x-csrf-token', store._csrf ?? '')
+      .set('Idempotency-Key', key)
+      .send({ brand: '  ABC  ', sku: '1002027', rp_type: 'ND', nd_code: 'ND20-SO-Not displayed in small stores' });
+    expect(retry.status).toBe(200);
+    expect(retry.body.replayed).toBe(true);
+  });
+
+  it('reviewer history honours limit/offset pagination', async () => {
+    const buyer = buyerAgent();
+    await portalLogin(buyer, 'BUYER1');
+    const res = await buyer.get('/api/portal/reviewer/history?limit=1&offset=0');
+    expect(res.status).toBe(200);
+    expect(res.body.submissions.length).toBeLessThanOrEqual(1);
+    const bad = await buyer.get('/api/portal/reviewer/history?limit=99999');
+    expect(bad.status).toBe(400);
+  });
+
+  it('keeps the TypeScript workflow state values in sync with the DB CHECK constraints', async () => {
+    const { WORKFLOW_STATUSES, NDRF_ROUTES } = await import('../src/services/ndrfWorkflow.js');
+    let s = 0;
+    for (const status of WORKFLOW_STATUSES) {
+      await db.query(
+        `INSERT INTO submissions (application_no, source, submission_type, site_code, requested_by_email, application_date,
+           sku, status, ndrf_route, workflow_status, active_workflow, review_round)
+         VALUES ($1, 'web', 'normal', 'HA02', 'ha02@sasa.com', '2026-08-05', '1002028', 'received', 'rp', $2, false, 1)`,
+        [`NDRF-PARITY-S${s++}`, status],
+      );
+    }
+    let r = 0;
+    for (const route of NDRF_ROUTES) {
+      await db.query(
+        `INSERT INTO submissions (application_no, source, submission_type, site_code, requested_by_email, application_date,
+           sku, status, ndrf_route, workflow_status, active_workflow, review_round)
+         VALUES ($1, 'web', 'normal', 'HA02', 'ha02@sasa.com', '2026-08-05', '1002028', 'received', $2, 'pending', false, 1)`,
+        [`NDRF-PARITY-R${r++}`, route],
+      );
+    }
+    await expect(
+      db.query(
+        `INSERT INTO submissions (application_no, source, submission_type, site_code, requested_by_email, application_date,
+           sku, status, ndrf_route, workflow_status, active_workflow, review_round)
+         VALUES ('NDRF-PARITY-BAD', 'web', 'normal', 'HA02', 'ha02@sasa.com', '2026-08-05', '1002028', 'received', 'rp', 'not_a_status', false, 1)`,
+      ),
+    ).rejects.toThrow();
   });
 });

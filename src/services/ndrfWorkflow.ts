@@ -623,66 +623,74 @@ export async function decideSubmission(input: DecisionInput): Promise<DecisionRe
       [row.id, row.review_round],
     );
     const previous = existing.rows[0];
-    if (previous) {
-      const matches = previous.event_type === input.decision;
-      if (!matches) {
-        throw new ReviewDecisionError('此申請已有決定，不能重複審批');
-      }
+    if (previous && previous.event_type !== input.decision) {
+      throw new ReviewDecisionError('此申請已有決定，不能重複審批');
+    }
+    if (previous && row.workflow_status !== 'pending') {
       return { row, event: previous, replayed: true };
     }
-
-    if (row.workflow_status !== 'pending') {
+    if (!previous && row.workflow_status !== 'pending') {
       throw new ReviewDecisionError('此申請已決定或不在 Pending 狀態');
     }
+
+    // `previous` on a still-pending row means the round's decision was recorded
+    // but the status update was lost (legacy of a mid-round edit); re-apply the
+    // recorded decision so the row can leave pending instead of replaying it.
 
     let rejectReasonCode: string | null = null;
     let rejectReasonLabel: string | null = null;
     let rejectReasonNote: string | null = null;
+    let remark: string | null;
+    let event: ReviewEventRow;
 
-    if (input.decision === 'reject') {
-      const code = normalizeText(input.rejectReasonCode);
-      if (!code) throw new ReviewDecisionError('Reject 必須選擇原因類別');
-      const reason = await client.query<{ code: string; label: string; active: boolean }>(
-        'SELECT code, label, active FROM ndrf_rejection_reasons WHERE code = $1',
-        [code],
+    if (previous) {
+      remark = previous.remark;
+      event = previous;
+    } else {
+      if (input.decision === 'reject') {
+        const code = normalizeText(input.rejectReasonCode);
+        if (!code) throw new ReviewDecisionError('Reject 必須選擇原因類別');
+        const reason = await client.query<{ code: string; label: string; active: boolean }>(
+          'SELECT code, label, active FROM ndrf_rejection_reasons WHERE code = $1',
+          [code],
+        );
+        const reasonRow = reason.rows[0];
+        if (!reasonRow || !reasonRow.active) throw new ReviewDecisionError('Reject 原因類別無效');
+        rejectReasonCode = reasonRow.code;
+        rejectReasonLabel = reasonRow.label;
+        rejectReasonNote = normalizeText(input.rejectReasonNote) || null;
+        if (code === 'other' && !rejectReasonNote) {
+          throw new ReviewDecisionError('選擇「其他」時必須填寫補充說明');
+        }
+        if (!rejectReasonNote) {
+          throw new ReviewDecisionError('Reject 必須填寫補充說明');
+        }
+      }
+      remark = normalizeText(input.remark) || null;
+      const inserted = await client.query<ReviewEventRow>(
+        `INSERT INTO ndrf_review_events
+           (submission_id, review_round, event_type, actor_role, actor_user_id, actor,
+            remark, reject_reason_code, reject_reason_label, reject_reason_note, ip, ip_expires_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+         RETURNING id, submission_id, review_round, event_type, actor_role, actor_user_id, actor,
+                   remark, reject_reason_code, reject_reason_label, reject_reason_note, reason, ip, created_at`,
+        [
+          row.id,
+          row.review_round,
+          input.decision,
+          input.user.role,
+          input.user.id,
+          input.user.username,
+          remark,
+          rejectReasonCode,
+          rejectReasonLabel,
+          rejectReasonNote,
+          input.ip,
+          input.ip ? ipExpiryIso() : null,
+        ],
       );
-      const reasonRow = reason.rows[0];
-      if (!reasonRow || !reasonRow.active) throw new ReviewDecisionError('Reject 原因類別無效');
-      rejectReasonCode = reasonRow.code;
-      rejectReasonLabel = reasonRow.label;
-      rejectReasonNote = normalizeText(input.rejectReasonNote) || null;
-      if (code === 'other' && !rejectReasonNote) {
-        throw new ReviewDecisionError('選擇「其他」時必須填寫補充說明');
-      }
-      if (!rejectReasonNote) {
-        throw new ReviewDecisionError('Reject 必須填寫補充說明');
-      }
+      event = inserted.rows[0]!;
     }
-
-    const remark = normalizeText(input.remark) || null;
-    const inserted = await client.query<ReviewEventRow>(
-      `INSERT INTO ndrf_review_events
-         (submission_id, review_round, event_type, actor_role, actor_user_id, actor,
-          remark, reject_reason_code, reject_reason_label, reject_reason_note, ip, ip_expires_at)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
-       RETURNING id, submission_id, review_round, event_type, actor_role, actor_user_id, actor,
-                 remark, reject_reason_code, reject_reason_label, reject_reason_note, reason, ip, created_at`,
-      [
-        row.id,
-        row.review_round,
-        input.decision,
-        input.user.role,
-        input.user.id,
-        input.user.username,
-        remark,
-        rejectReasonCode,
-        rejectReasonLabel,
-        rejectReasonNote,
-        input.ip,
-        input.ip ? ipExpiryIso() : null,
-      ],
-    );
-    const event = inserted.rows[0]!;
 
     const updated = await client.query<WorkflowRow>(
       `UPDATE submissions
@@ -773,6 +781,7 @@ export async function adminWorkflowOverride(input: OverrideInput): Promise<Workf
                 review_round = $2,
                 active_workflow = $3,
                 rejected_at = CASE WHEN $1 = 'rejected' THEN now() ELSE NULL END,
+                auto_approved_at = NULL,
                 current_review_remark = NULL,
                 round_started_at = CASE WHEN $5 THEN now() ELSE round_started_at END,
                 updated_at = now()
@@ -898,12 +907,23 @@ export async function adminEditWorkflowSubmission(input: AdminEditInput): Promis
       nd_code: row.nd_code,
       remark: row.remark,
     };
+
+    // An edit that moves the row back into review must start a fresh round:
+    // the per-round decision uniqueness would otherwise collide with the
+    // previous round's accept/reject/auto_accept event and leave the row
+    // permanently pending, and the SLA clock must not carry over either.
+    const reopensReview = route.status === 'pending' && row.workflow_status !== 'pending';
+    const nextRound = reopensReview ? row.review_round + 1 : row.review_round;
+
     const updated = await client.query<WorkflowRow>(
       `UPDATE submissions SET
          brand = $1, sku = $2, rp_type = $3, safety_stock = $4, nd_code = $5, remark = $6,
          ndrf_route = $7, workflow_status = $8,
+         review_round = $9,
+         round_started_at = CASE WHEN $10 THEN now() ELSE round_started_at END,
+         current_review_remark = CASE WHEN $10 THEN NULL ELSE current_review_remark END,
          updated_at = now()
-       WHERE id = $9
+       WHERE id = $11
        RETURNING *`,
       [
         normalizeText(input.fields.brand) || null,
@@ -914,10 +934,27 @@ export async function adminEditWorkflowSubmission(input: AdminEditInput): Promis
         normalizeText(input.fields.remark) || null,
         route.route,
         route.status,
+        nextRound,
+        reopensReview,
         row.id,
       ],
     );
     const newRow = updated.rows[0]!;
+    if (reopensReview) {
+      await client.query(
+        `INSERT INTO ndrf_review_events
+           (submission_id, review_round, event_type, actor_role, actor, reason, ip, ip_expires_at)
+         VALUES ($1, $2, 'override', 'admin', $3, $4, $5, $6)`,
+        [
+          row.id,
+          nextRound,
+          input.adminUsername,
+          'Admin 編輯欄位後重新送審，開啟新審批回合',
+          input.ip,
+          input.ip ? ipExpiryIso() : null,
+        ],
+      );
+    }
     await appendVersion(client, row, newRow, before, input.fields, input.adminUsername, input.ip, 'admin_edit', 'admin');
     return newRow;
   });

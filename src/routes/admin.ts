@@ -7,7 +7,7 @@ import {
   excelImportLimiter,
   excelExportLimiter,
 } from '../middleware/rateLimits.js';
-import { asyncHandler, getClientIp } from '../middleware/helpers.js';
+import { asyncHandler, getClientIp, requireUuidParam } from '../middleware/helpers.js';
 import { login, requireAdmin, destroySession, SESSION_COOKIE } from '../middleware/auth.js';
 import { writeAuditEvent } from '../lib/audit.js';
 import { config } from '../config.js';
@@ -517,6 +517,7 @@ adminRouter.get(
 /** GET /api/admin/submissions/:id — detail + versions + workflow events. */
 adminRouter.get(
   '/submissions/:id',
+  requireUuidParam('id'),
   requireAdmin,
   adminActionLimiter,
   asyncHandler(async (req: Request, res: Response) => {
@@ -564,6 +565,7 @@ adminRouter.get(
 /** PUT /api/admin/submissions/:id — admin edits fields according to submission type. */
 adminRouter.put(
   '/submissions/:id',
+  requireUuidParam('id'),
   requireAdmin,
   adminActionLimiter,
   asyncHandler(async (req: Request, res: Response) => {
@@ -1652,6 +1654,10 @@ adminRouter.post(
       res.status(201).json({ ...account });
     } catch (err) {
       if (err instanceof Error && (err as { code?: string }).code === '23505') {
+        if ((err as { constraint?: string }).constraint === 'uq_portal_users_active_sct') {
+          res.status(409).json({ error: '系統目前已有啟用中的 SCT 帳號，請先停用現有帳號' });
+          return;
+        }
         res.status(409).json({ error: '此使用者名稱已存在' });
         return;
       }
@@ -1668,6 +1674,7 @@ const portalUserUpdateSchema = z.object({
 /** PUT /api/admin/portal/users/:id — update display name or activate/deactivate. */
 adminRouter.put(
   '/portal/users/:id',
+  requireUuidParam('id'),
   requireAdmin,
   adminActionLimiter,
   asyncHandler(async (req: Request, res: Response) => {
@@ -1735,6 +1742,7 @@ adminRouter.put(
 /** POST /api/admin/portal/users/:id/reset-password — reset to a one-time password. */
 adminRouter.post(
   '/portal/users/:id/reset-password',
+  requireUuidParam('id'),
   requireAdmin,
   adminActionLimiter,
   asyncHandler(async (req: Request, res: Response) => {
@@ -1990,6 +1998,10 @@ adminRouter.post(
   requireAdmin,
   adminActionLimiter,
   asyncHandler(async (req: Request, res: Response) => {
+    if (!config.ndrfAutoApproveEnabled) {
+      res.status(409).json({ error: 'Buyer SLA 自動批准已停用（NDRF_AUTO_APPROVE_ENABLED）' });
+      return;
+    }
     const result = await runBuyerAutoApproveJob();
     await writeAuditEvent({
       eventType: 'buyer_auto_approved',
@@ -2074,6 +2086,7 @@ const overrideSchema = z.object({
 /** POST /api/admin/submissions/:id/override — workflow override/reopen with mandatory reason. */
 adminRouter.post(
   '/submissions/:id/override',
+  requireUuidParam('id'),
   requireAdmin,
   adminActionLimiter,
   asyncHandler(async (req: Request, res: Response) => {

@@ -133,13 +133,20 @@ export async function portalLogin(
   const normalized = normalizePortalUsername(username);
   if (!normalized) return { ok: false, reason: '請輸入使用者名稱' };
 
-  const recent = await query<{ cnt: string }>(
-    `SELECT count(*)::text AS cnt FROM portal_login_attempts
-      WHERE (ip = $1 OR username = $2) AND success = false
+  // Lockout is per-IP at the low threshold; per-username failures only lock at
+  // a much higher count. Store usernames (Site Codes) are public, so a pure
+  // username lock would let anyone remotely lock a chosen store's account.
+  const recent = await query<{ ip_failures: string; user_failures: string }>(
+    `SELECT count(*) FILTER (WHERE ip = $1)::text AS ip_failures,
+            count(*) FILTER (WHERE username = $2)::text AS user_failures
+       FROM portal_login_attempts
+      WHERE success = false
         AND attempted_at > now() - (interval '1 minute' * $3::int)`,
     [ip, normalized, config.loginLockMinutes],
   );
-  if (Number(recent.rows[0]?.cnt ?? 0) >= config.loginLockThreshold) {
+  const ipFailures = Number(recent.rows[0]?.ip_failures ?? 0);
+  const userFailures = Number(recent.rows[0]?.user_failures ?? 0);
+  if (ipFailures >= config.loginLockThreshold || userFailures >= config.loginUsernameLockThreshold) {
     return { ok: false, reason: '登入失敗次數過多，帳號已暫時鎖定' };
   }
 
@@ -167,6 +174,10 @@ export async function portalLogin(
     return { ok: false, reason: '使用者名稱或密碼不正確' };
   }
 
+  await query(
+    'INSERT INTO portal_login_attempts (ip, username, attempted_at, success) VALUES ($1, $2, now(), true)',
+    [ip, normalized],
+  );
   const session = await createPortalSession(user.id);
   return { ok: true, user, token: session.token };
 }

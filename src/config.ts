@@ -59,6 +59,9 @@ export const config = {
   sessionTtlHours: int('SESSION_TTL_HOURS', 8),
   loginLockThreshold: int('LOGIN_LOCK_THRESHOLD', 5),
   loginLockMinutes: int('LOGIN_LOCK_MINUTES', 15),
+  // Per-username failures need a much higher count than per-IP so public store
+  // usernames (Site Codes) cannot be used to remotely lock a specific account.
+  loginUsernameLockThreshold: Math.max(1, int('LOGIN_USERNAME_LOCK_THRESHOLD', 50)),
   csrfEnabled: bool('CSRF_ENABLED', true),
   trustProxy: proxyTrust(),
   timezone: process.env.APP_TIMEZONE ?? 'Asia/Hong_Kong',

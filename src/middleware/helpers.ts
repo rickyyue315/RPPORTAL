@@ -14,3 +14,22 @@ export function asyncHandler(
     fn(req, res, next).catch(next);
   };
 }
+
+const UUID_PATTERN = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/;
+
+/**
+ * Rejects requests whose named path parameters are not UUIDs before they reach
+ * the database (an unparseable uuid would otherwise surface as a 500).
+ */
+export function requireUuidParam(...names: string[]) {
+  return (req: Request, res: Response, next: NextFunction): void => {
+    for (const name of names) {
+      const value = req.params[name];
+      if (!value || !UUID_PATTERN.test(value)) {
+        res.status(400).json({ error: '參數格式無效' });
+        return;
+      }
+    }
+    next();
+  };
+}

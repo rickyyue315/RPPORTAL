@@ -106,4 +106,42 @@ describe('portal login hardening', () => {
       .send({ current_password: PASSWORD, new_password: 'Str0ng!Pass' });
     expect(strong.status).toBe(200);
   });
+
+  it('does not lock an account from failures spread across many IPs below the username threshold', async () => {
+    // A previous test changed the password; restore the known one.
+    await db.query(`UPDATE portal_users SET active = true, password_hash = $1 WHERE username = 'LOCKSTORE1'`, [await hashPassword(PASSWORD)]);
+    await db.query(`DELETE FROM portal_login_attempts`);
+    // 49 failures from 49 different IPs: each IP is below the per-IP threshold
+    // and the username count is below LOGIN_USERNAME_LOCK_THRESHOLD (50).
+    for (let i = 1; i <= 49; i++) {
+      await db.query(
+        `INSERT INTO portal_login_attempts (ip, username, attempted_at, success) VALUES ($1, 'LOCKSTORE1', now(), false)`,
+        [`10.99.${Math.floor(i / 250)}.${(i % 250) + 1}`],
+      );
+    }
+    const agent = request.agent(app) as Agent;
+    const token = await csrf(agent);
+    const login = await agent
+      .post('/api/portal/auth/login')
+      .set('x-csrf-token', token)
+      .send({ username: 'LOCKSTORE1', password: PASSWORD });
+    expect(login.status).toBe(200);
+
+    // Reaching the per-username threshold still locks the account.
+    await db.query(`DELETE FROM portal_sessions`);
+    for (let i = 50; i <= 60; i++) {
+      await db.query(
+        `INSERT INTO portal_login_attempts (ip, username, attempted_at, success) VALUES ($1, 'LOCKSTORE1', now(), false)`,
+        [`10.98.${Math.floor(i / 250)}.${(i % 250) + 1}`],
+      );
+    }
+    const lockAgent = request.agent(app) as Agent;
+    const lockToken = await csrf(lockAgent);
+    const locked = await lockAgent
+      .post('/api/portal/auth/login')
+      .set('x-csrf-token', lockToken)
+      .send({ username: 'LOCKSTORE1', password: PASSWORD });
+    expect(locked.status).toBe(401);
+    expect(locked.body.error).toContain('鎖定');
+  });
 });

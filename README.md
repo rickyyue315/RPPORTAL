@@ -78,8 +78,9 @@ Repository 已配置 GitHub Actions（`.github/workflows/ci.yml`）：push 時�
 | `ADMIN_USERNAME` | 管理員使用者名稱（預設 `admin`） |
 | `ADMIN_PASSWORD` | 管理員密碼（重要：於 Zeabur Secrets 直接填寫密碼字串，不需要 bcrypt hash） |
 | `SESSION_TTL_HOURS` | 登入 session 有效期（小時，預設 8） |
-| `LOGIN_LOCK_THRESHOLD` | 失敗登入鎖定次數（預設 5） |
+| `LOGIN_LOCK_THRESHOLD` | 失敗登入鎖定次數（預設 5，按 IP 計算） |
 | `LOGIN_LOCK_MINUTES` | 鎖定分鐘數（預設 15） |
+| `LOGIN_USERNAME_LOCK_THRESHOLD` | Portal 按使用者名稱計算的失敗登入鎖定次數（預設 50；Store 帳號名稱為公開 Site Code，故按 IP 鎖定為主，username 需更高門檻以防遠端鎖死個別帳號） |
 | `TRUST_PROXY` | `true`（Zeabur 反向代理後） |
 | `TRUST_PROXY_HOPS` | `1`（可信 reverse proxy hop 數） |
 | `APP_TIMEZONE` | `Asia/Hong_Kong` |
@@ -130,6 +131,7 @@ Repository 已配置 GitHub Actions（`.github/workflows/ci.yml`）：push 時�
 - Excel 批量上載只接受 Excel 活頁簿 `.xlsx` 格式，支援 Excel 2007 或更新版本（包括 Excel 2019、Excel 2021、Excel 2024 及 Microsoft 365）；舊式 `.xls` 檔案請先另存為 `.xlsx`。`.xlsx` 是檔案格式，不是特定 Excel 版本名稱。
 - 舊有（加入原因欄位前）的 Urgent Order 原因欄位為空，可於管理後台編輯時補回；匯出時空白原因會以空白顯示。
 - 上載檔內的 `Application Date` 及 `Requested by` 不可信，系統一律以伺服器值及 Site Code 產生值覆蓋。
+- Admin 編輯一般 NDRF 若令申請由非 Pending（如 Ready for RP）重新進入 Pending 審批，系統會自動開啟新審批回合（`review_round + 1`、重設 `round_started_at`、清除舊 Review Remark 並記錄一條 override 事件），確保同一回合不會已有決定、Buyer SLA 時鐘由新回合重新起算。
 - 「同一 Site Code + SKU 每日只可申報一次」以 `application_date`（香港當日日期）計算，申請人修改時若把 SKU 改成同日已存在的組合亦會被拒；管理員匯入／編輯不受限制。
 - 管理員匯入無 Idempotency-Key 需求（與公開匯入不同），但相同內容的檔案（`content_hash`）重複上載會被拒絕（409），避免誤按或網路重試造成重複寫入；修改過內容的檔案不受影響。
 - 錯誤訊息不包含資料庫或內部設定資訊。

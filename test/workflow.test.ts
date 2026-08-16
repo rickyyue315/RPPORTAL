@@ -906,3 +906,157 @@ describe('NDRF workflow regression fixes', () => {
     ).rejects.toThrow();
   });
 });
+describe('workflow round/SLA regression fixes (admin edit re-entering review)', () => {
+  async function ensureSku(sku: string) {
+    const buyer1Res = await db.query<{ id: string }>('SELECT id FROM portal_users WHERE username = $1', ['BUYER1']);
+    await db.query(
+      `INSERT INTO sku_master (sku, buyer_user_id, updated_by) VALUES ($1, $2, 'test')
+       ON CONFLICT (sku) DO UPDATE SET buyer_user_id = EXCLUDED.buyer_user_id, updated_by = 'test', updated_at = now()`,
+      [sku, buyer1Res.rows[0]!.id],
+    );
+  }
+
+  it('admin edit from ready_for_rp back to pending starts a new round and the buyer can decide', async () => {
+    await ensureSku('1002030');
+    const store = await storeAgent('HA02');
+    const created = await submitNormal(store, { sku: '1002030', rp_type: 'ND', nd_code: 'ND20-SO-Not displayed in small stores' });
+    expect(created.status).toBe(201);
+    const idRes = await db.query<{ id: string }>('SELECT id FROM submissions WHERE application_no = $1', [created.body.submission.application_no]);
+    const id = idRes.rows[0]!.id;
+
+    const buyer = buyerAgent();
+    await portalLogin(buyer, 'BUYER1');
+    const rejected = await buyer
+      .post(`/api/portal/reviewer/submissions/${id}/decision`)
+      .set('x-csrf-token', buyer._csrf ?? '')
+      .send({ decision: 'reject', reject_reason_code: 'data_error', reject_reason_note: '資料有誤' });
+    expect(rejected.status).toBe(201);
+
+    const admin = request.agent(app) as Agent;
+    await adminLogin(admin);
+    const ready = await admin
+      .post(`/api/admin/submissions/${id}/override`)
+      .set('x-csrf-token', admin._csrf ?? '')
+      .send({ action: 'override_ready', reason: '重新處理' });
+    expect(ready.status).toBe(200);
+    expect(ready.body.submission.workflow.status).toBe('ready_for_rp');
+
+    // The edit moves the decided row back into review; it must open a new round.
+    const edit = await admin
+      .put(`/api/admin/submissions/${id}`)
+      .set('x-csrf-token', admin._csrf ?? '')
+      .send({ brand: '', sku: '1002030', rp_type: 'ND', safety_stock: '', nd_code: 'ND20-SO-Not displayed in small stores', remark: '已更正' });
+    expect(edit.status).toBe(200);
+    expect(edit.body.submission.workflow.status).toBe('pending');
+    expect(edit.body.submission.workflow.review_round).toBe(2);
+
+    // Previously this 409'd forever ("此申請已有決定") because round 1 already
+    // had a reject event.
+    const accepted = await buyer
+      .post(`/api/portal/reviewer/submissions/${id}/decision`)
+      .set('x-csrf-token', buyer._csrf ?? '')
+      .send({ decision: 'accept', remark: '更正後批准' });
+    expect(accepted.status).toBe(201);
+    expect(accepted.body.submission.workflow_status).toBe('accepted');
+    expect(accepted.body.submission.review_round).toBe(2);
+  });
+
+  it('admin edit from ready_for_rp back to pending restarts the Buyer SLA clock', async () => {
+    await ensureSku('1002031');
+    const ins = await db.query<{ id: string }>(
+      `INSERT INTO submissions (
+         application_no, source, submission_type, site_code, requested_by_email, application_date,
+         brand, sku, rp_type, nd_code, status, ndrf_route, workflow_status, active_workflow, review_round,
+         submitted_at, round_started_at
+       ) VALUES ('NDRF-SLA-EDIT', 'web', 'normal', 'HA02', 'ha02@sasa.com', '2026-08-05',
+         '', '1002031', 'ND', 'ND20-SO-Not displayed in small stores', 'received', 'buyer', 'ready_for_rp', true, 1,
+         now() - interval '20 days', now() - interval '20 days')
+       RETURNING id`,
+    );
+    const id = ins.rows[0]!.id;
+
+    const admin = request.agent(app) as Agent;
+    await adminLogin(admin);
+    const edit = await admin
+      .put(`/api/admin/submissions/${id}`)
+      .set('x-csrf-token', admin._csrf ?? '')
+      .send({ brand: '', sku: '1002031', rp_type: 'ND', safety_stock: '', nd_code: 'ND20-SO-Not displayed in small stores', remark: '' });
+    expect(edit.status).toBe(200);
+    expect(edit.body.submission.workflow.status).toBe('pending');
+
+    // The SLA must now be measured from the edit, not the 20-day-old round.
+    const row = await db.query<{ round_started_at: string }>(
+      `SELECT round_started_at FROM submissions
+        WHERE id = $1 AND round_started_at > now() - interval '1 minute'`,
+      [id],
+    );
+    expect(row.rows[0]).toBeDefined();
+
+    const { runBuyerAutoApproveJob } = await import('../src/services/ndrfWorkflow.js');
+    await runBuyerAutoApproveJob();
+    const after = await db.query<{ workflow_status: string }>('SELECT workflow_status FROM submissions WHERE id = $1', [id]);
+    expect(after.rows[0]!.workflow_status).toBe('pending');
+  });
+
+  it('self-heals a pending row whose round already has a recorded decision', async () => {
+    await ensureSku('1002032');
+    const ins = await db.query<{ id: string }>(
+      `INSERT INTO submissions (
+         application_no, source, submission_type, site_code, requested_by_email, application_date,
+         brand, sku, rp_type, nd_code, status, ndrf_route, workflow_status, active_workflow, review_round
+       ) VALUES ('NDRF-STUCK', 'web', 'normal', 'HA02', 'ha02@sasa.com', '2026-08-05',
+         '', '1002032', 'ND', 'ND20-SO-Not displayed in small stores', 'received', 'buyer', 'pending', true, 1)
+       RETURNING id`,
+    );
+    const id = ins.rows[0]!.id;
+    // Legacy corrupted state: decision recorded but the status never moved.
+    await db.query(
+      `INSERT INTO ndrf_review_events (submission_id, review_round, event_type, actor_role, actor, remark)
+       VALUES ($1, 1, 'accept', 'buyer', 'BUYER1', '先前批准')`,
+      [id],
+    );
+
+    const buyer = buyerAgent();
+    await portalLogin(buyer, 'BUYER1');
+    const accepted = await buyer
+      .post(`/api/portal/reviewer/submissions/${id}/decision`)
+      .set('x-csrf-token', buyer._csrf ?? '')
+      .send({ decision: 'accept', remark: '' });
+    expect(accepted.status).toBe(201);
+    expect(accepted.body.submission.workflow_status).toBe('accepted');
+
+    const mismatch = await buyer
+      .post(`/api/portal/reviewer/submissions/${id}/decision`)
+      .set('x-csrf-token', buyer._csrf ?? '')
+      .send({ decision: 'reject', reject_reason_code: 'data_error', reject_reason_note: 'x' });
+    expect(mismatch.status).toBe(409);
+  });
+
+  it('rejects non-UUID id path parameters with 400 instead of 500', async () => {
+    const store = await storeAgent('HA02');
+    const detail = await store.get('/api/portal/store/submissions/not-a-uuid');
+    expect(detail.status).toBe(400);
+
+    const buyer = buyerAgent();
+    await portalLogin(buyer, 'BUYER1');
+    const decision = await buyer
+      .post('/api/portal/reviewer/submissions/zzz/decision')
+      .set('x-csrf-token', buyer._csrf ?? '')
+      .send({ decision: 'accept' });
+    expect(decision.status).toBe(400);
+
+    const admin = request.agent(app) as Agent;
+    await adminLogin(admin);
+    const override = await admin
+      .post('/api/admin/submissions/xyz/override')
+      .set('x-csrf-token', admin._csrf ?? '')
+      .send({ action: 'reopen', reason: 'x' });
+    expect(override.status).toBe(400);
+
+    const user = await admin
+      .put('/api/admin/portal/users/nope')
+      .set('x-csrf-token', admin._csrf ?? '')
+      .send({ active: false });
+    expect(user.status).toBe(400);
+  });
+});

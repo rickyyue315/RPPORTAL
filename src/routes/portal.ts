@@ -1,7 +1,7 @@
 import { Router, type Request, type Response } from 'express';
 import { z } from 'zod';
 import multer from 'multer';
-import { asyncHandler, getClientIp } from '../middleware/helpers.js';
+import { asyncHandler, getClientIp, requireUuidParam } from '../middleware/helpers.js';
 import {
   adminActionLimiter,
   excelExportLimiter,
@@ -99,8 +99,11 @@ const loginSchema = z.object({
   password: z.string().min(1),
 });
 
-function serializeWorkflowRow(row: WorkflowRow | NormalSubmissionListItem) {
-  return {
+function isPgUniqueViolation(err: unknown): boolean {
+  return (err as { code?: string }).code === '23505';
+}
+
+function serializeWorkflowRow(row: WorkflowRow | NormalSubmissionListItem) {  return {
     id: row.id,
     application_no: row.application_no,
     source: row.source,
@@ -350,6 +353,16 @@ portalRouter.post(
         res.status(400).json({ error: err.message, field: (err as Error & { field?: string }).field });
         return;
       }
+      // A concurrent duplicate submit loses the race on a unique index. When it
+      // is the idempotency key the winner already holds this exact payload, so
+      // replay it; an active-key race means another submission just won.
+      if (isPgUniqueViolation(err)) {
+        if (await storeReplaySubmission(idempotencyKey, idempotencyFingerprint, siteCode, req.portalUser!.id, res)) return;
+        if ((err as { constraint?: string }).constraint === 'uq_submissions_active_workflow_key') {
+          res.status(409).json({ error: new ActiveSubmissionConflictError().message });
+          return;
+        }
+      }
       throw err;
     }
 
@@ -559,6 +572,12 @@ portalRouter.post(
         res.status(409).json({ error: err.message });
         return;
       }
+      // Two different imports submitting the same rows concurrently: the loser
+      // hits the active-submission unique index after the winner commits.
+      if (isPgUniqueViolation(err) && (err as { constraint?: string }).constraint === 'uq_submissions_active_workflow_key') {
+        res.status(409).json({ error: new ActiveSubmissionConflictError().message });
+        return;
+      }
       throw err;
     }
 
@@ -627,6 +646,7 @@ portalRouter.get(
 
 portalRouter.get(
   '/store/submissions/:id',
+  requireUuidParam('id'),
   requirePortalUser,
   requireStoreSite,
   adminActionLimiter,
@@ -692,6 +712,7 @@ portalRouter.get(
 
 portalRouter.get(
   '/reviewer/submissions/:id',
+  requireUuidParam('id'),
   ...reviewerAuth,
   adminActionLimiter,
   asyncHandler(async (req: Request, res: Response) => {
@@ -746,6 +767,7 @@ const remarkSchema = z.object({
 
 portalRouter.put(
   '/reviewer/submissions/:id/remark',
+  requireUuidParam('id'),
   ...reviewerAuth,
   adminActionLimiter,
   asyncHandler(async (req: Request, res: Response) => {
@@ -797,6 +819,7 @@ const decisionSchema = z.object({
 
 portalRouter.post(
   '/reviewer/submissions/:id/decision',
+  requireUuidParam('id'),
   ...reviewerAuth,
   adminActionLimiter,
   asyncHandler(async (req: Request, res: Response) => {

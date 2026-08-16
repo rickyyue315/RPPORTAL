@@ -121,9 +121,9 @@
     if (btn) { btn.disabled = true; btn.textContent = '提交中…'; }
     p.showAlert($('decision_error'), '', '');
     try {
+      // Retry-safety is provided server-side: one decision per review round.
       const res = await p.api(`/api/portal/reviewer/submissions/${submissionId}/decision`, {
         method: 'POST',
-        headers: { 'Idempotency-Key': createIdempotencyKey() },
         body: JSON.stringify(payload),
       });
       p.showAlert($('decision_error'), 'success', `已${res.event?.event_type === 'reject' ? '拒絕' : '批准'}（${res.replayed ? '重複提交，已返回原結果' : ''}）`);

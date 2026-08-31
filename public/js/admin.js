@@ -1311,7 +1311,7 @@
     }
   }
 
-  $('btn_auto_approve').addEventListener('click', runAutoApprove);
+  $('btn_auto_approve')?.addEventListener('click', runAutoApprove);
   $('btn_logout').addEventListener('click', async (e) => {
     e.preventDefault();
     try {

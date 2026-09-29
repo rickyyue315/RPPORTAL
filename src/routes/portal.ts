@@ -910,7 +910,8 @@ portalRouter.get(
       status: status === 'pending' || status === 'replied' ? status : undefined,
       batchId: batch_id?.trim() || undefined,
     });
-    res.json({ site_code: req.storeSiteCode, items });
+    const store = await getStore(req.storeSiteCode!);
+    res.json({ site_code: req.storeSiteCode, shop: store?.shop ?? '', items });
   }),
 );
 

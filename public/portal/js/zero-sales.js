@@ -44,7 +44,12 @@
     const qs = status ? `?status=${encodeURIComponent(status)}` : '';
     const data = await p.api(`/api/portal/zero-sales/my${qs}`);
     items = data.items || [];
-    $('site_info').textContent = `Site Code：${data.site_code}｜共 ${items.length} 個指定 SKU（${items.filter((i) => i.status === 'replied').length} 已回覆）`;
+    const replied = items.filter((i) => i.status === 'replied').length;
+    const shop = data.shop ? ` ${p.escapeHtml(data.shop)}` : '';
+    $('site_info').innerHTML =
+      `<div class="site-banner">${p.escapeHtml(data.site_code)}${shop}</div>` +
+      `<div>共 ${items.length} 個指定 SKU（${replied} 已回覆）</div>` +
+      `<div class="hint">如非你店舖，請按右上「登出」再重新輸入自己嘅 Site Code。</div>`;
     render();
   }
 

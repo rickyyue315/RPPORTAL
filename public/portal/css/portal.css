@@ -64,3 +64,11 @@
   border-color: #2563eb;
   background: #eff6ff;
 }
+
+.site-banner {
+  font-size: 28px;
+  font-weight: 800;
+  letter-spacing: 1px;
+  color: #0f172a;
+  margin: 4px 0 8px;
+}

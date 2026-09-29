@@ -266,9 +266,25 @@
       const v = expBatch.value;
       if (v) { currentBatch = v; loadItems(); }
     });
-    loadBatches();
-    loadReasons();
-    loadSummary();
+    // 懶載入：捲動到零銷售區塊才請求 batches / reasons / summary，首屏更快
+    let started = false;
+    const start = () => {
+      if (started) return;
+      started = true;
+      loadBatches();
+      loadReasons();
+      loadSummary();
+    };
+    // 供頂部「立即更新」一併刷新
+    globalThis.__zsRefresh = () => { started = true; loadBatches(); loadReasons(); loadSummary(); };
+    const anchor = $('zs_card') || $('zs_batches_body');
+    if (!('IntersectionObserver' in window)) { start(); return; }
+    const io = new IntersectionObserver((entries) => {
+      entries.forEach((e) => {
+        if (e.isIntersecting) { start(); io.disconnect(); }
+      });
+    }, { rootMargin: '500px 0px' });
+    io.observe(anchor);
   }
 
   async function loadReasons() {

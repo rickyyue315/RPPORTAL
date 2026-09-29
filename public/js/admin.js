@@ -5,7 +5,48 @@
   let currentDetail = null;
   let pendingStoreFile = null;
   let csrfToken = null;
+  const FILTER_STORAGE_KEY = 'ndrf_admin_filters_v1';
+  const PAGE_SIZE_STORAGE_KEY = 'ndrf_admin_page_size';
   const DATE_FILTER_IDS = ['f_from', 'f_to', 'e_from', 'e_to', 'ue_from', 'ue_to', 'se_from', 'se_to', 're_from', 're_to'];
+  const FILTER_INPUT_IDS = ['f_from', 'f_to', 'f_site', 'f_source', 'f_type', 'f_exported', 'f_workflow_status', 'f_auto_approved', 'f_modified', 'f_sku', 'f_rp_type', 'f_nd_code', 'f_appno'];
+
+  function readStoredFilters() {
+    try { return JSON.parse(localStorage.getItem(FILTER_STORAGE_KEY) || 'null'); }
+    catch { return null; }
+  }
+
+  function persistFilters() {
+    try {
+      const data = {};
+      ['f_from', 'f_to', 'f_site', 'f_source', 'f_type', 'f_exported', 'f_workflow_status', 'f_auto_approved', 'f_modified', 'f_sku', 'f_rp_type', 'f_nd_code', 'f_appno'].forEach((id) => {
+        const el = $(id);
+        if (el) data[id] = el.value;
+      });
+      localStorage.setItem(FILTER_STORAGE_KEY, JSON.stringify(data));
+      const ps = $('f_page_size');
+      if (ps) localStorage.setItem(PAGE_SIZE_STORAGE_KEY, ps.value);
+    } catch {}
+  }
+
+  function restoreStoredFilters() {
+    const saved = readStoredFilters();
+    if (saved) {
+      Object.entries(saved).forEach(([id, v]) => {
+        const el = $(id);
+        if (el && typeof v === 'string') el.value = v;
+      });
+      return true;
+    }
+    return false;
+  }
+
+  function restorePageSize() {
+    try {
+      const saved = localStorage.getItem(PAGE_SIZE_STORAGE_KEY);
+      const sel = $('f_page_size');
+      if (sel && saved && ['20', '50', '100'].includes(saved)) sel.value = saved;
+    } catch {}
+  }
 
   function todayInHongKong() {
     const parts = new Intl.DateTimeFormat('en-GB', {
@@ -19,6 +60,16 @@
   }
 
   function setDefaultDateFilters() {
+    restorePageSize();
+    if (restoreStoredFilters()) {
+      // 仍為空的日期匯出欄補今日，避免空查詢
+      const today = todayInHongKong();
+      DATE_FILTER_IDS.forEach((id) => {
+        const field = $(id);
+        if (field && !field.value) field.value = today;
+      });
+      return;
+    }
     const today = todayInHongKong();
     DATE_FILTER_IDS.forEach((id) => {
       const field = $(id);
@@ -51,48 +102,70 @@
     return api(url, { ...options, headers });
   }
 
+  function currentPageSize() {
+    const sel = $('f_page_size');
+    const v = sel ? Number(sel.value) : 20;
+    return [20, 50, 100].includes(v) ? v : 20;
+  }
+
   function buildQuery() {
     const params = new URLSearchParams();
     const idMap = { application_no: 'appno', submission_type: 'type', site_code: 'site', rp_type: 'rp_type', nd_code: 'nd_code' };
     ['from', 'to', 'site_code', 'source', 'submission_type', 'exported', 'workflow_status', 'auto_approved', 'sku', 'rp_type', 'nd_code', 'application_no', 'modified'].forEach((k) => {
-      const v = $(`f_${idMap[k] || k}`).value.trim();
+      const el = $(`f_${idMap[k] || k}`);
+      const v = el ? el.value.trim() : '';
       if (v) params.set(k, v);
     });
     params.set('page', String(currentPage));
-    params.set('page_size', '20');
+    params.set('page_size', String(currentPageSize()));
     return params.toString();
+  }
+
+  function renderSkeletons() {
+    const tbody = $('list_body');
+    if (!tbody) return;
+    const size = Math.min(currentPageSize(), 10);
+    tbody.innerHTML = Array.from({ length: size }).map(() => '<tr class="skeleton-row"><td colspan="12"><div class="skeleton-bar"></div></td></tr>').join('');
   }
 
   async function loadList() {
     showAlert($('list_error'), '', '');
+    renderSkeletons();
     try {
       const data = await adminFetch(`/api/admin/submissions?${buildQuery()}`);
       totalPages = data.total_pages;
       renderList(data);
     } catch (err) {
       showAlert($('list_error'), 'error', escapeHtml(err.message));
+      const tbody = $('list_body');
+      if (tbody) tbody.innerHTML = '<tr><td colspan="12" class="empty">載入失敗，請重試</td></tr>';
     }
   }
 
   function renderList(data) {
     const tbody = $('list_body');
     tbody.innerHTML = '';
+    const badge = $('list_count_badge');
+    if (badge) badge.textContent = `共 ${data.total} 筆`;
     if (!data.submissions.length) {
-      tbody.innerHTML = '<tr><td colspan="12" class="empty">沒有符合條件的申報</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="12" class="empty">沒有符合條件的申報<br><span class="hint">試試放寬日期或清除篩選條件</span></td></tr>';
       $('page_info').textContent = '0 筆';
       $('btn_prev').disabled = true;
       $('btn_next').disabled = true;
+      document.dispatchEvent(new CustomEvent('admin:list-updated', { detail: data }));
       return;
     }
     data.submissions.forEach((s) => {
       const tr = document.createElement('tr');
+      tr.dataset.id = s.id;
+      if (currentDetail && String(currentDetail.submission?.id) === String(s.id)) tr.classList.add('row-selected');
       const status = s.locked
         ? `<span class="status-badge locked">已鎖定</span>`
         : s.workflow
           ? workflowBadge(s.workflow.status) + (s.workflow.auto_approved_at ? ` <span class="status-badge received" title="Buyer 逾期未回覆，系統默認同意（${escapeHtml(s.workflow.auto_approved_at)}）">SLA 自動批准</span>` : '')
           : `<span class="status-badge received">已收件</span>`;
       tr.innerHTML = `
-        <td>${escapeHtml(s.application_no)}</td>
+        <td class="cell-appno">${escapeHtml(s.application_no)}<button type="button" class="btn-copy-appno" data-copy="${escapeHtml(s.application_no)}" title="複製申請編號">複製</button></td>
         <td>${escapeHtml(s.site_code)}${s.store_shop ? `<div class="hint">${escapeHtml(s.store_shop)}</div>` : ''}</td>
         <td>${escapeHtml(s.sku)}${s.submission_type === 'urgent' ? `<div class="hint">QTY: ${escapeHtml(s.qty)}</div>` : s.submission_type === 'return' ? `<div class="hint">QTY: ${escapeHtml(s.return_qty)}<br>${escapeHtml(s.return_reason_label || '')}</div>` : ''}</td>
         <td>${escapeHtml(s.rp_type || '—')}</td>
@@ -110,16 +183,68 @@
     tbody.querySelectorAll('.view-link').forEach((a) => {
       a.addEventListener('click', (e) => {
         e.preventDefault();
+        e.stopPropagation();
         loadDetail(a.dataset.id);
       });
+    });
+    tbody.querySelectorAll('[data-copy]').forEach((btn) => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const text = btn.dataset.copy || '';
+        const done = () => {
+          const orig = btn.textContent;
+          btn.textContent = '已複製';
+          setTimeout(() => { btn.textContent = orig; }, 1200);
+        };
+        if (navigator.clipboard?.writeText) navigator.clipboard.writeText(text).then(done).catch(done);
+        else {
+          const ta = document.createElement('textarea');
+          ta.value = text;
+          document.body.appendChild(ta);
+          ta.select();
+          try { document.execCommand('copy'); } catch {}
+          ta.remove();
+          done();
+        }
+      });
+    });
+    tbody.querySelectorAll('tr[data-id]').forEach((tr) => {
+      tr.addEventListener('click', () => loadDetail(tr.dataset.id));
     });
     $('page_info').textContent = `第 ${data.page} / ${data.total_pages} 頁（共 ${data.total} 筆）`;
     $('btn_prev').disabled = data.page <= 1;
     $('btn_next').disabled = data.page >= data.total_pages;
+    document.dispatchEvent(new CustomEvent('admin:list-updated', { detail: data }));
+  }
+
+  function openDetailDrawer() {
+    const card = $('detail_card');
+    const overlay = $('detail_overlay');
+    if (card) {
+      card.style.display = '';
+      requestAnimationFrame(() => card.classList.add('open'));
+    }
+    if (overlay) overlay.classList.add('open');
+    document.body.classList.add('drawer-open');
+  }
+
+  function closeDetailDrawer() {
+    const card = $('detail_card');
+    const overlay = $('detail_overlay');
+    if (card) {
+      card.classList.remove('open');
+      setTimeout(() => {
+        if (!card.classList.contains('open')) card.style.display = 'none';
+      }, 220);
+    }
+    if (overlay) overlay.classList.remove('open');
+    document.body.classList.remove('drawer-open');
+    currentDetail = null;
   }
 
   $('btn_filter').addEventListener('click', () => {
     currentPage = 1;
+    persistFilters();
     loadList();
   });
   $('btn_reset').addEventListener('click', () => {
@@ -129,8 +254,29 @@
     $('f_from').value = todayInHongKong();
     $('f_to').value = todayInHongKong();
     currentPage = 1;
+    try { localStorage.removeItem(FILTER_STORAGE_KEY); } catch {}
+    document.querySelectorAll('#filter_presets .preset-btn').forEach((b) => b.classList.remove('active'));
     loadList();
   });
+  // Enter 直接篩選 + 每頁筆數切換
+  FILTER_INPUT_IDS.forEach((id) => {
+    const el = $(id);
+    if (el) el.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        currentPage = 1;
+        persistFilters();
+        loadList();
+      }
+    });
+  });
+  if ($('f_page_size')) {
+    $('f_page_size').addEventListener('change', () => {
+      currentPage = 1;
+      persistFilters();
+      loadList();
+    });
+  }
   $('btn_prev').addEventListener('click', () => {
     if (currentPage > 1) {
       currentPage--;
@@ -146,12 +292,16 @@
 
   async function loadDetail(id) {
     showAlert($('detail_error'), '', '');
+    openDetailDrawer();
+    const drawerBody = document.querySelector('#detail_card .drawer-body');
+    if (drawerBody) drawerBody.scrollTop = 0;
     try {
       const data = await adminFetch(`/api/admin/submissions/${id}`);
       currentDetail = data;
       renderDetail(data);
-      $('detail_card').style.display = '';
-      $('detail_card').scrollIntoView({ behavior: 'smooth' });
+      document.querySelectorAll('#list_body tr.row-selected').forEach((tr) => tr.classList.remove('row-selected'));
+      const active = document.querySelector(`#list_body tr[data-id="${CSS.escape(String(id))}"]`);
+      if (active) active.classList.add('row-selected');
     } catch (err) {
       showAlert($('detail_error'), 'error', escapeHtml(err.message));
     }
@@ -310,9 +460,11 @@
     }
   });
 
-  $('btn_close_detail').addEventListener('click', () => {
-    $('detail_card').style.display = 'none';
-    currentDetail = null;
+  $('btn_close_detail').addEventListener('click', closeDetailDrawer);
+  if ($('btn_close_detail_x')) $('btn_close_detail_x').addEventListener('click', closeDetailDrawer);
+  if ($('detail_overlay')) $('detail_overlay').addEventListener('click', closeDetailDrawer);
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && $('detail_card')?.classList.contains('open')) closeDetailDrawer();
   });
 
   function setupDrop(dropId, inputId, labelId, cb) {
@@ -1395,6 +1547,54 @@
     window.location.href = '/admin/login.html';
   });
 
+  const lazyLoaded = new Set();
+  function setupLazySections() {
+    const loaders = {
+      'portal-users': loadPortalUsers,
+      'sku-master': loadSkuMaster,
+      'store-routes': loadStoreRoutes,
+      'rejection-reasons': loadRejectionReasons,
+      'review-pending': loadReviewPending,
+      stores: loadStoreCount,
+      'recovery-codes': loadRecoveryCodes,
+    };
+    const cards = document.querySelectorAll('[data-lazy-section]');
+    if (!('IntersectionObserver' in window)) {
+      Object.values(loaders).forEach((fn) => { try { fn(); } catch {} });
+      return;
+    }
+    const io = new IntersectionObserver((entries) => {
+      entries.forEach((entry) => {
+        if (!entry.isIntersecting) return;
+        const key = entry.target.dataset.lazySection;
+        if (!key || lazyLoaded.has(key)) return;
+        lazyLoaded.add(key);
+        const fn = loaders[key];
+        if (fn) {
+          try { fn(); } catch {}
+        }
+        io.unobserve(entry.target);
+      });
+    }, { rootMargin: '400px 0px' });
+    cards.forEach((el) => {
+      // 零銷售由 admin-zero-sales.js 負責，跳過避免重複
+      if (el.dataset.lazySection === 'zero-sales') return;
+      io.observe(el);
+    });
+  }
+
+  // 供頂部導航「立即更新」使用
+  globalThis.__adminRefresh = () => {
+    loadSummary();
+    loadList();
+    loadExportBatches();
+    const note = document.getElementById('nav_refresh_note');
+    if (note) {
+      const now = new Date().toLocaleTimeString('zh-HK', { hour12: false });
+      note.textContent = `已更新 ${now} · 每分鐘自動更新`;
+    }
+  };
+
   ensureAuth().then((username) => {
     if (!username) {
       window.location.replace('/admin/login.html');
@@ -1404,16 +1604,10 @@
     loadList();
     loadSummary();
     loadExportBatches();
-    loadStoreCount();
-    loadRecoveryCodes();
-    loadPortalUsers();
-    loadSkuMaster();
-    loadStoreRoutes();
-    loadRejectionReasons();
-    loadReviewPending();
+    setupLazySections();
   });
   setInterval(() => {
-    if (document.visibilityState === 'visible') {
+    if (document.visibilityState === 'visible' && !document.body.classList.contains('drawer-open')) {
       loadSummary();
       loadList();
       loadExportBatches();

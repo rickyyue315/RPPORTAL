@@ -5,39 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>管理後台 — NDRF 申報平台</title>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/core@1.1.1/dist/css/tabler.min.css">
-  <style>
-    :root { --tblr-primary: #0f5c9c; }
-    .toolbar { display:flex; flex-wrap:wrap; gap:12px; align-items:end; }
-    .toolbar .field { flex:1; min-width:140px; }
-    .toolbar .field--compact{ flex:0 1 160px; min-width:130px; }
-    .toolbar .field--ndcode{ flex:0 1 240px; min-width:210px; }
-    .toolbar .field--appno{ flex:0 1 220px; min-width:180px; }
-    .toolbar .field label{ margin:0 0 4px; font-size:13px; font-weight:600; }
-    .status-badge { display:inline-block; padding:3px 10px; border-radius:12px; font-size:12px; font-weight:600; line-height:1.4; }
-    .status-badge.received { background:#eaf2fb; color:#0a3d69; border:1px solid #a9c7e8; }
-    .status-badge.locked { background:#fdecea; color:#c0392b; border:1px solid #f5c6c2; }
-    .empty { color:#66727f; text-align:center; padding:30px; }
-    .hint { font-size:12px; color:#66727f; margin-top:4px; }
-    .dl { display:grid; grid-template-columns:220px 1fr; row-gap:8px; font-size:14px; }
-    .dl dt { color:#66727f; font-weight:600; }
-    .dl dd { margin:0; }
-    @media(max-width:640px){ .dl{grid-template-columns:1fr;} }
-    #export_confirm_overlay, #recovery_code_overlay { position:fixed; inset:0; background:rgba(0,0,0,.45); display:none; align-items:center; justify-content:center; z-index:1055; padding:16px; }
-    #export_confirm_overlay .modal-box, #recovery_code_overlay .modal-box { background:#fff; border-radius:12px; padding:26px; max-width:460px; width:100%; box-shadow:0 10px 30px rgba(0,0,0,.25); }
-    .file-drop.dragover, #store_drop.dragover { border-color:var(--tblr-primary) !important; background:#f6faff !important; }
-    #store_drop { border-style:dashed; }
-    .alert.error { color:#611a15; background:#fdecea; border-color:#f5c6c2; }
-    .alert.success { color:#0a5c36; background:#eafaf1; border-color:#a9dfbf; }
-    .alert.info { color:#0a3d69; background:#eaf2fb; border-color:#a9c7e8; }
-    .alert.warning { color:#7a4d00; background:#fef9e7; border-color:#f9e79f; }
-    #versions_box table { width:100%; border-collapse:collapse; font-size:13px; }
-    #versions_box th, #versions_box td { border:1px solid #d9dee3; padding:8px 10px; text-align:left; vertical-align:top; }
-    #versions_box th { background:#eef2f6; font-weight:600; }
-    .card-actions .btn-action svg { transition: transform .2s ease; }
-    .card-actions .btn-action.collapsed svg { transform: rotate(-90deg); }
-    .col-appno { width: 12%; }
-    .col-sku { width: 16%; }
-  </style>
+  <link rel="stylesheet" href="/css/admin.css">
 </head>
 <body>
 <div class="page">
@@ -53,15 +21,31 @@
       </div>
     </div>
   </header>
-  <div class="page-wrapper">
 
+  <nav class="admin-nav" aria-label="後台分區導航">
+    <div class="admin-nav-inner" id="admin_nav_links">
+      <a href="#sec-overview" data-nav="sec-overview">總覽</a>
+      <a href="#sec-list" data-nav="sec-list">申報清單</a>
+      <a href="#sec-export" data-nav="sec-export">匯出</a>
+      <a href="#sec-batches" data-nav="sec-batches">匯出批次</a>
+      <a href="#sec-accounts" data-nav="sec-accounts">帳戶 / 主檔</a>
+      <a href="#sec-review" data-nav="sec-review">審批設定</a>
+      <a href="#sec-zero-sales" data-nav="sec-zero-sales">零銷售</a>
+      <a href="#sec-system" data-nav="sec-system">系統</a>
+      <span class="nav-refresh"><span class="pulse-dot" title="每分鐘自動更新"></span><span id="nav_refresh_note">每分鐘自動更新</span><button class="btn btn-sm btn-outline-primary" id="btn_manual_refresh" type="button">立即更新</button></span>
+    </div>
+  </nav>
+
+  <div class="page-wrapper">
     <div class="page-body">
       <div class="container-xl">
-        <!-- Dashboard stats -->
+
+        <!-- ============ 總覽 ============ -->
+        <div class="admin-section-title admin-section" id="sec-overview">總覽 <span class="count-badge" id="summary_note">載入中…</span></div>
         <div class="row row-deck row-cards mb-3" id="dash_wrap">
           <div class="col-12">
             <div class="card">
-              <div class="card-header"><h3 class="card-title">總概覽</h3><span id="summary_note" class="ms-auto text-secondary small">載入中…</span></div>
+              <div class="card-header"><h3 class="card-title">總概覽</h3></div>
               <div class="card-body">
                 <div class="row g-2">
                   <div class="col-6 col-md-3"><div class="card card-sm"><div class="card-body text-center"><div class="h1 mb-1" id="s_stores_month">—</div><div class="text-secondary small">本月涉及店舖</div></div></div></div>
@@ -144,16 +128,17 @@
                   <div class="col-6 col-md-2"><div class="h3 mb-0" id="s_zs_stores">—</div><div class="text-secondary small">涉及店舖 / 待回覆店舖</div></div>
                   <div class="col-6 col-md-2"><div class="h3 mb-0" id="s_zs_latest">—</div><div class="text-secondary small">最新批次進度</div></div>
                 </div>
-                <div class="mt-2 text-end"><a href="#zs_card" class="btn btn-sm btn-outline-primary">前往統計及匯出</a></div>
+                <div class="mt-2 text-end"><a href="#sec-zero-sales" class="btn btn-sm btn-outline-primary">前往統計及匯出</a></div>
               </div>
             </div>
           </div>
         </div>
 
-        <!-- Filter + list -->
+        <!-- ============ 申報清單 ============ -->
+        <div class="admin-section-title admin-section" id="sec-list">申報清單 <span class="count-badge" id="list_count_badge">—</span></div>
         <div class="card">
           <div class="card-header">
-            <h3 class="card-title">申報清單</h3>
+            <h3 class="card-title">篩選及清單</h3>
             <div class="card-actions">
               <a href="#" class="btn-action" data-bs-toggle="collapse" data-bs-target="#submission-list-collapse" aria-expanded="true" aria-label="摺疊申報清單">
                 <svg xmlns="http://www.w3.org/2000/svg" class="icon" width="24" height="24" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none" stroke-linecap="round" stroke-linejoin="round"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><polyline points="6 9 12 15 18 9" /></svg>
@@ -161,166 +146,130 @@
             </div>
           </div>
           <div class="card-body collapse show" id="submission-list-collapse">
-            <div class="toolbar mb-3">
+            <div class="filter-presets" id="filter_presets" role="group" aria-label="常用篩選">
+              <button type="button" class="preset-btn" data-preset="today_unexported">今日未匯出</button>
+              <button type="button" class="preset-btn" data-preset="today_all">今日全部</button>
+              <button type="button" class="preset-btn" data-preset="urgent_today">Urgent · 今日</button>
+              <button type="button" class="preset-btn" data-preset="normal_pending">一般 NDRF · 待審批</button>
+              <button type="button" class="preset-btn" data-preset="unexported_all">全部未匯出</button>
+            </div>
+            <div class="active-filters" id="active_filters" aria-live="polite"></div>
+            <div class="toolbar mb-2">
               <div class="field"><label class="form-label">由 (日期)</label><input type="date" id="f_from" class="form-control"></div>
               <div class="field"><label class="form-label">至 (日期)</label><input type="date" id="f_to" class="form-control"></div>
-              <div class="field"><label class="form-label">Site Code</label><input type="text" id="f_site" class="form-control"></div>
+              <div class="field"><label class="form-label">Site Code</label><input type="text" id="f_site" class="form-control" placeholder="例如 HC63"></div>
+              <div class="field"><label class="form-label">SKU</label><input type="text" id="f_sku" class="form-control"></div>
               <div class="field"><label class="form-label">來源</label><select id="f_source" class="form-select"><option value="">全部</option><option value="web">網頁</option><option value="excel">Excel</option></select></div>
               <div class="field"><label class="form-label">申報類型</label><select id="f_type" class="form-select"><option value="">全部</option><option value="normal">一般 NDRF</option><option value="urgent">Urgent Order</option><option value="sales">突發性銷售申報</option><option value="return">行貨退貨報數</option></select></div>
               <div class="field"><label class="form-label">匯出狀態</label><select id="f_exported" class="form-select"><option value="">全部</option><option value="no">未匯出</option><option value="yes">已匯出</option></select></div>
-              <div class="field"><label class="form-label">審批狀態（一般 NDRF）</label><select id="f_workflow_status" class="form-select"><option value="">全部</option><option value="pending">待審批</option><option value="ready_for_rp">可供 RP</option><option value="accepted">已批准</option><option value="rejected">已拒絕</option><option value="legacy">Legacy</option></select></div><div class="field"><label class="form-label">SLA 自動批准</label><select id="f_auto_approved" class="form-select"><option value="">全部</option><option value="yes">自動批准（Buyer 逾期）</option><option value="no">非自動批准</option></select></div>
-              <div class="field"><label class="form-label">曾經修改</label><select id="f_modified" class="form-select"><option value="">全部</option><option value="yes">有</option><option value="no">沒有</option></select></div>
-              <div class="field"><label class="form-label">SKU</label><input type="text" id="f_sku" class="form-control"></div>
-              <div class="field field--compact"><label class="form-label">RP Type</label><select id="f_rp_type" class="form-select"><option value="">全部</option></select></div>
-              <div class="field field--ndcode"><label class="form-label">ND Code</label><select id="f_nd_code" class="form-select"><option value="">全部</option></select></div>
-              <div class="field field--appno"><label class="form-label">申請編號</label><input type="text" id="f_appno" class="form-control form-control-sm"></div>
               <div class="ms-auto d-flex gap-2 align-items-end">
                 <button class="btn btn-primary" id="btn_filter">篩選</button>
                 <button class="btn" id="btn_reset">重設</button>
               </div>
             </div>
+            <button class="filter-advanced-toggle" id="filter_advanced_toggle" type="button" aria-expanded="false">＋ 進階篩選（審批狀態、RP Type、ND Code、申請編號…）</button>
+            <div class="toolbar mb-3" id="filter_advanced" style="display:none">
+              <div class="field"><label class="form-label">審批狀態（一般 NDRF）</label><select id="f_workflow_status" class="form-select"><option value="">全部</option><option value="pending">待審批</option><option value="ready_for_rp">可供 RP</option><option value="accepted">已批准</option><option value="rejected">已拒絕</option><option value="legacy">Legacy</option></select></div>
+              <div class="field"><label class="form-label">SLA 自動批准</label><select id="f_auto_approved" class="form-select"><option value="">全部</option><option value="yes">自動批准（Buyer 逾期）</option><option value="no">非自動批准</option></select></div>
+              <div class="field"><label class="form-label">曾經修改</label><select id="f_modified" class="form-select"><option value="">全部</option><option value="yes">有</option><option value="no">沒有</option></select></div>
+              <div class="field field--compact"><label class="form-label">RP Type</label><select id="f_rp_type" class="form-select"><option value="">全部</option></select></div>
+              <div class="field field--ndcode"><label class="form-label">ND Code</label><select id="f_nd_code" class="form-select"><option value="">全部</option></select></div>
+              <div class="field field--appno"><label class="form-label">申請編號</label><input type="text" id="f_appno" class="form-control form-control-sm" placeholder="NDRF-… / URGENT-…"></div>
+            </div>
             <div id="list_error"></div>
-            <div class="table-responsive">
+            <div class="admin-table-wrap">
               <table class="table table-vcenter table-hover card-table" id="list_table">
                 <thead><tr><th class="col-appno">申請編號</th><th>Site Code</th><th class="col-sku">SKU</th><th>RP Type</th><th>Safety Qty</th><th>ND Code</th><th>類型</th><th>來源</th><th>申請時間</th><th>修改時間</th><th>狀態</th><th></th></tr></thead>
                 <tbody id="list_body"></tbody>
               </table>
             </div>
-            <div class="d-flex align-items-center gap-3 mt-3">
+            <div class="admin-pagination">
               <button class="btn btn-sm" id="btn_prev">上一頁</button>
               <span id="page_info" class="text-secondary small"></span>
               <button class="btn btn-sm" id="btn_next">下一頁</button>
+              <label class="page-size">每頁 <select id="f_page_size" class="form-select form-select-sm"><option value="20">20</option><option value="50">50</option><option value="100">100</option></select></label>
+              <span class="text-secondary small">點列可開啟詳情 · Enter 可直接篩選</span>
             </div>
           </div>
         </div>
 
-        <!-- Detail -->
-        <div class="card mt-3" id="detail_card" style="display:none">
-          <div class="card-header"><h3 class="card-title" id="detail_title">申報詳情</h3></div>
-          <div class="card-body">
-            <div id="detail_error"></div>
-            <div class="datagrid mb-3" id="detail_header"></div>
-            <h3 class="card-title mt-3">編輯業務欄位</h3>
-            <div id="urgent_note" style="display:none" class="alert alert-info py-2 small">Urgent Order：可修改 SKU、QTY（1 至 1000）及 Urgent Reason，Site Code 不可修改。選擇「9. 其他」時必須填寫 Other Reason。</div>
-            <form id="edit_form">
-              <div id="normal_fields" class="row g-3">
-                <div class="col-md-6"><label class="form-label" for="a_sku_normal">SKU</label><input type="text" id="a_sku_normal" class="form-control"></div>
-                <div class="col-md-6"><label class="form-label" for="a_rp_type">RP Type</label><select id="a_rp_type" class="form-select"><option value="">—</option></select></div>
-                <div class="col-md-6" id="a_safety_stock_wrap"><label class="form-label" for="a_safety_stock">Safety stock</label><input type="text" id="a_safety_stock" class="form-control"></div>
-                <div class="col-md-6" id="a_nd_code_wrap"><label class="form-label" for="a_nd_code">ND Code</label><input type="text" id="a_nd_code" list="nd_code_list" class="form-control"><datalist id="nd_code_list"></datalist></div>
-                <div class="col-12"><label class="form-label" for="a_remark">Remark</label><input type="text" id="a_remark" class="form-control"></div>
-              </div>
-              <div id="urgent_fields" class="row g-3" style="display:none">
-                <div class="col-md-6"><label class="form-label" for="a_sku_urgent">SKU</label><input type="text" id="a_sku_urgent" class="form-control"></div>
-                <div class="col-md-6"><label class="form-label" for="a_qty">QTY (1-1000)</label><input type="number" id="a_qty" min="1" max="1000" step="1" class="form-control"></div>
-                <div class="col-12"><label class="form-label" for="a_urgent_reason">Urgent Reason</label><select id="a_urgent_reason" class="form-select"><option value="">請選擇申請原因</option></select></div>
-                <div class="col-12" id="a_urgent_reason_other_wrap" style="display:none"><label class="form-label" for="a_urgent_reason_other">Other Reason</label><input type="text" id="a_urgent_reason_other" maxlength="2000" class="form-control"></div>
-              </div>
-              <div id="sales_fields" class="row g-3" style="display:none"><div class="col-md-6"><label class="form-label" for="a_sku_sales">SKU</label><input type="text" id="a_sku_sales" class="form-control"></div></div>
-              <div id="return_fields" class="row g-3" style="display:none">
-                <div class="col-md-6"><label class="form-label" for="a_sku_return">SKU</label><input type="text" id="a_sku_return" class="form-control"></div>
-                <div class="col-md-6"><label class="form-label" for="a_return_qty">QTY (1-9999)</label><input type="number" id="a_return_qty" min="1" max="9999" step="1" class="form-control"></div>
-                <div class="col-12"><label class="form-label" for="a_return_reason">REASON</label><select id="a_return_reason" class="form-select"><option value="">請選擇申請退貨原因</option></select></div>
-                <div class="col-md-6"><label class="form-label" for="a_return_name">確認人姓名</label><input type="text" id="a_return_name" maxlength="200" class="form-control"></div>
-                <div class="col-md-6"><label class="form-label" for="a_return_phone">確認人電話</label><input type="text" id="a_return_phone" maxlength="200" class="form-control"></div>
-              </div>
-            </form>
-            <div class="d-flex gap-2 mt-3">
-              <button class="btn btn-primary" id="btn_save_edit">儲存修改</button>
-              <button class="btn" id="btn_close_detail">返回清單</button>
-            </div>
-            <div id="save_edit_error" class="mt-2"></div>
-            <div id="workflow_section" style="display:none">
-              <h3 class="card-title mt-4">審批流程（一般 NDRF）</h3>
-              <div class="datagrid mb-3" id="workflow_header"></div>
-              <h4 class="card-title">審批時間線</h4>
-              <div id="workflow_events"></div>
-              <h4 class="card-title">Override / Reopen</h4>
-              <p class="text-secondary small">Override/Reopen 必須填寫原因；已匯出並鎖定的申請不可操作。Reopen 會開啟新的審批回合。</p>
-              <div class="d-flex gap-2 flex-wrap">
-                <button class="btn btn-outline-primary" id="btn_wf_reopen">Reopen</button>
-                <button class="btn btn-outline-primary" id="btn_wf_accept">Override 為已批准</button>
-                <button class="btn btn-outline-primary" id="btn_wf_ready">Override 為可供 RP</button>
-                <button class="btn btn-outline-danger" id="btn_wf_reject">Override 為已拒絕</button>
-              </div>
-              <div id="workflow_result" class="mt-2"></div>
-            </div>
-            <h3 class="card-title mt-4">版本歷史</h3>
-            <div id="versions_box"></div>
-          </div>
-        </div>
-
-        <!-- Exports -->
-        <div class="row row-deck row-cards mt-3">
-          <div class="col-lg-6">
-            <div class="card">
-              <div class="card-header"><h3 class="card-title">SAP Excel 匯出（一般 NDRF）</h3></div>
-              <div class="card-body">
-                <p class="text-secondary small">只會匯出一般 NDRF。匯出後該批會被鎖定，申請人不能再修改。預覽下載不會鎖定。</p>
-                <div class="row g-2 mb-3">
-                  <div class="col-6"><label class="form-label">由 (日期)</label><input type="date" id="e_from" class="form-control"></div>
-                  <div class="col-6"><label class="form-label">至 (日期)</label><input type="date" id="e_to" class="form-control"></div>
-                  <div class="col-6"><label class="form-label">Site Code</label><input type="text" id="e_site" class="form-control"></div>
-                  <div class="col-6"><label class="form-label">包含已匯出</label><select id="e_include" class="form-select"><option value="false">否</option><option value="true">是</option></select></div>
-                </div>
-                <div id="export_info"></div>
-                <div class="d-flex gap-2 mt-2"><button class="btn btn-primary" id="btn_export">匯出並鎖定</button><button class="btn" id="btn_export_preview">預覽下載(不鎖定)</button><button class="btn btn-outline-primary" id="btn_audit">下載審計報表</button></div>
-              </div>
+        <!-- ============ 匯出 ============ -->
+        <div class="admin-section-title admin-section" id="sec-export">Excel 匯出</div>
+        <div class="card">
+          <div class="card-header">
+            <h3 class="card-title">匯出中心</h3>
+            <div class="card-actions">
+              <a href="#" class="btn-action" data-bs-toggle="collapse" data-bs-target="#export-collapse" aria-expanded="true" aria-label="摺疊匯出">
+                <svg xmlns="http://www.w3.org/2000/svg" class="icon" width="24" height="24" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none" stroke-linecap="round" stroke-linejoin="round"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><polyline points="6 9 12 15 18 9" /></svg>
+              </a>
             </div>
           </div>
-          <div class="col-lg-6">
-            <div class="card">
-              <div class="card-header"><h3 class="card-title">Urgent Order Excel 匯出</h3></div>
-              <div class="card-body">
-                <p class="text-secondary small">只會匯出 Urgent Order。匯出後鎖定，不能修改。預覽不會鎖定。</p>
-                <div class="row g-2 mb-3">
-                  <div class="col-6"><label class="form-label">由 (日期)</label><input type="date" id="ue_from" class="form-control"></div>
-                  <div class="col-6"><label class="form-label">至 (日期)</label><input type="date" id="ue_to" class="form-control"></div>
-                  <div class="col-6"><label class="form-label">Site Code</label><input type="text" id="ue_site" class="form-control"></div>
-                  <div class="col-6"><label class="form-label">包含已匯出</label><select id="ue_include" class="form-select"><option value="false">否</option><option value="true">是</option></select></div>
-                </div>
-                <div id="urgent_export_info"></div>
-                <div class="d-flex gap-2 mt-2"><button class="btn btn-primary" id="btn_urgent_export">匯出並鎖定</button><button class="btn" id="btn_urgent_export_preview">預覽下載(不鎖定)</button></div>
-              </div>
+          <div class="card-body collapse show" id="export-collapse">
+            <div class="export-tabs" role="tablist" aria-label="匯出類型">
+              <button type="button" class="export-tab active" data-export-tab="normal" role="tab" aria-selected="true">一般 NDRF</button>
+              <button type="button" class="export-tab" data-export-tab="urgent" role="tab" aria-selected="false">Urgent Order</button>
+              <button type="button" class="export-tab" data-export-tab="sales" role="tab" aria-selected="false">突發性銷售</button>
+              <button type="button" class="export-tab" data-export-tab="return" role="tab" aria-selected="false">行貨退貨</button>
             </div>
-          </div>
-          <div class="col-lg-6">
-            <div class="card">
-              <div class="card-header"><h3 class="card-title">突發性銷售申報 Excel 匯出</h3></div>
-              <div class="card-body">
-                <p class="text-secondary small">欄位：Application Date | Requested by | Shop Code | SKU。匯出後鎖定。</p>
-                <div class="row g-2 mb-3">
-                  <div class="col-6"><label class="form-label">由 (日期)</label><input type="date" id="se_from" class="form-control"></div>
-                  <div class="col-6"><label class="form-label">至 (日期)</label><input type="date" id="se_to" class="form-control"></div>
-                  <div class="col-6"><label class="form-label">Site Code</label><input type="text" id="se_site" class="form-control"></div>
-                  <div class="col-6"><label class="form-label">包含已匯出</label><select id="se_include" class="form-select"><option value="false">否</option><option value="true">是</option></select></div>
-                </div>
-                <div id="sales_export_info"></div>
-                <div class="d-flex gap-2 mt-2"><button class="btn btn-primary" id="btn_sales_export">匯出並鎖定</button><button class="btn" id="btn_sales_export_preview">預覽下載(不鎖定)</button></div>
+            <div class="export-panel active" id="export_panel_normal" role="tabpanel">
+              <p class="text-secondary small">只會匯出一般 NDRF。匯出後該批會被鎖定，申請人不能再修改。預覽下載不會鎖定。</p>
+              <div class="row g-2 mb-3">
+                <div class="col-6"><label class="form-label">由 (日期)</label><input type="date" id="e_from" class="form-control"></div>
+                <div class="col-6"><label class="form-label">至 (日期)</label><input type="date" id="e_to" class="form-control"></div>
+                <div class="col-6"><label class="form-label">Site Code</label><input type="text" id="e_site" class="form-control"></div>
+                <div class="col-6"><label class="form-label">包含已匯出</label><select id="e_include" class="form-select"><option value="false">否</option><option value="true">是</option></select></div>
               </div>
+              <div id="export_info"></div>
+              <div class="d-flex gap-2 mt-2 flex-wrap"><button class="btn btn-primary" id="btn_export">匯出並鎖定</button><button class="btn" id="btn_export_preview">預覽下載(不鎖定)</button><button class="btn btn-outline-primary" id="btn_audit">下載審計報表</button></div>
             </div>
-          </div>
-          <div class="col-lg-6">
-            <div class="card">
-              <div class="card-header"><h3 class="card-title">行貨退貨報數 Excel 匯出</h3></div>
-              <div class="card-body">
-                <p class="text-secondary small">8 欄：申請編號、申請日期、Requested by、SKU、QTY、Reason、確認人姓名、電話。</p>
-                <div class="row g-2 mb-3">
-                  <div class="col-6"><label class="form-label">由 (日期)</label><input type="date" id="re_from" class="form-control"></div>
-                  <div class="col-6"><label class="form-label">至 (日期)</label><input type="date" id="re_to" class="form-control"></div>
-                  <div class="col-6"><label class="form-label">Site Code</label><input type="text" id="re_site" class="form-control"></div>
-                  <div class="col-6"><label class="form-label">包含已匯出</label><select id="re_include" class="form-select"><option value="false">否</option><option value="true">是</option></select></div>
-                </div>
-                <div id="return_export_info"></div>
-                <div class="d-flex gap-2 mt-2"><button class="btn btn-primary" id="btn_return_export">匯出並鎖定</button><button class="btn" id="btn_return_export_preview">預覽下載(不鎖定)</button></div>
+            <div class="export-panel" id="export_panel_urgent" role="tabpanel">
+              <p class="text-secondary small">只會匯出 Urgent Order。匯出後鎖定，不能修改。預覽不會鎖定。</p>
+              <div class="row g-2 mb-3">
+                <div class="col-6"><label class="form-label">由 (日期)</label><input type="date" id="ue_from" class="form-control"></div>
+                <div class="col-6"><label class="form-label">至 (日期)</label><input type="date" id="ue_to" class="form-control"></div>
+                <div class="col-6"><label class="form-label">Site Code</label><input type="text" id="ue_site" class="form-control"></div>
+                <div class="col-6"><label class="form-label">包含已匯出</label><select id="ue_include" class="form-select"><option value="false">否</option><option value="true">是</option></select></div>
               </div>
+              <div id="urgent_export_info"></div>
+              <div class="d-flex gap-2 mt-2 flex-wrap"><button class="btn btn-primary" id="btn_urgent_export">匯出並鎖定</button><button class="btn" id="btn_urgent_export_preview">預覽下載(不鎖定)</button></div>
+            </div>
+            <div class="export-panel" id="export_panel_sales" role="tabpanel">
+              <p class="text-secondary small">欄位：Application Date | Requested by | Shop Code | SKU。匯出後鎖定。</p>
+              <div class="row g-2 mb-3">
+                <div class="col-6"><label class="form-label">由 (日期)</label><input type="date" id="se_from" class="form-control"></div>
+                <div class="col-6"><label class="form-label">至 (日期)</label><input type="date" id="se_to" class="form-control"></div>
+                <div class="col-6"><label class="form-label">Site Code</label><input type="text" id="se_site" class="form-control"></div>
+                <div class="col-6"><label class="form-label">包含已匯出</label><select id="se_include" class="form-select"><option value="false">否</option><option value="true">是</option></select></div>
+              </div>
+              <div id="sales_export_info"></div>
+              <div class="d-flex gap-2 mt-2 flex-wrap"><button class="btn btn-primary" id="btn_sales_export">匯出並鎖定</button><button class="btn" id="btn_sales_export_preview">預覽下載(不鎖定)</button></div>
+            </div>
+            <div class="export-panel" id="export_panel_return" role="tabpanel">
+              <p class="text-secondary small">8 欄：申請編號、申請日期、Requested by、SKU、QTY、Reason、確認人姓名、電話。</p>
+              <div class="row g-2 mb-3">
+                <div class="col-6"><label class="form-label">由 (日期)</label><input type="date" id="re_from" class="form-control"></div>
+                <div class="col-6"><label class="form-label">至 (日期)</label><input type="date" id="re_to" class="form-control"></div>
+                <div class="col-6"><label class="form-label">Site Code</label><input type="text" id="re_site" class="form-control"></div>
+                <div class="col-6"><label class="form-label">包含已匯出</label><select id="re_include" class="form-select"><option value="false">否</option><option value="true">是</option></select></div>
+              </div>
+              <div id="return_export_info"></div>
+              <div class="d-flex gap-2 mt-2 flex-wrap"><button class="btn btn-primary" id="btn_return_export">匯出並鎖定</button><button class="btn" id="btn_return_export_preview">預覽下載(不鎖定)</button></div>
             </div>
           </div>
         </div>
 
-        <div class="card mt-3">
-          <div class="card-header"><h3 class="card-title">正式匯出批次及重新下載</h3></div>
-          <div class="card-body">
+        <!-- ============ 匯出批次 ============ -->
+        <div class="admin-section-title admin-section" id="sec-batches">匯出批次</div>
+        <div class="card">
+          <div class="card-header">
+            <h3 class="card-title">正式匯出批次及重新下載</h3>
+            <div class="card-actions">
+              <a href="#" class="btn-action" data-bs-toggle="collapse" data-bs-target="#batches-collapse" aria-expanded="true" aria-label="摺疊批次">
+                <svg xmlns="http://www.w3.org/2000/svg" class="icon" width="24" height="24" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none" stroke-linecap="round" stroke-linejoin="round"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><polyline points="6 9 12 15 18 9" /></svg>
+              </a>
+            </div>
+          </div>
+          <div class="card-body collapse show" id="batches-collapse">
             <p class="text-secondary small">正式匯出檔案保存三個月。若瀏覽器下載中斷，可從這裡重新下載。</p>
             <div id="export_archive_usage" class="text-secondary small"></div>
             <div id="export_history_info"></div>
@@ -330,9 +279,18 @@
           </div>
         </div>
 
-        <div class="card mt-3">
-          <div class="card-header"><h3 class="card-title">Portal 帳戶管理（一般 NDRF）</h3></div>
-          <div class="card-body">
+        <!-- ============ 帳戶 / 主檔 ============ -->
+        <div class="admin-section-title admin-section" id="sec-accounts">帳戶 / 主檔</div>
+        <div class="card" data-lazy-section="portal-users">
+          <div class="card-header">
+            <h3 class="card-title">Portal 帳戶管理（一般 NDRF）</h3>
+            <div class="card-actions">
+              <a href="#" class="btn-action" data-bs-toggle="collapse" data-bs-target="#portal-users-collapse" aria-expanded="true" aria-label="摺疊帳戶">
+                <svg xmlns="http://www.w3.org/2000/svg" class="icon" width="24" height="24" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none" stroke-linecap="round" stroke-linejoin="round"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><polyline points="6 9 12 15 18 9" /></svg>
+              </a>
+            </div>
+          </div>
+          <div class="card-body collapse show" id="portal-users-collapse">
             <p class="text-secondary small">Portal 帳戶（Store／Buyer／SCT）全部免密碼，只需使用者名稱登入。Store 帳戶由門店主檔同步建立；Buyer／SCT 帳戶在此建立。管理員可啟用／停用／刪除帳戶或批量操作（先勾選再按鈕，表頭可全選）。尚有 SKU 分派的 Buyer 或有待審批的 SCT 不可停用或刪除。</p>
             <div class="d-flex gap-2 mb-3 flex-wrap">
               <div class="flex-grow-1" style="min-width:200px">
@@ -351,7 +309,7 @@
                 <button class="btn btn-primary" id="btn_pu_create">建立帳戶</button>
               </div>
             </div>
-            <div class="d-flex gap-2 mb-3">
+            <div class="d-flex gap-2 mb-3 flex-wrap">
               <button class="btn btn-outline-primary" id="btn_store_sync">按門店主檔同步 Store 帳戶</button>
               <button class="btn btn-outline-primary" id="btn_pu_export_links">匯出登入連結 (CSV)</button>
             </div>
@@ -363,45 +321,68 @@
               <button class="btn btn-sm btn-outline-danger" id="btn_pu_bulk_delete">批量刪除</button>
             </div>
             <div class="table-responsive">
-              <table class="table table-vcenter"><thead><tr><th><input type="checkbox" id="pu_select_all" title="全選"></th><th>使用者名稱</th><th>顯示名稱</th><th>角色</th><th>Site Code</th><th>狀態</th><th>登入連結</th><th>操作</th></tr></thead><tbody id="portal_users_body"><tr><td colspan="8" class="text-center text-secondary">載入中…</td></tr></tbody></table>
+              <table class="table table-vcenter"><thead><tr><th><input type="checkbox" id="pu_select_all" title="全選"></th><th>使用者名稱</th><th>顯示名稱</th><th>角色</th><th>Site Code</th><th>狀態</th><th>登入連結</th><th>操作</th></tr></thead><tbody id="portal_users_body"><tr><td colspan="8" class="text-center text-secondary">捲動到此處自動載入…</td></tr></tbody></table>
             </div>
           </div>
         </div>
 
-        <div class="card mt-3">
-          <div class="card-header"><h3 class="card-title">SKU Master（ND 的 Buyer 分工）</h3></div>
-          <div class="card-body">
+        <div class="card" data-lazy-section="sku-master">
+          <div class="card-header">
+            <h3 class="card-title">SKU Master（ND 的 Buyer 分工）</h3>
+            <div class="card-actions">
+              <a href="#" class="btn-action" data-bs-toggle="collapse" data-bs-target="#sku-collapse" aria-expanded="true" aria-label="摺疊SKU">
+                <svg xmlns="http://www.w3.org/2000/svg" class="icon" width="24" height="24" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none" stroke-linecap="round" stroke-linejoin="round"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><polyline points="6 9 12 15 18 9" /></svg>
+              </a>
+            </div>
+          </div>
+          <div class="card-body collapse show" id="sku-collapse">
             <p class="text-secondary small">每個 SKU 對應一位 Buyer。整批上載前會先檢查現有待審 ND 是否都有負責 Buyer；若新檔會令任何待審 ND 失去負責人，整批會被拒絕。</p>
-            <div class="d-flex gap-2 mb-3">
+            <div class="d-flex gap-2 mb-3 flex-wrap">
               <input type="file" id="sku_input" accept=".csv" class="form-control" style="max-width:360px">
               <button class="btn btn-primary" id="btn_sku_upload">上載並整批取代</button>
             </div>
             <div class="hint">CSV 欄名：SKU, Buyer Username</div>
             <div id="sku_result"></div>
             <div class="table-responsive">
-              <table class="table table-vcenter"><thead><tr><th>SKU</th><th>Buyer</th><th>Buyer 狀態</th><th>更新時間</th></tr></thead><tbody id="sku_master_body"><tr><td colspan="4" class="text-center text-secondary">載入中…</td></tr></tbody></table>
+              <table class="table table-vcenter"><thead><tr><th>SKU</th><th>Buyer</th><th>Buyer 狀態</th><th>更新時間</th></tr></thead><tbody id="sku_master_body"><tr><td colspan="4" class="text-center text-secondary">捲動到此處自動載入…</td></tr></tbody></table>
             </div>
           </div>
         </div>
 
-
-        <div class="card mt-3">
-          <div class="card-header"><h3 class="card-title">Buyer 待審批提醒</h3></div>
-          <div class="card-body">
+        <!-- ============ 審批設定 ============ -->
+        <div class="admin-section-title admin-section" id="sec-review">審批設定</div>
+        <div class="card" data-lazy-section="review-pending">
+          <div class="card-header">
+            <h3 class="card-title">Buyer 待審批提醒</h3>
+            <div class="card-actions">
+              <a href="#" class="btn-action" data-bs-toggle="collapse" data-bs-target="#review-pending-collapse" aria-expanded="true" aria-label="摺疊提醒">
+                <svg xmlns="http://www.w3.org/2000/svg" class="icon" width="24" height="24" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none" stroke-linecap="round" stroke-linejoin="round"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><polyline points="6 9 12 15 18 9" /></svg>
+              </a>
+            </div>
+          </div>
+          <div class="card-body collapse show" id="review-pending-collapse">
             <p class="text-secondary small">列出目前有待審 ND 的 Buyer、未審批筆數及未審 SKU 列表，方便提醒跟進。</p>
-            <div class="d-flex gap-2 mb-3">
+            <div class="d-flex gap-2 mb-3 flex-wrap">
               <button class="btn btn-primary" id="btn_review_pending_export">下載提醒 Excel</button>
               <button class="btn" id="btn_review_pending_refresh">重新整理</button>
             </div>
             <div id="review_pending_result"></div>
             <div class="table-responsive">
-              <table class="table table-vcenter"><thead><tr><th>Buyer</th><th>顯示名稱</th><th>狀態</th><th>待審筆數</th><th>待審 SKU 數</th><th>SKU 列表</th></tr></thead><tbody id="review_pending_body"><tr><td colspan="6" class="text-center text-secondary">載入中…</td></tr></tbody></table>
+              <table class="table table-vcenter"><thead><tr><th>Buyer</th><th>顯示名稱</th><th>狀態</th><th>待審筆數</th><th>待審 SKU 數</th><th>SKU 列表</th></tr></thead><tbody id="review_pending_body"><tr><td colspan="6" class="text-center text-secondary">捲動到此處自動載入…</td></tr></tbody></table>
             </div>
           </div>
         </div>
-        <div class="card mt-3">
-          <div class="card-header"><h3 class="card-title">指定店路由設定</h3></div>
-          <div class="card-body">
+
+        <div class="card" data-lazy-section="store-routes">
+          <div class="card-header">
+            <h3 class="card-title">指定店路由設定</h3>
+            <div class="card-actions">
+              <a href="#" class="btn-action" data-bs-toggle="collapse" data-bs-target="#routes-collapse" aria-expanded="true" aria-label="摺疊路由">
+                <svg xmlns="http://www.w3.org/2000/svg" class="icon" width="24" height="24" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none" stroke-linecap="round" stroke-linejoin="round"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><polyline points="6 9 12 15 18 9" /></svg>
+              </a>
+            </div>
+          </div>
+          <div class="card-body collapse show" id="routes-collapse">
             <p class="text-secondary small">指定店的 RF（包括改 Safety）會送 SCT 審批，並要求 Remark 必填。路由在申請建立時 snapshot，改動只影響新申請。可在此直接<b>新增或移除</b>指定店。</p>
             <div class="d-flex gap-2 mb-3 flex-wrap">
               <div style="min-width:180px"><label class="form-label">新增指定店 Site Code</label><input type="text" id="route_site_new" class="form-control" placeholder="例如 HC99"></div>
@@ -409,14 +390,21 @@
             </div>
             <div id="store_routes_result"></div>
             <div class="table-responsive">
-              <table class="table table-vcenter"><thead><tr><th>Site Code</th><th>店舖</th><th>SCT 審批</th><th>Remark 必填</th><th>更新時間</th><th>操作</th></tr></thead><tbody id="store_routes_body"><tr><td colspan="6" class="text-center text-secondary">載入中…</td></tr></tbody></table>
+              <table class="table table-vcenter"><thead><tr><th>Site Code</th><th>店舖</th><th>SCT 審批</th><th>Remark 必填</th><th>更新時間</th><th>操作</th></tr></thead><tbody id="store_routes_body"><tr><td colspan="6" class="text-center text-secondary">捲動到此處自動載入…</td></tr></tbody></table>
             </div>
           </div>
         </div>
 
-        <div class="card mt-3">
-          <div class="card-header"><h3 class="card-title">Reject 原因類別</h3></div>
-          <div class="card-body">
+        <div class="card" data-lazy-section="rejection-reasons">
+          <div class="card-header">
+            <h3 class="card-title">Reject 原因類別</h3>
+            <div class="card-actions">
+              <a href="#" class="btn-action" data-bs-toggle="collapse" data-bs-target="#rejection-collapse" aria-expanded="true" aria-label="摺疊原因">
+                <svg xmlns="http://www.w3.org/2000/svg" class="icon" width="24" height="24" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none" stroke-linecap="round" stroke-linejoin="round"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><polyline points="6 9 12 15 18 9" /></svg>
+              </a>
+            </div>
+          </div>
+          <div class="card-body collapse show" id="rejection-collapse">
             <p class="text-secondary small">Reviewer Reject 時必須選擇原因類別並填寫補充說明；原因 label 會 snapshot 到審批歷史，改名或停用不會影響舊紀錄。</p>
             <div class="d-flex gap-2 mb-3 flex-wrap">
               <div style="min-width:140px"><label class="form-label">Code</label><input type="text" id="rr_code" class="form-control" placeholder="例如 duplicate"></div>
@@ -426,14 +414,23 @@
             </div>
             <div id="rejection_result"></div>
             <div class="table-responsive">
-              <table class="table table-vcenter"><thead><tr><th>Code</th><th>顯示名稱</th><th>排序</th><th>啟用</th><th>更新人</th><th>操作</th></tr></thead><tbody id="rejection_body"><tr><td colspan="6" class="text-center text-secondary">載入中…</td></tr></tbody></table>
+              <table class="table table-vcenter"><thead><tr><th>Code</th><th>顯示名稱</th><th>排序</th><th>啟用</th><th>更新人</th><th>操作</th></tr></thead><tbody id="rejection_body"><tr><td colspan="6" class="text-center text-secondary">捲動到此處自動載入…</td></tr></tbody></table>
             </div>
           </div>
         </div>
 
-        <div class="card mt-3" id="zs_card">
-          <div class="card-header"><h3 class="card-title">90日零銷售回覆 — 每週派發</h3></div>
-          <div class="card-body">
+        <!-- ============ 零銷售 ============ -->
+        <div class="admin-section-title admin-section" id="sec-zero-sales">90日零銷售回覆</div>
+        <div class="card mt-0" id="zs_card" data-lazy-section="zero-sales">
+          <div class="card-header">
+            <h3 class="card-title">90日零銷售回覆 — 每週派發</h3>
+            <div class="card-actions">
+              <a href="#" class="btn-action" data-bs-toggle="collapse" data-bs-target="#zs-collapse" aria-expanded="true" aria-label="摺疊零銷售">
+                <svg xmlns="http://www.w3.org/2000/svg" class="icon" width="24" height="24" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none" stroke-linecap="round" stroke-linejoin="round"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><polyline points="6 9 12 15 18 9" /></svg>
+              </a>
+            </div>
+          </div>
+          <div class="card-body collapse show" id="zs-collapse">
             <p class="text-secondary small">上載 Excel（欄位：Site Code、Shop Name、OM、Shop Nature、店內庫存排名、Buyer、Brand、SKU、SKU Desc、Adj. MCH1、MAKE UP 分類、RP Type、Safety Stock (現時)、Item Status、Supply Source、Shop Stock Qty (LM/CM)、Sold Qty (P90D/M-2/M-1/CM-MTD)、Shop On Order PO Qty (CM)、店舖回覆）。每間店SKU可不同，店舖登入後逐條回覆原因，每SKU可修改一次。</p>
             <div class="d-flex gap-2 mb-3 flex-wrap">
               <div><label class="form-label">週次 (例如 2026-W40)</label><input type="text" id="zs_week" class="form-control" placeholder="2026-W40"></div>
@@ -446,18 +443,18 @@
             </div>
             <div id="zs_upload_result"></div>
             <h4 class="mt-4">統計總覽（跨批次） <button class="btn btn-sm ms-2" id="btn_zs_stats_refresh">重新整理</button></h4>
-            <div id="zs_stats_result" class="text-secondary small">載入中…</div>
+            <div id="zs_stats_result" class="text-secondary small">捲動到此處自動載入…</div>
             <div class="row g-3 mt-1">
               <div class="col-md-6">
                 <h5 class="text-secondary">回覆原因分佈（已回覆）</h5>
                 <div class="table-responsive">
-                  <table class="table table-vcenter"><thead><tr><th>原因</th><th>筆數</th><th>佔比</th></tr></thead><tbody id="zs_reason_stats_body"><tr><td colspan="3" class="text-center text-secondary">載入中…</td></tr></tbody></table>
+                  <table class="table table-vcenter"><thead><tr><th>原因</th><th>筆數</th><th>佔比</th></tr></thead><tbody id="zs_reason_stats_body"><tr><td colspan="3" class="text-center text-secondary">—</td></tr></tbody></table>
                 </div>
               </div>
               <div class="col-md-6">
                 <h5 class="text-secondary">待回覆店舖排行（Top 50）</h5>
                 <div class="table-responsive">
-                  <table class="table table-vcenter"><thead><tr><th>Site</th><th>店舖</th><th>總數</th><th>已回覆</th><th>未回覆</th></tr></thead><tbody id="zs_store_stats_body"><tr><td colspan="5" class="text-center text-secondary">載入中…</td></tr></tbody></table>
+                  <table class="table table-vcenter"><thead><tr><th>Site</th><th>店舖</th><th>總數</th><th>已回覆</th><th>未回覆</th></tr></thead><tbody id="zs_store_stats_body"><tr><td colspan="5" class="text-center text-secondary">—</td></tr></tbody></table>
                 </div>
               </div>
             </div>
@@ -475,7 +472,7 @@
             </div>
             <div id="zs_export_result"></div>
             <div class="table-responsive">
-              <table class="table table-vcenter"><thead><tr><th>週次</th><th>行數</th><th>店數</th><th>已回覆</th><th>未回覆</th><th>建立人</th><th>建立時間</th><th>操作</th></tr></thead><tbody id="zs_batches_body"><tr><td colspan="8" class="text-center text-secondary">載入中…</td></tr></tbody></table>
+              <table class="table table-vcenter"><thead><tr><th>週次</th><th>行數</th><th>店數</th><th>已回覆</th><th>未回覆</th><th>建立人</th><th>建立時間</th><th>操作</th></tr></thead><tbody id="zs_batches_body"><tr><td colspan="8" class="text-center text-secondary">捲動到此處自動載入…</td></tr></tbody></table>
             </div>
             <div class="d-flex gap-2 mt-2 flex-wrap">
               <input type="text" id="zs_filter_site" class="form-control" style="max-width:160px" placeholder="篩選 Site Code">
@@ -498,14 +495,23 @@
             </div>
             <div id="zs_reason_result"></div>
             <div class="table-responsive">
-              <table class="table table-vcenter"><thead><tr><th>Code</th><th>顯示名稱</th><th>排序</th><th>須補充</th><th>啟用</th><th>操作</th></tr></thead><tbody id="zs_reasons_body"><tr><td colspan="6" class="text-center text-secondary">載入中…</td></tr></tbody></table>
+              <table class="table table-vcenter"><thead><tr><th>Code</th><th>顯示名稱</th><th>排序</th><th>須補充</th><th>啟用</th><th>操作</th></tr></thead><tbody id="zs_reasons_body"><tr><td colspan="6" class="text-center text-secondary">捲動到此處自動載入…</td></tr></tbody></table>
             </div>
           </div>
         </div>
 
-        <div class="card mt-3">
-          <div class="card-header"><h3 class="card-title">門店主檔</h3></div>
-          <div class="card-body">
+        <!-- ============ 系統 ============ -->
+        <div class="admin-section-title admin-section" id="sec-system">系統</div>
+        <div class="card" data-lazy-section="stores">
+          <div class="card-header">
+            <h3 class="card-title">門店主檔</h3>
+            <div class="card-actions">
+              <a href="#" class="btn-action" data-bs-toggle="collapse" data-bs-target="#stores-collapse" aria-expanded="true" aria-label="摺疊門店">
+                <svg xmlns="http://www.w3.org/2000/svg" class="icon" width="24" height="24" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none" stroke-linecap="round" stroke-linejoin="round"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><polyline points="6 9 12 15 18 9" /></svg>
+              </a>
+            </div>
+          </div>
+          <div class="card-body collapse show" id="stores-collapse">
             <div id="store_count" class="text-secondary small"></div>
             <div class="form-control d-flex align-items-center justify-content-center py-4 text-secondary mt-2" id="store_drop" style="border-style:dashed;cursor:pointer">
               <span id="store_label">拖曳 stores CSV 檔案到此處，或按一下選擇檔案</span><input type="file" id="store_input" accept=".csv" style="display:none">
@@ -515,21 +521,91 @@
           </div>
         </div>
 
-        <div class="card mt-3">
-          <div class="card-header"><h3 class="card-title">Recovery Code 管理</h3></div>
-          <div class="card-body">
+        <div class="card" data-lazy-section="recovery-codes">
+          <div class="card-header">
+            <h3 class="card-title">Recovery Code 管理</h3>
+            <div class="card-actions">
+              <a href="#" class="btn-action" data-bs-toggle="collapse" data-bs-target="#recovery-collapse" aria-expanded="true" aria-label="摺疊Recovery">
+                <svg xmlns="http://www.w3.org/2000/svg" class="icon" width="24" height="24" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none" stroke-linecap="round" stroke-linejoin="round"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><polyline points="6 9 12 15 18 9" /></svg>
+              </a>
+            </div>
+          </div>
+          <div class="card-body collapse show" id="recovery-collapse">
             <p class="text-secondary small">「搵返申請編號」功能按每組 OM 獨立設定 Recovery Code（master code 適用於所有店舖）。原碼只會喺後台顯示，公開查詢驗證用 SHA-256 hash 比對。</p>
             <div class="table-responsive">
-              <table class="table table-vcenter"><thead><tr><th>範圍</th><th>狀態</th><th>Recovery Code</th><th>最後更新</th><th>更新人</th><th>操作</th></tr></thead><tbody id="recovery_codes_body"><tr><td colspan="6" class="text-center text-secondary">載入中…</td></tr></tbody></table>
+              <table class="table table-vcenter"><thead><tr><th>範圍</th><th>狀態</th><th>Recovery Code</th><th>最後更新</th><th>更新人</th><th>操作</th></tr></thead><tbody id="recovery_codes_body"><tr><td colspan="6" class="text-center text-secondary">捲動到此處自動載入…</td></tr></tbody></table>
             </div>
             <div id="recovery_code_result" class="mt-2"></div>
           </div>
         </div>
+
       </div>
     </div>
   </div>
   <footer class="footer footer-transparent"><div class="container-xl"><div class="text-center text-secondary small">Developed by RP Team - Ricky Yue</div></div></footer>
 </div>
+
+<!-- 詳情抽屜 -->
+<div id="detail_overlay"></div>
+<aside class="card detail-drawer" id="detail_card" style="display:none" aria-label="申報詳情">
+  <div class="card-header d-flex align-items-center gap-2">
+    <h3 class="card-title mb-0" id="detail_title">申報詳情</h3>
+    <button class="drawer-close-x" id="btn_close_detail_x" type="button" aria-label="關閉詳情">✕</button>
+  </div>
+  <div class="drawer-body">
+    <div id="detail_error"></div>
+    <div class="datagrid mb-3" id="detail_header"></div>
+    <h3 class="card-title mt-3">編輯業務欄位</h3>
+    <div id="urgent_note" style="display:none" class="alert alert-info py-2 small">Urgent Order：可修改 SKU、QTY（1 至 1000）及 Urgent Reason，Site Code 不可修改。選擇「9. 其他」時必須填寫 Other Reason。</div>
+    <form id="edit_form">
+      <div id="normal_fields" class="row g-3">
+        <div class="col-md-6"><label class="form-label" for="a_sku_normal">SKU</label><input type="text" id="a_sku_normal" class="form-control"></div>
+        <div class="col-md-6"><label class="form-label" for="a_rp_type">RP Type</label><select id="a_rp_type" class="form-select"><option value="">—</option></select></div>
+        <div class="col-md-6" id="a_safety_stock_wrap"><label class="form-label" for="a_safety_stock">Safety stock</label><input type="text" id="a_safety_stock" class="form-control"></div>
+        <div class="col-md-6" id="a_nd_code_wrap"><label class="form-label" for="a_nd_code">ND Code</label><input type="text" id="a_nd_code" list="nd_code_list" class="form-control"><datalist id="nd_code_list"></datalist></div>
+        <div class="col-12"><label class="form-label" for="a_remark">Remark</label><input type="text" id="a_remark" class="form-control"></div>
+      </div>
+      <div id="urgent_fields" class="row g-3" style="display:none">
+        <div class="col-md-6"><label class="form-label" for="a_sku_urgent">SKU</label><input type="text" id="a_sku_urgent" class="form-control"></div>
+        <div class="col-md-6"><label class="form-label" for="a_qty">QTY (1-1000)</label><input type="number" id="a_qty" min="1" max="1000" step="1" class="form-control"></div>
+        <div class="col-12"><label class="form-label" for="a_urgent_reason">Urgent Reason</label><select id="a_urgent_reason" class="form-select"><option value="">請選擇申請原因</option></select></div>
+        <div class="col-12" id="a_urgent_reason_other_wrap" style="display:none"><label class="form-label" for="a_urgent_reason_other">Other Reason</label><input type="text" id="a_urgent_reason_other" maxlength="2000" class="form-control"></div>
+      </div>
+      <div id="sales_fields" class="row g-3" style="display:none"><div class="col-md-6"><label class="form-label" for="a_sku_sales">SKU</label><input type="text" id="a_sku_sales" class="form-control"></div></div>
+      <div id="return_fields" class="row g-3" style="display:none">
+        <div class="col-md-6"><label class="form-label" for="a_sku_return">SKU</label><input type="text" id="a_sku_return" class="form-control"></div>
+        <div class="col-md-6"><label class="form-label" for="a_return_qty">QTY (1-9999)</label><input type="number" id="a_return_qty" min="1" max="9999" step="1" class="form-control"></div>
+        <div class="col-12"><label class="form-label" for="a_return_reason">REASON</label><select id="a_return_reason" class="form-select"><option value="">請選擇申請退貨原因</option></select></div>
+        <div class="col-md-6"><label class="form-label" for="a_return_name">確認人姓名</label><input type="text" id="a_return_name" maxlength="200" class="form-control"></div>
+        <div class="col-md-6"><label class="form-label" for="a_return_phone">確認人電話</label><input type="text" id="a_return_phone" maxlength="200" class="form-control"></div>
+      </div>
+    </form>
+    <div class="d-flex gap-2 mt-3 flex-wrap">
+      <button class="btn btn-primary" id="btn_save_edit">儲存修改</button>
+      <button class="btn" id="btn_close_detail">返回清單</button>
+    </div>
+    <div id="save_edit_error" class="mt-2"></div>
+    <div id="workflow_section" style="display:none">
+      <h3 class="card-title mt-4">審批流程（一般 NDRF）</h3>
+      <div class="datagrid mb-3" id="workflow_header"></div>
+      <h4 class="card-title">審批時間線</h4>
+      <div id="workflow_events"></div>
+      <h4 class="card-title">Override / Reopen</h4>
+      <p class="text-secondary small">Override/Reopen 必須填寫原因；已匯出並鎖定的申請不可操作。Reopen 會開啟新的審批回合。</p>
+      <div class="d-flex gap-2 flex-wrap">
+        <button class="btn btn-outline-primary" id="btn_wf_reopen">Reopen</button>
+        <button class="btn btn-outline-primary" id="btn_wf_accept">Override 為已批准</button>
+        <button class="btn btn-outline-primary" id="btn_wf_ready">Override 為可供 RP</button>
+        <button class="btn btn-outline-danger" id="btn_wf_reject">Override 為已拒絕</button>
+      </div>
+      <div id="workflow_result" class="mt-2"></div>
+    </div>
+    <h3 class="card-title mt-4">版本歷史</h3>
+    <div id="versions_box"></div>
+  </div>
+</aside>
+
+<button id="btn_back_top" type="button" aria-label="回到頂部">↑</button>
 
 <div id="recovery_code_overlay" style="display:none">
   <div class="modal-box">
@@ -560,5 +636,6 @@
 <script src="/js/api.js"></script>
 <script src="/js/admin.js"></script>
 <script src="/js/admin-zero-sales.js"></script>
+<script src="/js/admin-ui.js"></script>
 </body>
 </html>

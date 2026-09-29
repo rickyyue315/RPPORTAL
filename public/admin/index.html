@@ -409,6 +409,49 @@
         </div>
 
         <div class="card mt-3">
+          <div class="card-header"><h3 class="card-title">90日零銷售回覆 — 每週派發</h3></div>
+          <div class="card-body">
+            <p class="text-secondary small">上載 Excel（欄位：Site Code、Shop Name、OM、Shop Nature、店內庫存排名、Buyer、Brand、SKU、SKU Desc、Adj. MCH1、MAKE UP 分類、RP Type、Safety Stock (現時)、Item Status、Supply Source、Shop Stock Qty (LM/CM)、Sold Qty (P90D/M-2/M-1/CM-MTD)、Shop On Order PO Qty (CM)、店舖回覆）。每間店SKU可不同，店舖登入後逐條回覆原因，每SKU可修改一次。</p>
+            <div class="d-flex gap-2 mb-3 flex-wrap">
+              <div><label class="form-label">週次 (例如 2026-W40)</label><input type="text" id="zs_week" class="form-control" placeholder="2026-W40"></div>
+              <div class="flex-grow-1" style="min-width:200px"><label class="form-label">備註</label><input type="text" id="zs_note" class="form-control"></div>
+              <div><label class="form-label">Excel (.xlsx)</label><input type="file" id="zs_file" accept=".xlsx" class="form-control"></div>
+              <div class="align-self-end d-flex gap-2">
+                <a class="btn btn-outline-primary" href="/api/admin/zero-sales/template">下載模板</a>
+                <button class="btn btn-primary" id="btn_zs_upload">上載開新批次</button>
+              </div>
+            </div>
+            <div id="zs_upload_result"></div>
+            <div class="table-responsive">
+              <table class="table table-vcenter"><thead><tr><th>週次</th><th>行數</th><th>店數</th><th>已回覆</th><th>未回覆</th><th>建立人</th><th>建立時間</th><th>操作</th></tr></thead><tbody id="zs_batches_body"><tr><td colspan="8" class="text-center text-secondary">載入中…</td></tr></tbody></table>
+            </div>
+            <div class="d-flex gap-2 mt-2 flex-wrap">
+              <input type="text" id="zs_filter_site" class="form-control" style="max-width:160px" placeholder="篩選 Site Code">
+              <select id="zs_filter_status" class="form-select" style="max-width:160px"><option value="">全部狀態</option><option value="pending">未回覆</option><option value="replied">已回覆</option></select>
+              <button class="btn" id="btn_zs_view">查看明細</button>
+            </div>
+            <div id="zs_items_result" class="mt-2"></div>
+            <div class="table-responsive mt-2">
+              <table class="table table-vcenter"><thead><tr><th>Site</th><th>SKU</th><th>Brand</th><th>描述</th><th>上載日期</th><th>狀態</th><th>修改次數</th><th>回覆</th></tr></thead><tbody id="zs_items_body"></tbody></table>
+            </div>
+            <h4 class="mt-4">回覆原因選項</h4>
+            <p class="text-secondary small">店舖回覆時下拉選單用的原因；「須補充」的原因店舖必須填寫補充說明。停用後店舖不可再選，但舊回覆保留。</p>
+            <div class="d-flex gap-2 mb-3 flex-wrap">
+              <div style="min-width:120px"><label class="form-label">Code</label><input type="text" id="zs_reason_code" class="form-control" placeholder="例如 other"></div>
+              <div class="flex-grow-1" style="min-width:220px"><label class="form-label">顯示名稱</label><input type="text" id="zs_reason_label" class="form-control" placeholder="例如 6.其他（須填補充）"></div>
+              <div style="min-width:100px"><label class="form-label">排序</label><input type="number" id="zs_reason_sort" class="form-control" value="0"></div>
+              <div><label class="form-label">須補充</label><select id="zs_reason_reqnote" class="form-select"><option value="false">否</option><option value="true">是</option></select></div>
+              <div><label class="form-label">啟用</label><select id="zs_reason_active" class="form-select"><option value="true">是</option><option value="false">否</option></select></div>
+              <div class="align-self-end"><button class="btn btn-primary" id="btn_zs_reason_save">新增／更新</button></div>
+            </div>
+            <div id="zs_reason_result"></div>
+            <div class="table-responsive">
+              <table class="table table-vcenter"><thead><tr><th>Code</th><th>顯示名稱</th><th>排序</th><th>須補充</th><th>啟用</th><th>操作</th></tr></thead><tbody id="zs_reasons_body"><tr><td colspan="6" class="text-center text-secondary">載入中…</td></tr></tbody></table>
+            </div>
+          </div>
+        </div>
+
+        <div class="card mt-3">
           <div class="card-header"><h3 class="card-title">門店主檔</h3></div>
           <div class="card-body">
             <div id="store_count" class="text-secondary small"></div>
@@ -464,5 +507,6 @@
 <script src="/js/options.js"></script>
 <script src="/js/api.js"></script>
 <script src="/js/admin.js"></script>
+<script src="/js/admin-zero-sales.js"></script>
 </body>
 </html>

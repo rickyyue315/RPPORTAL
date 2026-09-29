@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Store Portal — 90日零銷售回覆</title>
+  <link rel="stylesheet" href="/css/style.css">
+  <link rel="stylesheet" href="/portal/css/portal.css">
+  <style>
+    .zs-table-wrap { overflow-x: auto; }
+    table.zs-table { min-width: 1400px; }
+    table.zs-table th, table.zs-table td { white-space: nowrap; font-size: 13px; }
+    .filter-row { display: flex; gap: 12px; flex-wrap: wrap; align-items: end; margin-bottom: 12px; }
+    .badge-pending { background: #fef9e7; color: #7a4d00; border: 1px solid #f9e79f; padding: 2px 10px; border-radius: 12px; font-size: 12px; }
+    .badge-replied { background: #eafaf1; color: #0a5c36; border: 1px solid #a9dfbf; padding: 2px 10px; border-radius: 12px; font-size: 12px; }
+    dialog#reply_dialog { border: none; border-radius: 12px; padding: 24px; max-width: 560px; width: 92vw; }
+    dialog#reply_dialog::backdrop { background: rgba(0,0,0,.45); }
+  </style>
+</head>
+<body>
+  <header class="topbar">
+    <div>
+      <h1>NDRF Store Portal</h1>
+      <div class="subtitle" id="store_header">90日零銷售回覆</div>
+    </div>
+    <nav>
+      <a href="/portal/store.html">申報</a>
+      <a href="/portal/zero-sales.html" class="active">零銷售回覆</a>
+      <a href="#" id="logout_link">登出</a>
+      <a href="/">平台首頁</a>
+    </nav>
+  </header>
+
+  <main class="container portal-main">
+    <div class="card">
+      <h2>90日零銷售 SKU 回覆</h2>
+      <p class="hint" id="site_info">載入中…</p>
+      <p class="hint">RP Team 每週派發你店舖的指定零銷售SKU，請逐條選擇原因並可填補充說明。每 SKU 可修改一次（初次回覆 + 1次修改），用完後會鎖定，如需再改請聯絡 RP Team。</p>
+      <div class="filter-row">
+        <div>
+          <label for="f_status">狀態</label><br>
+          <select id="f_status"><option value="">全部</option><option value="pending">未回覆</option><option value="replied">已回覆</option></select>
+        </div>
+        <div>
+          <label for="f_search">搜尋 SKU / Brand / 描述</label><br>
+          <input type="text" id="f_search" placeholder="例如 1234567">
+        </div>
+        <div><button class="btn" id="btn_refresh">重新整理</button></div>
+      </div>
+      <div id="list_error"></div>
+      <div class="zs-table-wrap"><div id="zs_list"><div class="loading">載入中…</div></div></div>
+    </div>
+  </main>
+
+  <dialog id="reply_dialog">
+    <h3 id="reply_title">回覆</h3>
+    <div id="reply_sku_info" class="hint"></div>
+    <div style="margin:12px 0">
+      <label for="reply_reason">回覆原因 <span class="optional">（必選）</span></label><br>
+      <select id="reply_reason" style="width:100%"></select>
+    </div>
+    <div style="margin:12px 0">
+      <label for="reply_note">補充說明</label><br>
+      <textarea id="reply_note" rows="3" style="width:100%" maxlength="2000" placeholder="例如：已安排陳列 / 待清貨…"></textarea>
+    </div>
+    <div id="reply_error"></div>
+    <div class="btn-row" style="justify-content:flex-end">
+      <button class="btn ghost" id="btn_reply_cancel">取消</button>
+      <button class="btn" id="btn_reply_save">儲存回覆</button>
+    </div>
+  </dialog>
+
+  <script src="/js/api.js"></script>
+  <script src="/portal/js/portal.js"></script>
+  <script src="/portal/js/zero-sales.js"></script>
+  <footer class="site-footer">Developed by RP Team - Ricky Yue</footer>
+</body>
+</html>

@@ -95,6 +95,17 @@ import {
   type ExportSubmissionType,
 } from '../services/exportBatches.js';
 import { createImportBatch, findImportBatchByContentHash } from '../services/importBatches.js';
+import {
+  buildZeroSalesExportBuffer,
+  generateZeroSalesTemplateWorkbook,
+  parseZeroSalesWorkbook,
+} from '../lib/zeroSales.js';
+import {
+  createBatch as createZeroSalesBatch,
+  listBatches as listZeroSalesBatches,
+  listBatchItems as listZeroSalesBatchItems,
+  listReasons as listZeroSalesReasons,
+} from '../services/zeroSales.js';
 
 export const adminRouter = Router();
 
@@ -2235,5 +2246,177 @@ adminRouter.delete(
       metadata: { scope },
     });
     res.json({ ok: true, scope });
+  }),
+);
+
+// ---------------------------------------------------------------------------
+// 90日零銷售 SKU 店舖回覆 (Admin 派發 / 跟進)
+// ---------------------------------------------------------------------------
+
+/** GET /api/admin/zero-sales/template — 下載上載模板 */
+adminRouter.get(
+  '/zero-sales/template',
+  requireAdmin,
+  excelExportLimiter,
+  asyncHandler(async (_req: Request, res: Response) => {
+    const buffer = await generateZeroSalesTemplateWorkbook();
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition', 'attachment; filename="Zero_Sales_Template.xlsx"');
+    res.send(buffer);
+  }),
+);
+
+/** GET /api/admin/zero-sales/batches — 批次列表 (含回覆進度) */
+adminRouter.get(
+  '/zero-sales/batches',
+  requireAdmin,
+  adminActionLimiter,
+  asyncHandler(async (_req: Request, res: Response) => {
+    res.json({ batches: await listZeroSalesBatches() });
+  }),
+);
+
+const zeroSalesUploadSchema = z.object({
+  week_label: z.string().trim().min(1, '週次為必填').max(60),
+  note: z.string().max(1000).optional().default(''),
+});
+
+/** POST /api/admin/zero-sales/batches — 上載 Excel 開新一週批次 */
+adminRouter.post(
+  '/zero-sales/batches',
+  requireAdmin,
+  excelImportLimiter,
+  upload.single('file'),
+  asyncHandler(async (req: Request, res: Response) => {
+    const file = getUploadedFile(req)!;
+    const uploadError = validateUploadedXlsx(file, config.maxUploadBytes, EXCEL_UPLOAD_EXTENSION_ERROR);
+    if (uploadError) {
+      res.status(uploadError.status).json({ error: uploadError.message });
+      return;
+    }
+    const meta = zeroSalesUploadSchema.safeParse(req.body);
+    if (!meta.success) {
+      res.status(400).json({ error: meta.error.issues[0]?.message ?? '週次無效' });
+      return;
+    }
+    const stores = await query<{ site_code: string }>('SELECT site_code FROM stores');
+    const storeCodes = new Set(stores.rows.map((s) => s.site_code));
+    const parsed = await parseZeroSalesWorkbook(file.buffer, storeCodes, config.maxImportRows);
+    if (!parsed.ok || !parsed.rows) {
+      await writeAuditEvent({
+        eventType: 'zero_sales_import_error',
+        actorRole: 'admin',
+        actor: req.adminUsername,
+        ip: getClientIp(req),
+        metadata: { filename: file.originalname, errors: parsed.errors ?? [] },
+      });
+      res.status(400).json({ error: '匯入失敗', totalRows: parsed.totalRows, errors: parsed.errors ?? [] });
+      return;
+    }
+    const { batchId } = await createZeroSalesBatch({
+      weekLabel: meta.data.week_label,
+      note: meta.data.note ?? '',
+      rows: parsed.rows.map((r) => ({ siteCode: r.siteCode, sku: r.sku, data: r.data })),
+      contentHash: parsed.contentHash ?? '',
+      createdBy: req.adminUsername!,
+    });
+    await writeAuditEvent({
+      eventType: 'zero_sales_batch_created',
+      actorRole: 'admin',
+      actor: req.adminUsername,
+      ip: getClientIp(req),
+      metadata: { filename: file.originalname, week_label: meta.data.week_label, batchId, totalRows: parsed.totalRows },
+    });
+    res.status(201).json({ ok: true, batchId, totalRows: parsed.totalRows });
+  }),
+);
+
+/** GET /api/admin/zero-sales/batches/:id/items — 批次明細 (可按 site_code / status 篩選) */
+adminRouter.get(
+  '/zero-sales/batches/:id/items',
+  requireUuidParam('id'),
+  requireAdmin,
+  adminActionLimiter,
+  asyncHandler(async (req: Request, res: Response) => {
+    const { site_code, status } = req.query as Record<string, string | undefined>;
+    const items = await listZeroSalesBatchItems(req.params.id as string, {
+      siteCode: site_code?.trim() ? normalizeSiteCode(site_code) : undefined,
+      status: status === 'pending' || status === 'replied' ? status : undefined,
+    });
+    res.json({ items });
+  }),
+);
+
+/** GET /api/admin/zero-sales/batches/:id/export — 匯出批次 (原文 + 店舖回覆) */
+adminRouter.get(
+  '/zero-sales/batches/:id/export',
+  requireUuidParam('id'),
+  requireAdmin,
+  excelExportLimiter,
+  asyncHandler(async (req: Request, res: Response) => {
+    const items = await listZeroSalesBatchItems(req.params.id as string, {});
+    if (!items.length) {
+      res.status(404).json({ error: '此批次沒有資料' });
+      return;
+    }
+    const buffer = await buildZeroSalesExportBuffer(items.map((i) => ({
+      site_code: i.site_code,
+      sku: i.sku,
+      payload: i.payload,
+      status: i.status,
+      reason_code: i.reason_code,
+      reason_label: i.reason_label,
+      reason_note: i.reason_note,
+      replied_at: i.replied_at,
+      replied_by: i.replied_by,
+      batch_label: i.week_label ?? '',
+      reply_count: i.reply_count ?? (i.status === 'replied' ? 1 : 0),
+    })));
+    const label = (items[0]?.week_label ?? 'batch').replace(/[^\w\-]+/g, '_');
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition', `attachment; filename="Zero_Sales_${label}.xlsx"`);
+    res.send(buffer);
+  }),
+);
+
+/** GET /api/admin/zero-sales/reasons — 原因選項 */
+adminRouter.get(
+  '/zero-sales/reasons',
+  requireAdmin,
+  adminActionLimiter,
+  asyncHandler(async (_req: Request, res: Response) => {
+    res.json({ reasons: await listZeroSalesReasons(false) });
+  }),
+);
+
+const zeroSalesReasonSchema = z.object({
+  code: z.string().trim().min(1).max(100),
+  label: z.string().trim().min(1).max(300),
+  sort_order: z.number().int().optional(),
+  active: z.boolean().optional(),
+  require_note: z.boolean().optional(),
+});
+
+/** PUT /api/admin/zero-sales/reasons — 新增/更新原因 */
+adminRouter.put(
+  '/zero-sales/reasons',
+  requireAdmin,
+  adminActionLimiter,
+  asyncHandler(async (req: Request, res: Response) => {
+    const parsed = zeroSalesReasonSchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ error: parsed.error.issues[0]?.message ?? '原因設定無效' });
+      return;
+    }
+    await query(
+      `INSERT INTO zero_sales_reasons (code, label, sort_order, active, require_note, updated_by, updated_at)
+       VALUES ($1, $2, $3, $4, $5, $6, now())
+       ON CONFLICT (code) DO UPDATE SET label = EXCLUDED.label, sort_order = EXCLUDED.sort_order,
+         active = EXCLUDED.active, require_note = EXCLUDED.require_note,
+         updated_by = EXCLUDED.updated_by, updated_at = now()`,
+      [parsed.data.code, parsed.data.label, parsed.data.sort_order ?? 0, parsed.data.active ?? true, parsed.data.require_note ?? false, req.adminUsername],
+    );
+    await writeAuditEvent({ eventType: 'zero_sales_reason_updated', actorRole: 'admin', actor: req.adminUsername, ip: getClientIp(req), metadata: { code: parsed.data.code } });
+    res.json({ ok: true });
   }),
 );

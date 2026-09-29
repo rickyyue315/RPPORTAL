@@ -61,6 +61,12 @@ import { fingerprintPayload, getIdempotencyKey, hasInvalidIdempotencyKey } from 
 import { getUploadedFile, validateUploadedXlsx } from '../lib/upload.js';
 import { createImportBatch, findPortalImportBatchByIdempotencyKey, getPortalImportBatchRecord, importBatchResponse, lockImportIdempotencyKey, type ImportBatchRow } from '../services/importBatches.js';
 import { query, withTransaction } from '../db/pool.js';
+import {
+  listMyItems as listMyZeroSalesItems,
+  listReasons as listZeroSalesReasons,
+  replyItem as replyZeroSalesItem,
+  ZeroSalesReplyError,
+} from '../services/zeroSales.js';
 
 export const portalRouter = Router();
 
@@ -870,6 +876,82 @@ portalRouter.post(
       }
       if (err instanceof SubmissionNotFoundError) {
         res.status(404).json({ error: '找不到申報' });
+        return;
+      }
+      throw err;
+    }
+  }),
+);
+
+// ---------------------------------------------------------------------------
+// 90日零銷售 SKU 店舖回覆
+// ---------------------------------------------------------------------------
+
+/** GET /api/portal/zero-sales/reasons — 啟用中的回覆原因 */
+portalRouter.get(
+  '/zero-sales/reasons',
+  requirePortalUser,
+  requireStoreSite,
+  adminActionLimiter,
+  asyncHandler(async (_req: Request, res: Response) => {
+    res.json({ reasons: await listZeroSalesReasons(true) });
+  }),
+);
+
+/** GET /api/portal/zero-sales/my — 本店被指派的 SKU (可按 status / batch_id 篩選) */
+portalRouter.get(
+  '/zero-sales/my',
+  requirePortalUser,
+  requireStoreSite,
+  adminActionLimiter,
+  asyncHandler(async (req: Request, res: Response) => {
+    const { status, batch_id } = req.query as Record<string, string | undefined>;
+    const items = await listMyZeroSalesItems(req.storeSiteCode!, {
+      status: status === 'pending' || status === 'replied' ? status : undefined,
+      batchId: batch_id?.trim() || undefined,
+    });
+    res.json({ site_code: req.storeSiteCode, items });
+  }),
+);
+
+const zeroSalesReplySchema = z.object({
+  reason_code: z.string().trim().min(1, '請選擇回覆原因'),
+  reason_note: z.string().max(2000).optional().default(''),
+});
+
+/** PUT /api/portal/zero-sales/items/:id/reply — 店舖回覆指定 SKU */
+portalRouter.put(
+  '/zero-sales/items/:id/reply',
+  requireUuidParam('id'),
+  requirePortalUser,
+  requireStoreSite,
+  adminActionLimiter,
+  asyncHandler(async (req: Request, res: Response) => {
+    const parsed = zeroSalesReplySchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ error: parsed.error.issues[0]?.message ?? '回覆資料無效' });
+      return;
+    }
+    try {
+      const item = await replyZeroSalesItem({
+        itemId: req.params.id as string,
+        siteCode: req.storeSiteCode!,
+        reasonCode: parsed.data.reason_code,
+        reasonNote: parsed.data.reason_note ?? '',
+        repliedBy: req.portalUser!.username,
+        repliedByUserId: req.portalUser!.id,
+      });
+      await writeAuditEvent({
+        eventType: 'zero_sales_replied',
+        actorRole: 'store',
+        actor: req.portalUser!.username,
+        ip: getClientIp(req),
+        metadata: { item_id: item.id, batch_id: item.batch_id, site_code: item.site_code, sku: item.sku, reason_code: item.reason_code },
+      });
+      res.json({ ok: true, item });
+    } catch (err) {
+      if (err instanceof ZeroSalesReplyError) {
+        res.status(400).json({ error: err.message });
         return;
       }
       throw err;

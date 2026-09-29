@@ -105,7 +105,11 @@
         showAlert(overlay.querySelector('#site_gate_error'), '', '');
         try {
           const me = await silentLogin(input.value.trim());
-          if (me.user.role !== 'store' || !me.user.site_code) throw new Error('此帳戶不是店舖帳戶');
+          if ((me.user.role === 'buyer' || me.user.role === 'sct')) {
+            window.location.href = '/portal/reviewer.html';
+            return;
+          }
+          if (me.user.role !== 'store' || !me.user.site_code) throw new Error('帳戶無效');
           rememberSite(me.user.site_code);
           overlay.remove();
           resolve(me.user.site_code);
@@ -133,7 +137,13 @@
         rememberSite(me.user.site_code);
         return me.user.site_code;
       }
-    } catch {}
+      if (me.user.role === 'buyer' || me.user.role === 'sct') {
+        window.location.href = '/portal/reviewer.html';
+        throw new Error('role');
+      }
+    } catch (err) {
+      if (err && err.message === 'role') throw err;
+    }
     for (const name of [presetUsername(), storedSite()]) {
       if (!name) continue;
       try {
@@ -142,7 +152,13 @@
           rememberSite(me.user.site_code);
           return me.user.site_code;
         }
-      } catch {}
+        if (me.user.role === 'buyer' || me.user.role === 'sct') {
+          window.location.href = '/portal/reviewer.html';
+          throw new Error('role');
+        }
+      } catch (err) {
+        if (err && err.message === 'role') throw err;
+      }
     }
     try {
       localStorage.removeItem(SITE_KEY);

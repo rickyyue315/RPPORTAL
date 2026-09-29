@@ -1,6 +1,6 @@
 import { randomBytes } from 'node:crypto';
 import { query, withTransaction } from '../db/pool.js';
-import { generateInitialPassword, hashPassword, normalizePortalUsername, setUserPassword } from './portalAuth.js';
+import { normalizePortalUsername } from './portalAuth.js';
 
 export interface StoreAccountSyncResult {
   created: Array<{ site_code: string; username: string }>;
@@ -85,26 +85,21 @@ export async function syncStorePortalAccounts(adminUsername: string): Promise<St
   });
 }
 
+/** Creates a passwordless Buyer or SCT account (username only). */
 export async function createBuyerOrSctAccount(input: {
   username: string;
   displayName: string;
   role: 'buyer' | 'sct';
   adminUsername: string;
-}): Promise<{ username: string; initial_password: string }> {
+}): Promise<{ username: string }> {
   const username = normalizePortalUsername(input.username);
-  const password = generateInitialPassword();
-  const passwordHash = await hashPassword(password);
+  // Deliberately unusable hash (verifyPassword only accepts `scrypt$...`
+  // format) so no password can ever match. Login uses the username only.
+  const unusableHash = `unusable$${randomBytes(16).toString('hex')}`;
   await query(
     `INSERT INTO portal_users (username, display_name, role, password_hash, initial_password, must_change_password, active, created_by)
-     VALUES ($1, $2, $3, $4, $5, true, true, $6)`,
-    [username, input.displayName || username, input.role, passwordHash, password, input.adminUsername],
+     VALUES ($1, $2, $3, $4, NULL, false, true, $5)`,
+    [username, input.displayName || username, input.role, unusableHash, input.adminUsername],
   );
-  return { username, initial_password: password };
-}
-
-export async function resetPortalUserPassword(userId: string): Promise<string> {
-  const password = generateInitialPassword();
-  // Store the plaintext so admins can view it again later without resetting.
-  await setUserPassword(userId, password, true, password);
-  return password;
+  return { username };
 }

@@ -333,7 +333,7 @@
         <div class="card mt-3">
           <div class="card-header"><h3 class="card-title">Portal 帳戶管理（一般 NDRF）</h3></div>
           <div class="card-body">
-            <p class="text-secondary small">Store 帳戶免密碼（只需 Site Code 登入），由門店主檔同步建立；Buyer／SCT 帳戶在此建立，新帳戶使用初始密碼，首次登入須更改密碼。管理員可隨時在列表查看 Buyer／SCT 的初始密碼；持有人自行更改後會顯示「已更改／需重設」。只有管理員可為 Buyer／SCT 帳戶重設密碼、刪除帳戶或批量啟用／停用／刪除（先勾選再按鈕，表頭可全選）。尚有 SKU 分派的 Buyer 或有待審批的 SCT 不可停用或刪除。</p>
+            <p class="text-secondary small">Portal 帳戶（Store／Buyer／SCT）全部免密碼，只需使用者名稱登入。Store 帳戶由門店主檔同步建立；Buyer／SCT 帳戶在此建立。管理員可啟用／停用／刪除帳戶或批量操作（先勾選再按鈕，表頭可全選）。尚有 SKU 分派的 Buyer 或有待審批的 SCT 不可停用或刪除。</p>
             <div class="d-flex gap-2 mb-3 flex-wrap">
               <div class="flex-grow-1" style="min-width:200px">
                 <label class="form-label">使用者名稱（Buyer／SCT）</label>
@@ -362,7 +362,7 @@
               <button class="btn btn-sm btn-outline-danger" id="btn_pu_bulk_delete">批量刪除</button>
             </div>
             <div class="table-responsive">
-              <table class="table table-vcenter"><thead><tr><th><input type="checkbox" id="pu_select_all" title="全選"></th><th>使用者名稱</th><th>顯示名稱</th><th>角色</th><th>Site Code</th><th>狀態</th><th>需改密碼</th><th>初始密碼</th><th>操作</th></tr></thead><tbody id="portal_users_body"><tr><td colspan="9" class="text-center text-secondary">載入中…</td></tr></tbody></table>
+              <table class="table table-vcenter"><thead><tr><th><input type="checkbox" id="pu_select_all" title="全選"></th><th>使用者名稱</th><th>顯示名稱</th><th>角色</th><th>Site Code</th><th>狀態</th><th>操作</th></tr></thead><tbody id="portal_users_body"><tr><td colspan="7" class="text-center text-secondary">載入中…</td></tr></tbody></table>
             </div>
           </div>
         </div>

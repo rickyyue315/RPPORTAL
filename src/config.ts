@@ -83,13 +83,6 @@ export const config = {
   // new Store web submit/import; Admin management, review, export and override
   // remain available regardless of this flag.
   normalNdrfPortalEnabled: bool('NORMAL_NDRF_PORTAL_ENABLED', true),
-  // Store accounts are always passwordless (Site Code only) and never gated
-  // by forced password change. This emergency switch only affects Buyer / SCT:
-  // when true, Buyer / SCT login accepts a username with no password and the
-  // forced-password-change gate is skipped. Password hashes are kept and
-  // enforcement returns as soon as the flag is flipped back to false. The
-  // admin backend is NEVER affected and always requires a password.
-  portalAuthBypass: bool('PORTAL_AUTH_BYPASS', false),
   // Company rule: Buyer must review an ND within N days; no reply => system
   // auto-approves (default agreement) and flags the row for Admin follow-up.
   ndrfAutoApproveEnabled: bool('NDRF_AUTO_APPROVE_ENABLED', true),

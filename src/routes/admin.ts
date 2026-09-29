@@ -42,7 +42,6 @@ import {
 } from '../services/ndrfWorkflow.js';
 import {
   createBuyerOrSctAccount,
-  resetPortalUserPassword,
   syncStorePortalAccounts,
 } from '../services/storeAccounts.js';
 import {
@@ -1640,7 +1639,7 @@ const portalUserCreateSchema = z.object({
   role: z.enum(['buyer', 'sct']),
 });
 
-/** POST /api/admin/portal/users — create a Buyer or SCT account (initial password, viewable by admins). */
+/** POST /api/admin/portal/users — create a passwordless Buyer or SCT account. */
 adminRouter.post(
   '/portal/users',
   requireAdmin,
@@ -1886,38 +1885,6 @@ adminRouter.post(
       failed: results.length - succeeded,
       results,
     });
-  }),
-);
-
-/** POST /api/admin/portal/users/:id/reset-password — admin resets a specific account to a new initial password (viewable afterwards). */
-adminRouter.post(
-  '/portal/users/:id/reset-password',
-  requireUuidParam('id'),
-  requireAdmin,
-  adminActionLimiter,
-  asyncHandler(async (req: Request, res: Response) => {
-    const existing = await query<{ id: string; username: string; role: string }>(
-      'SELECT id, username, role FROM portal_users WHERE id = $1',
-      [req.params.id as string],
-    );
-    const user = existing.rows[0];
-    if (!user) {
-      res.status(404).json({ error: '找不到帳戶' });
-      return;
-    }
-    if (user.role === 'store') {
-      res.status(400).json({ error: '店舖帳戶免密碼，無需重設密碼' });
-      return;
-    }
-    const password = await resetPortalUserPassword(user.id);
-    await writeAuditEvent({
-      eventType: 'portal_password_reset',
-      actorRole: 'admin',
-      actor: req.adminUsername,
-      ip: getClientIp(req),
-      metadata: { username: user.username },
-    });
-    res.json({ ok: true, username: user.username, initial_password: password });
   }),
 );
 

@@ -32,26 +32,10 @@ export async function requirePortalUser(req: Request, res: Response, next: NextF
   }
 }
 
-/** Blocks everything except change-password / logout until the initial password is changed. Store accounts are passwordless and never blocked. */
+/** The portal is passwordless, so there is no forced password-change gate. Kept in the auth chain as a pass-through. */
 export function requirePasswordChanged(req: Request, res: Response, next: NextFunction): void {
-  const user = req.portalUser;
-  if (!user) {
+  if (!req.portalUser) {
     res.status(401).json({ error: '未登入' });
-    return;
-  }
-  if (user.role === 'store') {
-    next();
-    return;
-  }
-  // Bypass mode: portal is temporarily usable without passwords, so the
-  // forced-change gate is skipped (passwords are still stored and enforced
-  // again once the flag is off).
-  if (config.portalAuthBypass) {
-    next();
-    return;
-  }
-  if (user.must_change_password) {
-    res.status(403).json({ error: '首次登入必須先更改密碼', code: 'MUST_CHANGE_PASSWORD' });
     return;
   }
   next();

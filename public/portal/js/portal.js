@@ -29,10 +29,6 @@
     } catch {
       data = null;
     }
-    if (data && data.code === 'MUST_CHANGE_PASSWORD') {
-      window.location.href = '/portal/change-password.html';
-      throw new Error('請先更改密碼');
-    }
     if (!res.ok) {
       if (res.status === 401) {
         window.location.href = '/portal/';

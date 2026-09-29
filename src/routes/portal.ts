@@ -19,11 +19,9 @@ import {
 import { config } from '../config.js';
 import { getStore } from '../services/stores.js';
 import {
-  changePortalPassword,
   createPortalSession,
   destroyPortalSession,
   normalizePortalUsername,
-  portalLogin,
   type PortalUserRow,
 } from '../services/portalAuth.js';
 import {
@@ -105,12 +103,8 @@ const businessFieldSchema = z.object({
 
 const loginSchema = z.object({
   username: z.string().trim().min(1),
-  password: z.string().min(1),
-});
-
-// Bypass mode: username only, password is accepted but ignored.
-const bypassLoginSchema = z.object({
-  username: z.string().trim().min(1),
+  // Passwords are retired: the field is accepted but ignored so old clients
+  // that still send it keep working.
   password: z.string().optional().default(''),
 });
 
@@ -175,111 +169,29 @@ portalRouter.post(
   '/auth/login',
   adminActionLimiter,
   asyncHandler(async (req: Request, res: Response) => {
-    // Store accounts are passwordless: Site Code only, no password needed.
-    // Buyer / SCT keep password login. The global PORTAL_AUTH_BYPASS switch
-    // remains as an emergency open-access mode for Buyer / SCT.
-    const rawUsername = typeof req.body?.username === 'string' ? req.body.username : '';
-    const normalized = normalizePortalUsername(rawUsername);
+    // The portal (Store / Buyer / SCT) is passwordless: username only.
+    // The account must still exist and be active; the admin backend is
+    // unaffected and always requires a password.
+    const parsed = loginSchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ error: '請輸入使用者名稱' });
+      return;
+    }
+    const normalized = normalizePortalUsername(parsed.data.username);
     if (!normalized) {
       res.status(400).json({ error: '請輸入使用者名稱' });
       return;
     }
     const found = await query<PortalUserRow>('SELECT * FROM portal_users WHERE username = $1', [normalized]);
-    const existing = found.rows[0];
-    if (existing && existing.role === 'store') {
-      if (!existing.active) {
-        // Same message as a wrong password so the response does not reveal
-        // whether the username exists or is deactivated.
-        res.status(401).json({ error: '使用者名稱或密碼不正確' });
-        return;
-      }
-      const session = await createPortalSession(existing.id);
-      res.cookie(PORTAL_SESSION_COOKIE, session.token, {
-        httpOnly: true,
-        secure: config.env === 'production',
-        sameSite: 'lax',
-        path: '/',
-        maxAge: config.sessionTtlHours * 3600 * 1000,
-      });
-      await writeAuditEvent({
-        eventType: 'portal_login',
-        actorRole: existing.role,
-        actor: existing.username,
-        ip: getClientIp(req),
-        metadata: { role: existing.role, site_code: existing.site_code ?? null, store_passwordless: true },
-      });
-      res.json({
-        ok: true,
-        user: {
-          username: existing.username,
-          display_name: existing.display_name,
-          role: existing.role,
-          site_code: existing.site_code,
-          must_change_password: false,
-        },
-      });
+    const user = found.rows[0];
+    if (!user || !user.active) {
+      // Same message either way so the response does not reveal whether
+      // the username exists or is deactivated.
+      res.status(401).json({ error: '使用者名稱不正確或帳戶已停用' });
       return;
     }
-    // Temporary open-access mode (PORTAL_AUTH_BYPASS) for Buyer / SCT: trust
-    // the declared username with no password. The account must still exist
-    // and be active; the admin backend is unaffected.
-    if (config.portalAuthBypass) {
-      const parsed = bypassLoginSchema.safeParse(req.body);
-      if (!parsed.success) {
-        res.status(400).json({ error: '請輸入使用者名稱' });
-        return;
-      }
-      const bypassName = normalizePortalUsername(parsed.data.username);
-      if (!bypassName) {
-        res.status(400).json({ error: '請輸入使用者名稱' });
-        return;
-      }
-      const result = await query<PortalUserRow>('SELECT * FROM portal_users WHERE username = $1', [bypassName]);
-      const user = result.rows[0];
-      if (!user || !user.active) {
-        // Same message either way so the response does not reveal whether
-        // the username exists or is deactivated.
-        res.status(401).json({ error: '使用者名稱或密碼不正確' });
-        return;
-      }
-      const session = await createPortalSession(user.id);
-      res.cookie(PORTAL_SESSION_COOKIE, session.token, {
-        httpOnly: true,
-        secure: config.env === 'production',
-        sameSite: 'lax',
-        path: '/',
-        maxAge: config.sessionTtlHours * 3600 * 1000,
-      });
-      await writeAuditEvent({
-        eventType: 'portal_login',
-        actorRole: user.role,
-        actor: user.username,
-        ip: getClientIp(req),
-        metadata: { role: user.role, site_code: user.site_code ?? null, bypass: true },
-      });
-      res.json({
-        ok: true,
-        user: {
-          username: user.username,
-          display_name: user.display_name,
-          role: user.role,
-          site_code: user.site_code,
-          must_change_password: user.must_change_password,
-        },
-      });
-      return;
-    }
-    const parsed = loginSchema.safeParse(req.body);
-    if (!parsed.success) {
-      res.status(400).json({ error: '請輸入使用者名稱及密碼' });
-      return;
-    }
-    const result = await portalLogin(parsed.data.username, parsed.data.password, getClientIp(req));
-    if (!result.ok || !result.token || !result.user) {
-      res.status(401).json({ error: result.reason ?? '登入失敗' });
-      return;
-    }
-    res.cookie(PORTAL_SESSION_COOKIE, result.token, {
+    const session = await createPortalSession(user.id);
+    res.cookie(PORTAL_SESSION_COOKIE, session.token, {
       httpOnly: true,
       secure: config.env === 'production',
       sameSite: 'lax',
@@ -288,19 +200,19 @@ portalRouter.post(
     });
     await writeAuditEvent({
       eventType: 'portal_login',
-      actorRole: result.user.role,
-      actor: result.user.username,
+      actorRole: user.role,
+      actor: user.username,
       ip: getClientIp(req),
-      metadata: { role: result.user.role, site_code: result.user.site_code ?? null },
+      metadata: { role: user.role, site_code: user.site_code ?? null, passwordless: true },
     });
     res.json({
       ok: true,
       user: {
-        username: result.user.username,
-        display_name: result.user.display_name,
-        role: result.user.role,
-        site_code: result.user.site_code,
-        must_change_password: result.user.must_change_password,
+        username: user.username,
+        display_name: user.display_name,
+        role: user.role,
+        site_code: user.site_code,
+        must_change_password: false,
       },
     });
   }),
@@ -338,49 +250,10 @@ portalRouter.get(
         display_name: user.display_name,
         role: user.role,
         site_code: user.site_code,
-        must_change_password: user.must_change_password,
+        must_change_password: false,
       },
     });
   },
-);
-
-const changePasswordSchema = z.object({
-  current_password: z.string().min(1),
-  new_password: z.string().min(8).max(128),
-});
-
-portalRouter.post(
-  '/auth/change-password',
-  requirePortalUser,
-  adminActionLimiter,
-  asyncHandler(async (req: Request, res: Response) => {
-    if (req.portalUser!.role === 'store') {
-      res.status(400).json({ error: '店舖帳戶免密碼，無需更改密碼' });
-      return;
-    }
-    const parsed = changePasswordSchema.safeParse(req.body);
-    if (!parsed.success) {
-      res.status(400).json({ error: parsed.error.issues[0]?.message ?? '密碼格式無效' });
-      return;
-    }
-    const result = await changePortalPassword(
-      req.portalUser!.id,
-      parsed.data.current_password,
-      parsed.data.new_password,
-      getClientIp(req),
-    );
-    if (!result.ok) {
-      res.status(400).json({ error: result.reason ?? '更改密碼失敗' });
-      return;
-    }
-    await writeAuditEvent({
-      eventType: 'portal_password_changed',
-      actorRole: req.portalUser!.role,
-      actor: req.portalUser!.username,
-      ip: getClientIp(req),
-    });
-    res.json({ ok: true });
-  }),
 );
 
 // ---------------------------------------------------------------------------

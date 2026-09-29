@@ -31,9 +31,6 @@ services:
       TRUST_PROXY: "true"
       PUBLIC_WRITE_SUSPENSION_ENABLED: "true"
       PUBLIC_WRITE_SUSPENSION_AT: "2026-08-11T23:59:59+08:00"
-      # 前台 Portal 暫時免密碼（店舖／Buyer／SCT 只需使用者名稱）；還原時改回 "false"。
-      # 後台 Admin 不受影響，仍須密碼。
-      PORTAL_AUTH_BYPASS: "true"
     ports:
       - "3000:3000"
 

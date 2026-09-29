@@ -994,48 +994,26 @@
       const data = await adminFetch('/api/admin/portal/users');
       const tbody = $('portal_users_body');
       if (!tbody) return;
-      tbody.innerHTML = data.users.map((u) => {
-        const isStore = u.role === 'store';
-        const initialCell = isStore
-          ? '<span class="text-secondary">店舖免密碼</span>'
-          : (u.initial_password ? `<code>${escapeHtml(u.initial_password)}</code> <button class="btn ghost btn-sm btn-pu-copy" data-pw="${escapeHtml(u.initial_password)}">複製</button>` : '<span class="text-secondary">已更改／需重設</span>');
-        return `<tr>
+      tbody.innerHTML = data.users.map((u) => `<tr>
         <td><input type="checkbox" class="pu-select" data-id="${u.id}" aria-label="選擇 ${escapeHtml(u.username)}"></td>
         <td>${escapeHtml(u.username)}</td>
         <td>${escapeHtml(u.display_name || '—')}</td>
         <td>${escapeHtml(u.role)}</td>
         <td>${escapeHtml(u.site_code || '—')}</td>
         <td>${u.active ? '<span class="status-badge received">啟用</span>' : '<span class="status-badge locked">停用</span>'}</td>
-        <td>${u.must_change_password ? '是' : '否'}</td>
-        <td>${initialCell}</td>
         <td>
           <button class="btn ghost btn-pu-toggle" data-id="${u.id}" data-active="${u.active}">${u.active ? '停用' : '啟用'}</button>
-          ${isStore ? '' : `<button class="btn ghost btn-pu-reset" data-id="${u.id}">重設密碼</button>`}
           <button class="btn ghost btn-pu-del" data-id="${u.id}" data-username="${escapeHtml(u.username)}">刪除</button>
         </td>
-      </tr>`;
-      }).join('');
+      </tr>`).join('');
       tbody.querySelectorAll('.btn-pu-toggle').forEach((btn) => {
         btn.addEventListener('click', () => togglePortalUser(btn.dataset.id, btn.dataset.active === 'true'));
-      });
-      tbody.querySelectorAll('.btn-pu-reset').forEach((btn) => {
-        btn.addEventListener('click', () => resetPortalUser(btn.dataset.id));
       });
       tbody.querySelectorAll('.btn-pu-del').forEach((btn) => {
         btn.addEventListener('click', () => deletePortalUser(btn.dataset.id, btn.dataset.username));
       });
-      tbody.querySelectorAll('.btn-pu-copy').forEach((btn) => {
-        btn.addEventListener('click', async () => {
-          try {
-            await navigator.clipboard.writeText(btn.dataset.pw || '');
-            showAlert($('portal_users_result'), 'success', '密碼已複製。');
-          } catch (err) {
-            window.prompt('複製密碼：', btn.dataset.pw || '');
-          }
-        });
-      });
     } catch (err) {
-      if ($('portal_users_body')) $('portal_users_body').innerHTML = `<tr><td colspan="9" class="text-center text-secondary">載入失敗：${escapeHtml(err.message)}</td></tr>`;
+      if ($('portal_users_body')) $('portal_users_body').innerHTML = `<tr><td colspan="7" class="text-center text-secondary">載入失敗：${escapeHtml(err.message)}</td></tr>`;
     }
   }
 
@@ -1043,17 +1021,6 @@
     try {
       await adminFetch(`/api/admin/portal/users/${id}`, { method: 'PUT', body: JSON.stringify({ active: !currentlyActive }) });
       showAlert($('portal_users_result'), 'success', '帳戶狀態已更新。');
-      loadPortalUsers();
-    } catch (err) {
-      showAlert($('portal_users_result'), 'error', escapeHtml(err.message));
-    }
-  }
-
-  async function resetPortalUser(id) {
-    if (!window.confirm('確定要為此帳戶重設密碼嗎？重設後舊密碼即時失效。')) return;
-    try {
-      const data = await adminFetch(`/api/admin/portal/users/${id}/reset-password`, { method: 'POST', body: JSON.stringify({}) });
-      showAlert($('portal_users_result'), 'success', `「${escapeHtml(data.username)}」的密碼已重設為 <code>${escapeHtml(data.initial_password)}</code>，管理員可隨時在列表查看。請交予帳戶持有人。`);
       loadPortalUsers();
     } catch (err) {
       showAlert($('portal_users_result'), 'error', escapeHtml(err.message));
@@ -1115,7 +1082,7 @@
     }
     try {
       const data = await adminFetch('/api/admin/portal/users', { method: 'POST', body: JSON.stringify({ username, display_name: displayName, role }) });
-      showAlert($('portal_users_result'), 'success', `帳戶「${escapeHtml(data.username)}」已建立，初始密碼為 <code>${escapeHtml(data.initial_password)}</code>，管理員可隨時在列表查看。`);
+      showAlert($('portal_users_result'), 'success', `帳戶「${escapeHtml(data.username)}」已建立（免密碼，直接用使用者名稱登入）。`);
       $('pu_username').value = '';
       $('pu_display').value = '';
       loadPortalUsers();

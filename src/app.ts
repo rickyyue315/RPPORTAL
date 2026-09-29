@@ -108,6 +108,11 @@ export function createApp() {
         if (filePath.endsWith('.html')) {
           res.setHeader('Cache-Control', 'no-store');
         }
+        // Admin bundles change with backend APIs; a stale cached copy
+        // misaligns the user table and deadens new buttons, so never cache.
+        if (filePath.endsWith('/js/admin.js') || filePath.endsWith('/js/admin-zero-sales.js')) {
+          res.setHeader('Cache-Control', 'no-store');
+        }
       },
     }),
   );

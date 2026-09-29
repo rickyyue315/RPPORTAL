@@ -433,7 +433,8 @@
           <div class="card-body collapse show" id="zs-collapse">
             <p class="text-secondary small">上載 Excel（欄位：Site Code、Shop Name、OM、Shop Nature、店內庫存排名、Buyer、Brand、SKU、SKU Desc、Adj. MCH1、MAKE UP 分類、RP Type、Safety Stock (現時)、Item Status、Supply Source、Shop Stock Qty (LM/CM)、Sold Qty (P90D/M-2/M-1/CM-MTD)、Shop On Order PO Qty (CM)、店舖回覆）。每間店SKU可不同，店舖登入後逐條回覆原因，每SKU可修改一次。</p>
             <div class="d-flex gap-2 mb-3 flex-wrap">
-              <div><label class="form-label">週次 (例如 2026-W40)</label><input type="text" id="zs_week" class="form-control" placeholder="2026-W40"></div>
+              <div><label class="form-label">日期（自動計週，星期一開始）</label><input type="date" id="zs_week_date" class="form-control"></div>
+              <div><label class="form-label">週次 (例如 2026-W40)</label><input type="text" id="zs_week" class="form-control" placeholder="2026-W40"><div class="hint" id="zs_week_hint">選擇日期後自動填入 ISO 週次，可再手改</div></div>
               <div class="flex-grow-1" style="min-width:200px"><label class="form-label">備註</label><input type="text" id="zs_note" class="form-control"></div>
               <div><label class="form-label">Excel (.xlsx)</label><input type="file" id="zs_file" accept=".xlsx" class="form-control"></div>
               <div class="align-self-end d-flex gap-2">

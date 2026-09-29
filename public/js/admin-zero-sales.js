@@ -44,6 +44,72 @@
     if (el) el.textContent = v;
   }
 
+  /* ISO 8601 週次（星期一開始，適用 2026/2027/2028 及任何年份） */
+  function parseDateInput(str) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(str || '')) return null;
+    const d = new Date(`${str}T12:00:00`);
+    return Number.isNaN(d.getTime()) ? null : d;
+  }
+  function fmtDate(d) {
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${y}-${m}-${day}`;
+  }
+  function isoWeekOfDate(d) {
+    const day = (d.getDay() + 6) % 7; // Mon=0..Sun=6
+    const thursday = new Date(d.getFullYear(), d.getMonth(), d.getDate() - day + 3, 12);
+    const isoYear = thursday.getFullYear();
+    const jan4 = new Date(isoYear, 0, 4, 12);
+    const jan4day = (jan4.getDay() + 6) % 7;
+    const week1Mon = new Date(isoYear, 0, 4 - jan4day, 12);
+    const week = Math.round((thursday.getTime() - week1Mon.getTime()) / (7 * 86400000)) + 1;
+    const monday = new Date(week1Mon.getTime() + (week - 1) * 7 * 86400000);
+    const sunday = new Date(monday.getTime() + 6 * 86400000);
+    return { isoYear, week, label: `${isoYear}-W${String(week).padStart(2, '0')}`, monday, sunday };
+  }
+  function mondayOfIsoWeek(isoYear, week) {
+    const jan4 = new Date(isoYear, 0, 4, 12);
+    const jan4day = (jan4.getDay() + 6) % 7;
+    return new Date(isoYear, 0, 4 - jan4day + (week - 1) * 7, 12);
+  }
+  function setWeekHint(html) {
+    const hint = $('zs_week_hint');
+    if (hint) hint.innerHTML = html;
+  }
+  function refreshWeekFromDate() {
+    const dateEl = $('zs_week_date');
+    const weekEl = $('zs_week');
+    if (!dateEl || !weekEl) return;
+    const d = parseDateInput(dateEl.value);
+    if (!d) {
+      setWeekHint('選擇日期後自動填入 ISO 週次，可再手改');
+      return;
+    }
+    const info = isoWeekOfDate(d);
+    weekEl.value = info.label;
+    setWeekHint(`${esc(info.label)} ｜ ${esc(fmtDate(info.monday))}（一）至 ${esc(fmtDate(info.sunday))}（日）`);
+  }
+  function refreshHintFromWeek() {
+    const weekEl = $('zs_week');
+    if (!weekEl) return;
+    const m = /^(\d{4})-W(\d{2})$/.exec((weekEl.value || '').trim());
+    if (!m) {
+      setWeekHint('格式例如 2026-W40（星期一開始的 ISO 週）');
+      return;
+    }
+    const isoYear = Number(m[1]);
+    const week = Number(m[2]);
+    if (week < 1 || week > 53) {
+      setWeekHint('週數應為 01 至 53');
+      return;
+    }
+    const monday = mondayOfIsoWeek(isoYear, week);
+    const sunday = new Date(monday.getTime() + 6 * 86400000);
+    // 驗證該週確實屬於該 ISO 年（例如 2026 沒有 W01 以外的邊界問題由 Date 自動處理，仍顯示實際範圍）
+    setWeekHint(`${esc(weekEl.value.trim())} ｜ ${esc(fmtDate(monday))}（一）至 ${esc(fmtDate(sunday))}（日）`);
+  }
+
   async function loadBatches() {
     const body = $('zs_batches_body');
     if (!body) return;
@@ -124,8 +190,12 @@
   async function upload() {
     const res = $('zs_upload_result');
     const file = $('zs_file').files[0];
-    const week = ($('zs_week').value || '').trim();
-    if (!week) { res.innerHTML = '<div class="alert alert-danger">請填寫週次</div>'; return; }
+    let week = ($('zs_week').value || '').trim();
+    if (!week && $('zs_week_date')?.value) {
+      refreshWeekFromDate();
+      week = ($('zs_week').value || '').trim();
+    }
+    if (!week) { res.innerHTML = '<div class="alert alert-danger">請選擇日期或填寫週次（例如 2026-W40）</div>'; return; }
     if (!file) { res.innerHTML = '<div class="alert alert-danger">請選擇 .xlsx</div>'; return; }
     const fd = new FormData();
     fd.append('file', file);
@@ -252,6 +322,19 @@
   function init() {
     if (!$('zs_batches_body')) return;
     $('btn_zs_upload').addEventListener('click', upload);
+    // 日期選擇自動計 ISO 週次（星期一開始）
+    const dateEl = $('zs_week_date');
+    const weekEl = $('zs_week');
+    if (dateEl) dateEl.addEventListener('change', refreshWeekFromDate);
+    if (weekEl) weekEl.addEventListener('input', refreshHintFromWeek);
+    // 預設帶今日日期並自動填週次（例如 2026/09/29 = 2026-W40）
+    try {
+      const now = new Date();
+      const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+      if (dateEl && !dateEl.value) dateEl.value = today;
+      if (weekEl && !weekEl.value.trim()) refreshWeekFromDate();
+      else refreshHintFromWeek();
+    } catch {}
     $('btn_zs_view').addEventListener('click', loadItems);
     const reasonBtn = $('btn_zs_reason_save');
     if (reasonBtn) reasonBtn.addEventListener('click', saveReason);

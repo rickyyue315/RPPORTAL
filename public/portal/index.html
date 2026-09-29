@@ -33,6 +33,14 @@
         .then((data) => redirectFor(data.user))
         .catch(() => {});
 
+      // Allow pre-filling the username from the link, e.g. /portal/?user=HA02
+      try {
+        const preset = new URLSearchParams(window.location.search).get('user');
+        if (preset && preset.trim()) {
+          document.getElementById('username').value = preset.trim();
+        }
+      } catch {}
+
       document.getElementById('login_form').addEventListener('submit', async (e) => {
         e.preventDefault();
         const btn = e.target.querySelector('button');

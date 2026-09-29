@@ -40,20 +40,21 @@ a:hover {
 .topbar {
   background: var(--brand);
   color: #fff;
-  padding: 14px 24px;
+  padding: 14px 24px 0;
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
+  flex-direction: column;
+  gap: 10px;
 }
 .topbar h1 {
   margin: 0;
   font-size: 20px;
   font-weight: 600;
+  white-space: nowrap;
 }
 .topbar .subtitle {
   font-size: 13px;
   opacity: 0.85;
+  white-space: nowrap;
 }
 .topbar .portal-note {
   margin-top: 6px;
@@ -64,6 +65,22 @@ a:hover {
 .topbar nav {
   display: flex;
   gap: 6px;
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  padding-bottom: 12px;
+  scrollbar-width: thin;
+}
+.topbar nav a {
+  display: inline-block;
+  padding: 8px 16px;
+  border-radius: 999px;
+  color: rgba(255, 255, 255, 0.85);
+  margin-left: 0;
+  font-size: 14px;
+  font-weight: 500;
+  white-space: nowrap;
+  flex-shrink: 0;
+  transition: background 0.15s ease, color 0.15s ease;
 }
 .topbar nav a {
   display: inline-block;
@@ -121,8 +138,10 @@ a:hover {
 
 @media (max-width: 640px) {
   .topbar {
-    flex-wrap: wrap;
-    padding: 12px 16px;
+    padding: 12px 16px 0;
+  }
+  .topbar nav {
+    padding-bottom: 10px;
   }
   .topbar nav a {
     padding: 6px 12px;
@@ -806,6 +825,8 @@ input[readonly]#r_site {
   border-radius: 999px;
   padding: 8px 16px;
   font-size: 14px;
+  white-space: nowrap;
+  flex-shrink: 0;
 }
 .badge-paused {
   display: inline-block;

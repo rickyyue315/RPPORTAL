@@ -994,26 +994,40 @@
       const data = await adminFetch('/api/admin/portal/users');
       const tbody = $('portal_users_body');
       if (!tbody) return;
-      tbody.innerHTML = data.users.map((u) => `<tr>
+      tbody.innerHTML = data.users.map((u) => {
+      const loginUrl = `${window.location.origin}/portal/?user=${encodeURIComponent(u.username)}`;
+      return `<tr>
         <td><input type="checkbox" class="pu-select" data-id="${u.id}" aria-label="選擇 ${escapeHtml(u.username)}"></td>
         <td>${escapeHtml(u.username)}</td>
         <td>${escapeHtml(u.display_name || '—')}</td>
         <td>${escapeHtml(u.role)}</td>
         <td>${escapeHtml(u.site_code || '—')}</td>
         <td>${u.active ? '<span class="status-badge received">啟用</span>' : '<span class="status-badge locked">停用</span>'}</td>
+        <td><a href="${escapeHtml(loginUrl)}" target="_blank" rel="noopener">開啟</a> <button class="btn ghost btn-sm btn-pu-link-copy" data-url="${escapeHtml(loginUrl)}">複製</button></td>
         <td>
           <button class="btn ghost btn-pu-toggle" data-id="${u.id}" data-active="${u.active}">${u.active ? '停用' : '啟用'}</button>
           <button class="btn ghost btn-pu-del" data-id="${u.id}" data-username="${escapeHtml(u.username)}">刪除</button>
         </td>
-      </tr>`).join('');
+      </tr>`;
+      }).join('');
       tbody.querySelectorAll('.btn-pu-toggle').forEach((btn) => {
         btn.addEventListener('click', () => togglePortalUser(btn.dataset.id, btn.dataset.active === 'true'));
       });
       tbody.querySelectorAll('.btn-pu-del').forEach((btn) => {
         btn.addEventListener('click', () => deletePortalUser(btn.dataset.id, btn.dataset.username));
       });
+      tbody.querySelectorAll('.btn-pu-link-copy').forEach((btn) => {
+        btn.addEventListener('click', async () => {
+          try {
+            await navigator.clipboard.writeText(btn.dataset.url || '');
+            showAlert($('portal_users_result'), 'success', '登入連結已複製。');
+          } catch (err) {
+            window.prompt('複製登入連結：', btn.dataset.url || '');
+          }
+        });
+      });
     } catch (err) {
-      if ($('portal_users_body')) $('portal_users_body').innerHTML = `<tr><td colspan="7" class="text-center text-secondary">載入失敗：${escapeHtml(err.message)}</td></tr>`;
+      if ($('portal_users_body')) $('portal_users_body').innerHTML = `<tr><td colspan="8" class="text-center text-secondary">載入失敗：${escapeHtml(err.message)}</td></tr>`;
     }
   }
 
@@ -1088,6 +1102,33 @@
       loadPortalUsers();
     } catch (err) {
       showAlert($('portal_users_result'), 'error', escapeHtml(err.message));
+    }
+  });
+
+  $('btn_pu_export_links').addEventListener('click', async () => {
+    const btn = $('btn_pu_export_links');
+    btn.disabled = true;
+    try {
+      const data = await adminFetch('/api/admin/portal/users');
+      const cell = (v) => `"${String(v ?? '').replace(/"/g, '""')}"`;
+      const lines = ['使用者名稱,顯示名稱,角色,Site Code,狀態,登入連結'];
+      for (const u of data.users || []) {
+        const url = `${window.location.origin}/portal/?user=${encodeURIComponent(u.username)}`;
+        lines.push([u.username, u.display_name || '', u.role, u.site_code || '', u.active ? '啟用' : '停用', url].map(cell).join(','));
+      }
+      const blob = new Blob(['\ufeff' + lines.join('\r\n')], { type: 'text/csv;charset=utf-8' });
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = 'portal-login-links.csv';
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+      showAlert($('portal_users_result'), 'success', `已匯出 ${(data.users || []).length} 個帳戶的登入連結（CSV，可用 Excel 開啟）。`);
+    } catch (err) {
+      showAlert($('portal_users_result'), 'error', escapeHtml(err.message));
+    } finally {
+      btn.disabled = false;
     }
   });
 

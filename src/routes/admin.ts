@@ -106,6 +106,9 @@ import {
   listBatchItems as listZeroSalesBatchItems,
   listItemsForExport as listZeroSalesForExport,
   listReasons as listZeroSalesReasons,
+  deleteZeroSalesBatch,
+  deleteZeroSalesBatchSite,
+  deleteZeroSalesItem,
 } from '../services/zeroSales.js';
 
 export const adminRouter = Router();
@@ -2558,6 +2561,88 @@ adminRouter.get(
     res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
     res.setHeader('Content-Disposition', `attachment; filename="Zero_Sales_${label}.xlsx"`);
     res.send(buffer);
+  }),
+);
+
+/** DELETE /api/admin/zero-sales/batches/:id — 刪除整個批次（含全部行，上載錯誤時用；已回覆紀錄一併清除） */
+adminRouter.delete(
+  '/zero-sales/batches/:id',
+  requireUuidParam('id'),
+  requireAdmin,
+  adminActionLimiter,
+  asyncHandler(async (req: Request, res: Response) => {
+    const batchId = req.params.id as string;
+    const result = await deleteZeroSalesBatch(batchId);
+    if (!result) {
+      res.status(404).json({ error: '找不到此批次' });
+      return;
+    }
+    await writeAuditEvent({
+      eventType: 'zero_sales_deleted',
+      actorRole: 'admin',
+      actor: req.adminUsername,
+      ip: getClientIp(req),
+      metadata: { scope: 'batch', batch_id: batchId, week_label: result.weekLabel, deleted_items: result.deletedItems },
+    });
+    res.json({ ok: true, deleted_items: result.deletedItems });
+  }),
+);
+
+/** DELETE /api/admin/zero-sales/batches/:id/sites/:siteCode — 刪除某批次內某店舖的全部行 */
+adminRouter.delete(
+  '/zero-sales/batches/:id/sites/:siteCode',
+  requireUuidParam('id'),
+  requireAdmin,
+  adminActionLimiter,
+  asyncHandler(async (req: Request, res: Response) => {
+    const batchId = req.params.id as string;
+    const siteCode = normalizeSiteCode(req.params.siteCode as string);
+    if (!siteCode) {
+      res.status(400).json({ error: 'Site Code 無效' });
+      return;
+    }
+    const result = await deleteZeroSalesBatchSite(batchId, siteCode);
+    if (!result) {
+      res.status(404).json({ error: '找不到此批次' });
+      return;
+    }
+    if (!result.deletedItems) {
+      res.status(404).json({ error: `此批次沒有「${siteCode}」的資料` });
+      return;
+    }
+    await writeAuditEvent({
+      eventType: 'zero_sales_deleted',
+      actorRole: 'admin',
+      actor: req.adminUsername,
+      ip: getClientIp(req),
+      metadata: { scope: 'batch_site', batch_id: batchId, site_code: siteCode, deleted_items: result.deletedItems },
+    });
+    res.json({ ok: true, deleted_items: result.deletedItems });
+  }),
+);
+
+/** DELETE /api/admin/zero-sales/batches/:id/items/:itemId — 刪除某批次內單一 SKU 行 */
+adminRouter.delete(
+  '/zero-sales/batches/:id/items/:itemId',
+  requireUuidParam('id', 'itemId'),
+  requireAdmin,
+  adminActionLimiter,
+  asyncHandler(async (req: Request, res: Response) => {
+    const batchId = req.params.id as string;
+    const itemId = req.params.itemId as string;
+    const result = await deleteZeroSalesItem(batchId, itemId);
+    if (!result) {
+      res.status(404).json({ error: '找不到此 SKU 行（可能已被刪除）' });
+      return;
+    }
+    await writeAuditEvent({
+      eventType: 'zero_sales_deleted',
+      actorRole: 'admin',
+      actor: req.adminUsername,
+      ip: getClientIp(req),
+      metadata: { scope: 'batch_item', batch_id: batchId, item_id: itemId, site_code: result.siteCode, sku: result.sku },
+    });
+    res.json({ ok: true });
   }),
 );
 

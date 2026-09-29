@@ -479,10 +479,12 @@
               <input type="text" id="zs_filter_site" class="form-control" style="max-width:160px" placeholder="篩選 Site Code">
               <select id="zs_filter_status" class="form-select" style="max-width:160px"><option value="">全部狀態</option><option value="pending">未回覆</option><option value="replied">已回覆</option></select>
               <button class="btn" id="btn_zs_view">查看明細</button>
+              <button class="btn btn-outline-danger" id="btn_zs_delete_site">刪除此店此批次資料</button>
             </div>
             <div id="zs_items_result" class="mt-2"></div>
+            <div id="zs_delete_result" class="mt-2"></div>
             <div class="table-responsive mt-2">
-              <table class="table table-vcenter"><thead><tr><th>Site</th><th>SKU</th><th>Brand</th><th>描述</th><th>上載日期</th><th>狀態</th><th>修改次數</th><th>回覆</th></tr></thead><tbody id="zs_items_body"></tbody></table>
+              <table class="table table-vcenter"><thead><tr><th>Site</th><th>SKU</th><th>Brand</th><th>描述</th><th>上載日期</th><th>狀態</th><th>修改次數</th><th>回覆</th><th>操作</th></tr></thead><tbody id="zs_items_body"></tbody></table>
             </div>
             <h4 class="mt-4">回覆原因選項</h4>
             <p class="text-secondary small">店舖回覆時下拉選單用的原因；「須補充」的原因店舖必須填寫補充說明。停用後店舖不可再選，但舊回覆保留。</p>

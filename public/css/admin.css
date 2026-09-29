@@ -148,6 +148,11 @@ tr.row-selected:nth-child(even) td { background: #e3effc; }
   opacity: 0; pointer-events: none; transition: opacity 0.2s ease; z-index: 1040;
 }
 #detail_overlay.open { opacity: 1; pointer-events: auto; }
+
+/* 零銷售刪除確認彈窗（與匯出確認同式樣） */
+#zs_delete_overlay { position: fixed; inset: 0; background: rgba(0,0,0,.45); display: flex; align-items: center; justify-content: center; z-index: 1056; padding: 16px; }
+#zs_delete_overlay .modal-box { background: #fff; border-radius: 12px; padding: 26px; max-width: 460px; width: 100%; box-shadow: 0 10px 30px rgba(0,0,0,.25); }
+#zs_delete_overlay .modal-box h3 { margin: 0 0 8px; }
 .detail-drawer {
   position: fixed; top: 0; right: 0; bottom: 0; z-index: 1041;
   width: min(var(--admin-drawer-w), 100vw);

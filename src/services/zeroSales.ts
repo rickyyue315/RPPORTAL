@@ -1,5 +1,6 @@
 import { query, withTransaction } from '../db/pool.js';
 import { toHKDateString, toHKString } from '../lib/time.js';
+import type { PoolClient } from 'pg';
 
 export interface ZeroSalesBatchRow {
   id: string;
@@ -305,6 +306,61 @@ export async function listMyItems(siteCode: string, opts: { status?: string; bat
 }
 
 export class ZeroSalesReplyError extends Error {}
+
+/** 刪除整個批次（items 經 FK ON DELETE CASCADE 一併清除），回傳週次及清除行數供審計 */
+export async function deleteZeroSalesBatch(batchId: string): Promise<{ weekLabel: string; deletedItems: number } | null> {
+  return withTransaction(async (client) => {
+    const existing = await client.query<{ week_label: string }>(
+      'SELECT week_label FROM zero_sales_batches WHERE id = $1',
+      [batchId],
+    );
+    const row = existing.rows[0];
+    if (!row) return null;
+    const counted = await client.query<{ count: string }>(
+      'SELECT count(*)::text AS count FROM zero_sales_items WHERE batch_id = $1',
+      [batchId],
+    );
+    await client.query('DELETE FROM zero_sales_batches WHERE id = $1', [batchId]);
+    return { weekLabel: row.week_label, deletedItems: Number(counted.rows[0]?.count ?? 0) };
+  });
+}
+
+async function refreshZeroSalesBatchCounters(client: PoolClient, batchId: string): Promise<void> {
+  await client.query(
+    `UPDATE zero_sales_batches b
+        SET row_count = (SELECT count(*) FROM zero_sales_items i WHERE i.batch_id = $1),
+            store_count = (SELECT count(DISTINCT site_code) FROM zero_sales_items i WHERE i.batch_id = $1)
+      WHERE b.id = $1`,
+    [batchId],
+  );
+}
+
+/** 刪除某批次內某店舖的全部行；批次不存在回 null，店舖無行回 { deletedItems: 0 }（由路由轉 404） */
+export async function deleteZeroSalesBatchSite(batchId: string, siteCode: string): Promise<{ deletedItems: number } | null> {
+  return withTransaction(async (client) => {
+    const batch = await client.query('SELECT id FROM zero_sales_batches WHERE id = $1', [batchId]);
+    if (!batch.rows[0]) return null;
+    const del = await client.query('DELETE FROM zero_sales_items WHERE batch_id = $1 AND site_code = $2', [batchId, siteCode]);
+    const deleted = del.rowCount ?? 0;
+    if (!deleted) return { deletedItems: 0 };
+    await refreshZeroSalesBatchCounters(client, batchId);
+    return { deletedItems: deleted };
+  });
+}
+
+/** 刪除某批次內單一 SKU 行（以 item id 定位並限定 batch，避免跨批次誤刪） */
+export async function deleteZeroSalesItem(batchId: string, itemId: string): Promise<{ siteCode: string; sku: string } | null> {
+  return withTransaction(async (client) => {
+    const del = await client.query<{ site_code: string; sku: string }>(
+      'DELETE FROM zero_sales_items WHERE id = $1 AND batch_id = $2 RETURNING site_code, sku',
+      [itemId, batchId],
+    );
+    const row = del.rows[0];
+    if (!row) return null;
+    await refreshZeroSalesBatchCounters(client, batchId);
+    return { siteCode: row.site_code, sku: row.sku };
+  });
+}
 
 export async function replyItem(input: {
   itemId: string;

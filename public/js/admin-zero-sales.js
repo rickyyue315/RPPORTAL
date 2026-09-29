@@ -126,9 +126,13 @@
         <td><div class="d-flex gap-1 flex-wrap">
           <button class="btn btn-sm" data-zs-view="${b.id}">明細</button>
           <a class="btn btn-sm btn-outline-primary" href="/api/admin/zero-sales/batches/${b.id}/export">匯出</a>
+          <button class="btn btn-sm btn-outline-danger" data-zs-del="${b.id}" data-week="${esc(b.week_label)}" data-rows="${b.row_count}">刪除</button>
         </div></td></tr>`).join('');
       body.querySelectorAll('[data-zs-view]').forEach((btn) => {
         btn.addEventListener('click', () => { currentBatch = btn.dataset.zsView; syncExportBatchSelect(); loadItems(); });
+      });
+      body.querySelectorAll('[data-zs-del]').forEach((btn) => {
+        btn.addEventListener('click', () => deleteBatch(btn.dataset.zsDel, btn.dataset.week || '', Number(btn.dataset.rows || 0)));
       });
       if (!currentBatch && rows[0]) currentBatch = rows[0].id;
       syncExportBatchSelect();
@@ -168,6 +172,10 @@
     try {
       const data = await aFetch(`/api/admin/zero-sales/batches/${currentBatch}/items?${qs.toString()}`);
       const rows = data.items || [];
+      if (!rows.length) {
+        body.innerHTML = '<tr><td colspan="9" class="text-center text-secondary">此篩選沒有資料</td></tr>';
+        return;
+      }
       if (res) res.innerHTML = `<div class="text-secondary small">批次 ${esc(currentBatch.slice(0, 8))}｜共 ${rows.length} 筆｜已回覆 ${rows.filter((r) => r.status === 'replied').length}｜已鎖定（用完修改） ${rows.filter((r) => (r.reply_count ?? (r.status === 'replied' ? 1 : 0)) >= 2).length} <a href="/api/admin/zero-sales/batches/${currentBatch}/export">匯出 Excel</a></div>`;
       body.innerHTML = rows.slice(0, 200).map((i) => {
         const n = i.reply_count ?? (i.status === 'replied' ? 1 : 0);
@@ -179,9 +187,13 @@
         <td>${esc(upDate)}</td>
         <td>${i.status === 'replied' ? '<span class="badge bg-success">已回覆</span>' : '<span class="badge bg-warning">未回覆</span>'}</td>
         <td>${n}次${lockTag}</td>
-        <td>${esc(i.reason_label || '')}${i.reason_note ? `（${esc(i.reason_note)}）` : ''}</td></tr>`;
+        <td>${esc(i.reason_label || '')}${i.reason_note ? `（${esc(i.reason_note)}）` : ''}</td>
+        <td><button class="btn btn-sm btn-outline-danger" data-zs-item-del="${i.id}" data-site="${esc(i.site_code)}" data-sku="${esc(i.sku)}">刪除</button></td></tr>`;
       }).join('')
-        + (rows.length > 200 ? `<tr><td colspan="8" class="text-center text-secondary">只顯示首 200 筆，請匯出 Excel 查看全部</td></tr>` : '');
+        + (rows.length > 200 ? `<tr><td colspan="9" class="text-center text-secondary">只顯示首 200 筆，請匯出 Excel 查看全部</td></tr>` : '');
+      body.querySelectorAll('[data-zs-item-del]').forEach((btn) => {
+        btn.addEventListener('click', () => deleteItem(currentBatch, btn.dataset.zsItemDel, btn.dataset.site || '', btn.dataset.sku || '', btn));
+      });
     } catch (err) {
       if (res) res.innerHTML = `<div class="alert alert-danger">${esc(err.message)}</div>`;
     }
@@ -273,6 +285,111 @@
     }
   }
 
+  /* 刪除：批次 / 批次某店 / 批次某店某SKU（二次確認，不可還原） ---- */
+
+  function confirmZsDelete(title, lines) {
+    return new Promise((resolve) => {
+      const overlay = document.createElement('div');
+      overlay.id = 'zs_delete_overlay';
+      overlay.innerHTML = `<div class="modal-box" role="alertdialog" aria-modal="true" aria-label="${esc(title)}">
+        <h3 class="text-danger">${esc(title)}</h3>
+        ${(lines || []).map((l) => `<p class="text-secondary small" style="margin:6px 0">${esc(l)}</p>`).join('')}
+        <div class="d-flex gap-2 justify-content-end mt-4">
+          <button class="btn btn-danger" data-ok>確認刪除</button>
+          <button class="btn" data-cancel>取消</button>
+        </div></div>`;
+      document.body.appendChild(overlay);
+      const done = (v) => {
+        document.removeEventListener('keydown', onKey);
+        overlay.remove();
+        resolve(v);
+      };
+      const onKey = (e) => { if (e.key === 'Escape') done(false); };
+      overlay.querySelector('[data-ok]').addEventListener('click', () => done(true));
+      overlay.querySelector('[data-cancel]').addEventListener('click', () => done(false));
+      overlay.addEventListener('click', (e) => { if (e.target === overlay) done(false); });
+      document.addEventListener('keydown', onKey);
+      overlay.querySelector('[data-cancel]').focus();
+    });
+  }
+
+  function zsDeleteResult(html) {
+    const el = $('zs_delete_result');
+    if (el) {
+      el.innerHTML = html;
+      el.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }
+  }
+
+  async function refreshAfterDelete() {
+    await loadBatches();
+    await loadSummary();
+    if (currentBatch) await loadItems();
+  }
+
+  async function deleteBatch(batchId, weekLabel, rowCount) {
+    if (!batchId) return;
+    const ok = await confirmZsDelete('確認刪除整個批次？', [
+      `批次：${weekLabel || batchId.slice(0, 8)}（共 ${rowCount} 行）`,
+      '該批次全部 SKU 行（含店舖已提交的回覆）將一併清除，店舖不再看到這些指派。',
+      '此操作不可還原。如只上載錯部分店舖，請改用下面的店舖級刪除。',
+    ]);
+    if (!ok) return;
+    try {
+      const data = await aFetch(`/api/admin/zero-sales/batches/${batchId}`, { method: 'DELETE' });
+      if (currentBatch === batchId) currentBatch = null;
+      zsDeleteResult(`<div class="alert alert-success">已刪除批次「${esc(weekLabel)}」（${data.deleted_items ?? rowCount} 行）。</div>`);
+      await refreshAfterDelete();
+    } catch (err) {
+      zsDeleteResult(`<div class="alert alert-danger">${esc(err.message)}</div>`);
+    }
+  }
+
+  async function deleteBatchSite() {
+    const res = $('zs_delete_result');
+    if (!currentBatch) {
+      if (res) res.innerHTML = '<div class="alert alert-danger">請先按「明細」選擇一個批次</div>';
+      return;
+    }
+    const site = (($('zs_filter_site')?.value || '').trim() || '').toUpperCase();
+    if (!site) {
+      if (res) res.innerHTML = '<div class="alert alert-danger">請先在「篩選 Site Code」填寫店舖（例如 HC63），再按刪除</div>';
+      return;
+    }
+    const ok = await confirmZsDelete('確認刪除此店此批次資料？', [
+      `店舖：${site}`,
+      '該店在此批次的全部 SKU 行（含已回覆）將被清除，其他店不受影響。',
+      '此操作不可還原。',
+    ]);
+    if (!ok) return;
+    try {
+      const data = await aFetch(`/api/admin/zero-sales/batches/${currentBatch}/sites/${encodeURIComponent(site)}`, { method: 'DELETE' });
+      zsDeleteResult(`<div class="alert alert-success">已刪除「${esc(site)}」在此批次的 ${data.deleted_items} 行。</div>`);
+      await refreshAfterDelete();
+    } catch (err) {
+      zsDeleteResult(`<div class="alert alert-danger">${esc(err.message)}</div>`);
+    }
+  }
+
+  async function deleteItem(batchId, itemId, site, sku, btn) {
+    if (!batchId || !itemId) return;
+    const ok = await confirmZsDelete('確認刪除此 SKU 行？', [
+      `店舖：${site}｜SKU：${sku}`,
+      '該行（含店舖已提交的回覆，如有）將被清除，同批次其他行不受影響。',
+      '此操作不可還原。',
+    ]);
+    if (!ok) return;
+    if (btn) { btn.disabled = true; btn.textContent = '刪除中…'; }
+    try {
+      await aFetch(`/api/admin/zero-sales/batches/${batchId}/items/${itemId}`, { method: 'DELETE' });
+      zsDeleteResult(`<div class="alert alert-success">已刪除「${esc(site)}｜${esc(sku)}」。</div>`);
+      await refreshAfterDelete();
+    } catch (err) {
+      zsDeleteResult(`<div class="alert alert-danger">${esc(err.message)}</div>`);
+      if (btn) { btn.disabled = false; btn.textContent = '刪除'; }
+    }
+  }
+
   /* 統一匯出 -------------------------------------------------------- */
   function buildExportQuery(onlyUnreplied) {
     const qs = new URLSearchParams();
@@ -336,6 +453,8 @@
       else refreshHintFromWeek();
     } catch {}
     $('btn_zs_view').addEventListener('click', loadItems);
+    const delSiteBtn = $('btn_zs_delete_site');
+    if (delSiteBtn) delSiteBtn.addEventListener('click', deleteBatchSite);
     const reasonBtn = $('btn_zs_reason_save');
     if (reasonBtn) reasonBtn.addEventListener('click', saveReason);
     const statsBtn = $('btn_zs_stats_refresh');

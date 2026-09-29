@@ -284,6 +284,28 @@ textarea {
 .btn:hover {
   background: var(--brand-dark);
 }
+/* Links styled as buttons must keep button text readable: the global
+   a:hover color would otherwise win over .btn and hide white text. */
+a.btn,
+a.btn:hover,
+a.btn:active,
+a.btn:visited,
+a.btn:focus-visible {
+  color: #fff;
+  text-decoration: none;
+}
+a.btn.secondary,
+a.btn.secondary:hover,
+a.btn.secondary:active,
+a.btn.secondary:visited {
+  color: var(--text);
+}
+a.btn.ghost,
+a.btn.ghost:hover,
+a.btn.ghost:active,
+a.btn.ghost:visited {
+  color: var(--brand);
+}
 .btn:active {
   transform: translateY(1px);
 }

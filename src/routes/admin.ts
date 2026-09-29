@@ -1607,7 +1607,7 @@ adminRouter.post(
   }),
 );
 
-/** GET /api/admin/portal/users — list portal accounts. */
+/** GET /api/admin/portal/users — list portal accounts (includes admin-viewable initial passwords). */
 adminRouter.get(
   '/portal/users',
   requireAdmin,
@@ -1622,8 +1622,9 @@ adminRouter.get(
       must_change_password: boolean;
       active: boolean;
       created_at: string;
+      initial_password: string | null;
     }>(
-      `SELECT id, username, display_name, role, site_code, must_change_password, active, created_at
+      `SELECT id, username, display_name, role, site_code, must_change_password, active, created_at, initial_password
          FROM portal_users
         ORDER BY role, site_code, username`,
     );
@@ -1637,7 +1638,7 @@ const portalUserCreateSchema = z.object({
   role: z.enum(['buyer', 'sct']),
 });
 
-/** POST /api/admin/portal/users — create a Buyer or SCT account (one-time password). */
+/** POST /api/admin/portal/users — create a Buyer or SCT account (initial password, viewable by admins). */
 adminRouter.post(
   '/portal/users',
   requireAdmin,
@@ -1750,7 +1751,7 @@ adminRouter.put(
   }),
 );
 
-/** POST /api/admin/portal/users/:id/reset-password — reset to a one-time password. */
+/** POST /api/admin/portal/users/:id/reset-password — admin resets a specific account to a new initial password (viewable afterwards). */
 adminRouter.post(
   '/portal/users/:id/reset-password',
   requireUuidParam('id'),

@@ -10,7 +10,8 @@ export interface StoreAccountSyncResult {
 
 /**
  * Synchronises Store portal accounts with the store master:
- *   - creates accounts for Site Codes that do not exist yet (one-time password),
+ *   - creates accounts for Site Codes that do not exist yet (initial password,
+ *     viewable by admins until the holder changes it),
  *   - re-activates accounts that were previously deactivated,
  *   - deactivates accounts whose Site Code is no longer in the master.
  * Existing passwords and sessions are never reset.
@@ -53,9 +54,9 @@ export async function syncStorePortalAccounts(adminUsername: string): Promise<St
         const passwordHash = await hashPassword(password);
         await client.query(
           `INSERT INTO portal_users
-             (username, display_name, role, site_code, password_hash, must_change_password, active, created_by)
-           VALUES ($1, $2, 'store', $3, $4, true, true, $5)`,
-          [username, site.shop || site.site_code, site.site_code, passwordHash, adminUsername],
+             (username, display_name, role, site_code, password_hash, initial_password, must_change_password, active, created_by)
+           VALUES ($1, $2, 'store', $3, $4, $5, true, true, $6)`,
+          [username, site.shop || site.site_code, site.site_code, passwordHash, password, adminUsername],
         );
         result.created.push({ site_code: site.site_code, username, initial_password: password });
       } else if (!existing.active) {
@@ -88,15 +89,16 @@ export async function createBuyerOrSctAccount(input: {
   const password = generateInitialPassword();
   const passwordHash = await hashPassword(password);
   await query(
-    `INSERT INTO portal_users (username, display_name, role, password_hash, must_change_password, active, created_by)
-     VALUES ($1, $2, $3, $4, true, true, $5)`,
-    [username, input.displayName || username, input.role, passwordHash, input.adminUsername],
+    `INSERT INTO portal_users (username, display_name, role, password_hash, initial_password, must_change_password, active, created_by)
+     VALUES ($1, $2, $3, $4, $5, true, true, $6)`,
+    [username, input.displayName || username, input.role, passwordHash, password, input.adminUsername],
   );
   return { username, initial_password: password };
 }
 
 export async function resetPortalUserPassword(userId: string): Promise<string> {
   const password = generateInitialPassword();
-  await setUserPassword(userId, password, true);
+  // Store the plaintext so admins can view it again later without resetting.
+  await setUserPassword(userId, password, true, password);
   return password;
 }

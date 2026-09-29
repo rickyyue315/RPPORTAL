@@ -1001,6 +1001,7 @@
         <td>${escapeHtml(u.site_code || '—')}</td>
         <td>${u.active ? '<span class="status-badge received">啟用</span>' : '<span class="status-badge locked">停用</span>'}</td>
         <td>${u.must_change_password ? '是' : '否'}</td>
+        <td>${u.initial_password ? `<code>${escapeHtml(u.initial_password)}</code> <button class="btn ghost btn-sm btn-pu-copy" data-pw="${escapeHtml(u.initial_password)}">複製</button>` : '<span class="text-secondary">已更改／需重設</span>'}</td>
         <td>
           <button class="btn ghost btn-pu-toggle" data-id="${u.id}" data-active="${u.active}">${u.active ? '停用' : '啟用'}</button>
           <button class="btn ghost btn-pu-reset" data-id="${u.id}">重設密碼</button>
@@ -1012,8 +1013,18 @@
       tbody.querySelectorAll('.btn-pu-reset').forEach((btn) => {
         btn.addEventListener('click', () => resetPortalUser(btn.dataset.id));
       });
+      tbody.querySelectorAll('.btn-pu-copy').forEach((btn) => {
+        btn.addEventListener('click', async () => {
+          try {
+            await navigator.clipboard.writeText(btn.dataset.pw || '');
+            showAlert($('portal_users_result'), 'success', '密碼已複製。');
+          } catch (err) {
+            window.prompt('複製密碼：', btn.dataset.pw || '');
+          }
+        });
+      });
     } catch (err) {
-      if ($('portal_users_body')) $('portal_users_body').innerHTML = `<tr><td colspan="7" class="text-center text-secondary">載入失敗：${escapeHtml(err.message)}</td></tr>`;
+      if ($('portal_users_body')) $('portal_users_body').innerHTML = `<tr><td colspan="8" class="text-center text-secondary">載入失敗：${escapeHtml(err.message)}</td></tr>`;
     }
   }
 
@@ -1028,10 +1039,10 @@
   }
 
   async function resetPortalUser(id) {
+    if (!window.confirm('確定要為此帳戶重設密碼嗎？重設後舊密碼即時失效。')) return;
     try {
       const data = await adminFetch(`/api/admin/portal/users/${id}/reset-password`, { method: 'POST', body: JSON.stringify({}) });
-      const text = await window.prompt(`「${data.username}」的新一次性密碼（只顯示一次）：`, data.initial_password);
-      showAlert($('portal_users_result'), text !== null ? 'success' : 'info', text !== null ? '密碼已重設，請交予帳戶持有人。' : '密碼已重設（一次性密碼只於建立時顯示）。');
+      showAlert($('portal_users_result'), 'success', `「${escapeHtml(data.username)}」的密碼已重設為 <code>${escapeHtml(data.initial_password)}</code>，管理員可隨時在列表查看。請交予帳戶持有人。`);
       loadPortalUsers();
     } catch (err) {
       showAlert($('portal_users_result'), 'error', escapeHtml(err.message));
@@ -1048,8 +1059,7 @@
     }
     try {
       const data = await adminFetch('/api/admin/portal/users', { method: 'POST', body: JSON.stringify({ username, display_name: displayName, role }) });
-      const pw = await window.prompt(`帳戶「${data.username}」已建立。一次性密碼（只顯示一次）：`, data.initial_password);
-      showAlert($('portal_users_result'), 'success', '帳戶已建立。');
+      showAlert($('portal_users_result'), 'success', `帳戶「${escapeHtml(data.username)}」已建立，初始密碼為 <code>${escapeHtml(data.initial_password)}</code>，管理員可隨時在列表查看。`);
       $('pu_username').value = '';
       $('pu_display').value = '';
       loadPortalUsers();
@@ -1065,7 +1075,7 @@
       const data = await adminFetch('/api/admin/stores/sync-accounts', { method: 'POST', body: JSON.stringify({}) });
       let html = `<div class="alert success">同步完成：新增 ${data.created.length}、重新啟用 ${data.reactivated.length}、停用 ${data.deactivated.length}、不變 ${data.unchanged}</div>`;
       if (data.created.length) {
-        html += '<div class="alert warning">以下帳戶使用一次性密碼（只顯示一次）：<ul>' + data.created.map((c) => `<li><b>${escapeHtml(c.username)}</b>：<code>${escapeHtml(c.initial_password)}</code></li>`).join('') + '</ul></div>';
+        html += '<div class="alert warning">以下新帳戶的初始密碼（管理員可隨時在列表查看）：<ul>' + data.created.map((c) => `<li><b>${escapeHtml(c.username)}</b>：<code>${escapeHtml(c.initial_password)}</code></li>`).join('') + '</ul></div>';
       }
       if (data.deactivated.length) html += `<div class="alert info">已停用（不在門店主檔）：${escapeHtml(data.deactivated.join(', '))}</div>`;
       showAlert($('portal_users_result'), '', html);

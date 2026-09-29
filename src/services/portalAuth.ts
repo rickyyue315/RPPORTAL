@@ -68,19 +68,29 @@ function hashToken(token: string): string {
   return createHash('sha256').update(token).digest('hex');
 }
 
-/** Generates a one-time password, stores its hash and returns the plaintext once. */
+/** Sets a new password: stores its hash, optionally stores/clears the admin-viewable initial password, and revokes sessions. */
 export async function setUserPassword(
   userId: string,
   password: string,
   mustChange: boolean,
+  initialPassword: string | null | undefined = undefined,
 ): Promise<void> {
   const passwordHash = await hashPassword(password);
-  await query(
-    `UPDATE portal_users
-        SET password_hash = $1, must_change_password = $2, updated_at = now()
-      WHERE id = $3`,
-    [passwordHash, mustChange, userId],
-  );
+  if (initialPassword === undefined) {
+    await query(
+      `UPDATE portal_users
+          SET password_hash = $1, must_change_password = $2, updated_at = now()
+        WHERE id = $3`,
+      [passwordHash, mustChange, userId],
+    );
+  } else {
+    await query(
+      `UPDATE portal_users
+          SET password_hash = $1, must_change_password = $2, initial_password = $3, updated_at = now()
+        WHERE id = $4`,
+      [passwordHash, mustChange, initialPassword, userId],
+    );
+  }
   await query('DELETE FROM portal_sessions WHERE user_id = $1', [userId]);
 }
 
@@ -208,6 +218,8 @@ export async function changePortalPassword(
   if (!meetsPasswordPolicy(newPassword)) {
     return { ok: false, reason: '新密碼必須為 8 至 128 個字符，並包含大寫字母、小寫字母、數字及符號中至少三類' };
   }
-  await setUserPassword(userId, newPassword, false);
+  // Clear the admin-viewable initial password: user-chosen passwords must
+  // never be viewable by admins. The next admin reset will store a new one.
+  await setUserPassword(userId, newPassword, false, null);
   return { ok: true };
 }

@@ -210,12 +210,11 @@
 
   (async () => {
     try {
-      const me = await p.me();
-      if (me.user.role !== 'store') window.location.href = '/portal/';
-      await loadOptions();
-      await loadList();
+      await p.ensureUser(['store']);
     } catch (err) {
-      window.location.href = '/portal/';
+      return;
     }
+    await loadOptions();
+    await loadList();
   })();
 })();

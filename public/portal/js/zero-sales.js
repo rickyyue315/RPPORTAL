@@ -122,12 +122,12 @@
   $('logout_link').addEventListener('click', (e) => { e.preventDefault(); p.logout(); });
 
   (async () => {
+    let me;
     try {
-      const me = await p.me();
-      if (me.user.role !== 'store') { window.location.href = '/portal/'; return; }
-      $('store_header').textContent = `90日零銷售回覆 — ${me.user.site_code}`;
-      await loadReasons();
-      await loadList();
-    } catch { window.location.href = '/portal/'; }
+      me = await p.ensureUser(['store']);
+    } catch { return; }
+    $('store_header').textContent = `90日零銷售回覆 — ${me.user.site_code}`;
+    await loadReasons();
+    await loadList();
   })();
 })();

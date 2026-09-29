@@ -30,9 +30,16 @@
       data = null;
     }
     if (!res.ok) {
-      if (res.status === 401) {
-        window.location.href = '/portal/';
+      if (res.status === 401 && !options.noRedirect) {
+        // Keep ?user= so the login page can pick it up again.
+        window.location.href = '/portal/' + window.location.search;
         throw new Error('登入已過期');
+      }
+      if (res.status === 401) {
+        const err = new Error(data?.error || '登入已過期');
+        err.status = res.status;
+        err.data = data;
+        throw err;
       }
       const err = new Error(data?.error || `請求失敗 (${res.status})`);
       err.status = res.status;
@@ -40,6 +47,54 @@
       throw err;
     }
     return data;
+  }
+
+  function presetUsername() {
+    try {
+      const v = new URLSearchParams(window.location.search).get('user');
+      return v && v.trim() ? v.trim() : '';
+    } catch {
+      return '';
+    }
+  }
+
+  function goLogin() {
+    const name = presetUsername();
+    window.location.href = name ? `/portal/?user=${encodeURIComponent(name)}` : '/portal/';
+  }
+
+  /**
+   * Page guard for store / reviewer pages. Returns the logged-in user when
+   * their role is allowed. When the session is missing but the link carries
+   * ?user=, it logs in automatically so deep links (e.g. zero-sales.html)
+   * open directly with no extra click.
+   */
+  async function ensureUser(roles) {
+    const check = (me) => {
+      if (me && me.user && roles.includes(me.user.role)) return me;
+      goLogin();
+      throw new Error('role');
+    };
+    try {
+      return check(await portalApi('/api/portal/auth/me', { noRedirect: true }));
+    } catch (err) {
+      const name = presetUsername();
+      if (!name) {
+        goLogin();
+        throw err;
+      }
+      try {
+        await portalApi('/api/portal/auth/login', {
+          method: 'POST',
+          noRedirect: true,
+          body: JSON.stringify({ username: name }),
+        });
+        return check(await portalApi('/api/portal/auth/me', { noRedirect: true }));
+      } catch (err2) {
+        goLogin();
+        throw err2;
+      }
+    }
   }
 
   async function portalMe() {
@@ -118,6 +173,8 @@
   window.portal = {
     api: portalApi,
     me: portalMe,
+    ensureUser,
+    presetUsername,
     logout: portalLogout,
     escapeHtml,
     showAlert,

@@ -153,13 +153,13 @@
   $('logout_link').addEventListener('click', (e) => { e.preventDefault(); p.logout(); });
 
   (async () => {
+    let me;
     try {
-      const me = await p.me();
-      if (me.user.role !== 'buyer' && me.user.role !== 'sct') window.location.href = '/portal/';
-      $('reviewer_header').textContent = `${me.user.role === 'sct' ? 'SCT' : 'Buyer'} 審批工作檯 — ${me.user.display_name || me.user.username}`;
-      await loadQueue();
+      me = await p.ensureUser(['buyer', 'sct']);
     } catch {
-      window.location.href = '/portal/';
+      return;
     }
+    $('reviewer_header').textContent = `${me.user.role === 'sct' ? 'SCT' : 'Buyer'} 審批工作檯 — ${me.user.display_name || me.user.username}`;
+    await loadQueue();
   })();
 })();

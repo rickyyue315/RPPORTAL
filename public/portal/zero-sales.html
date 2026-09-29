@@ -8,8 +8,9 @@
   <link rel="stylesheet" href="/portal/css/portal.css">
   <style>
     .zs-table-wrap { overflow-x: auto; }
-    table.zs-table { min-width: 1400px; }
-    table.zs-table th, table.zs-table td { white-space: nowrap; font-size: 13px; }
+    table.zs-table { width: 100%; border-collapse: collapse; }
+    table.zs-table th, table.zs-table td { font-size: 13px; white-space: normal; word-break: break-word; vertical-align: top; }
+    table.zs-table th { white-space: nowrap; }
     .filter-row { display: flex; gap: 12px; flex-wrap: wrap; align-items: end; margin-bottom: 12px; }
     .badge-pending { background: #fef9e7; color: #7a4d00; border: 1px solid #f9e79f; padding: 2px 10px; border-radius: 12px; font-size: 12px; }
     .badge-replied { background: #eafaf1; color: #0a5c36; border: 1px solid #a9dfbf; padding: 2px 10px; border-radius: 12px; font-size: 12px; }
@@ -24,8 +25,8 @@
       <div class="subtitle" id="store_header">90日零銷售回覆</div>
     </div>
     <nav>
-      <a href="/portal/store.html">申報</a>
       <a href="/portal/zero-sales.html" class="active">零銷售回覆</a>
+      <!-- 申報已暫停，連結隱藏 -->
       <a href="#" id="logout_link">登出</a>
       <a href="/">平台首頁</a>
     </nav>

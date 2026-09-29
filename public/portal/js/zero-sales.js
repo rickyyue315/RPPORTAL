@@ -10,10 +10,6 @@
     { key: 'Brand', label: 'Brand' },
     { key: 'SKU', label: 'SKU' },
     { key: 'SKU Desc', label: '描述' },
-    { key: 'RP Type', label: 'RP Type' },
-    { key: 'Safety Stock (現時)', label: 'Safety Stock' },
-    { key: 'Shop Stock Qty (CM)', label: 'CM庫存' },
-    { key: 'Buyer', label: 'Buyer' },
   ];
 
   function uploadDate(it) {
@@ -31,6 +27,13 @@
 
   function payloadVal(it, key) {
     return (it.payload && it.payload[key]) || (key === 'SKU' ? it.sku : key === 'Brand' ? '' : '');
+  }
+
+  /** 'EYG - EO YUNG GAM(HAN BANG)' 只顯示 Brand Code 'EYG' */
+  function brandCode(it) {
+    const full = payloadVal(it, 'Brand');
+    const code = (full.split(' - ')[0] || '').trim();
+    return code || full;
   }
 
   async function loadReasons() {
@@ -74,7 +77,10 @@
       const locked = !canEdit(it);
       const btnLabel = n === 0 ? '回覆' : locked ? '已鎖定' : '修改';
       html += `<tr><td>${p.escapeHtml(it.week_label || '')}</td>`;
-      COLS.forEach((c) => { html += `<td>${p.escapeHtml(payloadVal(it, c.key))}</td>`; });
+      COLS.forEach((c) => {
+        const val = c.key === 'Brand' ? brandCode(it) : payloadVal(it, c.key);
+        html += `<td>${p.escapeHtml(val)}</td>`;
+      });
       html += `<td>${p.escapeHtml(uploadDate(it))}</td><td>${badge}</td><td>${reply}</td><td><button class="btn ghost" data-reply="${it.id}" ${locked ? 'disabled' : ''}>${btnLabel}</button></td></tr>`;
     });
     html += '</tbody></table>';

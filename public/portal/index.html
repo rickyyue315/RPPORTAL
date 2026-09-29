@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta http-equiv="refresh" content="2;url=/portal/store.html">
+  <meta http-equiv="refresh" content="2;url=/portal/zero-sales.html">
   <title>NDRF Portal</title>
   <link rel="stylesheet" href="/css/style.css">
   <link rel="stylesheet" href="/portal/css/portal.css">
@@ -20,7 +20,7 @@
 <body class="portal-login-body">
   <main class="portal-login-card">
     <h1>NDRF 申報 Portal</h1>
-    <p class="hint">載入中…如未自動跳轉，請按此<a href="/portal/store.html">直接進入店舖頁</a>。</p>
+    <p class="hint">載入中…如未自動跳轉，請按此<a href="/portal/zero-sales.html">直接進入零銷售回覆</a>。</p>
   </main>
 
   <script src="/portal/js/portal.js"></script>
@@ -33,7 +33,7 @@
       try {
         name = (new URLSearchParams(search).get('user') || '').trim();
       } catch {}
-      const goStore = () => window.location.replace('/portal/store.html' + search);
+      const goStore = () => window.location.replace('/portal/zero-sales.html');
       if (!name) {
         goStore();
         return;

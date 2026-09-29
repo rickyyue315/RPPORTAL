@@ -186,7 +186,7 @@ describe('store passwordless login', () => {
     const bad = await agent
       .post('/api/portal/auth/login')
       .set('x-csrf-token', token)
-      .send({ username: 'NOPE-NOBODY' });
+      .send({ username: 'NOPE-NOBODY', password: 'whatever' });
     expect(bad.status).toBe(401);
 
     await db.query(`UPDATE portal_users SET active = false WHERE username = 'LOCKSTORE1'`);

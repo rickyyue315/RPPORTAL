@@ -175,21 +175,66 @@ portalRouter.post(
   '/auth/login',
   adminActionLimiter,
   asyncHandler(async (req: Request, res: Response) => {
-    // Temporary open-access mode (PORTAL_AUTH_BYPASS): trust the declared
-    // username with no password so all portal services stay usable. The
-    // account must still exist and be active; the admin backend is unaffected.
+    // Store accounts are passwordless: Site Code only, no password needed.
+    // Buyer / SCT keep password login. The global PORTAL_AUTH_BYPASS switch
+    // remains as an emergency open-access mode for Buyer / SCT.
+    const rawUsername = typeof req.body?.username === 'string' ? req.body.username : '';
+    const normalized = normalizePortalUsername(rawUsername);
+    if (!normalized) {
+      res.status(400).json({ error: '請輸入使用者名稱' });
+      return;
+    }
+    const found = await query<PortalUserRow>('SELECT * FROM portal_users WHERE username = $1', [normalized]);
+    const existing = found.rows[0];
+    if (existing && existing.role === 'store') {
+      if (!existing.active) {
+        // Same message as a wrong password so the response does not reveal
+        // whether the username exists or is deactivated.
+        res.status(401).json({ error: '使用者名稱或密碼不正確' });
+        return;
+      }
+      const session = await createPortalSession(existing.id);
+      res.cookie(PORTAL_SESSION_COOKIE, session.token, {
+        httpOnly: true,
+        secure: config.env === 'production',
+        sameSite: 'lax',
+        path: '/',
+        maxAge: config.sessionTtlHours * 3600 * 1000,
+      });
+      await writeAuditEvent({
+        eventType: 'portal_login',
+        actorRole: existing.role,
+        actor: existing.username,
+        ip: getClientIp(req),
+        metadata: { role: existing.role, site_code: existing.site_code ?? null, store_passwordless: true },
+      });
+      res.json({
+        ok: true,
+        user: {
+          username: existing.username,
+          display_name: existing.display_name,
+          role: existing.role,
+          site_code: existing.site_code,
+          must_change_password: false,
+        },
+      });
+      return;
+    }
+    // Temporary open-access mode (PORTAL_AUTH_BYPASS) for Buyer / SCT: trust
+    // the declared username with no password. The account must still exist
+    // and be active; the admin backend is unaffected.
     if (config.portalAuthBypass) {
       const parsed = bypassLoginSchema.safeParse(req.body);
       if (!parsed.success) {
         res.status(400).json({ error: '請輸入使用者名稱' });
         return;
       }
-      const normalized = normalizePortalUsername(parsed.data.username);
-      if (!normalized) {
+      const bypassName = normalizePortalUsername(parsed.data.username);
+      if (!bypassName) {
         res.status(400).json({ error: '請輸入使用者名稱' });
         return;
       }
-      const result = await query<PortalUserRow>('SELECT * FROM portal_users WHERE username = $1', [normalized]);
+      const result = await query<PortalUserRow>('SELECT * FROM portal_users WHERE username = $1', [bypassName]);
       const user = result.rows[0];
       if (!user || !user.active) {
         // Same message either way so the response does not reveal whether
@@ -309,6 +354,10 @@ portalRouter.post(
   requirePortalUser,
   adminActionLimiter,
   asyncHandler(async (req: Request, res: Response) => {
+    if (req.portalUser!.role === 'store') {
+      res.status(400).json({ error: '店舖帳戶免密碼，無需更改密碼' });
+      return;
+    }
     const parsed = changePasswordSchema.safeParse(req.body);
     if (!parsed.success) {
       res.status(400).json({ error: parsed.error.issues[0]?.message ?? '密碼格式無效' });

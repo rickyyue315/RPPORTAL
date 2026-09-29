@@ -1896,13 +1896,17 @@ adminRouter.post(
   requireAdmin,
   adminActionLimiter,
   asyncHandler(async (req: Request, res: Response) => {
-    const existing = await query<{ id: string; username: string }>(
-      'SELECT id, username FROM portal_users WHERE id = $1',
+    const existing = await query<{ id: string; username: string; role: string }>(
+      'SELECT id, username, role FROM portal_users WHERE id = $1',
       [req.params.id as string],
     );
     const user = existing.rows[0];
     if (!user) {
       res.status(404).json({ error: '找不到帳戶' });
+      return;
+    }
+    if (user.role === 'store') {
+      res.status(400).json({ error: '店舖帳戶免密碼，無需重設密碼' });
       return;
     }
     const password = await resetPortalUserPassword(user.id);

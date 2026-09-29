@@ -32,11 +32,15 @@ export async function requirePortalUser(req: Request, res: Response, next: NextF
   }
 }
 
-/** Blocks everything except change-password / logout until the initial password is changed. */
+/** Blocks everything except change-password / logout until the initial password is changed. Store accounts are passwordless and never blocked. */
 export function requirePasswordChanged(req: Request, res: Response, next: NextFunction): void {
   const user = req.portalUser;
   if (!user) {
     res.status(401).json({ error: '未登入' });
+    return;
+  }
+  if (user.role === 'store') {
+    next();
     return;
   }
   // Bypass mode: portal is temporarily usable without passwords, so the
@@ -75,11 +79,7 @@ export function requireStoreSite(req: Request, res: Response, next: NextFunction
     res.status(403).json({ error: '此操作只限已登入的店舖帳戶' });
     return;
   }
-  // Bypass mode skips the forced-change gate (see requirePasswordChanged).
-  if (!config.portalAuthBypass && user.must_change_password) {
-    res.status(403).json({ error: '首次登入必須先更改密碼', code: 'MUST_CHANGE_PASSWORD' });
-    return;
-  }
+  // Store accounts are passwordless: no forced-change gate.
   req.storeSiteCode = user.site_code;
   next();
 }

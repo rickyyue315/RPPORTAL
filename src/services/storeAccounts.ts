@@ -1,8 +1,9 @@
+import { randomBytes } from 'node:crypto';
 import { query, withTransaction } from '../db/pool.js';
 import { generateInitialPassword, hashPassword, normalizePortalUsername, setUserPassword } from './portalAuth.js';
 
 export interface StoreAccountSyncResult {
-  created: Array<{ site_code: string; username: string; initial_password: string }>;
+  created: Array<{ site_code: string; username: string }>;
   reactivated: string[];
   deactivated: string[];
   unchanged: number;
@@ -10,11 +11,11 @@ export interface StoreAccountSyncResult {
 
 /**
  * Synchronises Store portal accounts with the store master:
- *   - creates accounts for Site Codes that do not exist yet (initial password,
- *     viewable by admins until the holder changes it),
+ *   - creates accounts for Site Codes that do not exist yet (passwordless:
+ *     Site Code only, no usable password is stored),
  *   - re-activates accounts that were previously deactivated,
  *   - deactivates accounts whose Site Code is no longer in the master.
- * Existing passwords and sessions are never reset.
+ * Store logins never check passwords; existing sessions are never reset.
  */
 export async function syncStorePortalAccounts(adminUsername: string): Promise<StoreAccountSyncResult> {
   return withTransaction(async (client) => {
@@ -50,17 +51,22 @@ export async function syncStorePortalAccounts(adminUsername: string): Promise<St
       const existing = accountsBySite.get(site.site_code);
       if (!existing) {
         const username = normalizePortalUsername(site.site_code);
-        const password = generateInitialPassword();
-        const passwordHash = await hashPassword(password);
+        // Passwordless store account: store a deliberately unusable hash
+        // (verifyPassword only accepts `scrypt$...` format) so no password
+        // can ever match. Login uses the Site Code only.
+        const unusableHash = `unusable$${randomBytes(16).toString('hex')}`;
         await client.query(
           `INSERT INTO portal_users
              (username, display_name, role, site_code, password_hash, initial_password, must_change_password, active, created_by)
-           VALUES ($1, $2, 'store', $3, $4, $5, true, true, $6)`,
-          [username, site.shop || site.site_code, site.site_code, passwordHash, password, adminUsername],
+           VALUES ($1, $2, 'store', $3, $4, NULL, false, true, $5)`,
+          [username, site.shop || site.site_code, site.site_code, unusableHash, adminUsername],
         );
-        result.created.push({ site_code: site.site_code, username, initial_password: password });
+        result.created.push({ site_code: site.site_code, username });
       } else if (!existing.active) {
-        await client.query('UPDATE portal_users SET active = true, updated_at = now() WHERE id = $1', [existing.id]);
+        await client.query(
+          'UPDATE portal_users SET active = true, must_change_password = false, initial_password = NULL, updated_at = now() WHERE id = $1',
+          [existing.id],
+        );
         result.reactivated.push(site.site_code);
       } else {
         result.unchanged++;

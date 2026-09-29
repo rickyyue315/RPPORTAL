@@ -340,8 +340,11 @@ export async function deleteZeroSalesBatchSite(batchId: string, siteCode: string
   return withTransaction(async (client) => {
     const batch = await client.query('SELECT id FROM zero_sales_batches WHERE id = $1', [batchId]);
     if (!batch.rows[0]) return null;
-    const del = await client.query('DELETE FROM zero_sales_items WHERE batch_id = $1 AND site_code = $2', [batchId, siteCode]);
-    const deleted = del.rowCount ?? 0;
+    const del = await client.query<{ id: string }>(
+      'DELETE FROM zero_sales_items WHERE batch_id = $1 AND site_code = $2 RETURNING id',
+      [batchId, siteCode],
+    );
+    const deleted = del.rows.length;
     if (!deleted) return { deletedItems: 0 };
     await refreshZeroSalesBatchCounters(client, batchId);
     return { deletedItems: deleted };

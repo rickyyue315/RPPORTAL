@@ -166,7 +166,13 @@ describe('zero-sales delete (batch / batch-site / batch-item)', () => {
       .delete('/api/admin/zero-sales/batches/not-a-uuid')
       .set('x-csrf-token', agent._csrf ?? '');
     expect(bad.status).toBe(400);
-    const anon = await request(app).delete('/api/admin/zero-sales/batches/00000000-0000-4000-8000-000000000000');
+    // CSRF runs before the session check: a valid CSRF pair without a login
+    // reaches requireAdmin and gets 401 (same convention as api.test.ts).
+    const anonAgent = request.agent(app) as Agent;
+    const anonToken = await csrf(anonAgent);
+    const anon = await anonAgent
+      .delete('/api/admin/zero-sales/batches/00000000-0000-4000-8000-000000000000')
+      .set('x-csrf-token', anonToken);
     expect(anon.status).toBe(401);
   });
 });

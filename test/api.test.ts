@@ -584,7 +584,7 @@ describe('public API', () => {
     const page = await request(app).get('/help.html');
     expect(page.status).toBe(200);
     expect(page.text).toContain('跟著圖示，一步一步完成回覆');
-    expect(page.text).toContain('前往 Store Portal 登入');
+    expect(page.text).toContain('進入 Store Portal');
     expect(page.text).toContain('/images/help/recover.svg');
     expect(page.text).toContain('Recovery Code 每組 OM 一個，請向管理員索取');
 

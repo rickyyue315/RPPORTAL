@@ -36,7 +36,11 @@ export type AuditEventType =
   | 'store_routes_updated'
   | 'rejection_reason_updated'
   | 'workflow_override'
-  | 'buyer_auto_approved';
+  | 'buyer_auto_approved'
+  | 'zero_sales_import_error'
+  | 'zero_sales_batch_created'
+  | 'zero_sales_reason_updated'
+  | 'zero_sales_replied';
 
 interface AuditInput {
   eventType: AuditEventType;

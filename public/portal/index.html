@@ -10,12 +10,12 @@
 <body class="portal-login-body">
   <main class="portal-login-card">
     <h1>NDRF 申報 Portal</h1>
-    <p class="hint">一般 NDRF 申報已改為帳戶登入。請使用 RP Team 派發的帳戶登入；首次登入請使用一次性密碼，並於登入後立即更改密碼。</p>
+    <p class="hint" id="login_hint">一般 NDRF 申報已改為帳戶登入。請使用 RP Team 派發的帳戶登入；首次登入請使用一次性密碼，並於登入後立即更改密碼。</p>
     <div id="login_error"></div>
     <form id="login_form">
       <label for="username">使用者名稱</label>
       <input type="text" id="username" autocomplete="username" placeholder="例如 HA02 / BUYER1">
-      <label for="password">密碼</label>
+      <label for="password" id="password_label">密碼</label>
       <input type="password" id="password" autocomplete="current-password">
       <div class="btn-row" style="margin-top:16px">
         <button class="btn" type="submit">登入</button>
@@ -24,13 +24,20 @@
     <div class="hint" style="margin-top:16px"><a href="/">返回平台首頁</a></div>
   </main>
 
+  <script src="/js/options.js"></script>
   <script src="/portal/js/portal.js"></script>
   <script>
     (() => {
+      const bypass = globalThis.NDRF_OPTIONS?.portalAuthBypass === true;
       const redirectFor = (user) => {
         if (user.role === 'store') window.location.href = '/portal/store.html';
         if (user.role === 'buyer' || user.role === 'sct') window.location.href = '/portal/reviewer.html';
       };
+      if (bypass) {
+        document.getElementById('password_label').style.display = 'none';
+        document.getElementById('password').style.display = 'none';
+        document.getElementById('login_hint').textContent = '暫時免密碼登入：只需輸入使用者名稱（例如 HA02 / BUYER1）即可進入。';
+      }
       portal.me()
         .then((data) => redirectFor(data.user))
         .catch(() => {});
@@ -42,14 +49,17 @@
         btn.textContent = '登入中…';
         portal.showAlert(document.getElementById('login_error'), '', '');
         try {
-          const data = await portal.api('/api/portal/auth/login', {
-            method: 'POST',
-            body: JSON.stringify({
+          const body = bypass
+            ? { username: document.getElementById('username').value.trim() }
+            : {
               username: document.getElementById('username').value.trim(),
               password: document.getElementById('password').value,
-            }),
+            };
+          const data = await portal.api('/api/portal/auth/login', {
+            method: 'POST',
+            body: JSON.stringify(body),
           });
-          if (data.user.must_change_password) {
+          if (!bypass && data.user.must_change_password) {
             window.location.href = '/portal/change-password.html';
             return;
           }

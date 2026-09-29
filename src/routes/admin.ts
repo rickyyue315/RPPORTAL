@@ -102,8 +102,10 @@ import {
 } from '../lib/zeroSales.js';
 import {
   createBatch as createZeroSalesBatch,
+  getZeroSalesSummary as getZeroSalesSummaryStats,
   listBatches as listZeroSalesBatches,
   listBatchItems as listZeroSalesBatchItems,
+  listItemsForExport as listZeroSalesForExport,
   listReasons as listZeroSalesReasons,
 } from '../services/zeroSales.js';
 
@@ -2274,6 +2276,78 @@ adminRouter.get(
   adminActionLimiter,
   asyncHandler(async (_req: Request, res: Response) => {
     res.json({ batches: await listZeroSalesBatches() });
+  }),
+);
+
+/** GET /api/admin/zero-sales/summary — 跨批次統計 (總覽卡 + 原因分佈 + 待回覆店舖) */
+adminRouter.get(
+  '/zero-sales/summary',
+  requireAdmin,
+  adminActionLimiter,
+  asyncHandler(async (req: Request, res: Response) => {
+    const { batch_id } = req.query as Record<string, string | undefined>;
+    const trimmed = batch_id?.trim();
+    if (trimmed && !/^[0-9a-fA-F-]{36}$/.test(trimmed)) {
+      res.status(400).json({ error: '批次編號無效' });
+      return;
+    }
+    res.json(await getZeroSalesSummaryStats(trimmed || undefined));
+  }),
+);
+
+/** GET /api/admin/zero-sales/export — 統一匯出 (可按 batch_id / site_code / status / reason_code 篩選) */
+adminRouter.get(
+  '/zero-sales/export',
+  requireAdmin,
+  excelExportLimiter,
+  asyncHandler(async (req: Request, res: Response) => {
+    const { batch_id, site_code, status, reason_code } = req.query as Record<string, string | undefined>;
+    const batchId = batch_id?.trim() || undefined;
+    if (batchId && !/^[0-9a-fA-F-]{36}$/.test(batchId)) {
+      res.status(400).json({ error: '批次編號無效' });
+      return;
+    }
+    if (status && status !== 'pending' && status !== 'replied') {
+      res.status(400).json({ error: '狀態篩選無效' });
+      return;
+    }
+    const siteCode = site_code?.trim() ? normalizeSiteCode(site_code) : undefined;
+    const reasonCode = reason_code?.trim() || undefined;
+    const items = await listZeroSalesForExport({
+      batchId,
+      siteCode,
+      status: status === 'pending' || status === 'replied' ? status : undefined,
+      reasonCode,
+    });
+    if (!items.length) {
+      res.status(404).json({ error: '沒有符合條件的零銷售資料可以匯出' });
+      return;
+    }
+    const buffer = await buildZeroSalesExportBuffer(items.map((i) => ({
+      site_code: i.site_code,
+      sku: i.sku,
+      payload: i.payload,
+      status: i.status,
+      reason_code: i.reason_code,
+      reason_label: i.reason_label,
+      reason_note: i.reason_note,
+      replied_at: i.replied_at,
+      replied_by: i.replied_by,
+      batch_label: i.week_label ?? '',
+      reply_count: i.reply_count ?? (i.status === 'replied' ? 1 : 0),
+    })));
+    const stamp = toHKDateString(new Date()).replace(/-/g, '');
+    const label = (items[0]?.week_label ?? 'all').replace(/[^\w\-]+/g, '_');
+    await writeAuditEvent({
+      eventType: 'zero_sales_export',
+      actorRole: 'admin',
+      actor: req.adminUsername,
+      ip: getClientIp(req),
+      metadata: { batch_id: batchId ?? null, site_code: siteCode ?? null, status: status ?? null, reason_code: reasonCode ?? null, count: items.length },
+    });
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition', `attachment; filename="Zero_Sales_${label}_${stamp}.xlsx"`);
+    res.send(buffer);
   }),
 );
 

@@ -39,6 +39,13 @@ export function requirePasswordChanged(req: Request, res: Response, next: NextFu
     res.status(401).json({ error: '未登入' });
     return;
   }
+  // Bypass mode: portal is temporarily usable without passwords, so the
+  // forced-change gate is skipped (passwords are still stored and enforced
+  // again once the flag is off).
+  if (config.portalAuthBypass) {
+    next();
+    return;
+  }
   if (user.must_change_password) {
     res.status(403).json({ error: '首次登入必須先更改密碼', code: 'MUST_CHANGE_PASSWORD' });
     return;
@@ -68,7 +75,8 @@ export function requireStoreSite(req: Request, res: Response, next: NextFunction
     res.status(403).json({ error: '此操作只限已登入的店舖帳戶' });
     return;
   }
-  if (user.must_change_password) {
+  // Bypass mode skips the forced-change gate (see requirePasswordChanged).
+  if (!config.portalAuthBypass && user.must_change_password) {
     res.status(403).json({ error: '首次登入必須先更改密碼', code: 'MUST_CHANGE_PASSWORD' });
     return;
   }

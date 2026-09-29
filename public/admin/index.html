@@ -132,6 +132,22 @@
               </div>
             </div>
           </div>
+          <div class="col-12">
+            <div class="card border-primary">
+              <div class="card-header"><h3 class="card-title">90日零銷售 SKU 回覆 — 總覽</h3><span id="zs_summary_note" class="ms-auto text-secondary small">載入中…</span></div>
+              <div class="card-body">
+                <div class="row g-2 text-center">
+                  <div class="col-6 col-md-2"><div class="h2 mb-0" id="s_zs_total">—</div><div class="text-secondary small">總 SKU 行數</div></div>
+                  <div class="col-6 col-md-2"><div class="h2 mb-0 text-success" id="s_zs_replied">—</div><div class="text-secondary small">已回覆</div></div>
+                  <div class="col-6 col-md-2"><div class="h2 mb-0 text-danger" id="s_zs_pending">—</div><div class="text-secondary small">未回覆</div></div>
+                  <div class="col-6 col-md-2"><div class="h2 mb-0" id="s_zs_rate">—</div><div class="text-secondary small">回覆率</div></div>
+                  <div class="col-6 col-md-2"><div class="h3 mb-0" id="s_zs_stores">—</div><div class="text-secondary small">涉及店舖 / 待回覆店舖</div></div>
+                  <div class="col-6 col-md-2"><div class="h3 mb-0" id="s_zs_latest">—</div><div class="text-secondary small">最新批次進度</div></div>
+                </div>
+                <div class="mt-2 text-end"><a href="#zs_card" class="btn btn-sm btn-outline-primary">前往統計及匯出</a></div>
+              </div>
+            </div>
+          </div>
         </div>
 
         <!-- Filter + list -->
@@ -408,7 +424,7 @@
           </div>
         </div>
 
-        <div class="card mt-3">
+        <div class="card mt-3" id="zs_card">
           <div class="card-header"><h3 class="card-title">90日零銷售回覆 — 每週派發</h3></div>
           <div class="card-body">
             <p class="text-secondary small">上載 Excel（欄位：Site Code、Shop Name、OM、Shop Nature、店內庫存排名、Buyer、Brand、SKU、SKU Desc、Adj. MCH1、MAKE UP 分類、RP Type、Safety Stock (現時)、Item Status、Supply Source、Shop Stock Qty (LM/CM)、Sold Qty (P90D/M-2/M-1/CM-MTD)、Shop On Order PO Qty (CM)、店舖回覆）。每間店SKU可不同，店舖登入後逐條回覆原因，每SKU可修改一次。</p>
@@ -422,6 +438,35 @@
               </div>
             </div>
             <div id="zs_upload_result"></div>
+            <h4 class="mt-4">統計總覽（跨批次） <button class="btn btn-sm ms-2" id="btn_zs_stats_refresh">重新整理</button></h4>
+            <div id="zs_stats_result" class="text-secondary small">載入中…</div>
+            <div class="row g-3 mt-1">
+              <div class="col-md-6">
+                <h5 class="text-secondary">回覆原因分佈（已回覆）</h5>
+                <div class="table-responsive">
+                  <table class="table table-vcenter"><thead><tr><th>原因</th><th>筆數</th><th>佔比</th></tr></thead><tbody id="zs_reason_stats_body"><tr><td colspan="3" class="text-center text-secondary">載入中…</td></tr></tbody></table>
+                </div>
+              </div>
+              <div class="col-md-6">
+                <h5 class="text-secondary">待回覆店舖排行（Top 50）</h5>
+                <div class="table-responsive">
+                  <table class="table table-vcenter"><thead><tr><th>Site</th><th>店舖</th><th>總數</th><th>已回覆</th><th>未回覆</th></tr></thead><tbody id="zs_store_stats_body"><tr><td colspan="5" class="text-center text-secondary">載入中…</td></tr></tbody></table>
+                </div>
+              </div>
+            </div>
+            <h4 class="mt-4">統一匯出（跨批次篩選）</h4>
+            <p class="text-secondary small">可按批次、Site Code、回覆狀態、回覆原因篩選後一次匯出（原文 22 欄 + 回覆原因 + 補充 + 狀態）。匯出為唯讀，不會鎖定店舖回覆。</p>
+            <div class="d-flex gap-2 mb-2 flex-wrap align-items-end">
+              <div style="min-width:200px"><label class="form-label">批次</label><select id="zs_exp_batch" class="form-select"><option value="">全部批次</option></select></div>
+              <div><label class="form-label">Site Code</label><input type="text" id="zs_exp_site" class="form-control" placeholder="例如 HC63" style="max-width:160px"></div>
+              <div><label class="form-label">狀態</label><select id="zs_exp_status" class="form-select"><option value="">全部狀態</option><option value="pending">未回覆</option><option value="replied">已回覆</option></select></div>
+              <div class="flex-grow-1" style="min-width:200px"><label class="form-label">回覆原因</label><select id="zs_exp_reason" class="form-select"><option value="">全部原因</option></select></div>
+              <div class="d-flex gap-2">
+                <button class="btn btn-primary" id="btn_zs_export">匯出 Excel</button>
+                <button class="btn" id="btn_zs_export_unreplied">只匯出未回覆</button>
+              </div>
+            </div>
+            <div id="zs_export_result"></div>
             <div class="table-responsive">
               <table class="table table-vcenter"><thead><tr><th>週次</th><th>行數</th><th>店數</th><th>已回覆</th><th>未回覆</th><th>建立人</th><th>建立時間</th><th>操作</th></tr></thead><tbody id="zs_batches_body"><tr><td colspan="8" class="text-center text-secondary">載入中…</td></tr></tbody></table>
             </div>

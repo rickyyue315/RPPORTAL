@@ -20,8 +20,11 @@ import { config } from '../config.js';
 import { getStore } from '../services/stores.js';
 import {
   changePortalPassword,
+  createPortalSession,
   destroyPortalSession,
+  normalizePortalUsername,
   portalLogin,
+  type PortalUserRow,
 } from '../services/portalAuth.js';
 import {
   createNormalSubmission,
@@ -105,6 +108,12 @@ const loginSchema = z.object({
   password: z.string().min(1),
 });
 
+// Bypass mode: username only, password is accepted but ignored.
+const bypassLoginSchema = z.object({
+  username: z.string().trim().min(1),
+  password: z.string().optional().default(''),
+});
+
 function isPgUniqueViolation(err: unknown): boolean {
   return (err as { code?: string }).code === '23505';
 }
@@ -166,6 +175,55 @@ portalRouter.post(
   '/auth/login',
   adminActionLimiter,
   asyncHandler(async (req: Request, res: Response) => {
+    // Temporary open-access mode (PORTAL_AUTH_BYPASS): trust the declared
+    // username with no password so all portal services stay usable. The
+    // account must still exist and be active; the admin backend is unaffected.
+    if (config.portalAuthBypass) {
+      const parsed = bypassLoginSchema.safeParse(req.body);
+      if (!parsed.success) {
+        res.status(400).json({ error: '請輸入使用者名稱' });
+        return;
+      }
+      const normalized = normalizePortalUsername(parsed.data.username);
+      if (!normalized) {
+        res.status(400).json({ error: '請輸入使用者名稱' });
+        return;
+      }
+      const result = await query<PortalUserRow>('SELECT * FROM portal_users WHERE username = $1', [normalized]);
+      const user = result.rows[0];
+      if (!user || !user.active) {
+        // Same message either way so the response does not reveal whether
+        // the username exists or is deactivated.
+        res.status(401).json({ error: '使用者名稱或密碼不正確' });
+        return;
+      }
+      const session = await createPortalSession(user.id);
+      res.cookie(PORTAL_SESSION_COOKIE, session.token, {
+        httpOnly: true,
+        secure: config.env === 'production',
+        sameSite: 'lax',
+        path: '/',
+        maxAge: config.sessionTtlHours * 3600 * 1000,
+      });
+      await writeAuditEvent({
+        eventType: 'portal_login',
+        actorRole: user.role,
+        actor: user.username,
+        ip: getClientIp(req),
+        metadata: { role: user.role, site_code: user.site_code ?? null, bypass: true },
+      });
+      res.json({
+        ok: true,
+        user: {
+          username: user.username,
+          display_name: user.display_name,
+          role: user.role,
+          site_code: user.site_code,
+          must_change_password: user.must_change_password,
+        },
+      });
+      return;
+    }
     const parsed = loginSchema.safeParse(req.body);
     if (!parsed.success) {
       res.status(400).json({ error: '請輸入使用者名稱及密碼' });

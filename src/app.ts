@@ -97,6 +97,7 @@ export function createApp() {
           enabled: config.publicWriteSuspensionEnabled,
           suspendAt: config.publicWriteSuspensionAt,
         },
+        portalAuthBypass: config.portalAuthBypass,
       })};`);
   });
 

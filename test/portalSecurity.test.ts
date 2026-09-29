@@ -7,6 +7,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { setPoolForTesting } from '../src/db/pool.js';
 import { createApp } from '../src/app.js';
+import { config } from '../src/config.js';
 import { hashPassword } from '../src/services/portalAuth.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -143,5 +144,42 @@ describe('portal login hardening', () => {
       .send({ username: 'LOCKSTORE1', password: PASSWORD });
     expect(locked.status).toBe(401);
     expect(locked.body.error).toContain('鎖定');
+  });
+});
+
+describe('portal auth bypass (PORTAL_AUTH_BYPASS)', () => {
+  it('allows username-only login and skips forced password change when enabled', async () => {
+    const pwHash = await hashPassword(PASSWORD);
+    await db.query(
+      `INSERT INTO portal_users (username, display_name, role, site_code, password_hash, initial_password, must_change_password, active, created_by)
+       VALUES ('BYPASS1', 'Bypass Store', 'store', 'BYP1', $1, 'Sasa1!BYPASS', true, true, 'test')`,
+      [pwHash],
+    );
+    config.portalAuthBypass = true;
+    try {
+      const agent = request.agent(app) as Agent;
+      const token = await csrf(agent);
+      // Password is ignored in bypass mode, even a wrong one.
+      const login = await agent
+        .post('/api/portal/auth/login')
+        .set('x-csrf-token', token)
+        .send({ username: 'BYPASS1', password: 'wrong-password' });
+      expect(login.status).toBe(200);
+      expect(login.body.user.username).toBe('BYPASS1');
+      // Store endpoints work despite must_change_password=true.
+      const options = await agent.get('/api/portal/store/options');
+      expect(options.status).toBe(200);
+      expect(options.body.store.site_code).toBe('BYP1');
+      // Unknown usernames are still rejected.
+      const badAgent = request.agent(app) as Agent;
+      const badToken = await csrf(badAgent);
+      const bad = await badAgent
+        .post('/api/portal/auth/login')
+        .set('x-csrf-token', badToken)
+        .send({ username: 'NOPE-NOBODY' });
+      expect(bad.status).toBe(401);
+    } finally {
+      config.portalAuthBypass = false;
+    }
   });
 });

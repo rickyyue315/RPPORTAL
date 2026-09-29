@@ -60,6 +60,177 @@ export async function listBatches(): Promise<ZeroSalesBatchRow[]> {
   return r.rows.map((b) => ({ ...b, created_at: toHKString(b.created_at) }));
 }
 
+export interface ZeroSalesSummary {
+  batches: number;
+  total: number;
+  replied: number;
+  pending: number;
+  locked: number;
+  reply_rate: number;
+  stores_total: number;
+  stores_pending: number;
+  stores_done: number;
+  latest_batch: {
+    id: string;
+    week_label: string;
+    total: number;
+    replied: number;
+    pending: number;
+    created_at: string;
+  } | null;
+  by_reason: Array<{ reason_code: string; reason_label: string; count: number }>;
+  pending_by_store: Array<{
+    site_code: string;
+    shop: string;
+    total: number;
+    replied: number;
+    pending: number;
+  }>;
+}
+
+/** 跨批次總覽：總數 / 回覆率 / 原因分佈 / 待回覆店舖排行（供後台統計面板） */
+export async function getZeroSalesSummary(batchId?: string): Promise<ZeroSalesSummary> {
+  const batchFilter = batchId ? 'AND i.batch_id = $1' : '';
+  const params: unknown[] = batchId ? [batchId] : [];
+  const overall = await query<{
+    batches: string;
+    total: string;
+    replied: string;
+    pending: string;
+    locked: string;
+    stores_total: string;
+    stores_pending: string;
+  }>(
+    `SELECT
+      (SELECT count(*)::text FROM zero_sales_batches) AS batches,
+      (SELECT count(*)::text FROM zero_sales_items i WHERE TRUE ${batchFilter}) AS total,
+      (SELECT count(*)::text FROM zero_sales_items i WHERE i.status = 'replied' ${batchFilter}) AS replied,
+      (SELECT count(*)::text FROM zero_sales_items i WHERE i.status = 'pending' ${batchFilter}) AS pending,
+      (SELECT count(*)::text FROM zero_sales_items i WHERE i.reply_count >= 2 ${batchFilter}) AS locked,
+      (SELECT count(DISTINCT i.site_code)::text FROM zero_sales_items i WHERE TRUE ${batchFilter}) AS stores_total,
+      (SELECT count(DISTINCT i.site_code)::text FROM zero_sales_items i WHERE i.status = 'pending' ${batchFilter}) AS stores_pending`,
+    params,
+  );
+  const o = overall.rows[0]!;
+  const total = Number(o.total ?? 0);
+  const replied = Number(o.replied ?? 0);
+  const pending = Number(o.pending ?? 0);
+  const storesTotal = Number(o.stores_total ?? 0);
+  const storesPending = Number(o.stores_pending ?? 0);
+
+  const reasonRows = await query<{ reason_code: string; reason_label: string; count: string }>(
+    `SELECT COALESCE(i.reason_code, '') AS reason_code,
+            COALESCE(i.reason_label, '（未分類）') AS reason_label,
+            count(*)::text AS count
+       FROM zero_sales_items i
+      WHERE i.status = 'replied' ${batchFilter}
+      GROUP BY i.reason_code, i.reason_label
+      ORDER BY count(*) DESC, i.reason_label`,
+    params,
+  );
+
+  const storeRows = await query<{ site_code: string; shop: string; total: string; replied: string; pending: string }>(
+    `SELECT i.site_code,
+            COALESCE(s.shop, '') AS shop,
+            count(*)::text AS total,
+            count(*) FILTER (WHERE i.status = 'replied')::text AS replied,
+            count(*) FILTER (WHERE i.status = 'pending')::text AS pending
+       FROM zero_sales_items i
+       LEFT JOIN stores s ON s.site_code = i.site_code
+      WHERE TRUE ${batchFilter}
+      GROUP BY i.site_code, s.shop
+      ORDER BY count(*) FILTER (WHERE i.status = 'pending') DESC, i.site_code
+      LIMIT 50`,
+    params,
+  );
+
+  const latest = await query<{ id: string; week_label: string; total: string; replied: string; pending: string; created_at: string }>(
+    `SELECT b.id, b.week_label, b.created_at,
+            (SELECT count(*)::text FROM zero_sales_items i WHERE i.batch_id = b.id) AS total,
+            (SELECT count(*)::text FROM zero_sales_items i WHERE i.batch_id = b.id AND i.status = 'replied') AS replied,
+            (SELECT count(*)::text FROM zero_sales_items i WHERE i.batch_id = b.id AND i.status = 'pending') AS pending
+       FROM zero_sales_batches b ORDER BY b.created_at DESC LIMIT 1`,
+  );
+  const lb = latest.rows[0] ?? null;
+
+  return {
+    batches: Number(o.batches ?? 0),
+    total,
+    replied,
+    pending,
+    locked: Number(o.locked ?? 0),
+    reply_rate: total ? Math.round((replied / total) * 1000) / 10 : 0,
+    stores_total: storesTotal,
+    stores_pending: storesPending,
+    stores_done: Math.max(0, storesTotal - storesPending),
+    latest_batch: lb
+      ? {
+          id: lb.id,
+          week_label: lb.week_label,
+          total: Number(lb.total ?? 0),
+          replied: Number(lb.replied ?? 0),
+          pending: Number(lb.pending ?? 0),
+          created_at: toHKString(lb.created_at),
+        }
+      : null,
+    by_reason: reasonRows.rows.map((r) => ({
+      reason_code: r.reason_code,
+      reason_label: r.reason_label,
+      count: Number(r.count ?? 0),
+    })),
+    pending_by_store: storeRows.rows.map((r) => ({
+      site_code: r.site_code,
+      shop: r.shop ?? '',
+      total: Number(r.total ?? 0),
+      replied: Number(r.replied ?? 0),
+      pending: Number(r.pending ?? 0),
+    })),
+  };
+}
+
+export interface ZeroSalesExportFilter {
+  batchId?: string;
+  siteCode?: string;
+  status?: 'pending' | 'replied';
+  reasonCode?: string;
+}
+
+/** 統一匯出查詢：可跨批次按 Site / 狀態 / 原因篩選（上限 10000 行） */
+export async function listItemsForExport(filter: ZeroSalesExportFilter): Promise<ZeroSalesItemRow[]> {
+  const where: string[] = [];
+  const params: unknown[] = [];
+  if (filter.batchId) {
+    params.push(filter.batchId);
+    where.push(`i.batch_id = $${params.length}`);
+  }
+  if (filter.siteCode) {
+    params.push(filter.siteCode);
+    where.push(`i.site_code = $${params.length}`);
+  }
+  if (filter.status === 'pending' || filter.status === 'replied') {
+    params.push(filter.status);
+    where.push(`i.status = $${params.length}`);
+  }
+  if (filter.reasonCode) {
+    params.push(filter.reasonCode);
+    where.push(`i.reason_code = $${params.length}`);
+  }
+  const whereSql = where.length ? `WHERE ${where.join(' AND ')}` : '';
+  const r = await query<ZeroSalesItemRow>(
+    `SELECT i.*, b.week_label, b.created_at AS batch_created_at FROM zero_sales_items i
+     JOIN zero_sales_batches b ON b.id = i.batch_id
+     ${whereSql} ORDER BY b.created_at DESC, i.site_code, i.sku LIMIT 10000`,
+    params,
+  );
+  return r.rows.map((row) => ({
+    ...row,
+    payload: typeof row.payload === 'string' ? JSON.parse(row.payload as unknown as string) : (row.payload ?? {}),
+    replied_at: row.replied_at ? toHKString(row.replied_at) : null,
+    batch_created_at: row.batch_created_at ? toHKString(row.batch_created_at as unknown as string) : undefined,
+    batch_date: row.batch_created_at ? toHKDateString(row.batch_created_at as unknown as string) : undefined,
+  }));
+}
+
 export async function createBatch(input: {
   weekLabel: string;
   note: string;

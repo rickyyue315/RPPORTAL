@@ -30,6 +30,7 @@ export type AuditEventType =
   | 'portal_review_decision'
   | 'portal_user_created'
   | 'portal_user_updated'
+  | 'portal_user_deleted'
   | 'portal_password_reset'
   | 'store_accounts_synced'
   | 'sku_master_updated'

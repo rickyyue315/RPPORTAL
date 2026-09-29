@@ -505,6 +505,59 @@ describe('general NDRF review workflow', () => {
     expect(res.body.error).toContain('仍有已分配的 SKU');
   });
 
+  it('deletes an account and supports bulk activate/deactivate/delete', async () => {
+    const agent = request.agent(app) as Agent;
+    await adminLogin(agent);
+    const makeBuyer = async (username: string): Promise<string> => {
+      const created = await agent
+        .post('/api/admin/portal/users')
+        .set('x-csrf-token', agent._csrf ?? '')
+        .send({ username, display_name: username, role: 'buyer' });
+      expect(created.status).toBe(201);
+      const idRes = await db.query<{ id: string }>('SELECT id FROM portal_users WHERE username = $1', [username]);
+      return idRes.rows[0]!.id;
+    };
+
+    // Single delete removes the row.
+    const delId = await makeBuyer('DELBUYER1');
+    const del = await agent
+      .delete(`/api/admin/portal/users/${delId}`)
+      .set('x-csrf-token', agent._csrf ?? '');
+    expect(del.status).toBe(200);
+    const gone = await db.query('SELECT 1 FROM portal_users WHERE id = $1', [delId]);
+    expect(gone.rows.length).toBe(0);
+
+    // Guards still apply: BUYER1 owns SKUs so delete is blocked.
+    const buyerRes = await db.query<{ id: string }>('SELECT id FROM portal_users WHERE username = $1', ['BUYER1']);
+    const blocked = await agent
+      .delete(`/api/admin/portal/users/${buyerRes.rows[0]!.id}`)
+      .set('x-csrf-token', agent._csrf ?? '');
+    expect(blocked.status).toBe(409);
+    expect(blocked.body.error).toContain('仍有已分配的 SKU');
+
+    // Bulk deactivate then bulk delete.
+    const b1 = await makeBuyer('BULKBUYER1');
+    const b2 = await makeBuyer('BULKBUYER2');
+    const bulkOff = await agent
+      .post('/api/admin/portal/users/bulk')
+      .set('x-csrf-token', agent._csrf ?? '')
+      .send({ ids: [b1, b2], action: 'deactivate' });
+    expect(bulkOff.status).toBe(200);
+    expect(bulkOff.body.succeeded).toBe(2);
+    const inactive = await db.query<{ cnt: string }>(
+      'SELECT count(*)::text AS cnt FROM portal_users WHERE id = ANY($1) AND active = false',
+      [[b1, b2]],
+    );
+    expect(Number(inactive.rows[0]?.cnt ?? 0)).toBe(2);
+    const bulkDel = await agent
+      .post('/api/admin/portal/users/bulk')
+      .set('x-csrf-token', agent._csrf ?? '')
+      .send({ ids: [b1, b2, '00000000-0000-0000-0000-000000000000'], action: 'delete' });
+    expect(bulkDel.status).toBe(200);
+    expect(bulkDel.body.succeeded).toBe(2);
+    expect(bulkDel.body.failed).toBe(1);
+  });
+
   it('SKU Master reassignment moves the pending item to the new Buyer', async () => {
     const buyer1Res = await db.query<{ id: string }>('SELECT id FROM portal_users WHERE username = $1', ['BUYER1']);
     const buyer2Res = await db.query<{ id: string }>('SELECT id FROM portal_users WHERE username = $1', ['BUYER2']);

@@ -995,6 +995,7 @@
       const tbody = $('portal_users_body');
       if (!tbody) return;
       tbody.innerHTML = data.users.map((u) => `<tr>
+        <td><input type="checkbox" class="pu-select" data-id="${u.id}" aria-label="選擇 ${escapeHtml(u.username)}"></td>
         <td>${escapeHtml(u.username)}</td>
         <td>${escapeHtml(u.display_name || '—')}</td>
         <td>${escapeHtml(u.role)}</td>
@@ -1005,6 +1006,7 @@
         <td>
           <button class="btn ghost btn-pu-toggle" data-id="${u.id}" data-active="${u.active}">${u.active ? '停用' : '啟用'}</button>
           <button class="btn ghost btn-pu-reset" data-id="${u.id}">重設密碼</button>
+          <button class="btn ghost btn-pu-del" data-id="${u.id}" data-username="${escapeHtml(u.username)}">刪除</button>
         </td>
       </tr>`).join('');
       tbody.querySelectorAll('.btn-pu-toggle').forEach((btn) => {
@@ -1012,6 +1014,9 @@
       });
       tbody.querySelectorAll('.btn-pu-reset').forEach((btn) => {
         btn.addEventListener('click', () => resetPortalUser(btn.dataset.id));
+      });
+      tbody.querySelectorAll('.btn-pu-del').forEach((btn) => {
+        btn.addEventListener('click', () => deletePortalUser(btn.dataset.id, btn.dataset.username));
       });
       tbody.querySelectorAll('.btn-pu-copy').forEach((btn) => {
         btn.addEventListener('click', async () => {
@@ -1024,7 +1029,7 @@
         });
       });
     } catch (err) {
-      if ($('portal_users_body')) $('portal_users_body').innerHTML = `<tr><td colspan="8" class="text-center text-secondary">載入失敗：${escapeHtml(err.message)}</td></tr>`;
+      if ($('portal_users_body')) $('portal_users_body').innerHTML = `<tr><td colspan="9" class="text-center text-secondary">載入失敗：${escapeHtml(err.message)}</td></tr>`;
     }
   }
 
@@ -1048,6 +1053,51 @@
       showAlert($('portal_users_result'), 'error', escapeHtml(err.message));
     }
   }
+
+  async function deletePortalUser(id, username) {
+    if (!window.confirm(`確定要永久刪除帳戶「${username}」嗎？此操作不可還原。`)) return;
+    try {
+      await adminFetch(`/api/admin/portal/users/${id}`, { method: 'DELETE' });
+      showAlert($('portal_users_result'), 'success', `帳戶「${escapeHtml(username)}」已刪除。`);
+      loadPortalUsers();
+    } catch (err) {
+      showAlert($('portal_users_result'), 'error', escapeHtml(err.message));
+    }
+  }
+
+  function selectedPortalUserIds() {
+    return [...document.querySelectorAll('.pu-select:checked')].map((box) => box.dataset.id);
+  }
+
+  async function bulkPortalUsers(action, label) {
+    const ids = selectedPortalUserIds();
+    if (!ids.length) {
+      showAlert($('portal_users_result'), 'error', '請先勾選至少一個帳戶。');
+      return;
+    }
+    if (!window.confirm(`確定要為已勾選的 ${ids.length} 個帳戶批量「${label}」嗎？${action === 'delete' ? '刪除後不可還原。' : ''}`)) return;
+    try {
+      const data = await adminFetch('/api/admin/portal/users/bulk', { method: 'POST', body: JSON.stringify({ ids, action }) });
+      let msg = `批量「${escapeHtml(data.label)}」完成：成功 ${data.succeeded}、失敗 ${data.failed}。`;
+      const failures = (data.results || []).filter((r) => !r.ok);
+      if (failures.length) {
+        msg += '<ul>' + failures.map((r) => `<li><b>${escapeHtml(r.username || r.id)}</b>：${escapeHtml(r.error || '失敗')}</li>`).join('') + '</ul>';
+      }
+      showAlert($('portal_users_result'), data.failed ? 'warning' : 'success', msg);
+      const selectAll = $('pu_select_all');
+      if (selectAll) selectAll.checked = false;
+      loadPortalUsers();
+    } catch (err) {
+      showAlert($('portal_users_result'), 'error', escapeHtml(err.message));
+    }
+  }
+
+  $('pu_select_all').addEventListener('change', (e) => {
+    document.querySelectorAll('.pu-select').forEach((box) => { box.checked = e.target.checked; });
+  });
+  $('btn_pu_bulk_activate').addEventListener('click', () => bulkPortalUsers('activate', '啟用'));
+  $('btn_pu_bulk_deactivate').addEventListener('click', () => bulkPortalUsers('deactivate', '停用'));
+  $('btn_pu_bulk_delete').addEventListener('click', () => bulkPortalUsers('delete', '刪除'));
 
   $('btn_pu_create').addEventListener('click', async () => {
     const username = $('pu_username').value.trim();

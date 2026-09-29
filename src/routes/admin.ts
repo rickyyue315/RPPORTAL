@@ -1753,6 +1753,142 @@ adminRouter.put(
   }),
 );
 
+/** DELETE /api/admin/portal/users/:id — permanently delete an account. */
+adminRouter.delete(
+  '/portal/users/:id',
+  requireUuidParam('id'),
+  requireAdmin,
+  adminActionLimiter,
+  asyncHandler(async (req: Request, res: Response) => {
+    const userId = req.params.id as string;
+    const existing = await query<{ id: string; username: string; role: string }>(
+      'SELECT id, username, role FROM portal_users WHERE id = $1',
+      [userId],
+    );
+    const user = existing.rows[0];
+    if (!user) {
+      res.status(404).json({ error: '找不到帳戶' });
+      return;
+    }
+    try {
+      // Same safety guards as deactivation: a Buyer holding SKUs or an SCT
+      // with pending reviews must be reassigned first (also protects the
+      // sku_master foreign key). Store accounts have no FK constraints;
+      // deleting one whose Site is still in the master means the next sync
+      // will recreate it, so admins should remove the Site first if intended.
+      if (user.role === 'buyer') {
+        await assertBuyerHasNoSkus(userId);
+      }
+      if (user.role === 'sct') {
+        await assertSctHasNoPending(userId);
+      }
+    } catch (err) {
+      if (err instanceof WorkflowConfigurationError) {
+        res.status(409).json({ error: err.message });
+        return;
+      }
+      throw err;
+    }
+    await query('DELETE FROM portal_users WHERE id = $1', [userId]);
+    // Portal sessions cascade via FK; historical UUID references in
+    // submissions / review events / import batches are retained as-is.
+    await writeAuditEvent({
+      eventType: 'portal_user_deleted',
+      actorRole: 'admin',
+      actor: req.adminUsername,
+      ip: getClientIp(req),
+      metadata: { username: user.username, role: user.role },
+    });
+    res.json({ ok: true });
+  }),
+);
+
+const portalUsersBulkSchema = z.object({
+  ids: z.array(z.string().uuid()).min(1).max(200),
+  action: z.enum(['activate', 'deactivate', 'delete']),
+});
+
+/** POST /api/admin/portal/users/bulk — batch activate / deactivate / delete. */
+adminRouter.post(
+  '/portal/users/bulk',
+  requireAdmin,
+  adminActionLimiter,
+  asyncHandler(async (req: Request, res: Response) => {
+    const parsed = portalUsersBulkSchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ error: parsed.error.issues[0]?.message ?? '批量操作無效' });
+      return;
+    }
+    const actionLabels = { activate: '啟用', deactivate: '停用', delete: '刪除' } as const;
+    const results: Array<{ id: string; username?: string; ok: boolean; error?: string }> = [];
+    for (const userId of new Set(parsed.data.ids)) {
+      const existing = await query<{ id: string; username: string; role: string; active: boolean }>(
+        'SELECT id, username, role, active FROM portal_users WHERE id = $1',
+        [userId],
+      );
+      const user = existing.rows[0];
+      if (!user) {
+        results.push({ id: userId, ok: false, error: '找不到帳戶' });
+        continue;
+      }
+      try {
+        if (parsed.data.action === 'delete') {
+          if (user.role === 'buyer') {
+            await assertBuyerHasNoSkus(userId);
+          }
+          if (user.role === 'sct') {
+            await assertSctHasNoPending(userId);
+          }
+          await query('DELETE FROM portal_users WHERE id = $1', [userId]);
+        } else {
+          const active = parsed.data.action === 'activate';
+          if (!active) {
+            if (user.role === 'buyer') {
+              await assertBuyerHasNoSkus(userId);
+            }
+            if (user.role === 'sct') {
+              await assertSctHasNoPending(userId);
+            }
+          }
+          await query('UPDATE portal_users SET active = $1, updated_at = now() WHERE id = $2', [active, userId]);
+          if (!active) {
+            await query('DELETE FROM portal_sessions WHERE user_id = $1', [userId]);
+          }
+        }
+        results.push({ id: userId, username: user.username, ok: true });
+      } catch (err) {
+        if (err instanceof WorkflowConfigurationError) {
+          results.push({ id: userId, username: user.username, ok: false, error: err.message });
+          continue;
+        }
+        throw err;
+      }
+    }
+    const succeeded = results.filter((r) => r.ok).length;
+    await writeAuditEvent({
+      eventType: 'portal_user_updated',
+      actorRole: 'admin',
+      actor: req.adminUsername,
+      ip: getClientIp(req),
+      metadata: {
+        bulk_action: parsed.data.action,
+        requested: parsed.data.ids.length,
+        succeeded,
+        failed: results.length - succeeded,
+        failures: results.filter((r) => !r.ok).map((r) => ({ username: r.username ?? r.id, error: r.error })),
+      },
+    });
+    res.json({
+      ok: true,
+      action: parsed.data.action,
+      label: actionLabels[parsed.data.action],
+      succeeded,
+      failed: results.length - succeeded,
+      results,
+    });
+  }),
+);
+
 /** POST /api/admin/portal/users/:id/reset-password — admin resets a specific account to a new initial password (viewable afterwards). */
 adminRouter.post(
   '/portal/users/:id/reset-password',

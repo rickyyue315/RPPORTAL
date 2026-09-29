@@ -58,6 +58,98 @@
     }
   }
 
+  const SITE_KEY = 'ndrf_site';
+  function storedSite() {
+    try {
+      return localStorage.getItem(SITE_KEY) || '';
+    } catch {
+      return '';
+    }
+  }
+  function rememberSite(site) {
+    try {
+      localStorage.setItem(SITE_KEY, site);
+    } catch {}
+  }
+
+  async function silentLogin(username) {
+    await portalApi('/api/portal/auth/login', {
+      method: 'POST',
+      noRedirect: true,
+      body: JSON.stringify({ username }),
+    });
+    return portalApi('/api/portal/auth/me', { noRedirect: true });
+  }
+
+  function showSiteGate() {
+    return new Promise((resolve) => {
+      const overlay = document.createElement('div');
+      overlay.id = 'site_gate';
+      overlay.style.cssText = 'position:fixed;inset:0;background:rgba(255,255,255,.96);z-index:9999;display:flex;align-items:center;justify-content:center;padding:16px;';
+      overlay.innerHTML = `<div class="portal-login-card" style="margin:0">
+        <h1>NDRF Store Portal</h1>
+        <p class="hint">請輸入你店舖嘅 Site Code（例如 HA02），唔使密碼。</p>
+        <div id="site_gate_error"></div>
+        <label for="site_gate_input">Site Code</label>
+        <input type="text" id="site_gate_input" autocomplete="off" placeholder="例如 HA02" style="text-transform:uppercase">
+        <div class="btn-row" style="margin-top:16px">
+          <button class="btn" type="button" id="site_gate_go">進入</button>
+        </div>
+      </div>`;
+      document.body.appendChild(overlay);
+      const input = overlay.querySelector('#site_gate_input');
+      const go = async () => {
+        const btn = overlay.querySelector('#site_gate_go');
+        btn.disabled = true;
+        btn.textContent = '載入中…';
+        showAlert(overlay.querySelector('#site_gate_error'), '', '');
+        try {
+          const me = await silentLogin(input.value.trim());
+          if (me.user.role !== 'store' || !me.user.site_code) throw new Error('此帳戶不是店舖帳戶');
+          rememberSite(me.user.site_code);
+          overlay.remove();
+          resolve(me.user.site_code);
+        } catch (err) {
+          showAlert(overlay.querySelector('#site_gate_error'), 'error', escapeHtml(err.message));
+          btn.disabled = false;
+          btn.textContent = '進入';
+        }
+      };
+      overlay.querySelector('#site_gate_go').addEventListener('click', go);
+      input.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); go(); } });
+      setTimeout(() => input.focus(), 50);
+    });
+  }
+
+  /**
+   * Store page guard with no visible login: existing session, ?user= link,
+   * remembered device, then a Site Code box on the page itself.
+   * Resolves with the Site Code.
+   */
+  async function ensureStoreSite() {
+    try {
+      const me = await portalApi('/api/portal/auth/me', { noRedirect: true });
+      if (me.user.role === 'store' && me.user.site_code) {
+        rememberSite(me.user.site_code);
+        return me.user.site_code;
+      }
+    } catch {}
+    for (const name of [presetUsername(), storedSite()]) {
+      if (!name) continue;
+      try {
+        const me = await silentLogin(name);
+        if (me.user.role === 'store' && me.user.site_code) {
+          rememberSite(me.user.site_code);
+          return me.user.site_code;
+        }
+      } catch {}
+    }
+    try {
+      localStorage.removeItem(SITE_KEY);
+    } catch {}
+    return showSiteGate();
+  }
+
   function goLogin() {
     const name = presetUsername();
     window.location.href = name ? `/portal/?user=${encodeURIComponent(name)}` : '/portal/';
@@ -104,6 +196,9 @@
   async function portalLogout() {
     try {
       await portalApi('/api/portal/auth/logout', { method: 'POST', body: JSON.stringify({}) });
+    } catch {}
+    try {
+      localStorage.removeItem(SITE_KEY);
     } catch {}
     window.location.href = '/portal/';
   }
@@ -174,6 +269,7 @@
     api: portalApi,
     me: portalMe,
     ensureUser,
+    ensureStoreSite,
     presetUsername,
     logout: portalLogout,
     escapeHtml,

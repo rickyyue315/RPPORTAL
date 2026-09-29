@@ -122,11 +122,11 @@
   $('logout_link').addEventListener('click', (e) => { e.preventDefault(); p.logout(); });
 
   (async () => {
-    let me;
+    let site;
     try {
-      me = await p.ensureUser(['store']);
+      site = await p.ensureStoreSite();
     } catch { return; }
-    $('store_header').textContent = `90日零銷售回覆 — ${me.user.site_code}`;
+    $('store_header').textContent = `90日零銷售回覆 — ${site}`;
     await loadReasons();
     await loadList();
   })();

@@ -210,7 +210,7 @@
 
   (async () => {
     try {
-      await p.ensureUser(['store']);
+      await p.ensureStoreSite();
     } catch (err) {
       return;
     }

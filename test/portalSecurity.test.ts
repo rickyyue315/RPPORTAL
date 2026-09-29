@@ -126,6 +126,22 @@ describe('portal passwordless login', () => {
     await db.query(`UPDATE portal_users SET active = true WHERE username = 'LOCKSTORE1'`);
   });
 
+  it('creates a store account on first use when the Site Code is in the master', async () => {
+    await db.query(`INSERT INTO stores (site_code, shop) VALUES ('NEW99', '新店') ON CONFLICT DO NOTHING`);
+    await db.query(`DELETE FROM portal_users WHERE username = 'NEW99'`);
+    const agent = request.agent(app) as Agent;
+    const token = await csrf(agent);
+    const login = await agent
+      .post('/api/portal/auth/login')
+      .set('x-csrf-token', token)
+      .send({ username: 'new99' });
+    expect(login.status).toBe(200);
+    expect(login.body.user.role).toBe('store');
+    expect(login.body.user.site_code).toBe('NEW99');
+    const row = await db.query(`SELECT role, active FROM portal_users WHERE username = 'NEW99'`);
+    expect(row.rows[0]?.role).toBe('store');
+  });
+
   it('no longer serves the change-password endpoint', async () => {
     const agent = request.agent(app) as Agent;
     const token = await csrf(agent);

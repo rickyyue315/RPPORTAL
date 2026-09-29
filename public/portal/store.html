@@ -23,6 +23,11 @@
 
   <main class="container portal-main">
     <div class="card">
+      <h2>一般 NDRF 申報（暫停）</h2>
+      <div class="alert warning" style="margin-top:0">一般 NDRF 申報服務已暫停，新提交及 Excel 上載已隱藏。現時請先完成「<a href="/portal/zero-sales.html">90日零銷售回覆</a>」。「我的申請」仍可查看舊紀錄及審批狀態。</div>
+    </div>
+
+    <div class="card" style="display:none">
       <h2>單筆申報</h2>
       <p class="hint">此帳戶已綁定 Site Code（<b id="site_code_display"></b>），不需也不能輸入其他 Site Code。</p>
       <div id="form_error"></div>
@@ -62,7 +67,7 @@
       <div id="submit_result" style="margin-top:12px"></div>
     </div>
 
-    <div class="card">
+    <div class="card" style="display:none">
       <h2>Excel 批量上載</h2>
       <p class="hint">固定模板（工作表 <b>RP Team</b>）。上載檔案中的 <b>Shop Code</b> 必須為本店 Site Code，其他店舖的行會被整批拒絕。</p>
       <div class="btn-row" style="margin-top:0">

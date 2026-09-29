@@ -8,10 +8,13 @@
 </head>
 <body>
   <header class="topbar">
-    <div><h1>NDRF 申報平台</h1><div class="subtitle">行貨退貨報數</div><div class="portal-note">一般 NDRF 申報已改為帳戶登入；Urgent、突發性銷售及行貨退貨仍可直接使用本頁。</div></div>
+    <div><h1>NDRF 申報平台</h1><div class="subtitle">行貨退貨報數</div><div class="portal-note">店舖首頁為「90日零銷售回覆」；本頁輸入一次 Site Code 後自動認店。行貨退貨暫停收單中，仍可進入查看。</div></div>
     <nav>
-      <!-- 只保留 90日零銷售回覆；其他服務暫停，連結已隱藏 -->
       <a href="/portal/zero-sales.html">90日零銷售回覆</a>
+      <a href="/urgent.html">Urgent Order</a>
+      <a href="/sales.html">突發性銷售申報</a>
+      <a href="/return.html" class="active" aria-current="page">行貨退貨報數</a>
+      <a href="/lookup.html">查詢／修改</a>
       <a href="/help.html">使用說明</a>
     </nav>
   </header>
@@ -31,8 +34,9 @@
       <form id="apply_form">
         <div class="form-grid">
           <div>
-            <label for="site_code">Site Code <span class="optional">（必填）</span></label>
+            <label for="site_code">Site Code <span class="optional">（必填，輸入一次後自動認店並鎖定）</span></label>
             <input type="text" id="site_code" autocomplete="off" placeholder="例如 HA02">
+            <div class="hint">與「90日零銷售回覆」共用同一認店，其他頁面會自動認到係你嘅店。</div>
           </div>
           <div><label>門店資訊</label><div id="store_info" class="hint" style="padding-top:9px">—</div></div>
           <div>
@@ -98,7 +102,7 @@
       <div class="table-scroll"><table id="schedule_table"><thead><tr><th>店舖申請退行貨日期</th><th>Buyer 審批日期</th><th>出退貨 NO. 日期</th></tr></thead><tbody></tbody></table></div>
     </div>
   </main>
-  <script src="/js/options.js"></script><script src="/js/api.js"></script><script src="/js/return.js"></script><script src="/js/service-suspension.js"></script>
+  <script src="/js/options.js"></script><script src="/js/api.js"></script><script src="/js/site-gate.js"></script><script src="/js/return.js"></script><script src="/js/service-suspension.js"></script>
   <footer class="site-footer">Developed by RP Team - Ricky Yue</footer>
 </body>
 </html>

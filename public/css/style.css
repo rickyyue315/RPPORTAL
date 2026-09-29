@@ -748,3 +748,80 @@ hr {
 }
 .dash-dot--ok { background: var(--success); }
 .dash-dot--empty { background: var(--muted); opacity: 0.4; }
+
+/* Public site gate + unhidden nav (all pages visible, paused stays paused). */
+#site_gate {
+  position: fixed;
+  inset: 0;
+  background: rgba(255, 255, 255, 0.96);
+  z-index: 9999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+}
+.site-gate-card {
+  background: #fff;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 26px;
+  max-width: 520px;
+  width: 100%;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.12);
+}
+.site-gate-card h1 {
+  margin: 0 0 8px;
+  font-size: 20px;
+  color: var(--brand-dark);
+}
+.site-gate-card input {
+  text-transform: uppercase;
+}
+.site-lock-bar {
+  margin-top: 8px;
+  font-size: 13px;
+  color: var(--brand-dark);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.btn-switch-site {
+  min-height: 32px;
+  padding: 4px 14px;
+  font-size: 12.5px;
+}
+input[readonly]#site_code,
+input[readonly]#q_site,
+input[readonly]#r_site {
+  background: #eef2f6;
+  color: var(--brand-dark);
+  font-weight: 700;
+}
+.topbar nav a.nav-disabled,
+.topbar nav span.nav-disabled {
+  opacity: 0.65;
+  cursor: not-allowed;
+  border: 1px dashed rgba(255, 255, 255, 0.6);
+  border-radius: 999px;
+  padding: 8px 16px;
+  font-size: 14px;
+}
+.badge-paused {
+  display: inline-block;
+  background: #fef9e7;
+  color: #7a4d00;
+  border: 1px solid #f9e79f;
+  padding: 2px 10px;
+  border-radius: 12px;
+  font-size: 12px;
+  font-weight: 700;
+  margin-left: 8px;
+  vertical-align: middle;
+}
+.btn-disabled,
+a.btn-disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+  pointer-events: none;
+}

@@ -8,12 +8,12 @@
   <link rel="stylesheet" href="/css/style.css">
   <link rel="stylesheet" href="/portal/css/portal.css">
   <script>
-    // Instant redirect before first paint (no ?user= means straight to store).
+    // Instant redirect before first paint: shop homepage is 90日零銷售回覆.
     try {
       var s = window.location.search || '';
       var hasUser = false;
       try { hasUser = !!(new URLSearchParams(s).get('user') || '').trim(); } catch (e) {}
-      if (!hasUser) window.location.replace('/portal/store.html' + s);
+      if (!hasUser) window.location.replace('/portal/zero-sales.html' + s);
     } catch (e) {}
   </script>
 </head>

@@ -12,11 +12,14 @@
     <div>
       <h1>NDRF 申報平台</h1>
       <div class="subtitle">圖文使用說明</div>
-      <div class="portal-note">現時主要功能為「90日零銷售回覆」；一般申報、Urgent、突發性銷售及行貨退貨暫時停用。</div>
+      <div class="portal-note">店舖首頁為「90日零銷售回覆」；Urgent、突發性銷售及行貨退貨已全部顯示，暫停收單中仍可進入查看。</div>
     </div>
     <nav aria-label="主要導覽">
       <a href="/portal/zero-sales.html">90日零銷售回覆</a>
-      <!-- 只保留 90日零銷售回覆；其他服務暫停，連結已隱藏 -->
+      <a href="/urgent.html">Urgent Order</a>
+      <a href="/sales.html">突發性銷售申報</a>
+      <a href="/return.html">行貨退貨報數</a>
+      <a href="/lookup.html">查詢／修改</a>
       <a href="/help.html" class="active" aria-current="page">使用說明</a>
     </nav>
   </header>
@@ -24,7 +27,7 @@
   <main class="container">
     <section class="help-hero" aria-labelledby="help-title">
       <h2 id="help-title">跟著圖示，一步一步完成回覆</h2>
-      <p>現時請先完成「90日零銷售回覆」。店舖進入後只會見到自己店舖的指定SKU，逐條選擇原因即可；舊的一般申報、Urgent、突發性銷售及行貨退貨暫時停用。先選擇你要看的說明章節，圖片為介面示意圖，實際畫面可能因手機或電腦螢幕大小略有不同。</p>
+      <p>店舖首頁為「90日零銷售回覆」。店舖進入後只會見到自己店舖的指定SKU，輸入一次 Site Code 後其他頁面（Urgent、突發性銷售、行貨退貨）會自動認店；Urgent、突發性銷售及行貨退貨已全部顯示，暫停收單中仍可進入查看。先選擇你要看的說明章節，圖片為介面示意圖，實際畫面可能因手機或電腦螢幕大小略有不同。</p>
     </section>
 
     <nav class="help-toc" aria-label="說明章節">
@@ -173,8 +176,8 @@
     </section>
 
     <section class="card help-section" id="urgent" aria-labelledby="urgent-title">
-      <h2 id="urgent-title">5. Urgent Order（暫停）</h2>
-      <p class="help-section-intro">Urgent Order 暫時停用，請先完成「90日零銷售回覆」。以下為舊說明，僅供參考。</p>
+      <h2 id="urgent-title">5. Urgent Order（暫停收單，仍可進入查看）</h2>
+      <p class="help-section-intro">Urgent Order 暫停收單中，仍可進入頁面查看。與零銷售回覆同一模式：輸入一次自己店舖嘅 Site Code 後自動認店。</p>
       <div class="help-step">
         <img src="/images/help/urgent.svg" alt="填寫 Urgent Order 的 Site Code、SKU、QTY 及原因的示意圖" width="640" height="360" loading="lazy" decoding="async">
         <div>
@@ -193,8 +196,8 @@
     </section>
 
     <section class="card help-section" id="sales" aria-labelledby="sales-title">
-      <h2 id="sales-title">6. 突發性銷售申報（暫停）</h2>
-      <p class="help-section-intro">突發性銷售申報暫時停用，請先完成「90日零銷售回覆」。以下為舊說明，僅供參考。</p>
+      <h2 id="sales-title">6. 突發性銷售申報（暫停收單，仍可進入查看）</h2>
+      <p class="help-section-intro">突發性銷售申報暫停收單中，仍可進入頁面查看。與零銷售回覆同一模式：輸入一次自己店舖嘅 Site Code 後自動認店。</p>
       <div class="help-step">
         <img src="/images/help/sales-site.svg" alt="填寫突發性銷售申報的 Site Code 及 SKU 的示意圖" width="640" height="360" loading="lazy" decoding="async">
         <div>
@@ -213,8 +216,8 @@
     </section>
 
     <section class="card help-section" id="return" aria-labelledby="return-title">
-      <h2 id="return-title">7. 行貨退貨報數（暫停）</h2>
-      <p class="help-section-intro">行貨退貨報數暫時停用，請先完成「90日零銷售回覆」。以下為舊說明，僅供參考。</p>
+      <h2 id="return-title">7. 行貨退貨報數（暫停收單，仍可進入查看）</h2>
+      <p class="help-section-intro">行貨退貨報數暫停收單中，仍可進入頁面查看時間表。與零銷售回覆同一模式：輸入一次自己店舖嘅 Site Code 後自動認店。</p>
       <div class="help-step">
         <img src="/images/help/return-window.svg" alt="查看行貨退貨申請窗口及庫存分析報表的示意圖" width="640" height="360">
         <div>
@@ -300,7 +303,7 @@
         </div>
         <div>
           <h3><span class="help-step-number">1</span>進入並查看待審批申請</h3>
-          <p>用後台派發嘅連結（或喺平台首頁按「<b>職員入口</b>」），輸入 <b>Buyer／SCT 帳戶</b>即可進入（免密碼）。「待審批申請」只會列出<b>屬於自己負責</b>的申請：Buyer 看到 SKU Master 分配的 SKU；SCT 看到指定店舖的 RF。</p>
+          <p>用後台派發嘅連結進入即可審批（免密碼）。「待審批申請」只會列出<b>屬於自己負責</b>的申請：Buyer 看到 SKU Master 分配的 SKU；SCT 看到指定店舖的 RF。平台首頁「審批員入口（Buyer／SCT）(未開放)」目前未開放。</p>
         </div>
       </div>
       <div class="help-step">
@@ -325,7 +328,7 @@
       </div>
     </section>
 
-    <p class="help-footer">如需重新開始：店舖請直接進入「90日零銷售回覆」；舊的一般申報、Urgent、突發性銷售及行貨退貨暫時停用。</p>
+    <p class="help-footer">如需重新開始：店舖請直接進入「90日零銷售回覆」（店舖首頁）；Urgent、突發性銷售及行貨退貨已全部顯示，暫停收單中仍可進入查看。</p>
   </main>
 
   <footer class="site-footer">Developed by RP Team - Ricky Yue</footer>

@@ -162,7 +162,7 @@
     }
   }
 
-  async function loadItems() {
+  async function loadItems(opts = {}) {
     const res = $('zs_items_result');
     const body = $('zs_items_body');
     if (!currentBatch) { if (res) res.innerHTML = '<div class="alert alert-info">請先選擇批次</div>'; return; }
@@ -198,11 +198,16 @@
       }).join('')
         + (rows.length > 200 ? `<tr><td colspan="9" class="text-center text-secondary">只顯示首 200 筆，請匯出 Excel 查看全部</td></tr>` : '');
       body.querySelectorAll('[data-zs-item-edit]').forEach((btn) => {
-        btn.addEventListener('click', () => openEditReply(btn.dataset.zsItemEdit));
+        btn.addEventListener('click', () => openEditReply(btn.dataset.zsItemEdit, btn));
       });
       body.querySelectorAll('[data-zs-item-del]').forEach((btn) => {
         btn.addEventListener('click', () => deleteItem(currentBatch, btn.dataset.zsItemDel, btn.dataset.site || '', btn.dataset.sku || '', btn));
       });
+      // 彈窗儲存後重載：焦點回到同一列的編輯按鈕，頁面不跳動
+      if (opts.preserveFocusId) {
+        const back = body.querySelector(`[data-zs-item-edit="${opts.preserveFocusId}"]`);
+        if (back) back.focus({ preventScroll: true });
+      }
     } catch (err) {
       if (res) res.innerHTML = `<div class="alert alert-danger">${esc(err.message)}</div>`;
     }
@@ -308,9 +313,11 @@
           <button class="btn" data-cancel>取消</button>
         </div></div>`;
       document.body.appendChild(overlay);
+      lockBodyScroll();
       const done = (v) => {
         document.removeEventListener('keydown', onKey);
         overlay.remove();
+        unlockBodyScroll();
         resolve(v);
       };
       const onKey = (e) => { if (e.key === 'Escape') done(false); };
@@ -322,11 +329,21 @@
     });
   }
 
-  function zsDeleteResult(html) {
+  function zsDeleteResult(html, scroll = true) {
     const el = $('zs_delete_result');
     if (el) {
       el.innerHTML = html;
-      el.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      if (scroll) el.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }
+  }
+
+  /* 彈窗共用：鎖住背景捲動、ESC/點背景關閉、關閉後回到觸發按鈕 ---- */
+  function lockBodyScroll() {
+    document.body.classList.add('zs-modal-open');
+  }
+  function unlockBodyScroll() {
+    if (!document.querySelector('#zs_edit_reply_overlay, #zs_reason_edit_overlay, #zs_delete_overlay')) {
+      document.body.classList.remove('zs-modal-open');
     }
   }
 
@@ -408,19 +425,19 @@
     return reasonsCache;
   }
 
-  function openEditReply(itemId) {
+  function openEditReply(itemId, triggerBtn) {
     const item = itemRows.find((x) => x.id === itemId);
     if (!item || item.status !== 'replied') return;
-    openEditReplyOverlay(item);
+    openEditReplyOverlay(item, triggerBtn);
   }
 
-  function openEditReplyOverlay(item) {
+  function openEditReplyOverlay(item, triggerBtn) {
     const overlay = document.createElement('div');
     overlay.id = 'zs_edit_reply_overlay';
     overlay.innerHTML = `<div class="modal-box" role="dialog" aria-modal="true" aria-label="編輯店舖回覆">
       <h3>編輯店舖回覆</h3>
       <p class="text-secondary small" style="margin:6px 0">店舖：${esc(item.site_code)}｜SKU：${esc(item.sku)}${item.replied_by ? `｜原回覆人：${esc(item.replied_by)}` : ''}</p>
-      <div class="mb-2"><label class="form-label">回覆原因</label><select id="zs_edit_reason" class="form-select"></select></div>
+      <div class="mb-2"><label class="form-label">回覆原因</label><select id="zs_edit_reason" class="form-select"><option value="">載入中…</option></select></div>
       <div class="mb-2"><label class="form-label">補充說明</label><textarea id="zs_edit_note" class="form-control" rows="3" maxlength="2000" placeholder="選擇須補充的原因時必填"></textarea></div>
       <p class="text-secondary small" style="margin:6px 0">管理員修改不受鎖定限制，亦不佔用店舖的修改次數；更改會記錄在審計日誌。</p>
       <div id="zs_edit_reply_error" class="text-danger small"></div>
@@ -429,39 +446,55 @@
         <button class="btn" data-cancel>取消</button>
       </div></div>`;
     document.body.appendChild(overlay);
+    lockBodyScroll();
     const sel = overlay.querySelector('#zs_edit_reason');
     const note = overlay.querySelector('#zs_edit_note');
     const errBox = overlay.querySelector('#zs_edit_reply_error');
-    const close = () => { document.removeEventListener('keydown', onKey); overlay.remove(); };
+    const saveBtn = overlay.querySelector('[data-save]');
+    const cancelBtn = overlay.querySelector('[data-cancel]');
+    const close = () => {
+      document.removeEventListener('keydown', onKey);
+      overlay.remove();
+      unlockBodyScroll();
+      if (triggerBtn && document.contains(triggerBtn)) triggerBtn.focus();
+    };
     const onKey = (e) => { if (e.key === 'Escape') close(); };
     overlay.addEventListener('click', (e) => { if (e.target === overlay) close(); });
-    overlay.querySelector('[data-cancel]').addEventListener('click', close);
-    overlay.querySelector('[data-save]').addEventListener('click', async () => {
-      const btn = overlay.querySelector('[data-save]');
+    cancelBtn.addEventListener('click', close);
+    saveBtn.addEventListener('click', async () => {
       errBox.textContent = '';
       const reasonCode = sel.value;
       const reason = reasonsCache.find((r) => r.code === reasonCode);
       const noteVal = (note.value || '').trim();
+      if (!reasonCode) {
+        errBox.textContent = '請選擇回覆原因';
+        return;
+      }
       if (reason?.require_note && !noteVal) {
         errBox.textContent = `選擇「${reason.label}」必須填寫補充說明`;
         return;
       }
-      btn.disabled = true; btn.textContent = '儲存中…';
+      saveBtn.disabled = true; saveBtn.textContent = '儲存中…';
       try {
         await aFetch(`/api/admin/zero-sales/batches/${currentBatch}/items/${item.id}/reply`, {
           method: 'PUT',
           body: JSON.stringify({ reason_code: reasonCode, reason_note: noteVal }),
         });
+        const editedId = item.id;
+        const editedLabel = `${item.site_code}｜${item.sku}`;
         close();
-        zsDeleteResult(`<div class="alert alert-success">已更新回覆：${esc(item.site_code)}｜${esc(item.sku)}。</div>`);
-        if (currentBatch) await loadItems();
+        // 原地提示、不捲動頁面（避免跳去最底），再重載明細並停留原位
+        const y = window.scrollY;
+        if (currentBatch) await loadItems({ preserveFocusId: editedId });
+        zsDeleteResult(`<div class="alert alert-success">已更新回覆：${esc(editedLabel)}。</div>`, false);
+        if (typeof y === 'number') window.scrollTo(0, y);
       } catch (err) {
         errBox.textContent = err.message;
-        btn.disabled = false; btn.textContent = '儲存';
+        saveBtn.disabled = false; saveBtn.textContent = '儲存';
       }
     });
     ensureReasons().then((reasons) => {
-      if (!reasons.length) { errBox.textContent = '沒有可用的回覆原因選項'; return; }
+      if (!reasons.length) { errBox.textContent = '沒有可用的回覆原因選項'; sel.innerHTML = '<option value="">—</option>'; return; }
       sel.innerHTML = reasons.map((r) => `<option value="${esc(r.code)}"${r.code === item.reason_code ? ' selected' : ''}>${esc(r.label)}</option>`).join('');
       note.value = item.reason_note || '';
       sel.focus();
@@ -594,12 +627,7 @@
         btn.addEventListener('click', () => {
           const row = rows.find((x) => x.code === btn.dataset.zsReasonEdit);
           if (!row) return;
-          $('zs_reason_code').value = row.code;
-          $('zs_reason_label').value = row.label;
-          $('zs_reason_sort').value = row.sort_order;
-          $('zs_reason_reqnote').value = String(Boolean(row.require_note));
-          $('zs_reason_active').value = String(Boolean(row.active));
-          $('zs_reason_label').focus();
+          openReasonEditOverlay(row, btn);
         });
       });
       body.querySelectorAll('[data-zs-reason-toggle]').forEach((btn) => {
@@ -639,6 +667,75 @@
     } catch (err) {
       res.innerHTML = `<div class="alert alert-danger">${esc(err.message)}</div>`;
     }
+  }
+
+  /* 回覆原因選項的編輯彈窗（原 inline 填表會跳去最底，改為彈窗原地處理） ---- */
+  function openReasonEditOverlay(row, triggerBtn) {
+    const overlay = document.createElement('div');
+    overlay.id = 'zs_reason_edit_overlay';
+    overlay.innerHTML = `<div class="modal-box" role="dialog" aria-modal="true" aria-label="編輯回覆原因">
+      <h3>編輯回覆原因</h3>
+      <p class="text-secondary small" style="margin:6px 0">Code：${esc(row.code)}（不可更改，如需新 Code 請用下方新增）</p>
+      <div class="mb-2"><label class="form-label">顯示名稱</label><input type="text" id="zs_re_label" class="form-control" maxlength="200" value="${esc(row.label)}"></div>
+      <div class="d-flex gap-2 flex-wrap">
+        <div class="flex-grow-1" style="min-width:100px"><label class="form-label">排序</label><input type="number" id="zs_re_sort" class="form-control" value="${Number(row.sort_order || 0)}"></div>
+        <div class="flex-grow-1" style="min-width:100px"><label class="form-label">須補充</label><select id="zs_re_reqnote" class="form-select"><option value="false">否</option><option value="true">是</option></select></div>
+        <div class="flex-grow-1" style="min-width:100px"><label class="form-label">啟用</label><select id="zs_re_active" class="form-select"><option value="true">是</option><option value="false">否</option></select></div>
+      </div>
+      <div id="zs_re_error" class="text-danger small mt-2"></div>
+      <div class="d-flex gap-2 justify-content-end mt-3">
+        <button class="btn btn-primary" data-save>儲存</button>
+        <button class="btn" data-cancel>取消</button>
+      </div></div>`;
+    document.body.appendChild(overlay);
+    lockBodyScroll();
+    const labelEl = overlay.querySelector('#zs_re_label');
+    const sortEl = overlay.querySelector('#zs_re_sort');
+    const reqEl = overlay.querySelector('#zs_re_reqnote');
+    const activeEl = overlay.querySelector('#zs_re_active');
+    const errBox = overlay.querySelector('#zs_re_error');
+    const saveBtn = overlay.querySelector('[data-save]');
+    reqEl.value = String(Boolean(row.require_note));
+    activeEl.value = String(Boolean(row.active));
+    const close = () => {
+      document.removeEventListener('keydown', onKey);
+      overlay.remove();
+      unlockBodyScroll();
+      if (triggerBtn && document.contains(triggerBtn)) triggerBtn.focus();
+    };
+    const onKey = (e) => { if (e.key === 'Escape') close(); };
+    overlay.addEventListener('click', (e) => { if (e.target === overlay) close(); });
+    overlay.querySelector('[data-cancel]').addEventListener('click', close);
+    saveBtn.addEventListener('click', async () => {
+      errBox.textContent = '';
+      const label = (labelEl.value || '').trim();
+      if (!label) { errBox.textContent = '顯示名稱為必填'; return; }
+      saveBtn.disabled = true; saveBtn.textContent = '儲存中…';
+      try {
+        await aFetch('/api/admin/zero-sales/reasons', {
+          method: 'PUT',
+          body: JSON.stringify({
+            code: row.code,
+            label,
+            sort_order: Number(sortEl.value || 0),
+            active: activeEl.value === 'true',
+            require_note: reqEl.value === 'true',
+          }),
+        });
+        const y = window.scrollY;
+        close();
+        await loadReasons();
+        const res = $('zs_reason_result');
+        if (res) res.innerHTML = `<div class="alert alert-success">已更新原因「${esc(row.code)}」。</div>`;
+        window.scrollTo(0, y);
+      } catch (err) {
+        errBox.textContent = err.message;
+        saveBtn.disabled = false; saveBtn.textContent = '儲存';
+      }
+    });
+    document.addEventListener('keydown', onKey);
+    labelEl.focus();
+    labelEl.select();
   }
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init);
   else init();

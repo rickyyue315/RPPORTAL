@@ -1015,20 +1015,32 @@ a.btn-disabled {
   color: rgba(255,255,255,.92);
 }
 .hero .btn-row { margin-top: 18px; }
-.hero .btn {
+.hero .btn,
+.hero a.btn,
+.hero a.btn:visited,
+.hero a.btn:hover,
+.hero a.btn:active,
+.hero a.btn:focus-visible {
   background: #fff;
   color: var(--brand-dark);
   border-color: #fff;
   box-shadow: 0 4px 14px rgba(0,0,0,.25);
+  text-decoration: none;
 }
-.hero .btn:hover { background: var(--brand-50); color: var(--brand-darker); }
-.hero .btn.ghost {
+.hero a.btn:hover { background: var(--brand-50); color: var(--brand-darker); }
+.hero .btn.ghost,
+.hero a.btn.ghost,
+.hero a.btn.ghost:visited,
+.hero a.btn.ghost:hover,
+.hero a.btn.ghost:active,
+.hero a.btn.ghost:focus-visible {
   background: transparent;
   color: #fff;
   border-color: rgba(255,255,255,.7);
   box-shadow: none;
+  text-decoration: none;
 }
-.hero .btn.ghost:hover { background: rgba(255,255,255,.14); }
+.hero a.btn.ghost:hover { background: rgba(255,255,255,.14); color: #fff; }
 .hero-rule {
   margin-top: 16px;
   background: rgba(255,255,255,.12);

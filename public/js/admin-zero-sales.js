@@ -313,6 +313,7 @@
           <button class="btn" data-cancel>取消</button>
         </div></div>`;
       document.body.appendChild(overlay);
+      applyModalFallback(overlay);
       lockBodyScroll();
       const done = (v) => {
         document.removeEventListener('keydown', onKey);
@@ -344,6 +345,31 @@
   function unlockBodyScroll() {
     if (!document.querySelector('#zs_edit_reply_overlay, #zs_reason_edit_overlay, #zs_delete_overlay')) {
       document.body.classList.remove('zs-modal-open');
+    }
+  }
+
+  /* 關鍵定位改用 inline style：即使瀏覽器拿著舊版 admin.css，彈窗仍會
+     置中顯示，不會變成全幅區塊貼在頁尾。完整美化仍由 admin.css 提供。 */
+  function applyModalFallback(overlay) {
+    overlay.style.position = 'fixed';
+    overlay.style.inset = '0';
+    overlay.style.background = 'rgba(0,0,0,.45)';
+    overlay.style.display = 'flex';
+    overlay.style.alignItems = 'center';
+    overlay.style.justifyContent = 'center';
+    overlay.style.zIndex = '1056';
+    overlay.style.padding = '16px';
+    const box = overlay.querySelector('.modal-box');
+    if (box) {
+      box.style.background = '#fff';
+      box.style.borderRadius = '12px';
+      box.style.padding = '26px';
+      box.style.maxWidth = '460px';
+      box.style.width = '100%';
+      box.style.boxShadow = '0 10px 30px rgba(0,0,0,.25)';
+      box.style.maxHeight = 'calc(100vh - 48px)';
+      box.style.overflowY = 'auto';
+      box.style.boxSizing = 'border-box';
     }
   }
 
@@ -446,6 +472,7 @@
         <button class="btn" data-cancel>取消</button>
       </div></div>`;
     document.body.appendChild(overlay);
+    applyModalFallback(overlay);
     lockBodyScroll();
     const sel = overlay.querySelector('#zs_edit_reason');
     const note = overlay.querySelector('#zs_edit_note');
@@ -688,6 +715,7 @@
         <button class="btn" data-cancel>取消</button>
       </div></div>`;
     document.body.appendChild(overlay);
+    applyModalFallback(overlay);
     lockBodyScroll();
     const labelEl = overlay.querySelector('#zs_re_label');
     const sortEl = overlay.querySelector('#zs_re_sort');

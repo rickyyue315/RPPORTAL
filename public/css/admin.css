@@ -149,10 +149,10 @@ tr.row-selected:nth-child(even) td { background: #e3effc; }
 }
 #detail_overlay.open { opacity: 1; pointer-events: auto; }
 
-/* 零銷售刪除確認彈窗（與匯出確認同式樣） */
-#zs_delete_overlay { position: fixed; inset: 0; background: rgba(0,0,0,.45); display: flex; align-items: center; justify-content: center; z-index: 1056; padding: 16px; }
-#zs_delete_overlay .modal-box { background: #fff; border-radius: 12px; padding: 26px; max-width: 460px; width: 100%; box-shadow: 0 10px 30px rgba(0,0,0,.25); }
-#zs_delete_overlay .modal-box h3 { margin: 0 0 8px; }
+/* 零銷售刪除確認彈窗（與匯出確認同式樣）；#zs_edit_reply_overlay 為管理員代改回覆彈窗 */
+#zs_delete_overlay, #zs_edit_reply_overlay { position: fixed; inset: 0; background: rgba(0,0,0,.45); display: flex; align-items: center; justify-content: center; z-index: 1056; padding: 16px; }
+#zs_delete_overlay .modal-box, #zs_edit_reply_overlay .modal-box { background: #fff; border-radius: 12px; padding: 26px; max-width: 460px; width: 100%; box-shadow: 0 10px 30px rgba(0,0,0,.25); }
+#zs_delete_overlay .modal-box h3, #zs_edit_reply_overlay .modal-box h3 { margin: 0 0 8px; }
 .detail-drawer {
   position: fixed; top: 0; right: 0; bottom: 0; z-index: 1041;
   width: min(var(--admin-drawer-w), 100vw);

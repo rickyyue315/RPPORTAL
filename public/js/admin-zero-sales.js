@@ -3,6 +3,8 @@
   const $ = (id) => document.getElementById(id);
   let csrf = null;
   let currentBatch = null;
+  let reasonsCache = [];
+  let itemRows = [];
 
   async function getCsrf() {
     if (!csrf) {
@@ -172,6 +174,7 @@
     try {
       const data = await aFetch(`/api/admin/zero-sales/batches/${currentBatch}/items?${qs.toString()}`);
       const rows = data.items || [];
+      itemRows = rows;
       if (!rows.length) {
         body.innerHTML = '<tr><td colspan="9" class="text-center text-secondary">此篩選沒有資料</td></tr>';
         return;
@@ -181,6 +184,9 @@
         const n = i.reply_count ?? (i.status === 'replied' ? 1 : 0);
         const upDate = i.batch_date || (i.batch_created_at || '').slice(0, 10);
         const lockTag = n >= 2 ? ' <span class="badge bg-secondary">已鎖定</span>' : n === 1 ? ' <span class="text-secondary small">可再改1次</span>' : '';
+        const editBtn = i.status === 'replied'
+          ? `<button class="btn btn-sm" data-zs-item-edit="${i.id}">編輯回覆</button>`
+          : '';
         return `<tr>
         <td>${esc(i.site_code)}</td><td>${esc(i.sku)}</td>
         <td>${esc(i.payload?.['Brand'] || '')}</td><td>${esc(i.payload?.['SKU Desc'] || '')}</td>
@@ -188,9 +194,12 @@
         <td>${i.status === 'replied' ? '<span class="badge bg-success">已回覆</span>' : '<span class="badge bg-warning">未回覆</span>'}</td>
         <td>${n}次${lockTag}</td>
         <td>${esc(i.reason_label || '')}${i.reason_note ? `（${esc(i.reason_note)}）` : ''}</td>
-        <td><button class="btn btn-sm btn-outline-danger" data-zs-item-del="${i.id}" data-site="${esc(i.site_code)}" data-sku="${esc(i.sku)}">刪除</button></td></tr>`;
+        <td><div class="d-flex gap-1 flex-wrap">${editBtn}<button class="btn btn-sm btn-outline-danger" data-zs-item-del="${i.id}" data-site="${esc(i.site_code)}" data-sku="${esc(i.sku)}">刪除</button></div></td></tr>`;
       }).join('')
         + (rows.length > 200 ? `<tr><td colspan="9" class="text-center text-secondary">只顯示首 200 筆，請匯出 Excel 查看全部</td></tr>` : '');
+      body.querySelectorAll('[data-zs-item-edit]').forEach((btn) => {
+        btn.addEventListener('click', () => openEditReply(btn.dataset.zsItemEdit));
+      });
       body.querySelectorAll('[data-zs-item-del]').forEach((btn) => {
         btn.addEventListener('click', () => deleteItem(currentBatch, btn.dataset.zsItemDel, btn.dataset.site || '', btn.dataset.sku || '', btn));
       });
@@ -390,6 +399,76 @@
     }
   }
 
+  /* 管理員代改店舖回覆（不受鎖定限制，不佔用店舖修改次數） ---- */
+
+  async function ensureReasons() {
+    if (reasonsCache.length) return reasonsCache;
+    const data = await aFetch('/api/admin/zero-sales/reasons');
+    reasonsCache = (data.reasons || []).filter((r) => r.active);
+    return reasonsCache;
+  }
+
+  function openEditReply(itemId) {
+    const item = itemRows.find((x) => x.id === itemId);
+    if (!item || item.status !== 'replied') return;
+    openEditReplyOverlay(item);
+  }
+
+  function openEditReplyOverlay(item) {
+    const overlay = document.createElement('div');
+    overlay.id = 'zs_edit_reply_overlay';
+    overlay.innerHTML = `<div class="modal-box" role="dialog" aria-modal="true" aria-label="編輯店舖回覆">
+      <h3>編輯店舖回覆</h3>
+      <p class="text-secondary small" style="margin:6px 0">店舖：${esc(item.site_code)}｜SKU：${esc(item.sku)}${item.replied_by ? `｜原回覆人：${esc(item.replied_by)}` : ''}</p>
+      <div class="mb-2"><label class="form-label">回覆原因</label><select id="zs_edit_reason" class="form-select"></select></div>
+      <div class="mb-2"><label class="form-label">補充說明</label><textarea id="zs_edit_note" class="form-control" rows="3" maxlength="2000" placeholder="選擇須補充的原因時必填"></textarea></div>
+      <p class="text-secondary small" style="margin:6px 0">管理員修改不受鎖定限制，亦不佔用店舖的修改次數；更改會記錄在審計日誌。</p>
+      <div id="zs_edit_reply_error" class="text-danger small"></div>
+      <div class="d-flex gap-2 justify-content-end mt-3">
+        <button class="btn btn-primary" data-save>儲存</button>
+        <button class="btn" data-cancel>取消</button>
+      </div></div>`;
+    document.body.appendChild(overlay);
+    const sel = overlay.querySelector('#zs_edit_reason');
+    const note = overlay.querySelector('#zs_edit_note');
+    const errBox = overlay.querySelector('#zs_edit_reply_error');
+    const close = () => { document.removeEventListener('keydown', onKey); overlay.remove(); };
+    const onKey = (e) => { if (e.key === 'Escape') close(); };
+    overlay.addEventListener('click', (e) => { if (e.target === overlay) close(); });
+    overlay.querySelector('[data-cancel]').addEventListener('click', close);
+    overlay.querySelector('[data-save]').addEventListener('click', async () => {
+      const btn = overlay.querySelector('[data-save]');
+      errBox.textContent = '';
+      const reasonCode = sel.value;
+      const reason = reasonsCache.find((r) => r.code === reasonCode);
+      const noteVal = (note.value || '').trim();
+      if (reason?.require_note && !noteVal) {
+        errBox.textContent = `選擇「${reason.label}」必須填寫補充說明`;
+        return;
+      }
+      btn.disabled = true; btn.textContent = '儲存中…';
+      try {
+        await aFetch(`/api/admin/zero-sales/batches/${currentBatch}/items/${item.id}/reply`, {
+          method: 'PUT',
+          body: JSON.stringify({ reason_code: reasonCode, reason_note: noteVal }),
+        });
+        close();
+        zsDeleteResult(`<div class="alert alert-success">已更新回覆：${esc(item.site_code)}｜${esc(item.sku)}。</div>`);
+        if (currentBatch) await loadItems();
+      } catch (err) {
+        errBox.textContent = err.message;
+        btn.disabled = false; btn.textContent = '儲存';
+      }
+    });
+    ensureReasons().then((reasons) => {
+      if (!reasons.length) { errBox.textContent = '沒有可用的回覆原因選項'; return; }
+      sel.innerHTML = reasons.map((r) => `<option value="${esc(r.code)}"${r.code === item.reason_code ? ' selected' : ''}>${esc(r.label)}</option>`).join('');
+      note.value = item.reason_note || '';
+      sel.focus();
+    }).catch((err) => { errBox.textContent = err.message; });
+    document.addEventListener('keydown', onKey);
+  }
+
   /* 統一匯出 -------------------------------------------------------- */
   function buildExportQuery(onlyUnreplied) {
     const qs = new URLSearchParams();
@@ -495,6 +574,7 @@
     try {
       const data = await aFetch('/api/admin/zero-sales/reasons');
       const rows = data.reasons || [];
+      reasonsCache = rows.filter((r) => r.active);
       // 同步匯出篩選的原因下拉
       const expReason = $('zs_exp_reason');
       if (expReason) {

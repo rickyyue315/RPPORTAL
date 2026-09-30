@@ -109,6 +109,8 @@ import {
   deleteZeroSalesBatch,
   deleteZeroSalesBatchSite,
   deleteZeroSalesItem,
+  adminReplyItem,
+  ZeroSalesReplyError,
 } from '../services/zeroSales.js';
 
 export const adminRouter = Router();
@@ -2643,6 +2645,55 @@ adminRouter.delete(
       metadata: { scope: 'batch_item', batch_id: batchId, item_id: itemId, site_code: result.siteCode, sku: result.sku },
     });
     res.json({ ok: true });
+  }),
+);
+
+const zeroSalesAdminReplySchema = z.object({
+  reason_code: z.string().trim().min(1, '請選擇回覆原因'),
+  reason_note: z.string().max(2000).optional().default(''),
+});
+
+/** PUT /api/admin/zero-sales/batches/:id/items/:itemId/reply — 管理員代改店舖回覆（不受鎖定限制，不佔用店舖修改次數） */
+adminRouter.put(
+  '/zero-sales/batches/:id/items/:itemId/reply',
+  requireUuidParam('id', 'itemId'),
+  requireAdmin,
+  adminActionLimiter,
+  asyncHandler(async (req: Request, res: Response) => {
+    const parsed = zeroSalesAdminReplySchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ error: parsed.error.issues[0]?.message ?? '回覆資料無效' });
+      return;
+    }
+    try {
+      const { before, item } = await adminReplyItem({
+        batchId: req.params.id as string,
+        itemId: req.params.itemId as string,
+        reasonCode: parsed.data.reason_code,
+        reasonNote: parsed.data.reason_note ?? '',
+      });
+      await writeAuditEvent({
+        eventType: 'zero_sales_reply_edited',
+        actorRole: 'admin',
+        actor: req.adminUsername,
+        ip: getClientIp(req),
+        metadata: {
+          item_id: item.id,
+          batch_id: item.batch_id,
+          site_code: item.site_code,
+          sku: item.sku,
+          before: { reason_code: before.reason_code, reason_note: before.reason_note },
+          after: { reason_code: item.reason_code, reason_note: item.reason_note },
+        },
+      });
+      res.json({ ok: true, item });
+    } catch (err) {
+      if (err instanceof ZeroSalesReplyError) {
+        res.status(400).json({ error: err.message });
+        return;
+      }
+      throw err;
+    }
   }),
 );
 

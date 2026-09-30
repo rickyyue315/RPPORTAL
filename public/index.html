@@ -8,83 +8,92 @@
 </head>
 <body>
   <header class="topbar">
-    <div>
-      <h1>店舖SKU項目申報平台</h1>
-      <div class="subtitle">SASA RP Team 工作使用</div>
+    <div class="topbar-inner">
+      <div class="topbar-brand">
+        <span class="brand-mark" aria-hidden="true">S</span>
+        <div>
+          <h1>店舖SKU項目申報平台</h1>
+          <div class="subtitle">SASA RP Team 工作使用 · 店舖首頁</div>
+        </div>
+      </div>
+      <nav aria-label="主要導覽">
+        <a href="/portal/zero-sales.html">零銷售回覆</a>
+        <a href="/portal/store.html">一般NDRF · 暫停</a>
+        <a href="/urgent.html">Urgent · 暫停</a>
+        <a href="/sales.html">突發性銷售 · 暫停</a>
+        <a href="/return.html">行貨退貨 · 暫停</a>
+        <a href="/lookup.html">查詢／修改</a>
+        <a href="/help.html">使用說明</a>
+        <span class="nav-disabled" title="未開放">審批員入口（未開放）</span>
+      </nav>
     </div>
-    <nav>
-      <a href="/portal/zero-sales.html">90日零銷售回覆</a>
-      <a href="/portal/store.html">一般NDRF申報（暫停）</a>
-      <a href="/urgent.html">Urgent Order（暫停）</a>
-      <a href="/sales.html">突發性銷售（暫停）</a>
-      <a href="/return.html">行貨退貨（暫停）</a>
-      <a href="/lookup.html">查詢／修改（暫停）</a>
-      <a href="/help.html">使用說明</a>
-      <span class="nav-disabled" title="未開放">審批員入口（Buyer／SCT）(未開放)</span>
-    </nav>
   </header>
 
-  <main class="container">
-    <div class="card portal-gate-card">
-      <h2>90日零銷售 SKU 回覆（店舖首頁）</h2>
-      <p class="hint">RP Team 每週會發出店舖的指定90日零銷售SKU，直接進入後輸入所屬店舖嘅 Site Code（例如 HA02），即可逐條選擇回覆原因。每個 SKU 可修改一次。輸入一次Site Code後，其他頁面會自動認到係你嘅店。轉換其他店舖需要登出。其他項目請使用公司的Portal。</p>
+  <main class="container" style="max-width:1080px">
+    <section class="hero" aria-labelledby="hero-title">
+      <span class="hero-eyebrow">店舖首頁 · 每週必做</span>
+      <h2 id="hero-title">90日零銷售 SKU 回覆</h2>
+      <p>RP Team 每週會發出你店舖的指定 90 日零銷售 SKU。直接進入後輸入 Site Code（例如 HA02），即可逐條選擇回覆原因。每個 SKU 可修改一次。輸入一次 Site Code 後，其他頁面會自動認到係你嘅店。</p>
       <div class="btn-row">
-        <a class="btn" href="/portal/zero-sales.html">直接進入回覆頁（店舖首頁）</a>
+        <a class="btn" href="/portal/zero-sales.html">直接進入回覆頁</a>
         <a class="btn ghost" href="/help.html#zero-sales">使用說明</a>
       </div>
-      <div class="alert warning" style="margin-top:16px">
-        <b>回覆規則</b>：選擇「6.其他」必須填寫補充說明；已回覆的SKU只可再修改一次，之後會鎖定。
-      </div>
-    </div>
+      <div class="hero-rule"><b>回覆規則</b>：選擇「6.其他」必須填寫補充說明；已回覆的 SKU 只可再修改一次，之後會鎖定。</div>
+    </section>
 
-    <div class="card">
-      <h2>一般NDRF申報（ND／RF／改 Safety）<span class="badge-paused">暫停收單</span></h2>
-      <p class="hint" style="margin-top:0">與零銷售回覆同一模式：輸入店舖 Site Code 後自動認店，唔使密碼。目前暫停收單，仍可進入查看「我的申請」舊紀錄及審批狀態。</p>
-      <div class="btn-row">
-        <a class="btn ghost" href="/portal/store.html">進入一般NDRF申報</a>
-        <a class="btn ghost" href="/help.html#normal">使用說明</a>
+    <div class="home-grid">
+      <div class="card">
+        <h2><span class="home-card__icon" aria-hidden="true">▦</span>查詢／修改</h2>
+        <p class="hint" style="margin-top:0">適用於 <b>URGENT-</b>、<b>SALES-</b> 及 <b>RETURN-</b> 開頭的申請。如已輸入 Site Code，會自動帶入，唔使重複輸入。</p>
+        <div class="btn-row">
+          <a class="btn ghost btn-sm" href="/lookup.html">進入查詢／修改</a>
+          <a class="card-link" href="/help.html#lookup">使用說明 →</a>
+        </div>
       </div>
-    </div>
 
-    <div class="card">
-      <h2>Urgent Order<span class="badge-paused">暫停收單</span></h2>
-      <p class="hint" style="margin-top:0">與零銷售回覆同一模式：輸入一次自己店舖嘅 Site Code 後自動認店。目前暫停收單，仍可進入查看頁面及說明。</p>
-      <div class="btn-row">
-        <a class="btn ghost" href="/urgent.html">進入 Urgent Order</a>
-        <a class="btn ghost" href="/help.html#urgent">使用說明</a>
+      <div class="card">
+        <h2><span class="home-card__icon" aria-hidden="true">？</span>需要幫助？</h2>
+        <p class="hint" style="margin-top:0">第一次使用？先到「90日零銷售回覆」輸入 Site Code；其他頁面可到獨立的<a href="/help.html">圖文使用說明</a>，按步驟查看。</p>
+        <div class="btn-row">
+          <a class="btn ghost btn-sm" href="/help.html">開啟圖文說明</a>
+        </div>
       </div>
-    </div>
 
-    <div class="card">
-      <h2>突發性銷售申報<span class="badge-paused">暫停收單</span></h2>
-      <p class="hint" style="margin-top:0">與零銷售回覆同一模式：輸入一次自己店舖嘅 Site Code 後自動認店。目前暫停收單，仍可進入查看頁面及說明。</p>
-      <div class="btn-row">
-        <a class="btn ghost" href="/sales.html">進入突發性銷售申報</a>
-        <a class="btn ghost" href="/help.html#sales">使用說明</a>
+      <div class="card home-card--paused">
+        <h2><span class="home-card__icon" aria-hidden="true">N</span>一般NDRF申報<span class="badge-paused">暫停收單</span></h2>
+        <p class="hint" style="margin-top:0">ND／RF／改 Safety。仍可進入查看「我的申請」舊紀錄及審批狀態。</p>
+        <div class="btn-row">
+          <a class="btn ghost btn-sm" href="/portal/store.html">進入查看</a>
+          <a class="card-link" href="/help.html#normal">說明 →</a>
+        </div>
       </div>
-    </div>
 
-    <div class="card">
-      <h2>行貨退貨報數<span class="badge-paused">暫停收單</span></h2>
-      <p class="hint" style="margin-top:0">與零銷售回覆同一模式：輸入一次自己店舖嘅 Site Code 後自動認店。目前暫停收單，仍可進入查看頁面、時間表及說明。</p>
-      <div class="btn-row">
-        <a class="btn ghost" href="/return.html">進入行貨退貨報數</a>
-        <a class="btn ghost" href="/help.html#return">使用說明</a>
+      <div class="card home-card--paused">
+        <h2><span class="home-card__icon" aria-hidden="true">!</span>Urgent Order<span class="badge-paused">暫停收單</span></h2>
+        <p class="hint" style="margin-top:0">緊急補貨。仍可進入查看頁面及說明。</p>
+        <div class="btn-row">
+          <a class="btn ghost btn-sm" href="/urgent.html">進入查看</a>
+          <a class="card-link" href="/help.html#urgent">說明 →</a>
+        </div>
       </div>
-    </div>
 
-    <div class="card">
-      <h2>查詢／修改</h2>
-      <p class="hint" style="margin-top:0">適用於 <b>URGENT-</b>、<b>SALES-</b> 及 <b>RETURN-</b> 開頭的申請。如已輸入 Site Code，會自動帶入，唔使重複輸入。</p>
-      <div class="btn-row">
-        <a class="btn ghost" href="/lookup.html">進入查詢／修改</a>
-        <a class="btn ghost" href="/help.html#lookup">使用說明</a>
+      <div class="card home-card--paused">
+        <h2><span class="home-card__icon" aria-hidden="true">%</span>突發性銷售<span class="badge-paused">暫停收單</span></h2>
+        <p class="hint" style="margin-top:0">只填 Site Code 及 SKU。仍可進入查看頁面及說明。</p>
+        <div class="btn-row">
+          <a class="btn ghost btn-sm" href="/sales.html">進入查看</a>
+          <a class="card-link" href="/help.html#sales">說明 →</a>
+        </div>
       </div>
-    </div>
 
-    <div class="card">
-      <h2>需要幫助？</h2>
-      <p class="hint" style="margin-top:0">第一次使用？店舖請先到「<a href="/portal/zero-sales.html">90日零銷售回覆（店舖首頁）</a>」輸入 Site Code；其他頁面可到獨立的<a href="/help.html">圖文使用說明</a>，按照步驟查看。一般NDRF申報、Urgent、突發性銷售及行貨退貨暫停收單中，仍可進入查看。</p>
+      <div class="card home-card--paused">
+        <h2><span class="home-card__icon" aria-hidden="true">↩</span>行貨退貨報數<span class="badge-paused">暫停收單</span></h2>
+        <p class="hint" style="margin-top:0">申請退行貨。仍可進入查看頁面、時間表及說明。</p>
+        <div class="btn-row">
+          <a class="btn ghost btn-sm" href="/return.html">進入查看</a>
+          <a class="card-link" href="/help.html#return">說明 →</a>
+        </div>
+      </div>
     </div>
   </main>
 

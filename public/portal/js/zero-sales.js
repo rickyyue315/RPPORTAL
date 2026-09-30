@@ -48,10 +48,13 @@
     const data = await p.api(`/api/portal/zero-sales/my${qs}`);
     items = data.items || [];
     const replied = items.filter((i) => i.status === 'replied').length;
+    const rate = items.length ? Math.round((replied / items.length) * 100) : 0;
     const shop = data.shop ? ` ${p.escapeHtml(data.shop)}` : '';
+    const bar = document.getElementById('zs_progress_bar');
+    if (bar) bar.style.width = `${rate}%`;
     $('site_info').innerHTML =
       `<div class="site-banner">${p.escapeHtml(data.site_code)}${shop}</div>` +
-      `<div>共 ${items.length} 個指定 SKU（${replied} 已回覆）</div>` +
+      `<div>共 ${items.length} 個指定 SKU（${replied} 已回覆 · ${rate}%）</div>` +
       `<div class="hint">如非你店舖，請按右上「登出」再重新輸入自己嘅 Site Code。</div>`;
     render();
   }
@@ -64,7 +67,9 @@
       return hay.includes(q);
     });
     if (!filtered.length) {
-      $('zs_list').innerHTML = '<div class="hint">暫無指定 SKU</div>';
+      $('zs_list').innerHTML = '<div class="empty" style="padding:36px 16px">暫無指定 SKU — 試下轉「狀態」或清空搜尋字。</div>';
+      const c0 = document.getElementById('zs_count');
+      if (c0) c0.textContent = '';
       return;
     }
     let html = '<table class="zs-table"><thead><tr><th>週次</th>';
@@ -85,6 +90,8 @@
     });
     html += '</tbody></table>';
     $('zs_list').innerHTML = html;
+    const cc = document.getElementById('zs_count');
+    if (cc) cc.textContent = `顯示 ${filtered.length} / ${items.length} 筆`;
     $('zs_list').querySelectorAll('[data-reply]').forEach((btn) => {
       btn.addEventListener('click', () => openReply(btn.dataset.reply));
     });

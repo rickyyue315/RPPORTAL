@@ -6,73 +6,76 @@
   <title>Store Portal — 90日零銷售回覆</title>
   <link rel="stylesheet" href="/css/style.css">
   <link rel="stylesheet" href="/portal/css/portal.css">
-  <style>
-    .zs-table-wrap { overflow-x: auto; }
-    table.zs-table { width: 100%; border-collapse: collapse; }
-    table.zs-table th, table.zs-table td { font-size: 13px; white-space: normal; word-break: break-word; vertical-align: top; }
-    table.zs-table th { white-space: nowrap; }
-    .filter-row { display: flex; gap: 12px; flex-wrap: wrap; align-items: end; margin-bottom: 12px; }
-    .badge-pending { background: #fef9e7; color: #7a4d00; border: 1px solid #f9e79f; padding: 2px 10px; border-radius: 12px; font-size: 12px; }
-    .badge-replied { background: #eafaf1; color: #0a5c36; border: 1px solid #a9dfbf; padding: 2px 10px; border-radius: 12px; font-size: 12px; }
-    dialog#reply_dialog { border: none; border-radius: 12px; padding: 24px; max-width: 560px; width: 92vw; }
-    dialog#reply_dialog::backdrop { background: rgba(0,0,0,.45); }
-  </style>
 </head>
 <body>
   <header class="topbar">
-    <div>
-      <h1>NDRF Store Portal</h1>
-      <div class="subtitle" id="store_header">90日零銷售回覆</div>
+    <div class="topbar-inner">
+      <div class="topbar-brand">
+        <span class="brand-mark" aria-hidden="true">S</span>
+        <div>
+          <h1>NDRF Store Portal</h1>
+          <div class="subtitle" id="store_header">90日零銷售回覆</div>
+        </div>
+      </div>
+      <nav aria-label="主要導覽">
+        <a href="/portal/zero-sales.html" class="active" aria-current="page">零銷售回覆</a>
+        <a href="/portal/store.html">一般NDRF · 暫停</a>
+        <a href="/urgent.html">Urgent · 暫停</a>
+        <a href="/sales.html">突發性銷售 · 暫停</a>
+        <a href="/return.html">行貨退貨 · 暫停</a>
+        <a href="/lookup.html">查詢／修改</a>
+        <a href="/help.html">使用說明</a>
+        <a href="#" id="logout_link">登出</a>
+        <a href="/">平台首頁</a>
+      </nav>
     </div>
-    <nav>
-      <a href="/portal/zero-sales.html" class="active">90日零銷售回覆</a>
-      <a href="/portal/store.html">一般NDRF申報（暫停）</a>
-      <a href="/urgent.html">Urgent Order（暫停）</a>
-      <a href="/sales.html">突發性銷售（暫停）</a>
-      <a href="/return.html">行貨退貨（暫停）</a>
-      <a href="/lookup.html">查詢／修改（暫停）</a>
-      <a href="/help.html">使用說明</a>
-      <a href="#" id="logout_link">登出</a>
-      <a href="/">平台首頁</a>
-    </nav>
   </header>
 
-  <main class="container portal-main">
-    <div class="card">
+  <main class="container portal-main" style="max-width:1200px">
+    <div class="card zs-head-card">
       <h2>90日零銷售 SKU 回覆</h2>
-      <p class="hint" id="site_info">載入中…</p>
-      <p class="hint">RP Team 每週派發你店舖的指定零銷售SKU，請逐條選擇原因並可填補充說明。每 SKU 可修改一次（初次回覆 + 1次修改），用完後會鎖定，如需再改請聯絡 RP Team。</p>
-      <div class="filter-row">
-        <div>
-          <label for="f_status">狀態</label><br>
+      <div id="site_info"><div class="loading">載入中…</div></div>
+      <div class="zs-progress" aria-hidden="true"><i id="zs_progress_bar" style="width:0%"></i></div>
+      <p class="hint" style="margin-bottom:0">RP Team 每週派發你店舖的指定零銷售 SKU，請逐條選擇原因並可填補充說明。每 SKU 可修改一次（初次回覆 + 1 次修改），用完後會鎖定，如需再改請聯絡 RP Team。</p>
+
+      <div class="zs-toolbar" role="search">
+        <div class="field">
+          <label for="f_status">狀態篩選</label>
           <select id="f_status"><option value="">全部</option><option value="pending">未回覆</option><option value="replied">已回覆</option></select>
         </div>
-        <div>
-          <label for="f_search">搜尋 SKU / Brand / 描述</label><br>
-          <input type="text" id="f_search" placeholder="例如 1234567">
+        <div class="field field--search">
+          <label for="f_search">搜尋 SKU / Brand / 描述</label>
+          <input type="text" id="f_search" placeholder="例如 1234567、EYG…" autocomplete="off">
         </div>
-        <div><button class="btn" id="btn_refresh">重新整理</button></div>
+        <div>
+          <button class="btn btn-sm" id="btn_refresh" type="button" style="min-height:42px;padding:10px 22px;font-size:14px;border-radius:999px">重新整理</button>
+        </div>
       </div>
       <div id="list_error"></div>
-      <div class="zs-table-wrap"><div id="zs_list"><div class="loading">載入中…</div></div></div>
+      <div class="zs-table-wrap"><div id="zs_list"><div class="loading" style="padding:28px;text-align:center">載入中…</div></div></div>
+      <p class="hint" id="zs_count" style="margin-bottom:0"></p>
     </div>
   </main>
 
-  <dialog id="reply_dialog">
-    <h3 id="reply_title">回覆</h3>
-    <div id="reply_sku_info" class="hint"></div>
-    <div style="margin:12px 0">
-      <label for="reply_reason">回覆原因 <span class="optional">（必選）</span></label><br>
-      <select id="reply_reason" style="width:100%"></select>
+  <dialog id="reply_dialog" aria-labelledby="reply_title">
+    <div class="reply-head">
+      <h3 id="reply_title">回覆</h3>
+      <div id="reply_sku_info" class="hint"></div>
     </div>
-    <div style="margin:12px 0">
-      <label for="reply_note">補充說明</label><br>
-      <textarea id="reply_note" rows="3" style="width:100%" maxlength="2000" placeholder="例如：已安排陳列 / 待清貨…"></textarea>
-    </div>
-    <div id="reply_error"></div>
-    <div class="btn-row" style="justify-content:flex-end">
-      <button class="btn ghost" id="btn_reply_cancel">取消</button>
-      <button class="btn" id="btn_reply_save">儲存回覆</button>
+    <div class="reply-body">
+      <div style="margin:0 0 12px">
+        <label for="reply_reason">回覆原因 <span class="optional">（必選）</span></label>
+        <select id="reply_reason" style="width:100%"></select>
+      </div>
+      <div style="margin:12px 0">
+        <label for="reply_note">補充說明</label>
+        <textarea id="reply_note" rows="3" style="width:100%" maxlength="2000" placeholder="例如：已安排陳列 / 待清貨…"></textarea>
+      </div>
+      <div id="reply_error"></div>
+      <div class="btn-row" style="justify-content:flex-end">
+        <button class="btn ghost btn-sm" id="btn_reply_cancel" type="button">取消</button>
+        <button class="btn btn-sm" id="btn_reply_save" type="button" style="min-height:36px;border-radius:8px">儲存回覆</button>
+      </div>
     </div>
   </dialog>
 

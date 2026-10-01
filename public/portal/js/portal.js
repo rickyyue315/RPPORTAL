@@ -59,6 +59,7 @@
   }
 
   const SITE_KEY = 'ndrf_site';
+  const PASS_KEY = 'ndrf_portal_pass';
   function storedSite() {
     try {
       return localStorage.getItem(SITE_KEY) || '';
@@ -71,40 +72,80 @@
       localStorage.setItem(SITE_KEY, site);
     } catch {}
   }
+  function storedPass() {
+    try {
+      return localStorage.getItem(PASS_KEY) || '';
+    } catch {
+      return '';
+    }
+  }
+  function rememberPass(pass) {
+    try {
+      localStorage.setItem(PASS_KEY, pass);
+    } catch {}
+  }
+  function clearPass() {
+    try {
+      localStorage.removeItem(PASS_KEY);
+    } catch {}
+  }
 
-  async function silentLogin(username) {
-    await portalApi('/api/portal/auth/login', {
+  /** Portal login needs the shared password (default SASA1234); it is
+   * remembered on this device after the first successful gate entry so
+   * return visits stay automatic. */
+  async function loginPortal(username, password) {
+    return portalApi('/api/portal/auth/login', {
       method: 'POST',
       noRedirect: true,
-      body: JSON.stringify({ username }),
+      body: JSON.stringify({ username, password }),
     });
+  }
+
+  async function silentLogin(username) {
+    const pass = storedPass();
+    if (!pass) {
+      const err = new Error('需要輸入密碼');
+      err.status = 401;
+      throw err;
+    }
+    try {
+      await loginPortal(username, pass);
+    } catch (err) {
+      if (err && err.status === 401) clearPass();
+      throw err;
+    }
     return portalApi('/api/portal/auth/me', { noRedirect: true });
   }
 
-  function showSiteGate() {
+  function showSiteGate(preset) {
     return new Promise((resolve) => {
       const overlay = document.createElement('div');
       overlay.id = 'site_gate';
       overlay.style.cssText = 'position:fixed;inset:0;background:rgba(255,255,255,.96);z-index:9999;display:flex;align-items:center;justify-content:center;padding:16px;';
       overlay.innerHTML = `<div class="portal-login-card" style="margin:0">
         <h1>NDRF Store Portal</h1>
-        <p class="hint">請輸入你店舖嘅 Site Code（例如 HA02），唔使密碼。</p>
+        <p class="hint">請輸入你店舖嘅 Site Code（例如 HA02）及統一密碼（由 RP Team 提供）。輸入一次後此裝置會自動記住。</p>
         <div id="site_gate_error"></div>
         <label for="site_gate_input">Site Code</label>
         <input type="text" id="site_gate_input" autocomplete="off" placeholder="例如 HA02" style="text-transform:uppercase">
+        <label for="site_gate_pass" style="margin-top:12px">統一密碼</label>
+        <input type="password" id="site_gate_pass" autocomplete="current-password" placeholder="統一密碼">
         <div class="btn-row" style="margin-top:16px">
           <button class="btn" type="button" id="site_gate_go">進入</button>
         </div>
       </div>`;
       document.body.appendChild(overlay);
       const input = overlay.querySelector('#site_gate_input');
+      const passInput = overlay.querySelector('#site_gate_pass');
+      if (preset) input.value = preset;
       const go = async () => {
         const btn = overlay.querySelector('#site_gate_go');
         btn.disabled = true;
         btn.textContent = '載入中…';
         showAlert(overlay.querySelector('#site_gate_error'), '', '');
         try {
-          const me = await silentLogin(input.value.trim());
+          const me = await loginPortal(input.value.trim(), passInput.value);
+          rememberPass(passInput.value);
           if ((me.user.role === 'buyer' || me.user.role === 'sct')) {
             window.location.href = '/portal/reviewer.html';
             return;
@@ -120,14 +161,17 @@
         }
       };
       overlay.querySelector('#site_gate_go').addEventListener('click', go);
-      input.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); go(); } });
-      setTimeout(() => input.focus(), 50);
+      const submitOnEnter = (e) => { if (e.key === 'Enter') { e.preventDefault(); go(); } };
+      input.addEventListener('keydown', submitOnEnter);
+      passInput.addEventListener('keydown', submitOnEnter);
+      input.addEventListener('input', () => { input.value = input.value.toUpperCase(); });
+      setTimeout(() => (preset ? passInput : input).focus(), 50);
     });
   }
 
   /**
-   * Store page guard with no visible login: existing session, ?user= link,
-   * remembered device, then a Site Code box on the page itself.
+   * Store page guard: existing session, remembered credentials, then a
+   * Site Code + shared password box on the page itself.
    * Resolves with the Site Code.
    */
   async function ensureStoreSite() {
@@ -163,7 +207,7 @@
     try {
       localStorage.removeItem(SITE_KEY);
     } catch {}
-    return showSiteGate();
+    return showSiteGate(presetUsername() || '');
   }
 
   function goLogin() {
@@ -173,9 +217,9 @@
 
   /**
    * Page guard for store / reviewer pages. Returns the logged-in user when
-   * their role is allowed. When the session is missing but the link carries
-   * ?user=, it logs in automatically so deep links (e.g. zero-sales.html)
-   * open directly with no extra click.
+   * their role is allowed. When the session is missing but a password is
+   * remembered (or ?user= is present), it retries automatically; otherwise it
+   * routes through the gate to collect the shared password.
    */
   async function ensureUser(roles) {
     const check = (me) => {
@@ -187,21 +231,16 @@
       return check(await portalApi('/api/portal/auth/me', { noRedirect: true }));
     } catch (err) {
       const name = presetUsername();
-      if (!name) {
-        goLogin();
-        throw err;
+      if (name && storedPass()) {
+        try {
+          await silentLogin(name);
+          return check(await portalApi('/api/portal/auth/me', { noRedirect: true }));
+        } catch (err2) {
+          // fall through to the gate below
+        }
       }
-      try {
-        await portalApi('/api/portal/auth/login', {
-          method: 'POST',
-          noRedirect: true,
-          body: JSON.stringify({ username: name }),
-        });
-        return check(await portalApi('/api/portal/auth/me', { noRedirect: true }));
-      } catch (err2) {
-        goLogin();
-        throw err2;
-      }
+      goLogin();
+      throw err;
     }
   }
 
@@ -215,6 +254,7 @@
     } catch {}
     try {
       localStorage.removeItem(SITE_KEY);
+      localStorage.removeItem(PASS_KEY);
     } catch {}
     window.location.href = '/portal/';
   }

@@ -24,6 +24,8 @@ const MASTER_RECOVERY_CODE = 'test-master-code';
 const IVY_RECOVERY_CODE = 'test-ivy-code';
 const VIOLET_RECOVERY_CODE = 'test-violet-code';
 const STORE_TEST_PASSWORD = 'StoreTest1!ABCD';
+// Portal logins must present the shared password (see PORTAL_SHARED_PASSWORD).
+const PORTAL_SHARED_PASSWORD = 'SASA1234';
 
 function recoveryHash(code: string): string {
   return createHash('sha256').update(code).digest('hex');
@@ -95,7 +97,7 @@ async function portalLogin(agent: ReturnType<typeof request.agent>, username: st
   const res = await agent
     .post('/api/portal/auth/login')
     .set('x-csrf-token', token)
-    .send({ username, password: STORE_TEST_PASSWORD });
+    .send({ username, password: PORTAL_SHARED_PASSWORD });
   expect(res.status).toBe(200);
   return token;
 }

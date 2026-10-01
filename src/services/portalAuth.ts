@@ -64,6 +64,14 @@ export function normalizePortalUsername(raw: string): string {
   return raw.trim().toUpperCase();
 }
 
+/** Constant-time comparison against the shared portal password (default SASA1234). */
+export function verifySharedPassword(given: string): boolean {
+  const expected = Buffer.from(config.portalSharedPassword, 'utf8');
+  const actual = Buffer.from(given ?? '', 'utf8');
+  if (expected.length === 0 || expected.length !== actual.length) return false;
+  return timingSafeEqual(expected, actual);
+}
+
 function hashToken(token: string): string {
   return createHash('sha256').update(token).digest('hex');
 }

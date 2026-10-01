@@ -10,6 +10,7 @@
  */
 process.env.ADMIN_USERNAME = process.env.ADMIN_USERNAME ?? 'admin';
 process.env.ADMIN_PASSWORD = process.env.ADMIN_PASSWORD ?? 'smoke-password';
+process.env.PORTAL_SHARED_PASSWORD = process.env.PORTAL_SHARED_PASSWORD ?? 'SASA1234';
 // Config requires DATABASE_URL at import time even though the smoke test runs
 // against an in-memory PGlite; provide a harmless default for local runs.
 process.env.DATABASE_URL = process.env.DATABASE_URL ?? 'postgres://smoke:smoke@localhost:5432/smoke';
@@ -147,7 +148,7 @@ const server = app.listen(0, async () => {
         cookie: cookieJar,
         'x-csrf-token': portalCsrfJson.token,
       },
-      body: JSON.stringify({ username: 'HA02', password: 'SmokeTest1!AAAA' }),
+      body: JSON.stringify({ username: 'HA02', password: 'SASA1234' }),
     });
     collectCookie(portalLoginRes);
     check('portal login', portalLoginRes.status === 200);

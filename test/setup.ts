@@ -7,6 +7,7 @@ const defaults: Record<string, string> = {
   DATABASE_URL: 'postgres://ndrf:ndrf@localhost:5432/ndrf',
   ADMIN_USERNAME: 'admin',
   ADMIN_PASSWORD: 'test-password',
+  PORTAL_SHARED_PASSWORD: 'SASA1234',
   NODE_ENV: 'test',
 };
 

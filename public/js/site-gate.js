@@ -1,12 +1,14 @@
 /* Public site gate — same pattern as 90日零銷售回覆.
- * Shop inputs Site Code once, it is validated via /api/public/stores/:code,
- * remembered in localStorage (same key as portal.js: 'ndrf_site') and shared
+ * Shop inputs Site Code + the shared password (default SASA1234, validated
+ * server-side via POST /api/public/site-gate), remembered in localStorage
+ * (same keys as portal.js: 'ndrf_site' / 'ndrf_portal_pass') and shared
  * across Urgent / Sales / Return / Lookup pages. The Site Code field is then
  * locked to the recognised shop; switching is done via the switch button.
  */
 (() => {
   const SITE_KEY = 'ndrf_site';
   const SHOP_KEY = 'ndrf_shop';
+  const PASS_KEY = 'ndrf_portal_pass';
 
   function storedSite() {
     try { return (localStorage.getItem(SITE_KEY) || '').trim().toUpperCase(); } catch { return ''; }
@@ -14,16 +16,23 @@
   function storedShop() {
     try { return localStorage.getItem(SHOP_KEY) || ''; } catch { return ''; }
   }
+  function storedPass() {
+    try { return localStorage.getItem(PASS_KEY) || ''; } catch { return ''; }
+  }
   function rememberSite(site, shop) {
     try {
       localStorage.setItem(SITE_KEY, site);
       if (shop) localStorage.setItem(SHOP_KEY, shop);
     } catch {}
   }
+  function rememberPass(pass) {
+    try { localStorage.setItem(PASS_KEY, pass); } catch {}
+  }
   function clearSite() {
     try {
       localStorage.removeItem(SITE_KEY);
       localStorage.removeItem(SHOP_KEY);
+      localStorage.removeItem(PASS_KEY);
     } catch {}
   }
 
@@ -33,11 +42,17 @@
     return d.innerHTML;
   }
 
-  async function fetchStore(code) {
-    const res = await fetch(`/api/public/stores/${encodeURIComponent(code)}`, { credentials: 'same-origin' });
+  /** Validates Site Code + shared password server-side; throws on failure. */
+  async function openGate(code, pass) {
+    const res = await fetch('/api/public/site-gate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'same-origin',
+      body: JSON.stringify({ site_code: code, password: pass ?? '' }),
+    });
     let data = null;
     try { data = await res.json(); } catch {}
-    if (!res.ok) throw new Error((data && data.error) || 'Site Code 不存在');
+    if (!res.ok) throw new Error((data && data.error) || 'Site Code 或密碼不正確');
     return data.store;
   }
 
@@ -52,10 +67,12 @@
       overlay.innerHTML =
         '<div class="site-gate-card">' +
           '<h1>選擇店舖</h1>' +
-          '<p class="hint">請輸入你店舖嘅 Site Code（例如 HA02），輸入一次後所有頁面（90日零銷售、Urgent、突發性銷售、行貨退貨）會自動認到係你嘅店舖。店舖首頁為「90日零銷售回覆」。</p>' +
+          '<p class="hint">請輸入你店舖嘅 Site Code（例如 HA02）及統一密碼，輸入一次後所有頁面（90日零銷售、Urgent、突發性銷售、行貨退貨）會自動認到係你嘅店舖。店舖首頁為「90日零銷售回覆」。</p>' +
           '<div id="site_gate_error"></div>' +
           '<label for="site_gate_input">Site Code</label>' +
           '<input type="text" id="site_gate_input" autocomplete="off" placeholder="例如 HA02">' +
+          '<label for="site_gate_pass" style="margin-top:12px">統一密碼</label>' +
+          '<input type="password" id="site_gate_pass" autocomplete="current-password" placeholder="統一密碼">' +
           '<div class="btn-row" style="margin-top:16px">' +
             '<button class="btn" type="button" id="site_gate_go">進入</button>' +
             '<a class="btn ghost" href="/portal/zero-sales.html">先去零銷售回覆（店舖首頁）</a>' +
@@ -63,6 +80,7 @@
         '</div>';
       document.body.appendChild(overlay);
       const input = overlay.querySelector('#site_gate_input');
+      const passInput = overlay.querySelector('#site_gate_pass');
       const errBox = overlay.querySelector('#site_gate_error');
       const btn = overlay.querySelector('#site_gate_go');
       if (initial) input.value = initial;
@@ -76,20 +94,23 @@
         btn.textContent = '載入中…';
         showErr('');
         try {
-          const store = await fetchStore(code);
+          const store = await openGate(code, passInput.value);
           rememberSite(store.site_code || code, store.shop || '');
+          rememberPass(passInput.value);
           overlay.remove();
           resolve({ site_code: store.site_code || code, shop: store.shop || '' });
         } catch (err) {
-          showErr(err.message || 'Site Code 不存在');
+          showErr(err.message || 'Site Code 或密碼不正確');
           btn.disabled = false;
           btn.textContent = '進入';
         }
       };
       btn.addEventListener('click', go);
-      input.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); go(); } });
+      const submitOnEnter = (e) => { if (e.key === 'Enter') { e.preventDefault(); go(); } };
+      input.addEventListener('keydown', submitOnEnter);
+      passInput.addEventListener('keydown', submitOnEnter);
       input.addEventListener('input', () => { input.value = input.value.toUpperCase(); });
-      setTimeout(() => input.focus(), 50);
+      setTimeout(() => (initial ? passInput : input).focus(), 50);
     });
   }
 
@@ -172,9 +193,10 @@
 
     let site = storedSite();
     let shop = storedShop();
-    if (site) {
+    const pass = storedPass();
+    if (site && pass) {
       try {
-        const store = await fetchStore(site);
+        const store = await openGate(site, pass);
         site = store.site_code || site;
         shop = store.shop || shop;
         rememberSite(site, shop);
@@ -184,6 +206,9 @@
         clearSite();
         site = '';
       }
+    } else if (site) {
+      clearSite();
+      site = '';
     }
     const next = await showSiteGate(site || '');
     applySiteToPage(next.site_code, next.shop);

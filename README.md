@@ -1,6 +1,6 @@
 # NDRF 申報平台
 
-SASA RP Team 非正常補貨（NDRF）申報平台。申請端免登入，管理端需密碼登入，部署於 Zeabur（Web/API 服務 + PostgreSQL）。
+SASA RP Team 非正常補貨（NDRF）申報平台。申請端以「Site Code／使用者名稱＋統一密碼」進入，管理端需密碼登入，部署於 Zeabur（Web/API 服務 + PostgreSQL）。
 
 ## 功能
 
@@ -77,6 +77,7 @@ Repository 已配置 GitHub Actions（`.github/workflows/ci.yml`）：push 時�
 | `PORT` | `3000` |
 | `ADMIN_USERNAME` | 管理員使用者名稱（預設 `admin`） |
 | `ADMIN_PASSWORD` | 管理員密碼（重要：於 Zeabur Secrets 直接填寫密碼字串，不需要 bcrypt hash） |
+| `PORTAL_SHARED_PASSWORD` | Portal（Store／Buyer／SCT）統一密碼（預設 `SASA1234`）：輸入 Site Code 後需輸入此同一密碼；公開頁 Site Gate 亦用同一密碼驗證 |
 | `SESSION_TTL_HOURS` | 登入 session 有效期（小時，預設 8） |
 | `LOGIN_LOCK_THRESHOLD` | 失敗登入鎖定次數（預設 5，按 IP 計算） |
 | `LOGIN_LOCK_MINUTES` | 鎖定分鐘數（預設 15） |

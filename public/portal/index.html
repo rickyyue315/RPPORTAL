@@ -9,11 +9,9 @@
   <link rel="stylesheet" href="/portal/css/portal.css">
   <script>
     // Instant redirect before first paint: shop homepage is 90日零銷售回覆.
+    // ?user= is preserved so the login gate can prefill the Site Code.
     try {
-      var s = window.location.search || '';
-      var hasUser = false;
-      try { hasUser = !!(new URLSearchParams(s).get('user') || '').trim(); } catch (e) {}
-      if (!hasUser) window.location.replace('/portal/zero-sales.html' + s);
+      window.location.replace('/portal/zero-sales.html' + (window.location.search || ''));
     } catch (e) {}
   </script>
 </head>
@@ -24,32 +22,5 @@
   </main>
 
   <script src="/portal/js/portal.js"></script>
-  <script>
-    // No login page: everyone enters through the store gate.
-    // Links with ?user= log in automatically and land on the role homepage.
-    (() => {
-      const search = window.location.search || '';
-      let name = '';
-      try {
-        name = (new URLSearchParams(search).get('user') || '').trim();
-      } catch {}
-      const goStore = () => window.location.replace('/portal/zero-sales.html');
-      if (!name) {
-        goStore();
-        return;
-      }
-      portal.api('/api/portal/auth/login', {
-        method: 'POST',
-        body: JSON.stringify({ username: name }),
-      }).then((data) => {
-        const role = data && data.user && data.user.role;
-        if (role === 'buyer' || role === 'sct') {
-          window.location.replace('/portal/reviewer.html' + search);
-        } else {
-          goStore();
-        }
-      }).catch(goStore);
-    })();
-  </script>
 </body>
 </html>

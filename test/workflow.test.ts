@@ -13,7 +13,7 @@ import * as time from '../src/lib/time.js';
 import { vi } from 'vitest';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const PASSWORD = 'Workflow1!TEST';
+const PASSWORD = 'SASA1234';
 
 type Agent = ReturnType<typeof request.agent> & { _csrf?: string };
 

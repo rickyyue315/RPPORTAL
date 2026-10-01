@@ -9,6 +9,7 @@ import {
 } from '../middleware/rateLimits.js';
 import { asyncHandler, getClientIp } from '../middleware/helpers.js';
 import { getStore, normalizeSiteCode } from '../services/stores.js';
+import { verifySharedPassword } from '../services/portalAuth.js';
 import {
   createSubmission,
   createUrgentBatch,
@@ -321,6 +322,35 @@ publicRouter.get(
     const store = await getStore(req.params.siteCode as string);
     if (!store) {
       res.status(404).json({ error: 'Site Code 不存在' });
+      return;
+    }
+    res.json({
+      store: {
+        site_code: store.site_code,
+        shop: store.shop,
+        requested_by_email: `${store.site_code.toLowerCase()}@sasa.com`,
+      },
+    });
+  }),
+);
+
+const siteGateSchema = z.object({
+  site_code: z.string().trim().min(1).max(40),
+  password: z.string().optional().default(''),
+});
+
+/** POST /api/public/site-gate — one shared password (default SASA1234) after the Site Code, for the public form gate. */
+publicRouter.post(
+  '/site-gate',
+  publicLookupLimiter,
+  asyncHandler(async (req: Request, res: Response) => {
+    const parsed = siteGateSchema.safeParse(req.body);
+    const siteCode = parsed.success ? normalizeSiteCode(parsed.data.site_code) : '';
+    const store = siteCode ? await getStore(siteCode) : null;
+    if (!parsed.success || !store || !verifySharedPassword(parsed.data.password)) {
+      // One message for bad Site Code / bad password so the gate does not
+      // reveal which half was wrong.
+      res.status(401).json({ error: 'Site Code 或密碼不正確' });
       return;
     }
     res.json({

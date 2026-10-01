@@ -11,11 +11,13 @@ export interface StoreAccountSyncResult {
 
 /**
  * Synchronises Store portal accounts with the store master:
- *   - creates accounts for Site Codes that do not exist yet (passwordless:
- *     Site Code only, no usable password is stored),
+ *   - creates accounts for Site Codes that do not exist yet (login is the
+ *     Site Code plus the shared portal password, so no per-account password
+ *     is stored),
  *   - re-activates accounts that were previously deactivated,
  *   - deactivates accounts whose Site Code is no longer in the master.
- * Store logins never check passwords; existing sessions are never reset.
+ * Store logins only check the shared portal password; existing sessions are
+ * never reset.
  */
 export async function syncStorePortalAccounts(adminUsername: string): Promise<StoreAccountSyncResult> {
   return withTransaction(async (client) => {
@@ -51,9 +53,9 @@ export async function syncStorePortalAccounts(adminUsername: string): Promise<St
       const existing = accountsBySite.get(site.site_code);
       if (!existing) {
         const username = normalizePortalUsername(site.site_code);
-        // Passwordless store account: store a deliberately unusable hash
-        // (verifyPassword only accepts `scrypt$...` format) so no password
-        // can ever match. Login uses the Site Code only.
+        // Store a deliberately unusable hash (verifyPassword only accepts
+        // `scrypt$...` format) so no per-account password can ever match;
+        // login checks the shared portal password instead.
         const unusableHash = `unusable$${randomBytes(16).toString('hex')}`;
         await client.query(
           `INSERT INTO portal_users
@@ -85,7 +87,7 @@ export async function syncStorePortalAccounts(adminUsername: string): Promise<St
   });
 }
 
-/** Creates a passwordless Buyer or SCT account (username only). */
+/** Creates a Buyer or SCT account; login is the username plus the shared portal password. */
 export async function createBuyerOrSctAccount(input: {
   username: string;
   displayName: string;
@@ -94,7 +96,8 @@ export async function createBuyerOrSctAccount(input: {
 }): Promise<{ username: string }> {
   const username = normalizePortalUsername(input.username);
   // Deliberately unusable hash (verifyPassword only accepts `scrypt$...`
-  // format) so no password can ever match. Login uses the username only.
+  // format) so no per-account password can ever match; login checks the
+  // shared portal password instead.
   const unusableHash = `unusable$${randomBytes(16).toString('hex')}`;
   await query(
     `INSERT INTO portal_users (username, display_name, role, password_hash, initial_password, must_change_password, active, created_by)

@@ -32,7 +32,7 @@ export async function requirePortalUser(req: Request, res: Response, next: NextF
   }
 }
 
-/** The portal is passwordless, so there is no forced password-change gate. Kept in the auth chain as a pass-through. */
+/** Portal logins use the shared password, so there is no per-account forced password-change gate. Kept in the auth chain as a pass-through. */
 export function requirePasswordChanged(req: Request, res: Response, next: NextFunction): void {
   if (!req.portalUser) {
     res.status(401).json({ error: '未登入' });

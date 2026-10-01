@@ -28,6 +28,7 @@ services:
       DATABASE_URL: postgres://ndrf:ndrf@db:5432/ndrf
       ADMIN_USERNAME: admin
       ADMIN_PASSWORD: local-dev-password-change-me
+      PORTAL_SHARED_PASSWORD: SASA1234
       TRUST_PROXY: "true"
       PUBLIC_WRITE_SUSPENSION_ENABLED: "true"
       PUBLIC_WRITE_SUSPENSION_AT: "2026-08-11T23:59:59+08:00"

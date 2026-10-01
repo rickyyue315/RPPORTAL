@@ -56,6 +56,11 @@ export const config = {
   databaseUrl: process.env.DATABASE_URL ?? required('DATABASE_URL'),
   adminUsername: process.env.ADMIN_USERNAME ?? 'admin',
   adminPassword: process.env.ADMIN_PASSWORD ?? '',
+  // One shared password for all Portal accounts (Store / Buyer / SCT): after
+  // entering their Site Code, everyone types this same password. It is a light
+  // "outsider" gate (the portal only records SKU/QTY-level data), not a
+  // per-account secret.
+  portalSharedPassword: process.env.PORTAL_SHARED_PASSWORD ?? 'SASA1234',
   sessionTtlHours: int('SESSION_TTL_HOURS', 8),
   loginLockThreshold: int('LOGIN_LOCK_THRESHOLD', 5),
   loginLockMinutes: int('LOGIN_LOCK_MINUTES', 15),

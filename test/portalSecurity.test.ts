@@ -50,14 +50,14 @@ beforeAll(async () => {
   app = createApp();
 });
 
-describe('portal passwordless login', () => {
-  it('allows username-only login for store accounts', async () => {
+describe('portal shared-password login', () => {
+  it('allows Site Code + shared password login for store accounts', async () => {
     const agent = request.agent(app) as Agent;
     const token = await csrf(agent);
     const login = await agent
       .post('/api/portal/auth/login')
       .set('x-csrf-token', token)
-      .send({ username: 'LOCKSTORE1' });
+      .send({ username: 'LOCKSTORE1', password: 'SASA1234' });
     expect(login.status).toBe(200);
     expect(login.body.user.username).toBe('LOCKSTORE1');
     expect(login.body.user.role).toBe('store');
@@ -68,13 +68,13 @@ describe('portal passwordless login', () => {
     expect(options.body.store.site_code).toBe('LOCK1');
   });
 
-  it('allows username-only login for buyer accounts', async () => {
+  it('allows username + shared password login for buyer accounts', async () => {
     const agent = request.agent(app) as Agent;
     const token = await csrf(agent);
     const login = await agent
       .post('/api/portal/auth/login')
       .set('x-csrf-token', token)
-      .send({ username: 'LOCKBUYER1' });
+      .send({ username: 'LOCKBUYER1', password: 'SASA1234' });
     expect(login.status).toBe(200);
     expect(login.body.user.username).toBe('LOCKBUYER1');
     expect(login.body.user.role).toBe('buyer');
@@ -84,14 +84,26 @@ describe('portal passwordless login', () => {
     expect(me.body.user.username).toBe('LOCKBUYER1');
   });
 
-  it('ignores a supplied password for all portal roles', async () => {
+  it('rejects a wrong shared password for all portal roles', async () => {
     const agent = request.agent(app) as Agent;
     const token = await csrf(agent);
     const login = await agent
       .post('/api/portal/auth/login')
       .set('x-csrf-token', token)
       .send({ username: 'LOCKSTORE1', password: 'wrong-password' });
-    expect(login.status).toBe(200);
+    expect(login.status).toBe(401);
+    expect(login.body.error).toBe('密碼不正確');
+  });
+
+  it('rejects a missing shared password', async () => {
+    const agent = request.agent(app) as Agent;
+    const token = await csrf(agent);
+    const login = await agent
+      .post('/api/portal/auth/login')
+      .set('x-csrf-token', token)
+      .send({ username: 'LOCKSTORE1' });
+    expect(login.status).toBe(401);
+    expect(login.body.error).toBe('密碼不正確');
   });
 
   it('requires a username', async () => {
@@ -100,7 +112,7 @@ describe('portal passwordless login', () => {
     const empty = await agent
       .post('/api/portal/auth/login')
       .set('x-csrf-token', token)
-      .send({ username: '   ' });
+      .send({ username: '   ', password: 'SASA1234' });
     expect(empty.status).toBe(400);
   });
 
@@ -110,7 +122,7 @@ describe('portal passwordless login', () => {
     const bad = await agent
       .post('/api/portal/auth/login')
       .set('x-csrf-token', token)
-      .send({ username: 'NOPE-NOBODY' });
+      .send({ username: 'NOPE-NOBODY', password: 'SASA1234' });
     expect(bad.status).toBe(401);
     expect(bad.body.error).toBe('使用者名稱不正確或帳戶已停用');
 
@@ -120,7 +132,7 @@ describe('portal passwordless login', () => {
     const deactivated = await agent2
       .post('/api/portal/auth/login')
       .set('x-csrf-token', token2)
-      .send({ username: 'LOCKSTORE1' });
+      .send({ username: 'LOCKSTORE1', password: 'SASA1234' });
     expect(deactivated.status).toBe(401);
     expect(deactivated.body.error).toBe('使用者名稱不正確或帳戶已停用');
     await db.query(`UPDATE portal_users SET active = true WHERE username = 'LOCKSTORE1'`);
@@ -134,7 +146,7 @@ describe('portal passwordless login', () => {
     const login = await agent
       .post('/api/portal/auth/login')
       .set('x-csrf-token', token)
-      .send({ username: 'new99' });
+      .send({ username: 'new99', password: 'SASA1234' });
     expect(login.status).toBe(200);
     expect(login.body.user.role).toBe('store');
     expect(login.body.user.site_code).toBe('NEW99');
@@ -148,12 +160,36 @@ describe('portal passwordless login', () => {
     const login = await agent
       .post('/api/portal/auth/login')
       .set('x-csrf-token', token)
-      .send({ username: 'LOCKBUYER1' });
+      .send({ username: 'LOCKBUYER1', password: 'SASA1234' });
     expect(login.status).toBe(200);
     const change = await agent
       .post('/api/portal/auth/change-password')
       .set('x-csrf-token', token)
       .send({ current_password: 'whatever', new_password: 'Str0ng!Pass' });
     expect(change.status).toBe(404);
+  });
+
+  it('validates Site Code + shared password on the public site gate', async () => {
+    await db.query(`INSERT INTO stores (site_code, shop) VALUES ('GATE01', '閘門店') ON CONFLICT DO NOTHING`);
+    const agent = request.agent(app) as Agent;
+
+    const ok = await agent
+      .post('/api/public/site-gate')
+      .send({ site_code: 'gate01', password: 'SASA1234' });
+    expect(ok.status).toBe(200);
+    expect(ok.body.store.site_code).toBe('GATE01');
+    expect(ok.body.store.shop).toBe('閘門店');
+
+    const badPass = await agent
+      .post('/api/public/site-gate')
+      .send({ site_code: 'GATE01', password: 'nope' });
+    expect(badPass.status).toBe(401);
+    expect(badPass.body.error).toBe('Site Code 或密碼不正確');
+
+    const badSite = await agent
+      .post('/api/public/site-gate')
+      .send({ site_code: 'GATE-NOPE', password: 'SASA1234' });
+    expect(badSite.status).toBe(401);
+    expect(badSite.body.error).toBe('Site Code 或密碼不正確');
   });
 });

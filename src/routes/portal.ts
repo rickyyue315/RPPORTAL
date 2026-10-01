@@ -23,6 +23,7 @@ import {
   createPortalSession,
   destroyPortalSession,
   normalizePortalUsername,
+  verifySharedPassword,
   type PortalUserRow,
 } from '../services/portalAuth.js';
 import {
@@ -104,8 +105,8 @@ const businessFieldSchema = z.object({
 
 const loginSchema = z.object({
   username: z.string().trim().min(1),
-  // Passwords are retired: the field is accepted but ignored so old clients
-  // that still send it keep working.
+  // One shared password for every Portal account (default SASA1234): shops
+  // enter their Site Code plus this same password.
   password: z.string().optional().default(''),
 });
 
@@ -170,12 +171,17 @@ portalRouter.post(
   '/auth/login',
   adminActionLimiter,
   asyncHandler(async (req: Request, res: Response) => {
-    // The portal (Store / Buyer / SCT) is passwordless: username only.
-    // The account must still exist and be active; the admin backend is
-    // unaffected and always requires a password.
+    // Portal (Store / Buyer / SCT) login: Site Code (username) + one shared
+    // password (PORTAL_SHARED_PASSWORD, default SASA1234). The account must
+    // still exist and be active; the admin backend is unaffected and keeps its
+    // own ADMIN_PASSWORD.
     const parsed = loginSchema.safeParse(req.body);
     if (!parsed.success) {
       res.status(400).json({ error: '請輸入使用者名稱' });
+      return;
+    }
+    if (!verifySharedPassword(parsed.data.password)) {
+      res.status(401).json({ error: '密碼不正確' });
       return;
     }
     const normalized = normalizePortalUsername(parsed.data.username);
@@ -223,7 +229,7 @@ portalRouter.post(
       actorRole: user.role,
       actor: user.username,
       ip: getClientIp(req),
-      metadata: { role: user.role, site_code: user.site_code ?? null, passwordless: true },
+      metadata: { role: user.role, site_code: user.site_code ?? null, shared_password: true },
     });
     res.json({
       ok: true,

@@ -77,7 +77,7 @@ Repository 已配置 GitHub Actions（`.github/workflows/ci.yml`）：push 時�
 | `PORT` | `3000` |
 | `ADMIN_USERNAME` | 管理員使用者名稱（預設 `admin`） |
 | `ADMIN_PASSWORD` | 管理員密碼（重要：於 Zeabur Secrets 直接填寫密碼字串，不需要 bcrypt hash） |
-| `PORTAL_SHARED_PASSWORD` | Portal（Store／Buyer／SCT）密碼（預設 `SASA1234`）：所有 Portal 帳戶登入使用同一組密碼；公開頁 Site Gate 亦用此密碼驗證 |
+| `PORTAL_SHARED_PASSWORD` | Portal（Store／Buyer／SCT）密碼（預設 `SASA1234`）：所有店舖頁面（零銷售回覆、一般 NDRF、Urgent、突發性銷售、行貨退貨）共用「Site Code＋此密碼」一次登入；Urgent／突發性銷售／行貨退貨的提交及 Excel 匯入 API 亦要求此 Store session，且只接受登入店舖自己的 Site Code |
 | `SESSION_TTL_HOURS` | 登入 session 有效期（小時，預設 8） |
 | `LOGIN_LOCK_THRESHOLD` | 失敗登入鎖定次數（預設 5，按 IP 計算） |
 | `LOGIN_LOCK_MINUTES` | 鎖定分鐘數（預設 15） |

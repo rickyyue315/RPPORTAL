@@ -1,12 +1,14 @@
 import { describe, expect, it, beforeAll } from 'vitest';
 import request from 'supertest';
 import { PGlite } from '@electric-sql/pglite';
+import ExcelJS from 'exceljs';
 import type { Express } from 'express';
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { setPoolForTesting } from '../src/db/pool.js';
 import { createApp } from '../src/app.js';
+import { SALES_COLUMNS, SALES_SHEET } from '../src/lib/fields.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -168,27 +170,58 @@ describe('portal shared-password login', () => {
     expect(change.status).toBe(404);
   });
 
-  it('validates Site Code + shared password on the public site gate', async () => {
+  it('requires a Store session for public submission endpoints', async () => {
     await db.query(`INSERT INTO stores (site_code, shop) VALUES ('GATE01', '閘門店') ON CONFLICT DO NOTHING`);
+    await db.query(
+      `INSERT INTO portal_users (username, display_name, role, site_code, password_hash, must_change_password, active, created_by)
+       VALUES ('GATE01', '閘門店', 'store', 'GATE01', 'unusable$test', false, true, 'test')
+       ON CONFLICT (username) DO NOTHING`,
+    );
     const agent = request.agent(app) as Agent;
+    const anon = await agent.post('/api/public/sales/submit').send({ site_code: 'GATE01', sku: '1008999' });
+    expect(anon.status).toBe(401);
+    expect(anon.body.code).toBe('STORE_LOGIN_REQUIRED');
+  });
 
-    const ok = await agent
-      .post('/api/public/site-gate')
-      .send({ site_code: 'gate01', password: 'SASA1234' });
-    expect(ok.status).toBe(200);
-    expect(ok.body.store.site_code).toBe('GATE01');
-    expect(ok.body.store.shop).toBe('閘門店');
+  it('binds public submissions to the logged-in store and rejects other sites', async () => {
+    const agent = request.agent(app) as Agent;
+    const token = await csrf(agent);
+    const login = await agent
+      .post('/api/portal/auth/login')
+      .set('x-csrf-token', token)
+      .send({ username: 'GATE01', password: 'SASA1234' });
+    expect(login.status).toBe(200);
 
-    const badPass = await agent
-      .post('/api/public/site-gate')
-      .send({ site_code: 'GATE01', password: 'nope' });
-    expect(badPass.status).toBe(401);
-    expect(badPass.body.error).toBe('Site Code 或密碼不正確');
+    const ok = await agent.post('/api/public/sales/submit').send({ site_code: 'gate01', sku: '1008999' });
+    expect(ok.status).toBe(201);
+    expect(ok.body.submission.site_code).toBe('GATE01');
 
-    const badSite = await agent
-      .post('/api/public/site-gate')
-      .send({ site_code: 'GATE-NOPE', password: 'SASA1234' });
-    expect(badSite.status).toBe(401);
-    expect(badSite.body.error).toBe('Site Code 或密碼不正確');
+    const mismatch = await agent.post('/api/public/sales/submit').send({ site_code: 'NEW99', sku: '1008999' });
+    expect(mismatch.status).toBe(403);
+    expect(mismatch.body.code).toBe('STORE_SITE_MISMATCH');
+    expect(mismatch.body.field).toBe('site_code');
+  });
+
+  it('rejects imports containing rows for other stores', async () => {
+    await db.query(`INSERT INTO stores (site_code, shop) VALUES ('NEW99', '新店') ON CONFLICT DO NOTHING`);
+    const agent = request.agent(app) as Agent;
+    const token = await csrf(agent);
+    const login = await agent
+      .post('/api/portal/auth/login')
+      .set('x-csrf-token', token)
+      .send({ username: 'GATE01', password: 'SASA1234' });
+    expect(login.status).toBe(200);
+
+    const wb = new ExcelJS.Workbook();
+    const ws = wb.addWorksheet(SALES_SHEET);
+    ws.addRow([...SALES_COLUMNS]);
+    ws.addRow(['GATE01', '1006001']);
+    ws.addRow(['NEW99', '1006002']);
+    const res = await agent
+      .post('/api/public/sales/import')
+      .attach('file', Buffer.from(await wb.xlsx.writeBuffer()), 'sales.xlsx');
+    expect(res.status).toBe(403);
+    expect(res.body.code).toBe('STORE_SITE_MISMATCH');
+    expect(res.body.error).toContain('第 3 行');
   });
 });

@@ -111,6 +111,56 @@ async function storeAgent(site: string): Promise<PortalAgent> {
   return agent;
 }
 
+// Public write endpoints (Urgent / Sales / Return) share the Store portal
+// session: requests must carry the session cookie of the store matching the
+// payload's Site Code. storeCookie logs in a seeded store once and caches the
+// cookie; storePost wraps request(app).post(...) and picks the cookie from
+// the body's site_code (or explicitSite for workbook uploads).
+const storeCookieCache = new Map<string, string>();
+
+async function storeCookie(site: string): Promise<string> {
+  const key = site.trim().toUpperCase();
+  const cached = storeCookieCache.get(key);
+  if (cached) return cached;
+  const agent = request.agent(app) as Agent;
+  const token = await csrf(agent);
+  const res = await agent
+    .post('/api/portal/auth/login')
+    .set('x-csrf-token', token)
+    .send({ username: key, password: PORTAL_SHARED_PASSWORD });
+  expect(res.status).toBe(200);
+  const cookie = ((res.headers['set-cookie'] ?? []) as string[]).map((c) => c.split(';')[0]).join('; ');
+  storeCookieCache.set(key, cookie);
+  return cookie;
+}
+
+function storePost(url: string, explicitSite?: string) {
+  const base: any = request(app).post(url);
+  const wrap = (obj: any): any => {
+    if (!obj || typeof obj !== 'object') return obj;
+    return new Proxy(obj, {
+      get(target, prop) {
+        const value = Reflect.get(target, prop);
+        if (typeof value !== 'function') return value;
+        return (...args: unknown[]) => {
+          if (prop === 'send' || prop === 'attach') {
+            let site = explicitSite ?? 'HA02';
+            const body = args[0] as { site_code?: unknown } | undefined;
+            if (!explicitSite && body && typeof body === 'object' && typeof body.site_code === 'string' && body.site_code.trim()) {
+              site = body.site_code.trim().toUpperCase();
+            }
+            const cookie = storeCookieCache.get(site);
+            if (cookie) target.set('Cookie', cookie);
+          }
+          const result = value.apply(target, args);
+          return result && typeof result === 'object' ? wrap(result) : result;
+        };
+      },
+    });
+  };
+  return wrap(base);
+}
+
 /** Submits a general NDRF via the Store portal (site_code comes from the session). */
 async function submitNormal(
   agent: PortalAgent,
@@ -179,6 +229,8 @@ beforeAll(async () => {
   // Freeze the calendar date inside the August return application window
   // (2026-08-03..2026-08-11) so return-window tests stay deterministic.
   vi.spyOn(time, 'hkTodayForDateColumn').mockReturnValue('2026-08-05');
+  // Pre-login the seeded stores used by the public write endpoint tests.
+  for (const site of ['HA02', 'HA06', 'HA19', 'HBA7']) await storeCookie(site);
 });
 
 describe('public API', () => {
@@ -219,13 +271,13 @@ describe('public API', () => {
     const payload = {
       site_code: 'HA02', sku: '1008001', qty: 8, reason: '1', confirmer_name: '確認人', confirmer_phone: '電話文字',
     };
-    const created = await request(app).post('/api/public/return/submit').send(payload);
+    const created = await storePost('/api/public/return/submit').send(payload);
     expect(created.status).toBe(201);
     expect(created.body.submission.application_no).toMatch(/^RETURN-/);
     expect(created.body.submission.return_reason).toBe('1');
     expect(created.body.submission.return_qty).toBe(8);
 
-    const duplicate = await request(app).post('/api/public/return/submit').send(payload);
+    const duplicate = await storePost('/api/public/return/submit').send(payload);
     expect(duplicate.status).toBe(409);
 
     const queried = await request(app).get(`/api/public/query?application_no=${created.body.submission.application_no}&site_code=HA02`);
@@ -251,7 +303,7 @@ describe('public API', () => {
     const ws = wb.addWorksheet(RETURN_SHEET);
     ws.addRow([...RETURN_COLUMNS]);
     ws.addRow(['HA02', '1008003', 4, '3. BUYER 電郵確認可退-壞貨', '確認人', '電話']);
-    const imported = await request(app).post('/api/public/return/import').attach('file', Buffer.from(await wb.xlsx.writeBuffer()), 'return.xlsx');
+    const imported = await storePost('/api/public/return/import').attach('file', Buffer.from(await wb.xlsx.writeBuffer()), 'return.xlsx');
     expect(imported.status).toBe(201);
     expect(imported.body.rows[0].application_no).toMatch(/^RETURN-/);
     expect(imported.body.rows[0].reason).toBe('3');
@@ -481,7 +533,7 @@ describe('public API', () => {
   });
 
   it('recovers application numbers by site code + date range', async () => {
-    const created = await request(app).post('/api/public/urgent/submit').send({
+    const created = await storePost('/api/public/urgent/submit').send({
       site_code: 'HA06',
       sku: '1000888',
       qty: 5,
@@ -1125,7 +1177,7 @@ describe('admin API', () => {
 
 describe('urgent public API', () => {
   it('accepts a valid urgent submission', async () => {
-    const res = await request(app).post('/api/public/urgent/submit').send({
+    const res = await storePost('/api/public/urgent/submit').send({
       site_code: 'HA02',
       sku: '1006029',
       qty: 10,
@@ -1141,7 +1193,7 @@ describe('urgent public API', () => {
   });
 
   it('accepts a 3-SKU web batch and returns three independent application numbers', async () => {
-    const res = await request(app).post('/api/public/urgent/submit').send({
+    const res = await storePost('/api/public/urgent/submit').send({
       site_code: 'HA06',
       items: [
         { sku: '1006211', qty: 2, urgent_reason: '1' },
@@ -1168,7 +1220,7 @@ describe('urgent public API', () => {
   });
 
   it('accepts a single-item batch and also exposes the submission alias', async () => {
-    const res = await request(app).post('/api/public/urgent/submit').send({
+    const res = await storePost('/api/public/urgent/submit').send({
       site_code: 'HA02',
       items: [{ sku: '1006214', qty: 7, urgent_reason: '3' }],
     });
@@ -1179,7 +1231,7 @@ describe('urgent public API', () => {
   });
 
   it('rejects a web batch with a mixed row of invalid fields and reports every row', async () => {
-    const res = await request(app).post('/api/public/urgent/submit').send({
+    const res = await storePost('/api/public/urgent/submit').send({
       site_code: 'HA02',
       items: [
         { sku: '1006215', qty: 5, urgent_reason: '1' },
@@ -1200,7 +1252,7 @@ describe('urgent public API', () => {
   });
 
   it('rejects a web batch with duplicate SKUs inside the same batch', async () => {
-    const res = await request(app).post('/api/public/urgent/submit').send({
+    const res = await storePost('/api/public/urgent/submit').send({
       site_code: 'HA02',
       items: [
         { sku: '1006218', qty: 5, urgent_reason: '1' },
@@ -1212,11 +1264,11 @@ describe('urgent public API', () => {
   });
 
   it('rejects a web batch when an SKU was already submitted today', async () => {
-    await request(app).post('/api/public/urgent/submit').send({
+    await storePost('/api/public/urgent/submit').send({
       site_code: 'HA02',
       items: [{ sku: '1006219', qty: 5, urgent_reason: '1' }],
     });
-    const res = await request(app).post('/api/public/urgent/submit').send({
+    const res = await storePost('/api/public/urgent/submit').send({
       site_code: 'HA02',
       items: [
         { sku: '1006220', qty: 5, urgent_reason: '1' },
@@ -1233,13 +1285,13 @@ describe('urgent public API', () => {
   });
 
   it('rejects a web batch with an empty or oversized items array', async () => {
-    const empty = await request(app).post('/api/public/urgent/submit').send({
+    const empty = await storePost('/api/public/urgent/submit').send({
       site_code: 'HA02',
       items: [],
     });
     expect(empty.status).toBe(400);
 
-    const oversized = await request(app).post('/api/public/urgent/submit').send({
+    const oversized = await storePost('/api/public/urgent/submit').send({
       site_code: 'HA02',
       items: Array.from({ length: 6 }, (_, i) => ({ sku: `100622${i}`, qty: 5, urgent_reason: '1' })),
     });
@@ -1247,7 +1299,7 @@ describe('urgent public API', () => {
   });
 
   it('does not fall back to the legacy parser when items is invalid', async () => {
-    const res = await request(app).post('/api/public/urgent/submit').send({
+    const res = await storePost('/api/public/urgent/submit').send({
       site_code: 'HA02',
       items: 'not-an-array',
     });
@@ -1265,11 +1317,11 @@ describe('urgent public API', () => {
         { sku: '1006233', qty: 4, urgent_reason: '1' },
       ],
     };
-    const first = await request(app).post('/api/public/urgent/submit').set('Idempotency-Key', key).send(payload);
+    const first = await storePost('/api/public/urgent/submit').set('Idempotency-Key', key).send(payload);
     expect(first.status).toBe(201);
     const nos = first.body.submissions.map((s: { application_no: string }) => s.application_no);
 
-    const retry = await request(app).post('/api/public/urgent/submit').set('Idempotency-Key', key).send(payload);
+    const retry = await storePost('/api/public/urgent/submit').set('Idempotency-Key', key).send(payload);
     expect(retry.status).toBe(200);
     expect(retry.body.replayed).toBe(true);
     expect(retry.body.submissions.map((s: { application_no: string }) => s.application_no)).toEqual(nos);
@@ -1287,8 +1339,8 @@ describe('urgent public API', () => {
       site_code: 'HA02',
       items: [{ sku: '1006241', qty: 2, urgent_reason: '1' }],
     };
-    await request(app).post('/api/public/urgent/submit').set('Idempotency-Key', key).send(payload);
-    const conflict = await request(app).post('/api/public/urgent/submit').set('Idempotency-Key', key).send({
+    await storePost('/api/public/urgent/submit').set('Idempotency-Key', key).send(payload);
+    const conflict = await storePost('/api/public/urgent/submit').set('Idempotency-Key', key).send({
       site_code: 'HA02',
       items: [{ sku: '1006242', qty: 9, urgent_reason: '2' }],
     });
@@ -1296,7 +1348,7 @@ describe('urgent public API', () => {
   });
 
   it('accepts option 9 with other reason', async () => {
-    const res = await request(app).post('/api/public/urgent/submit').send({
+    const res = await storePost('/api/public/urgent/submit').send({
       site_code: 'HA02',
       sku: '1006026',
       qty: 5,
@@ -1309,7 +1361,7 @@ describe('urgent public API', () => {
   });
 
   it('rejects urgent submit without reason', async () => {
-    const res = await request(app).post('/api/public/urgent/submit').send({
+    const res = await storePost('/api/public/urgent/submit').send({
       site_code: 'HA02',
       sku: '1006025',
       qty: 5,
@@ -1319,7 +1371,7 @@ describe('urgent public API', () => {
   });
 
   it('rejects urgent option 9 without other reason', async () => {
-    const res = await request(app).post('/api/public/urgent/submit').send({
+    const res = await storePost('/api/public/urgent/submit').send({
       site_code: 'HA02',
       sku: '1006024',
       qty: 5,
@@ -1330,7 +1382,7 @@ describe('urgent public API', () => {
   });
 
   it('rejects urgent non-9 with other reason', async () => {
-    const res = await request(app).post('/api/public/urgent/submit').send({
+    const res = await storePost('/api/public/urgent/submit').send({
       site_code: 'HA02',
       sku: '1006003',
       qty: 5,
@@ -1342,7 +1394,7 @@ describe('urgent public API', () => {
   });
 
   it('rejects urgent qty 0', async () => {
-    const res = await request(app).post('/api/public/urgent/submit').send({
+    const res = await storePost('/api/public/urgent/submit').send({
       site_code: 'HA02',
       sku: '1006033',
       qty: 0,
@@ -1353,7 +1405,7 @@ describe('urgent public API', () => {
   });
 
   it('rejects urgent qty over 1000', async () => {
-    const res = await request(app).post('/api/public/urgent/submit').send({
+    const res = await storePost('/api/public/urgent/submit').send({
       site_code: 'HA02',
       sku: '1006027',
       qty: 1001,
@@ -1364,7 +1416,7 @@ describe('urgent public API', () => {
   });
 
   it('rejects decimal urgent qty', async () => {
-    const res = await request(app).post('/api/public/urgent/submit').send({
+    const res = await storePost('/api/public/urgent/submit').send({
       site_code: 'HA02',
       sku: '1006004',
       qty: 1.5,
@@ -1375,7 +1427,7 @@ describe('urgent public API', () => {
   });
 
   it('rejects missing urgent sku', async () => {
-    const res = await request(app).post('/api/public/urgent/submit').send({
+    const res = await storePost('/api/public/urgent/submit').send({
       site_code: 'HA02',
       sku: '',
       qty: 5,
@@ -1386,7 +1438,7 @@ describe('urgent public API', () => {
   });
 
   it('rejects urgent submit with an invalid SKU format', async () => {
-    const res = await request(app).post('/api/public/urgent/submit').send({
+    const res = await storePost('/api/public/urgent/submit').send({
       site_code: 'HA02',
       sku: '123456789012 , 123456789011',
       qty: 5,
@@ -1396,19 +1448,20 @@ describe('urgent public API', () => {
     expect(res.body.field).toBe('sku');
   });
 
-  it('rejects urgent submit with unknown site code', async () => {
-    const res = await request(app).post('/api/public/urgent/submit').send({
+  it('rejects urgent submit for a site other than the logged-in store', async () => {
+    const res = await storePost('/api/public/urgent/submit', 'HA02').send({
       site_code: 'ZZ99',
       sku: '1006002',
       qty: 5,
       urgent_reason: '1',
     });
-    expect(res.status).toBe(400);
+    expect(res.status).toBe(403);
     expect(res.body.field).toBe('site_code');
+    expect(res.body.code).toBe('STORE_SITE_MISMATCH');
   });
 
   it('exposes urgent submissions to the public lookup', async () => {
-    const created = await request(app).post('/api/public/urgent/submit').send({
+    const created = await storePost('/api/public/urgent/submit').send({
       site_code: 'HA02',
       sku: '1006016',
       qty: 4,
@@ -1438,7 +1491,7 @@ describe('urgent public API', () => {
   });
 
   it('does not reveal urgent submissions to the public lookup without the matching site code', async () => {
-    const created = await request(app).post('/api/public/urgent/submit').send({
+    const created = await storePost('/api/public/urgent/submit').send({
       site_code: 'HA02',
       sku: '1006017',
       qty: 4,
@@ -1450,7 +1503,7 @@ describe('urgent public API', () => {
   });
 
   it('modifies an urgent submission within the window', async () => {
-    const created = await request(app).post('/api/public/urgent/submit').send({
+    const created = await storePost('/api/public/urgent/submit').send({
       site_code: 'HA02',
       sku: '1006018',
       qty: 4,
@@ -1477,7 +1530,7 @@ describe('urgent public API', () => {
   });
 
   it('rejects public modify of an urgent submission when the window is closed', async () => {
-    const created = await request(app).post('/api/public/urgent/submit').send({
+    const created = await storePost('/api/public/urgent/submit').send({
       site_code: 'HA02',
       sku: '1006022',
       qty: 4,
@@ -1498,7 +1551,7 @@ describe('urgent public API', () => {
   });
 
   it('still allows querying an urgent submission when the window is closed', async () => {
-    const created = await request(app).post('/api/public/urgent/submit').send({
+    const created = await storePost('/api/public/urgent/submit').send({
       site_code: 'HA02',
       sku: '1006028',
       qty: 4,
@@ -1513,7 +1566,7 @@ describe('urgent public API', () => {
   });
 
   it('rejects urgent modify with invalid qty', async () => {
-    const created = await request(app).post('/api/public/urgent/submit').send({
+    const created = await storePost('/api/public/urgent/submit').send({
       site_code: 'HA02',
       sku: '1006020',
       qty: 4,
@@ -1532,7 +1585,7 @@ describe('urgent public API', () => {
   });
 
   it('rejects urgent modify with reason 9 and no other reason', async () => {
-    const created = await request(app).post('/api/public/urgent/submit').send({
+    const created = await storePost('/api/public/urgent/submit').send({
       site_code: 'HA02',
       sku: '1006021',
       qty: 4,
@@ -1551,13 +1604,13 @@ describe('urgent public API', () => {
   });
 
   it('rejects urgent modify to a SKU already submitted today by the same site', async () => {
-    await request(app).post('/api/public/urgent/submit').send({
+    await storePost('/api/public/urgent/submit').send({
       site_code: 'HA02',
       sku: '1006006',
       qty: 2,
       urgent_reason: '1',
     });
-    const created = await request(app).post('/api/public/urgent/submit').send({
+    const created = await storePost('/api/public/urgent/submit').send({
       site_code: 'HA02',
       sku: '1006005',
       qty: 3,
@@ -1576,7 +1629,7 @@ describe('urgent public API', () => {
   });
 
   it('rejects urgent modify after the submission is locked', async () => {
-    const created = await request(app).post('/api/public/urgent/submit').send({
+    const created = await storePost('/api/public/urgent/submit').send({
       site_code: 'HA02',
       sku: '1006023',
       qty: 4,
@@ -1607,11 +1660,10 @@ describe('urgent public API', () => {
     const ws = wb.addWorksheet(URGENT_SHEET);
     ws.addRow([...URGENT_COLUMNS]);
     ws.addRow(['HA02', '1006011', 2, '1', '']);
-    ws.addRow(['HA06', '1006012', 999, '9', 'roadshow 加單']);
+    ws.addRow(['HA02', '1006012', 999, '9', 'roadshow 加單']);
     const buffer = Buffer.from(await wb.xlsx.writeBuffer());
 
-    const res = await request(app)
-      .post('/api/public/urgent/import')
+    const res = await storePost('/api/public/urgent/import')
       .attach('file', buffer, 'urgent-import.xlsx');
     expect(res.status).toBe(201);
     expect(res.body.successCount).toBe(2);
@@ -1627,17 +1679,15 @@ describe('urgent public API', () => {
     const ws = wb.addWorksheet(URGENT_SHEET);
     ws.addRow([...URGENT_COLUMNS]);
     ws.addRow(['HA02', '1006116', 2, '1', '']);
-    ws.addRow(['HA06', '1006117', 999, '9', 'roadshow 加單']);
+    ws.addRow(['HA02', '1006117', 999, '9', 'roadshow 加單']);
     // Serialize once and reuse the buffer: re-encoding embeds fresh zip entry
     // timestamps, so the content hash would differ and the retry would 409.
     const buffer = Buffer.from(await wb.xlsx.writeBuffer());
-    const imported = await request(app)
-      .post('/api/public/urgent/import')
+    const imported = await storePost('/api/public/urgent/import')
       .set('Idempotency-Key', key)
       .attach('file', buffer, 'urgent-record.xlsx');
     expect(imported.status).toBe(201);
-    const retry = await request(app)
-      .post('/api/public/urgent/import')
+    const retry = await storePost('/api/public/urgent/import')
       .set('Idempotency-Key', key)
       .attach('file', buffer, 'urgent-record.xlsx');
     expect(retry.status).toBe(200);
@@ -1663,8 +1713,7 @@ describe('urgent public API', () => {
     ws.addRow(['HA02', '1006114', 3, '1. 客人訂購 (RP Team定期隨機抽查核實)', '']);
     const buffer = Buffer.from(await wb.xlsx.writeBuffer());
 
-    const res = await request(app)
-      .post('/api/public/urgent/import')
+    const res = await storePost('/api/public/urgent/import')
       .attach('file', buffer, 'urgent-label.xlsx');
     expect(res.status).toBe(201);
     expect(res.body.rows[0].urgent_reason).toBe('1');
@@ -1679,8 +1728,7 @@ describe('urgent public API', () => {
     ws.addRow(['HA02', '1006115', 1001, '1', '']);
     const buffer = Buffer.from(await wb.xlsx.writeBuffer());
 
-    const res = await request(app)
-      .post('/api/public/urgent/import')
+    const res = await storePost('/api/public/urgent/import')
       .attach('file', buffer, 'urgent-bad.xlsx');
     expect(res.status).toBe(400);
     expect(res.body.errors?.length).toBeGreaterThan(0);
@@ -1697,8 +1745,7 @@ describe('urgent public API', () => {
     ws.addRow(['HA02', '1006116', 5, '', '']);
     const buffer = Buffer.from(await wb.xlsx.writeBuffer());
 
-    const res = await request(app)
-      .post('/api/public/urgent/import')
+    const res = await storePost('/api/public/urgent/import')
       .attach('file', buffer, 'urgent-bad-reason.xlsx');
     expect(res.status).toBe(400);
     expect(res.body.errors?.some((e: { field: string }) => e.field === 'Urgent Reason')).toBe(true);
@@ -1712,8 +1759,7 @@ describe('urgent public API', () => {
     ws.addRow(['HA02', '1006117', 5]);
     const buffer = Buffer.from(await wb.xlsx.writeBuffer());
 
-    const res = await request(app)
-      .post('/api/public/urgent/import')
+    const res = await storePost('/api/public/urgent/import')
       .attach('file', buffer, 'urgent-wrong-sheet.xlsx');
     expect(res.status).toBe(400);
     expect(res.body.errors?.[0]?.field).toBe('sheet');
@@ -1729,7 +1775,7 @@ describe('urgent admin API', () => {
   }
 
   it('filters submissions by submission_type=urgent', async () => {
-    await request(app).post('/api/public/urgent/submit').send({ site_code: 'HA02', sku: '1006010', qty: 5, urgent_reason: '1' });
+    await storePost('/api/public/urgent/submit').send({ site_code: 'HA02', sku: '1006010', qty: 5, urgent_reason: '1' });
     const { agent } = await urgentAdminAgent();
     const res = await agent.get('/api/admin/submissions?submission_type=urgent&page=1');
     expect(res.status).toBe(200);
@@ -1738,7 +1784,7 @@ describe('urgent admin API', () => {
   });
 
   it('filters submissions by modified=yes / modified=no', async () => {
-    const untouched = await request(app).post('/api/public/urgent/submit').send({
+    const untouched = await storePost('/api/public/urgent/submit').send({
       site_code: 'HA02',
       sku: '1006034',
       qty: 2,
@@ -1746,7 +1792,7 @@ describe('urgent admin API', () => {
     });
     const untouchedNo = untouched.body.submission.application_no;
 
-    const edited = await request(app).post('/api/public/urgent/submit').send({
+    const edited = await storePost('/api/public/urgent/submit').send({
       site_code: 'HA02',
       sku: '1006035',
       qty: 3,
@@ -1775,7 +1821,7 @@ describe('urgent admin API', () => {
   });
 
   it('admin edits urgent sku/qty/reason and rejects out-of-range qty', async () => {
-    const created = await request(app).post('/api/public/urgent/submit').send({
+    const created = await storePost('/api/public/urgent/submit').send({
       site_code: 'HA02',
       sku: '1006007',
       qty: 7,
@@ -1810,7 +1856,7 @@ describe('urgent admin API', () => {
   });
 
   it('admin can complete a reason on a legacy blank urgent row', async () => {
-    const created = await request(app).post('/api/public/urgent/submit').send({
+    const created = await storePost('/api/public/urgent/submit').send({
       site_code: 'HA02',
       sku: '1006015',
       qty: 6,
@@ -1835,7 +1881,7 @@ describe('urgent admin API', () => {
   });
 
   it('urgent export locks urgent only; SAP export excludes urgent', async () => {
-    await request(app).post('/api/public/urgent/submit').send({ site_code: 'HA06', sku: '1006009', qty: 3, urgent_reason: '1' });
+    await storePost('/api/public/urgent/submit').send({ site_code: 'HA06', sku: '1006009', qty: 3, urgent_reason: '1' });
     // A ready-for-RP normal submission so the SAP export has content.
     const store = await storeAgent('HA02');
     await submitNormal(store, { site_code: 'HA02', sku: '1005012', rp_type: 'RF', safety_stock: '5' });
@@ -1865,7 +1911,7 @@ describe('urgent admin API', () => {
 
 describe('sales public API', () => {
   it('accepts a valid sales submission with SALES prefix', async () => {
-    const res = await request(app).post('/api/public/sales/submit').send({
+    const res = await storePost('/api/public/sales/submit').send({
       site_code: 'HA02',
       sku: '1005024',
     });
@@ -1877,17 +1923,18 @@ describe('sales public API', () => {
     expect(res.body.submission.locked).toBe(false);
   });
 
-  it('rejects sales submit with unknown site code', async () => {
-    const res = await request(app).post('/api/public/sales/submit').send({
+  it('rejects sales submit for a site other than the logged-in store', async () => {
+    const res = await storePost('/api/public/sales/submit', 'HA02').send({
       site_code: 'ZZ99',
       sku: '1005010',
     });
-    expect(res.status).toBe(400);
+    expect(res.status).toBe(403);
     expect(res.body.field).toBe('site_code');
+    expect(res.body.code).toBe('STORE_SITE_MISMATCH');
   });
 
   it('rejects sales submit with missing sku', async () => {
-    const res = await request(app).post('/api/public/sales/submit').send({
+    const res = await storePost('/api/public/sales/submit').send({
       site_code: 'HA02',
       sku: '',
     });
@@ -1896,7 +1943,7 @@ describe('sales public API', () => {
   });
 
   it('rejects sales submit with an invalid SKU format', async () => {
-    const res = await request(app).post('/api/public/sales/submit').send({
+    const res = await storePost('/api/public/sales/submit').send({
       site_code: 'HA02',
       sku: '12,34',
     });
@@ -1906,7 +1953,7 @@ describe('sales public API', () => {
 
   it('accepts sales submissions after the urgent 14:30 cutoff (no time limit)', async () => {
     timeSpy.mockReturnValue(23 * 60 + 59);
-    const res = await request(app).post('/api/public/sales/submit').send({
+    const res = await storePost('/api/public/sales/submit').send({
       site_code: 'HA02',
       sku: '1005023',
     });
@@ -1915,7 +1962,7 @@ describe('sales public API', () => {
   });
 
   it('exposes sales submissions to the public lookup', async () => {
-    const created = await request(app).post('/api/public/sales/submit').send({
+    const created = await storePost('/api/public/sales/submit').send({
       site_code: 'HA02',
       sku: '1005017',
     });
@@ -1929,7 +1976,7 @@ describe('sales public API', () => {
   });
 
   it('modifies a sales submission sku and records a version', async () => {
-    const created = await request(app).post('/api/public/sales/submit').send({
+    const created = await storePost('/api/public/sales/submit').send({
       site_code: 'HA02',
       sku: '1005018',
     });
@@ -1947,7 +1994,7 @@ describe('sales public API', () => {
   });
 
   it('rejects sales modify after the submission is locked', async () => {
-    const created = await request(app).post('/api/public/sales/submit').send({
+    const created = await storePost('/api/public/sales/submit').send({
       site_code: 'HA02',
       sku: '1005015',
     });
@@ -1974,17 +2021,16 @@ describe('sales public API', () => {
     const ws = wb.addWorksheet(SALES_SHEET);
     ws.addRow([...SALES_COLUMNS]);
     ws.addRow(['HA02', '1005013']);
-    ws.addRow(['HA06', '1007006']);
+    ws.addRow(['HA02', '1007006']);
     const buffer = Buffer.from(await wb.xlsx.writeBuffer());
 
-    const res = await request(app)
-      .post('/api/public/sales/import')
+    const res = await storePost('/api/public/sales/import')
       .attach('file', buffer, 'sales-import.xlsx');
     expect(res.status).toBe(201);
     expect(res.body.successCount).toBe(2);
     expect(res.body.rows[0].application_no).toMatch(/^SALES-/);
     expect(res.body.rows[0].site_code).toBe('HA02');
-    expect(res.body.rows[1].site_code).toBe('HA06');
+    expect(res.body.rows[1].site_code).toBe('HA02');
   });
 
   it('scopes import idempotency keys by submission type', async () => {
@@ -2002,8 +2048,7 @@ describe('sales public API', () => {
     const salesSheet = salesWorkbook.addWorksheet(SALES_SHEET);
     salesSheet.addRow([...SALES_COLUMNS]);
     salesSheet.addRow(['HA02', '1007992']);
-    const sales = await request(app)
-      .post('/api/public/sales/import')
+    const sales = await storePost('/api/public/sales/import')
       .set('Idempotency-Key', 'same-key-different-types')
       .attach('file', Buffer.from(await salesWorkbook.xlsx.writeBuffer()), 'sales-cross-type.xlsx');
     expect(sales.status).toBe(201);
@@ -2016,13 +2061,11 @@ describe('sales public API', () => {
     ws.addRow([...SALES_COLUMNS]);
     ws.addRow(['HA02', '1007015']);
     const buffer = Buffer.from(await wb.xlsx.writeBuffer());
-    const imported = await request(app)
-      .post('/api/public/sales/import')
+    const imported = await storePost('/api/public/sales/import')
       .set('Idempotency-Key', key)
       .attach('file', buffer, 'sales-record.xlsx');
     expect(imported.status).toBe(201);
-    const retry = await request(app)
-      .post('/api/public/sales/import')
+    const retry = await storePost('/api/public/sales/import')
       .set('Idempotency-Key', key)
       .attach('file', buffer, 'sales-record.xlsx');
     expect(retry.status).toBe(200);
@@ -2042,8 +2085,7 @@ describe('sales public API', () => {
     ws.addRow(['HA02', '1007005']);
     const buffer = Buffer.from(await wb.xlsx.writeBuffer());
 
-    const res = await request(app)
-      .post('/api/public/sales/import')
+    const res = await storePost('/api/public/sales/import')
       .attach('file', buffer, 'sales-wrong-sheet.xlsx');
     expect(res.status).toBe(400);
     expect(res.body.errors?.[0]?.field).toBe('sheet');
@@ -2058,8 +2100,7 @@ describe('sales public API', () => {
     ws.addRow(['ZZ99', '1005010']);
     const buffer = Buffer.from(await wb.xlsx.writeBuffer());
 
-    const res = await request(app)
-      .post('/api/public/sales/import')
+    const res = await storePost('/api/public/sales/import')
       .attach('file', buffer, 'sales-bad-site.xlsx');
     expect(res.status).toBe(400);
     expect(res.body.errors?.[0]?.field).toBe('Site Code');
@@ -2070,7 +2111,7 @@ describe('sales public API', () => {
 
 describe('sales admin API', () => {
   it('filters submissions by submission_type=sales and edits sku', async () => {
-    const created = await request(app).post('/api/public/sales/submit').send({
+    const created = await storePost('/api/public/sales/submit').send({
       site_code: 'HA02',
       sku: '1005008',
     });
@@ -2102,7 +2143,7 @@ describe('sales admin API', () => {
   });
 
   it('sales export locks sales only; SAP export excludes sales', async () => {
-    await request(app).post('/api/public/sales/submit').send({ site_code: 'HA06', sku: '1005011' });
+    await storePost('/api/public/sales/submit').send({ site_code: 'HA06', sku: '1005011' });
     const store = await storeAgent('HA02');
     await submitNormal(store, {
       site_code: 'HA02',
@@ -2158,9 +2199,9 @@ describe('general NDRF active/duplicate rules', () => {
     const store = await storeAgent('HA02');
     const normal = await submitNormal(store, { site_code: 'HA02', sku: '1003002', ...ND });
     expect(normal.status).toBe(201);
-    const urgent = await request(app).post('/api/public/urgent/submit').send({ site_code: 'HA02', sku: '1003002', qty: 5, urgent_reason: '1' });
+    const urgent = await storePost('/api/public/urgent/submit').send({ site_code: 'HA02', sku: '1003002', qty: 5, urgent_reason: '1' });
     expect(urgent.status).toBe(201);
-    const urgentDup = await request(app).post('/api/public/urgent/submit').send({ site_code: 'HA02', sku: '1003002', qty: 6, urgent_reason: '2' });
+    const urgentDup = await storePost('/api/public/urgent/submit').send({ site_code: 'HA02', sku: '1003002', qty: 6, urgent_reason: '2' });
     expect(urgentDup.status).toBe(409);
     expect(urgentDup.body.field).toBe('sku');
   });
@@ -2169,18 +2210,18 @@ describe('general NDRF active/duplicate rules', () => {
     const store = await storeAgent('HA06');
     const normal = await submitNormal(store, { site_code: 'HA06', sku: '1003009', ...ND });
     expect(normal.status).toBe(201);
-    const urgent = await request(app).post('/api/public/urgent/submit').send({ site_code: 'HA06', sku: '1003009', qty: 5, urgent_reason: '1' });
+    const urgent = await storePost('/api/public/urgent/submit').send({ site_code: 'HA06', sku: '1003009', qty: 5, urgent_reason: '1' });
     expect(urgent.status).toBe(201);
-    const sales = await request(app).post('/api/public/sales/submit').send({ site_code: 'HA06', sku: '1003009' });
+    const sales = await storePost('/api/public/sales/submit').send({ site_code: 'HA06', sku: '1003009' });
     expect(sales.status).toBe(201);
-    const salesDup = await request(app).post('/api/public/sales/submit').send({ site_code: 'HA06', sku: '1003009' });
+    const salesDup = await storePost('/api/public/sales/submit').send({ site_code: 'HA06', sku: '1003009' });
     expect(salesDup.status).toBe(409);
     expect(salesDup.body.field).toBe('sku');
   });
 
   it('blocks sales modify changing sku to one already submitted today, allows a new sku', async () => {
-    const a = await request(app).post('/api/public/sales/submit').send({ site_code: 'HA02', sku: '1003011' });
-    await request(app).post('/api/public/sales/submit').send({ site_code: 'HA02', sku: '1003012' });
+    const a = await storePost('/api/public/sales/submit').send({ site_code: 'HA02', sku: '1003011' });
+    await storePost('/api/public/sales/submit').send({ site_code: 'HA02', sku: '1003012' });
     const no = a.body.submission.application_no;
 
     const blocked = await request(app)
@@ -2197,7 +2238,7 @@ describe('general NDRF active/duplicate rules', () => {
   });
 
   it('rejects a sales import row duplicating an existing today sales submission without writing', async () => {
-    await request(app).post('/api/public/sales/submit').send({ site_code: 'HA02', sku: '1003010' });
+    await storePost('/api/public/sales/submit').send({ site_code: 'HA02', sku: '1003010' });
     const beforeTotal = await countSubmissions(`WHERE submission_type = 'sales'`);
 
     const wb = new ExcelJS.Workbook();
@@ -2206,7 +2247,7 @@ describe('general NDRF active/duplicate rules', () => {
     ws.addRow(['HA02', '1003010']);
     const buffer = Buffer.from(await wb.xlsx.writeBuffer());
 
-    const res = await request(app).post('/api/public/sales/import').attach('file', buffer, 'sales-dup.xlsx');
+    const res = await storePost('/api/public/sales/import').attach('file', buffer, 'sales-dup.xlsx');
     expect(res.status).toBe(400);
     expect(res.body.errors?.some((e: { field: string }) => e.field === 'SKU')).toBe(true);
 
@@ -2338,7 +2379,7 @@ describe('urgent submission window (14:30 cutoff)', () => {
 
   it('accepts urgent submit at 14:29', async () => {
     timeSpy.mockReturnValue(14 * 60 + 29);
-    const res = await request(app).post('/api/public/urgent/submit').send({
+    const res = await storePost('/api/public/urgent/submit').send({
       site_code: 'HA02',
       sku: '1006032',
       qty: 5,
@@ -2349,7 +2390,7 @@ describe('urgent submission window (14:30 cutoff)', () => {
 
   it('rejects urgent submit at 14:30', async () => {
     timeSpy.mockReturnValue(14 * 60 + 30);
-    const res = await request(app).post('/api/public/urgent/submit').send({
+    const res = await storePost('/api/public/urgent/submit').send({
       site_code: 'HA02',
       sku: '1006030',
       qty: 5,
@@ -2362,7 +2403,7 @@ describe('urgent submission window (14:30 cutoff)', () => {
 
   it('rejects urgent submit at 23:59 and accepts it again the next morning', async () => {
     timeSpy.mockReturnValue(23 * 60 + 59);
-    const closed = await request(app).post('/api/public/urgent/submit').send({
+    const closed = await storePost('/api/public/urgent/submit').send({
       site_code: 'HA02',
       sku: '1006031',
       qty: 5,
@@ -2371,7 +2412,7 @@ describe('urgent submission window (14:30 cutoff)', () => {
     expect(closed.status).toBe(400);
 
     timeSpy.mockReturnValue(0);
-    const reopened = await request(app).post('/api/public/urgent/submit').send({
+    const reopened = await storePost('/api/public/urgent/submit').send({
       site_code: 'HA02',
       sku: '1006031',
       qty: 5,
@@ -2390,8 +2431,7 @@ describe('urgent submission window (14:30 cutoff)', () => {
     const buffer = Buffer.from(await wb.xlsx.writeBuffer());
 
     timeSpy.mockReturnValue(14 * 60 + 30);
-    const res = await request(app)
-      .post('/api/public/urgent/import')
+    const res = await storePost('/api/public/urgent/import')
       .attach('file', buffer, 'urgent-window.xlsx');
     expect(res.status).toBe(400);
     expect(res.body.error).toContain('14:30');
@@ -2451,7 +2491,7 @@ describe('SKU format validation', () => {
     ws.addRow(['HA02', '123456789012,123456789011', 2, '1', '']);
     const buffer = Buffer.from(await wb.xlsx.writeBuffer());
 
-    const res = await request(app).post('/api/public/urgent/import').attach('file', buffer, 'urgent-multi-sku.xlsx');
+    const res = await storePost('/api/public/urgent/import').attach('file', buffer, 'urgent-multi-sku.xlsx');
     expect(res.status).toBe(400);
     expect(res.body.errors?.some((e: { field: string }) => e.field === 'SKU')).toBe(true);
 
@@ -2467,7 +2507,7 @@ describe('SKU format validation', () => {
     ws.addRow(['HA02', '123456789012 123456789011']);
     const buffer = Buffer.from(await wb.xlsx.writeBuffer());
 
-    const res = await request(app).post('/api/public/sales/import').attach('file', buffer, 'sales-multi-sku.xlsx');
+    const res = await storePost('/api/public/sales/import').attach('file', buffer, 'sales-multi-sku.xlsx');
     expect(res.status).toBe(400);
     expect(res.body.errors?.some((e: { field: string }) => e.field === 'SKU')).toBe(true);
 

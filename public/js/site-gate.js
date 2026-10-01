@@ -1,9 +1,10 @@
-/* Public site gate — same pattern as 90日零銷售回覆.
- * Shop inputs Site Code + the shared password (default SASA1234, validated
- * server-side via POST /api/public/site-gate), remembered in localStorage
- * (same keys as portal.js: 'ndrf_site' / 'ndrf_portal_pass') and shared
- * across Urgent / Sales / Return / Lookup pages. The Site Code field is then
- * locked to the recognised shop; switching is done via the switch button.
+/* Public site gate — shared Store Portal login.
+ * Every shop page (90日零銷售回覆、一般 NDRF、Urgent、突發性銷售、行貨退貨)
+ * uses the SAME login: Site Code + 密碼 creates one portal session, so
+ * logging in on any page unlocks all the others. The session is enforced
+ * server-side on submissions; credentials are remembered on this device
+ * (same keys as portal.js: 'ndrf_site' / 'ndrf_portal_pass') so return
+ * visits stay automatic. Switching shops is done via the switch button.
  */
 (() => {
   const SITE_KEY = 'ndrf_site';
@@ -42,18 +43,46 @@
     return d.innerHTML;
   }
 
-  /** Validates Site Code + shared password server-side; throws on failure. */
-  async function openGate(code, pass) {
-    const res = await fetch('/api/public/site-gate', {
+  async function fetchMe() {
+    try {
+      const res = await fetch('/api/portal/auth/me', { credentials: 'same-origin' });
+      if (!res.ok) return null;
+      return await res.json();
+    } catch {
+      return null;
+    }
+  }
+
+  /** Real portal login: sets the same session cookie as the portal pages. */
+  async function loginPortal(username, password) {
+    const res = await fetch('/api/portal/auth/login', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       credentials: 'same-origin',
-      body: JSON.stringify({ site_code: code, password: pass ?? '' }),
+      body: JSON.stringify({ username, password }),
     });
     let data = null;
     try { data = await res.json(); } catch {}
-    if (!res.ok) throw new Error((data && data.error) || 'Site Code 或密碼不正確');
+    if (!res.ok) throw new Error((data && data.error) || '登入失敗，請稍後再試');
+    return data;
+  }
+
+  async function fetchStore(code) {
+    const res = await fetch(`/api/public/stores/${encodeURIComponent(code)}`, { credentials: 'same-origin' });
+    let data = null;
+    try { data = await res.json(); } catch {}
+    if (!res.ok) throw new Error((data && data.error) || 'Site Code 不存在');
     return data.store;
+  }
+
+  async function applySessionSite(siteCode) {
+    let shop = '';
+    try {
+      const store = await fetchStore(siteCode);
+      shop = store.shop || '';
+    } catch {}
+    rememberSite(siteCode, shop);
+    return { site_code: siteCode, shop };
   }
 
   function showSiteGate(initial) {
@@ -94,13 +123,19 @@
         btn.textContent = '載入中…';
         showErr('');
         try {
-          const store = await openGate(code, passInput.value);
-          rememberSite(store.site_code || code, store.shop || '');
+          const me = await loginPortal(code, passInput.value);
+          const user = me && me.user;
+          if (user && (user.role === 'buyer' || user.role === 'sct')) {
+            window.location.href = '/portal/reviewer.html';
+            return;
+          }
+          if (!user || user.role !== 'store' || !user.site_code) throw new Error('帳戶無效');
           rememberPass(passInput.value);
+          const applied = await applySessionSite(user.site_code);
           overlay.remove();
-          resolve({ site_code: store.site_code || code, shop: store.shop || '' });
+          resolve(applied);
         } catch (err) {
-          showErr(err.message || 'Site Code 或密碼不正確');
+          showErr(err.message || '登入失敗');
           btn.disabled = false;
           btn.textContent = '進入';
         }
@@ -136,6 +171,11 @@
     const btn = bar.querySelector('#btn_switch_site');
     if (btn) {
       btn.addEventListener('click', async () => {
+        try {
+          // The shared session is bound to one store; drop it so the next
+          // login re-creates it for the other shop.
+          await fetch('/api/portal/auth/logout', { method: 'POST', credentials: 'same-origin' });
+        } catch {}
         clearSite();
         const input = document.getElementById('site_code');
         if (input) { input.value = ''; input.readOnly = false; }
@@ -180,37 +220,52 @@
     const qSite = document.getElementById('q_site');
     const rSite = document.getElementById('r_site');
 
-    // Lookup page: auto-fill from remembered shop, no forced gate.
-    if (!hasSiteInput && (qSite || rSite)) {
-      const s = storedSite();
-      if (s) {
-        if (qSite && !qSite.value) qSite.value = s;
-        if (rSite && !rSite.value) rSite.value = s;
+    // One shared session across every shop page.
+    const me = await fetchMe();
+    if (me && me.user && (me.user.role === 'buyer' || me.user.role === 'sct')) {
+      window.location.href = '/portal/reviewer.html';
+      return;
+    }
+    const sessionSite = me && me.user && me.user.role === 'store' ? me.user.site_code : '';
+
+    // Lookup page: auto-fill from session or remembered shop, no forced gate.
+    if (!hasSiteInput) {
+      const site = sessionSite || storedSite();
+      if (site) {
+        if (qSite && !qSite.value) qSite.value = site;
+        if (rSite && !rSite.value) rSite.value = site;
       }
       return;
     }
-    if (!hasSiteInput) return;
 
-    let site = storedSite();
-    let shop = storedShop();
+    // 1) Live session (e.g. logged in on 零銷售回覆 already) → straight in.
+    if (sessionSite) {
+      const applied = await applySessionSite(sessionSite);
+      applySiteToPage(applied.site_code, applied.shop);
+      return;
+    }
+
+    // 2) Remembered credentials → silent re-login.
+    const remembered = storedSite();
     const pass = storedPass();
-    if (site && pass) {
+    if (remembered && pass) {
       try {
-        const store = await openGate(site, pass);
-        site = store.site_code || site;
-        shop = store.shop || shop;
-        rememberSite(site, shop);
-        applySiteToPage(site, shop);
-        return;
+        await loginPortal(remembered, pass);
+        const me2 = await fetchMe();
+        if (me2 && me2.user && me2.user.role === 'store' && me2.user.site_code) {
+          const applied = await applySessionSite(me2.user.site_code);
+          applySiteToPage(applied.site_code, applied.shop);
+          return;
+        }
       } catch {
         clearSite();
-        site = '';
       }
-    } else if (site) {
+    } else if (remembered) {
       clearSite();
-      site = '';
     }
-    const next = await showSiteGate(site || '');
+
+    // 3) Ask for Site Code + 密碼.
+    const next = await showSiteGate('');
     applySiteToPage(next.site_code, next.shop);
   }
 

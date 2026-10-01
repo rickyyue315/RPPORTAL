@@ -68,6 +68,36 @@ export function requireStoreSite(req: Request, res: Response, next: NextFunction
   next();
 }
 
+/**
+ * Public submission endpoints (Urgent / Sales / Return) share the Store portal
+ * session: one Site Code + password login unlocks every shop page. Writes are
+ * rejected for anonymous callers so the login gate is enforced server-side.
+ */
+export async function requireStoreSessionForPublic(req: Request, res: Response, next: NextFunction): Promise<void> {
+  try {
+    const token = req.cookies?.[PORTAL_SESSION_COOKIE];
+    if (!token) {
+      res.status(401).json({ error: '請先輸入 Site Code 及密碼登入', code: 'STORE_LOGIN_REQUIRED' });
+      return;
+    }
+    const user = await validatePortalSession(token);
+    if (!user) {
+      res.clearCookie(PORTAL_SESSION_COOKIE);
+      res.status(401).json({ error: '登入已過期，請重新輸入 Site Code 及密碼', code: 'STORE_LOGIN_REQUIRED' });
+      return;
+    }
+    if (user.role !== 'store' || !user.site_code) {
+      res.status(403).json({ error: '此操作只限已登入的店舖帳戶', code: 'STORE_LOGIN_REQUIRED' });
+      return;
+    }
+    req.portalUser = user;
+    req.storeSiteCode = user.site_code;
+    next();
+  } catch (err) {
+    next(err);
+  }
+}
+
 declare global {
   namespace Express {
     interface Request {

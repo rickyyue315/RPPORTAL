@@ -175,8 +175,8 @@ const server = app.listen(0, async () => {
 
     const urgent = await fetch(`${base}/api/public/urgent/submit`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ site_code: 'HA06', sku: '1005022', qty: 8, urgent_reason: '1' }),
+      headers: { 'Content-Type': 'application/json', cookie: cookieJar },
+      body: JSON.stringify({ site_code: 'HA02', sku: '1005022', qty: 8, urgent_reason: '1' }),
     });
     const urgentJson = await urgent.json();
     check(
@@ -188,7 +188,7 @@ const server = app.listen(0, async () => {
 
     const urgentBatch = await fetch(`${base}/api/public/urgent/submit`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', cookie: cookieJar },
       body: JSON.stringify({
         site_code: 'HA02',
         items: [
@@ -211,8 +211,8 @@ const server = app.listen(0, async () => {
 
     const sales = await fetch(`${base}/api/public/sales/submit`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ site_code: 'HA06', sku: '1005021' }),
+      headers: { 'Content-Type': 'application/json', cookie: cookieJar },
+      body: JSON.stringify({ site_code: 'HA02', sku: '1005021' }),
     });
     const salesJson = await sales.json();
     check('sales web submit', sales.status === 201 && /^SALES-/.test(salesJson.submission.application_no));
@@ -230,6 +230,7 @@ const server = app.listen(0, async () => {
     const returnBuffer = Buffer.from(await returnWb.xlsx.writeBuffer());
     const returnImport = await fetch(`${base}/api/public/return/import`, {
       method: 'POST',
+      headers: { cookie: cookieJar },
       body: (() => {
         const fd = new FormData();
         fd.append('file', new Blob([returnBuffer]), 'smoke-return.xlsx');

@@ -9,7 +9,7 @@ import {
 } from '../middleware/rateLimits.js';
 import { asyncHandler, getClientIp } from '../middleware/helpers.js';
 import { getStore, normalizeSiteCode } from '../services/stores.js';
-import { verifySharedPassword } from '../services/portalAuth.js';
+import { requireStoreSessionForPublic } from '../middleware/portalAuth.js';
 import {
   createSubmission,
   createUrgentBatch,
@@ -334,35 +334,6 @@ publicRouter.get(
   }),
 );
 
-const siteGateSchema = z.object({
-  site_code: z.string().trim().min(1).max(40),
-  password: z.string().optional().default(''),
-});
-
-/** POST /api/public/site-gate — one shared password (default SASA1234) after the Site Code, for the public form gate. */
-publicRouter.post(
-  '/site-gate',
-  publicLookupLimiter,
-  asyncHandler(async (req: Request, res: Response) => {
-    const parsed = siteGateSchema.safeParse(req.body);
-    const siteCode = parsed.success ? normalizeSiteCode(parsed.data.site_code) : '';
-    const store = siteCode ? await getStore(siteCode) : null;
-    if (!parsed.success || !store || !verifySharedPassword(parsed.data.password)) {
-      // One message for bad Site Code / bad password so the gate does not
-      // reveal which half was wrong.
-      res.status(401).json({ error: 'Site Code 或密碼不正確' });
-      return;
-    }
-    res.json({
-      store: {
-        site_code: store.site_code,
-        shop: store.shop,
-        requested_by_email: `${store.site_code.toLowerCase()}@sasa.com`,
-      },
-    });
-  }),
-);
-
 /** GET /api/public/rf-remark-required-stores — stores requiring Remark for RF. */
 publicRouter.get(
   '/rf-remark-required-stores',
@@ -396,6 +367,22 @@ publicRouter.post(
   }),
 );
 
+/**
+ * The public write gate binds every submission to the logged-in store's
+ * Site Code (the same portal session as 零銷售回覆 / 一般 NDRF).
+ */
+function rejectSiteMismatch(res: Response, loggedInSite: string, given: string, rowNumber?: number): boolean {
+  if (normalizeSiteCode(given) === loggedInSite) return false;
+  res.status(403).json({
+    error: rowNumber
+      ? `第 ${rowNumber} 行的 Site Code「${normalizeSiteCode(given)}」與登入店舖（${loggedInSite}）不符`
+      : `Site Code 與登入店舖（${loggedInSite}）不符`,
+    field: 'site_code',
+    code: 'STORE_SITE_MISMATCH',
+  });
+  return true;
+}
+
 const salesSubmitSchema = z.object({
   site_code: z.string().trim().min(1, 'Site Code 為必填').max(20),
   sku: z.string().trim().min(1, 'SKU 為必填').regex(SKU_PATTERN, SKU_ERROR),
@@ -404,6 +391,7 @@ const salesSubmitSchema = z.object({
 /** POST /api/public/sales/submit — sudden sales single web submission. */
 publicRouter.post(
   '/sales/submit',
+  requireStoreSessionForPublic,
   requirePublicWritesOpen,
   publicSubmitLimiter,
   asyncHandler(async (req: Request, res: Response) => {
@@ -413,6 +401,7 @@ publicRouter.post(
       res.status(400).json({ error: first?.message ?? '輸入資料無效', field: first?.path[0] ?? null });
       return;
     }
+    if (rejectSiteMismatch(res, req.storeSiteCode!, parsed.data.site_code)) return;
     const idempotencyKey = requestIdempotencyKey(req, res);
     if (idempotencyKey === false) return;
     const idempotencyFingerprint = fingerprintPayload(parsed.data);
@@ -476,6 +465,7 @@ publicRouter.get(
 /** POST /api/public/sales/import — sudden sales Excel batch upload. */
 publicRouter.post(
   '/sales/import',
+  requireStoreSessionForPublic,
   requirePublicWritesOpen,
   excelImportLimiter,
   upload.single('file'),
@@ -513,6 +503,8 @@ publicRouter.post(
       res.status(400).json({ error: '匯入失敗', totalRows: parsed.totalRows, errors: parsed.errors ?? [] });
       return;
     }
+    const mismatchRow = parsed.rows!.find((r) => normalizeSiteCode(r.siteCode) !== req.storeSiteCode);
+    if (mismatchRow && rejectSiteMismatch(res, req.storeSiteCode!, mismatchRow.siteCode, mismatchRow.rowNumber)) return;
 
     const existing = await query<{ site_code: string; sku: string }>(
       `SELECT site_code, sku FROM submissions
@@ -720,6 +712,7 @@ publicRouter.get(
 /** POST /api/public/return/submit — single return-goods report. */
 publicRouter.post(
   '/return/submit',
+  requireStoreSessionForPublic,
   requirePublicWritesOpen,
   publicSubmitLimiter,
   asyncHandler(async (req: Request, res: Response) => {
@@ -729,6 +722,7 @@ publicRouter.post(
       res.status(400).json({ error: first?.message ?? '輸入資料無效', field: first?.path[0] ?? null });
       return;
     }
+    if (rejectSiteMismatch(res, req.storeSiteCode!, parsed.data.site_code)) return;
     const data = parsed.data;
     const idempotencyKey = requestIdempotencyKey(req, res);
     if (idempotencyKey === false) return;
@@ -804,6 +798,7 @@ publicRouter.get(
 /** POST /api/public/return/import — return-goods Excel batch upload. */
 publicRouter.post(
   '/return/import',
+  requireStoreSessionForPublic,
   requirePublicWritesOpen,
   excelImportLimiter,
   upload.single('file'),
@@ -845,6 +840,8 @@ publicRouter.post(
       res.status(400).json({ error: '匯入失敗', totalRows: parsed.totalRows, errors: parsed.errors ?? [] });
       return;
     }
+    const mismatchRow = parsed.rows!.find((r) => normalizeSiteCode(r.siteCode) !== req.storeSiteCode);
+    if (mismatchRow && rejectSiteMismatch(res, req.storeSiteCode!, mismatchRow.siteCode, mismatchRow.rowNumber)) return;
 
     const existing = await query<{ site_code: string; sku: string }>(
       `SELECT site_code, sku FROM submissions
@@ -1019,6 +1016,7 @@ const urgentBatchItemSchema = z.object({
 /** POST /api/public/urgent/submit — single or 1-5 SKU Urgent Order web submission. */
 publicRouter.post(
   '/urgent/submit',
+  requireStoreSessionForPublic,
   requirePublicWritesOpen,
   publicSubmitLimiter,
   asyncHandler(async (req: Request, res: Response) => {
@@ -1080,6 +1078,7 @@ publicRouter.post(
       }
 
       const data = { site_code: topLevelData.site_code, items: parsedItems };
+      if (rejectSiteMismatch(res, req.storeSiteCode!, data.site_code)) return;
       const idempotencyFingerprint = fingerprintPayload(data);
       if (idempotencyKey && await replayUrgentBatch(idempotencyKey, idempotencyFingerprint, data.site_code, data.items.length, res)) return;
       if (!isUrgentWindowOpen()) {
@@ -1164,6 +1163,7 @@ publicRouter.post(
       return;
     }
     const data = parsed.data as z.infer<typeof urgentSubmitSchema>;
+    if (rejectSiteMismatch(res, req.storeSiteCode!, data.site_code)) return;
     const idempotencyFingerprint = fingerprintPayload(data);
     if (await replaySingleSubmission(idempotencyKey, idempotencyFingerprint, 'urgent', serializeUrgentSubmission, res)) return;
     if (!isUrgentWindowOpen()) {
@@ -1258,6 +1258,7 @@ publicRouter.get(
 /** POST /api/public/urgent/import — Excel batch upload for Urgent Orders. */
 publicRouter.post(
   '/urgent/import',
+  requireStoreSessionForPublic,
   requirePublicWritesOpen,
   excelImportLimiter,
   upload.single('file'),
@@ -1308,6 +1309,8 @@ publicRouter.post(
       });
       return;
     }
+    const mismatchRow = parsed.rows!.find((r) => normalizeSiteCode(r.siteCode) !== req.storeSiteCode);
+    if (mismatchRow && rejectSiteMismatch(res, req.storeSiteCode!, mismatchRow.siteCode, mismatchRow.rowNumber)) return;
 
     const existing = await query<{ site_code: string; sku: string }>(
       `SELECT site_code, sku FROM submissions

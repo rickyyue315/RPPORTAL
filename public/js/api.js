@@ -13,6 +13,11 @@ async function api(url, options = {}) {
     data = null;
   }
   if (!res.ok) {
+    // Session expired mid-page: re-run the shared site gate (auto re-login
+    // with the remembered password, or show the Site Code + 密碼 box).
+    if (res.status === 401 && data?.code === 'STORE_LOGIN_REQUIRED') {
+      try { window.PublicSiteGate?.ensure?.(); } catch {}
+    }
     const err = new Error(data?.error || `請求失敗 (${res.status})`);
     err.status = res.status;
     err.data = data;

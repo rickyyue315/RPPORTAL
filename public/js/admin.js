@@ -1248,7 +1248,7 @@
     }
     try {
       const data = await adminFetch('/api/admin/portal/users', { method: 'POST', body: JSON.stringify({ username, display_name: displayName, role }) });
-      showAlert($('portal_users_result'), 'success', `帳戶「${escapeHtml(data.username)}」已建立（登入時輸入使用者名稱及統一密碼）。`);
+      showAlert($('portal_users_result'), 'success', `帳戶「${escapeHtml(data.username)}」已建立（登入時輸入使用者名稱及密碼）。`);
       $('pu_username').value = '';
       $('pu_display').value = '';
       loadPortalUsers();
@@ -1291,7 +1291,7 @@
       const data = await adminFetch('/api/admin/stores/sync-accounts', { method: 'POST', body: JSON.stringify({}) });
       let html = `<div class="alert success">同步完成：新增 ${data.created.length}、重新啟用 ${data.reactivated.length}、停用 ${data.deactivated.length}、不變 ${data.unchanged}</div>`;
       if (data.created.length) {
-        html += '<div class="alert success">以下新店舖帳戶已建立（登入時輸入 Site Code 及統一密碼）：<ul>' + data.created.map((c) => `<li><b>${escapeHtml(c.username)}</b>（${escapeHtml(c.site_code)}）</li>`).join('') + '</ul></div>';
+        html += '<div class="alert success">以下新店舖帳戶已建立（登入時輸入 Site Code 及密碼）：<ul>' + data.created.map((c) => `<li><b>${escapeHtml(c.username)}</b>（${escapeHtml(c.site_code)}）</li>`).join('') + '</ul></div>';
       }
       if (data.deactivated.length) html += `<div class="alert info">已停用（不在門店主檔）：${escapeHtml(data.deactivated.join(', '))}</div>`;
       showAlert($('portal_users_result'), '', html);

@@ -138,7 +138,7 @@ describe('portal shared-password login', () => {
     await db.query(`UPDATE portal_users SET active = true WHERE username = 'LOCKSTORE1'`);
   });
 
-  it('creates a store account on first use when the Site Code is in the master', async () => {
+  it('does not self-create store accounts: Admin must provision them', async () => {
     await db.query(`INSERT INTO stores (site_code, shop) VALUES ('NEW99', '新店') ON CONFLICT DO NOTHING`);
     await db.query(`DELETE FROM portal_users WHERE username = 'NEW99'`);
     const agent = request.agent(app) as Agent;
@@ -147,11 +147,10 @@ describe('portal shared-password login', () => {
       .post('/api/portal/auth/login')
       .set('x-csrf-token', token)
       .send({ username: 'new99', password: 'SASA1234' });
-    expect(login.status).toBe(200);
-    expect(login.body.user.role).toBe('store');
-    expect(login.body.user.site_code).toBe('NEW99');
-    const row = await db.query(`SELECT role, active FROM portal_users WHERE username = 'NEW99'`);
-    expect(row.rows[0]?.role).toBe('store');
+    expect(login.status).toBe(401);
+    expect(login.body.error).toBe('使用者名稱不正確或帳戶已停用');
+    const rows = await db.query(`SELECT id FROM portal_users WHERE username = 'NEW99'`);
+    expect(rows.rows).toHaveLength(0);
   });
 
   it('no longer serves the change-password endpoint', async () => {

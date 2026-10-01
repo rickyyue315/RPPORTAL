@@ -67,12 +67,12 @@
       overlay.innerHTML =
         '<div class="site-gate-card">' +
           '<h1>選擇店舖</h1>' +
-          '<p class="hint">請輸入你店舖嘅 Site Code（例如 HA02）及統一密碼，輸入一次後所有頁面（90日零銷售、Urgent、突發性銷售、行貨退貨）會自動認到係你嘅店舖。店舖首頁為「90日零銷售回覆」。</p>' +
+          '<p class="hint">請輸入你店舖嘅 Site Code（例如 HA02）及密碼，輸入一次後所有頁面（90日零銷售、Urgent、突發性銷售、行貨退貨）會自動認到係你嘅店舖。店舖首頁為「90日零銷售回覆」。</p>' +
           '<div id="site_gate_error"></div>' +
           '<label for="site_gate_input">Site Code</label>' +
           '<input type="text" id="site_gate_input" autocomplete="off" placeholder="例如 HA02">' +
-          '<label for="site_gate_pass" style="margin-top:12px">統一密碼</label>' +
-          '<input type="password" id="site_gate_pass" autocomplete="current-password" placeholder="統一密碼">' +
+          '<label for="site_gate_pass" style="margin-top:12px">密碼</label>' +
+          '<input type="password" id="site_gate_pass" autocomplete="current-password" placeholder="密碼">' +
           '<div class="btn-row" style="margin-top:16px">' +
             '<button class="btn" type="button" id="site_gate_go">進入</button>' +
             '<a class="btn ghost" href="/portal/zero-sales.html">先去零銷售回覆（店舖首頁）</a>' +

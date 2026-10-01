@@ -124,12 +124,12 @@
       overlay.style.cssText = 'position:fixed;inset:0;background:rgba(255,255,255,.96);z-index:9999;display:flex;align-items:center;justify-content:center;padding:16px;';
       overlay.innerHTML = `<div class="portal-login-card" style="margin:0">
         <h1>NDRF Store Portal</h1>
-        <p class="hint">請輸入你店舖嘅 Site Code（例如 HA02）及統一密碼（由 RP Team 提供）。輸入一次後此裝置會自動記住。</p>
+        <p class="hint">請輸入你店舖嘅 Site Code（例如 HA02）及密碼（由 RP Team 提供）。輸入一次後此裝置會自動記住。</p>
         <div id="site_gate_error"></div>
         <label for="site_gate_input">Site Code</label>
         <input type="text" id="site_gate_input" autocomplete="off" placeholder="例如 HA02" style="text-transform:uppercase">
-        <label for="site_gate_pass" style="margin-top:12px">統一密碼</label>
-        <input type="password" id="site_gate_pass" autocomplete="current-password" placeholder="統一密碼">
+        <label for="site_gate_pass" style="margin-top:12px">密碼</label>
+        <input type="password" id="site_gate_pass" autocomplete="current-password" placeholder="密碼">
         <div class="btn-row" style="margin-top:16px">
           <button class="btn" type="button" id="site_gate_go">進入</button>
         </div>

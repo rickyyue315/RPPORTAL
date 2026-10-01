@@ -1,5 +1,4 @@
 import { Router, type Request, type Response } from 'express';
-import { randomBytes } from 'node:crypto';
 import { z } from 'zod';
 import multer from 'multer';
 import { asyncHandler, getClientIp, requireUuidParam } from '../middleware/helpers.js';
@@ -190,26 +189,9 @@ portalRouter.post(
       return;
     }
     const found = await query<PortalUserRow>('SELECT * FROM portal_users WHERE username = $1', [normalized]);
-    let user = found.rows[0];
-    if (!user) {
-      // Self-service: a Site Code in the store master gets its store account
-      // automatically on first use, so shops never need pre-registration.
-      const store = await getStore(normalized);
-      if (!store) {
-        // Same message either way so the response does not reveal whether
-        // the username exists or is deactivated.
-        res.status(401).json({ error: '使用者名稱不正確或帳戶已停用' });
-        return;
-      }
-      await query(
-        `INSERT INTO portal_users (username, display_name, role, site_code, password_hash, initial_password, must_change_password, active, created_by)
-         VALUES ($1, $2, 'store', $3, $4, NULL, false, true, 'self-service')
-         ON CONFLICT (username) DO NOTHING`,
-        [normalized, store.shop || normalized, normalized, `unusable$${randomBytes(16).toString('hex')}`],
-      );
-      const retry = await query<PortalUserRow>('SELECT * FROM portal_users WHERE username = $1', [normalized]);
-      user = retry.rows[0];
-    }
+    const user = found.rows[0];
+    // No self-service: accounts are created by Admin (store sync / manual
+    // creation), so an unknown or deactivated username is simply rejected.
     if (!user || !user.active) {
       // Same message either way so the response does not reveal whether
       // the username exists or is deactivated.

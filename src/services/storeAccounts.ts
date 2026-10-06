@@ -106,3 +106,45 @@ export async function createBuyerOrSctAccount(input: {
   );
   return { username };
 }
+
+export class StoreAccountError extends Error {}
+
+/** Creates (or re-activates) a single Store account from the store master.
+ *  Login is Site Code + shared portal password; no password is stored or returned. */
+export async function createSingleStoreAccount(input: {
+  siteCode: string;
+  adminUsername: string;
+}): Promise<{ username: string; site_code: string; reactivated: boolean }> {
+  const siteCode = (input.siteCode ?? '').trim().toUpperCase();
+  if (!siteCode) throw new StoreAccountError('請選擇店舖');
+  return withTransaction(async (client) => {
+    const store = await client.query<{ site_code: string; shop: string }>(
+      'SELECT site_code, shop FROM stores WHERE site_code = $1',
+      [siteCode],
+    );
+    const row = store.rows[0];
+    if (!row) throw new StoreAccountError('門店主檔沒有此 Site Code');
+    const existing = await client.query<{ id: string; active: boolean }>(
+      `SELECT id, active FROM portal_users WHERE role = 'store' AND site_code = $1`,
+      [siteCode],
+    );
+    const found = existing.rows[0];
+    const username = normalizePortalUsername(siteCode);
+    if (found) {
+      if (found.active) throw new StoreAccountError('此店舖帳戶已存在');
+      await client.query(
+        'UPDATE portal_users SET active = true, must_change_password = false, initial_password = NULL, updated_at = now() WHERE id = $1',
+        [found.id],
+      );
+      return { username, site_code: siteCode, reactivated: true };
+    }
+    const unusableHash = `unusable$${randomBytes(16).toString('hex')}`;
+    await client.query(
+      `INSERT INTO portal_users
+         (username, display_name, role, site_code, password_hash, initial_password, must_change_password, active, created_by)
+       VALUES ($1, $2, 'store', $3, $4, NULL, false, true, $5)`,
+      [username, row.shop || siteCode, siteCode, unusableHash, input.adminUsername],
+    );
+    return { username, site_code: siteCode, reactivated: false };
+  });
+}

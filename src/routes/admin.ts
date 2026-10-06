@@ -42,6 +42,8 @@ import {
 } from '../services/ndrfWorkflow.js';
 import {
   createBuyerOrSctAccount,
+  createSingleStoreAccount,
+  StoreAccountError,
   syncStorePortalAccounts,
 } from '../services/storeAccounts.js';
 import {
@@ -1640,12 +1642,13 @@ adminRouter.get(
 );
 
 const portalUserCreateSchema = z.object({
-  username: z.string().trim().min(1).max(40),
+  username: z.string().trim().max(40).optional().default(''),
   display_name: z.string().trim().max(200).optional().default(''),
-  role: z.enum(['buyer', 'sct']),
+  role: z.enum(['buyer', 'sct', 'store']),
+  site_code: z.string().trim().max(20).optional().default(''),
 });
 
-/** POST /api/admin/portal/users — create a passwordless Buyer or SCT account. */
+/** POST /api/admin/portal/users — create Buyer / SCT, or a single Store (from store master). All log in with the shared portal password; no password is stored or returned. */
 adminRouter.post(
   '/portal/users',
   requireAdmin,
@@ -1657,6 +1660,30 @@ adminRouter.post(
       return;
     }
     try {
+      if (parsed.data.role === 'store') {
+        const siteCode = (parsed.data.site_code || parsed.data.username).trim().toUpperCase();
+        if (!siteCode) {
+          res.status(400).json({ error: '請選擇店舖' });
+          return;
+        }
+        const account = await createSingleStoreAccount({
+          siteCode,
+          adminUsername: req.adminUsername!,
+        });
+        await writeAuditEvent({
+          eventType: 'portal_user_created',
+          actorRole: 'admin',
+          actor: req.adminUsername,
+          ip: getClientIp(req),
+          metadata: { username: account.username, role: 'store', site_code: account.site_code, reactivated: account.reactivated },
+        });
+        res.status(201).json({ ...account });
+        return;
+      }
+      if (!parsed.data.username) {
+        res.status(400).json({ error: '請輸入使用者名稱' });
+        return;
+      }
       const account = await createBuyerOrSctAccount({
         username: parsed.data.username,
         displayName: parsed.data.display_name,
@@ -1672,6 +1699,10 @@ adminRouter.post(
       });
       res.status(201).json({ ...account });
     } catch (err) {
+      if (err instanceof StoreAccountError) {
+        res.status(400).json({ error: err.message });
+        return;
+      }
       if (err instanceof Error && (err as { code?: string }).code === '23505') {
         if ((err as { constraint?: string }).constraint === 'uq_portal_users_active_sct') {
           res.status(409).json({ error: '系統目前已有啟用中的 SCT 帳號，請先停用現有帳號' });

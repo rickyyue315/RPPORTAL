@@ -1238,15 +1238,53 @@
   $('btn_pu_bulk_deactivate').addEventListener('click', () => bulkPortalUsers('deactivate', '停用'));
   $('btn_pu_bulk_delete').addEventListener('click', () => bulkPortalUsers('delete', '刪除'));
 
-  $('btn_pu_create').addEventListener('click', async () => {
-    const username = $('pu_username').value.trim();
-    const displayName = $('pu_display').value.trim();
-    const role = $('pu_role').value;
-    if (!username) {
-      showAlert($('portal_users_result'), 'error', '請輸入使用者名稱');
-      return;
-    }
+  async function loadPuSiteOptions() {
+    const sel = $('pu_site');
+    if (!sel) return;
     try {
+      const data = await adminFetch('/api/admin/stores');
+      const stores = data.stores || [];
+      sel.innerHTML = '<option value="">請選擇店舖…</option>' + stores.map((s) => {
+        const label = s.shop ? `${s.site_code} — ${s.shop}` : s.site_code;
+        return `<option value="${escapeHtml(s.site_code)}">${escapeHtml(label)}</option>`;
+      }).join('');
+    } catch {
+      sel.innerHTML = '<option value="">載入店舖失敗，請重試</option>';
+    }
+  }
+
+  function refreshPuFormByRole() {
+    const role = $('pu_role') ? $('pu_role').value : 'buyer';
+    const isStore = role === 'store';
+    if ($('pu_username_wrap')) $('pu_username_wrap').style.display = isStore ? 'none' : '';
+    if ($('pu_site_wrap')) $('pu_site_wrap').style.display = isStore ? '' : 'none';
+    if ($('pu_display_wrap')) $('pu_display_wrap').style.display = isStore ? 'none' : '';
+    if (isStore) loadPuSiteOptions();
+  }
+
+  if ($('pu_role')) $('pu_role').addEventListener('change', refreshPuFormByRole);
+
+  $('btn_pu_create').addEventListener('click', async () => {
+    const role = $('pu_role').value;
+    try {
+      if (role === 'store') {
+        const siteCode = ($('pu_site') ? $('pu_site').value : '').trim().toUpperCase();
+        if (!siteCode) {
+          showAlert($('portal_users_result'), 'error', '請選擇店舖');
+          return;
+        }
+        const data = await adminFetch('/api/admin/portal/users', { method: 'POST', body: JSON.stringify({ role: 'store', site_code: siteCode, username: siteCode }) });
+        showAlert($('portal_users_result'), 'success', `店舖帳戶「${escapeHtml(data.username)}」已建立（登入時輸入 Site Code 及密碼）。`);
+        if ($('pu_site')) $('pu_site').value = '';
+        loadPortalUsers();
+        return;
+      }
+      const username = $('pu_username').value.trim();
+      const displayName = $('pu_display').value.trim();
+      if (!username) {
+        showAlert($('portal_users_result'), 'error', '請輸入使用者名稱');
+        return;
+      }
       const data = await adminFetch('/api/admin/portal/users', { method: 'POST', body: JSON.stringify({ username, display_name: displayName, role }) });
       showAlert($('portal_users_result'), 'success', `帳戶「${escapeHtml(data.username)}」已建立（登入時輸入使用者名稱及密碼）。`);
       $('pu_username').value = '';

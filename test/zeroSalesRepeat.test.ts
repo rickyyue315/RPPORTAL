@@ -165,4 +165,27 @@ describe('zero-sales repeats (admin)', () => {
     expect(s.repeat_groups).toBeGreaterThanOrEqual(1);
     expect(s.repeat_rows).toBeGreaterThanOrEqual(2);
   });
+
+  it('scopes the summary to a single batch when batch_id is given (不跨批次)', async () => {
+    const agent = await adminAgent();
+    const res = await agent.get(`/api/admin/zero-sales/summary?batch_id=${w42Id}`);
+    expect(res.status).toBe(200);
+    const s = res.body;
+    // W42 只有 2 行（A1001 + A1003，均未回覆），而非跨批次的全部 4 行
+    expect(s.total).toBe(2);
+    expect(s.replied).toBe(0);
+    expect(s.pending).toBe(2);
+    expect(s.batches).toBeGreaterThanOrEqual(2); // batches 恆為全部批次數
+    // 重複上榜只在跨批次總覽計算，單一批次內 site+sku 唯一必為 0
+    expect(s.repeat_groups).toBe(0);
+    expect(s.repeat_rows).toBe(0);
+    // 原因分佈 / 待回覆店舖只含該批次資料（W42 無已回覆 → 分佈為空）
+    expect(s.by_reason).toHaveLength(0);
+    const store = (s.pending_by_store ?? []).find((r: { site_code: string }) => r.site_code === 'HA02');
+    expect(store?.total).toBe(2);
+    expect(store?.pending).toBe(2);
+
+    const bad = await agent.get('/api/admin/zero-sales/summary?batch_id=not-a-uuid');
+    expect(bad.status).toBe(400);
+  });
 });

@@ -447,7 +447,12 @@
               </div>
             </div>
             <div id="zs_upload_result"></div>
-            <h4 class="mt-4">統計總覽（跨批次） <button class="btn btn-sm ms-2" id="btn_zs_stats_refresh">重新整理</button></h4>
+            <div class="d-flex align-items-center gap-2 flex-wrap mt-4">
+              <h4 class="m-0">統計總覽</h4>
+              <select id="zs_stats_batch" class="form-select" style="max-width:300px" aria-label="統計範圍"><option value="">全部批次（跨批次）</option></select>
+              <button class="btn btn-sm" id="btn_zs_stats_refresh">重新整理</button>
+            </div>
+            <div class="hint">預設統計全部批次；選擇個別週次後只統計該批次，原因分佈及待回覆店舖排行會一併切換</div>
             <div id="zs_stats_result" class="text-secondary small">捲動到此處自動載入…</div>
             <div class="row g-3 mt-1">
               <div class="col-md-6">

@@ -5,6 +5,7 @@
   let currentBatch = null;
   let reasonsCache = [];
   let itemRows = [];
+  let batchesCache = [];
 
   async function getCsrf() {
     if (!csrf) {
@@ -118,7 +119,9 @@
     try {
       const data = await aFetch('/api/admin/zero-sales/batches');
       const rows = data.batches || [];
+      batchesCache = rows;
       fillExportBatchSelect(rows);
+      fillStatsBatchSelect(rows);
       if (!rows.length) { body.innerHTML = '<tr><td colspan="8" class="text-center text-secondary">暫無批次</td></tr>'; return; }
       body.innerHTML = rows.map((b) => `<tr>
         <td><b>${esc(b.week_label)}</b><div class="text-secondary small">${esc(b.note || '')}</div></td>
@@ -143,15 +146,26 @@
     }
   }
 
+  function batchOptionLabel(b) {
+    const total = (b.replied_count ?? 0) + (b.pending_count ?? 0);
+    return `${esc(b.week_label)}（共 ${total}｜未 ${b.pending_count ?? 0}）`;
+  }
+
   function fillExportBatchSelect(rows) {
     const sel = $('zs_exp_batch');
     if (!sel) return;
     const cur = sel.value;
-    sel.innerHTML = '<option value="">全部批次</option>' + rows.map((b) => {
-      const total = (b.replied_count ?? 0) + (b.pending_count ?? 0);
-      return `<option value="${b.id}">${esc(b.week_label)}（共 ${total}｜未 ${b.pending_count ?? 0}）</option>`;
-    }).join('');
+    sel.innerHTML = '<option value="">全部批次</option>' + rows.map((b) => `<option value="${b.id}">${batchOptionLabel(b)}</option>`).join('');
     if (cur) sel.value = cur;
+  }
+
+  /* 統計總覽的範圍下拉：預設跨批次，可選單一批次（不跨批次統計） */
+  function fillStatsBatchSelect(rows) {
+    const sel = $('zs_stats_batch');
+    if (!sel) return;
+    const cur = sel.value;
+    sel.innerHTML = '<option value="">全部批次（跨批次）</option>' + rows.map((b) => `<option value="${b.id}">${batchOptionLabel(b)}</option>`).join('');
+    sel.value = rows.some((b) => b.id === cur) ? cur : '';
   }
 
   function syncExportBatchSelect() {
@@ -241,31 +255,44 @@
   }
 
   /* 統計總覽 -------------------------------------------------------- */
+  /* 頂部總覽卡永遠顯示跨批次數字；下方區內統計跟隨 zs_stats_batch 下拉：
+     不選批次 = 跨批次，選了批次 = 只統計該批次（後端 summary?batch_id= 已支援） */
   async function loadSummary() {
     const note = $('zs_summary_note');
     const statBox = $('zs_stats_result');
     const reasonBody = $('zs_reason_stats_body');
     const storeBody = $('zs_store_stats_body');
+    const scopeBatch = $('zs_stats_batch')?.value || '';
+    const scopeLabel = scopeBatch ? (batchesCache.find((b) => b.id === scopeBatch)?.week_label || '') : '';
     try {
-      const s = await gFetch('/api/admin/zero-sales/summary');
-      // 頂部總覽卡
-      setText('s_zs_total', String(s.total ?? 0));
-      setText('s_zs_replied', String(s.replied ?? 0));
-      setText('s_zs_pending', String(s.pending ?? 0));
-      setText('s_zs_rate', `${s.reply_rate ?? 0}%`);
-      setText('s_zs_stores', `${s.stores_total ?? 0} / ${s.stores_pending ?? 0}`);
-      const lb = s.latest_batch;
-      setText('s_zs_latest', lb ? `${lb.week_label} ${lb.replied}/${lb.total}` : '—');
+      const [overall, scoped] = await Promise.all([
+        gFetch('/api/admin/zero-sales/summary'),
+        scopeBatch ? gFetch(`/api/admin/zero-sales/summary?batch_id=${encodeURIComponent(scopeBatch)}`) : Promise.resolve(null),
+      ]);
+      const s = scoped || overall;
+      // 頂部總覽卡（跨批次）
+      const o = overall;
+      setText('s_zs_total', String(o.total ?? 0));
+      setText('s_zs_replied', String(o.replied ?? 0));
+      setText('s_zs_pending', String(o.pending ?? 0));
+      setText('s_zs_rate', `${o.reply_rate ?? 0}%`);
+      setText('s_zs_stores', `${o.stores_total ?? 0} / ${o.stores_pending ?? 0}`);
+      const lbOverall = o.latest_batch;
+      setText('s_zs_latest', lbOverall ? `${lbOverall.week_label} ${lbOverall.replied}/${lbOverall.total}` : '—');
       if (note) {
-        note.textContent = s.total
-          ? `共 ${s.batches} 個批次｜${s.total} 行｜回覆率 ${s.reply_rate}%｜已鎖定 ${s.locked} 行`
+        note.textContent = o.total
+          ? `共 ${o.batches} 個批次｜${o.total} 行｜回覆率 ${o.reply_rate}%｜已鎖定 ${o.locked} 行`
           : '暫無零銷售資料';
       }
-      // 區內統計文字
+      // 區內統計（跟隨下拉範圍）
+      const lb = s.latest_batch;
       if (statBox) {
-        statBox.innerHTML = `共 <b>${s.batches}</b> 個批次｜總 <b>${s.total}</b> 行｜已回覆 <b class="text-success">${s.replied}</b>｜未回覆 <b class="text-danger">${s.pending}</b>｜回覆率 <b>${s.reply_rate}%</b>｜涉及 <b>${s.stores_total}</b> 間店（<b>${s.stores_pending}</b> 間仍有待回覆，<b>${s.stores_done}</b> 間已完成）｜已鎖定（用完修改） <b>${s.locked}</b> 行`
-          + (s.repeat_groups ? `｜重複上榜 <b class="text-danger">${s.repeat_groups}</b> 組（${s.repeat_rows} 行）` : '｜重複上榜 0 組')
-          + (lb ? `<br>最新批次：<b>${esc(lb.week_label)}</b> ${lb.replied}/${lb.total}（未 ${lb.pending}）｜${esc(lb.created_at)}` : '');
+        const head = scopeBatch
+          ? `批次 <b>${esc(scopeLabel || scopeBatch.slice(0, 8))}</b>｜`
+          : `共 <b>${s.batches}</b> 個批次｜`;
+        statBox.innerHTML = `${head}總 <b>${s.total}</b> 行｜已回覆 <b class="text-success">${s.replied}</b>｜未回覆 <b class="text-danger">${s.pending}</b>｜回覆率 <b>${s.reply_rate}%</b>｜涉及 <b>${s.stores_total}</b> 間店（<b>${s.stores_pending}</b> 間仍有待回覆，<b>${s.stores_done}</b> 間已完成）｜已鎖定（用完修改） <b>${s.locked}</b> 行`
+          + (scopeBatch ? '' : (s.repeat_groups ? `｜重複上榜 <b class="text-danger">${s.repeat_groups}</b> 組（${s.repeat_rows} 行）` : '｜重複上榜 0 組'))
+          + (!scopeBatch && lb ? `<br>最新批次：<b>${esc(lb.week_label)}</b> ${lb.replied}/${lb.total}（未 ${lb.pending}）｜${esc(lb.created_at)}` : '');
       }
       // 原因分佈
       if (reasonBody) {
@@ -645,6 +672,8 @@
     if (reasonBtn) reasonBtn.addEventListener('click', saveReason);
     const statsBtn = $('btn_zs_stats_refresh');
     if (statsBtn) statsBtn.addEventListener('click', loadSummary);
+    const statsBatchSel = $('zs_stats_batch');
+    if (statsBatchSel) statsBatchSel.addEventListener('change', loadSummary);
     const expBtn = $('btn_zs_export');
     if (expBtn) expBtn.addEventListener('click', () => downloadExport(false));
     const expUnreplied = $('btn_zs_export_unreplied');

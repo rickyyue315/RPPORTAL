@@ -2423,7 +2423,7 @@ adminRouter.get(
   }),
 );
 
-/** GET /api/admin/zero-sales/summary — 跨批次統計 (總覽卡 + 原因分佈 + 待回覆店舖) */
+/** GET /api/admin/zero-sales/summary — 統計 (總覽卡 + 原因分佈 + 待回覆店舖)；不帶 batch_id 為跨批次，帶 batch_id 只統計該批次 */
 adminRouter.get(
   '/zero-sales/summary',
   requireAdmin,

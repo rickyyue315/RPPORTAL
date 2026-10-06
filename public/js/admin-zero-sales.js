@@ -192,7 +192,7 @@
         <td>${esc(i.payload?.['Brand'] || '')}</td><td>${esc(i.payload?.['SKU Desc'] || '')}</td>
         <td>${esc(upDate)}</td>
         <td>${i.status === 'replied' ? '<span class="badge bg-success">已回覆</span>' : '<span class="badge bg-warning">未回覆</span>'}</td>
-        <td>${n}次${lockTag}</td>
+        <td style="white-space:nowrap">${n}次${lockTag}</td>
         <td>${esc(i.reason_label || '')}${i.reason_note ? `（${esc(i.reason_note)}）` : ''}</td>
         <td><div class="d-flex gap-1 flex-wrap">${editBtn}<button class="btn btn-sm btn-outline-danger" data-zs-item-del="${i.id}" data-site="${esc(i.site_code)}" data-sku="${esc(i.sku)}">刪除</button></div></td></tr>`;
       }).join('')

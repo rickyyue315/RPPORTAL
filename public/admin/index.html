@@ -459,6 +459,20 @@
                 </div>
               </div>
             </div>
+            <h4 class="mt-4">重複上榜 SKU 統計（同店同 SKU 跨週 ≥2 次）</h4>
+            <p class="text-secondary small">連續多週出現代表上次措施未見效，可按店舖或 SKU 搜尋，派發前重點跟進。預設按出現次數倒序。</p>
+            <div class="d-flex gap-2 mb-2 flex-wrap align-items-end">
+              <div><label class="form-label">Site Code</label><input type="text" id="zs_rep_site" class="form-control" placeholder="例如 HC63" style="max-width:160px"></div>
+              <div class="flex-grow-1" style="min-width:200px"><label class="form-label">搜尋 SKU / Site</label><input type="text" id="zs_rep_q" class="form-control" placeholder="例如 1234567"></div>
+              <div><label class="form-label">最少次數</label><select id="zs_rep_min" class="form-select"><option value="2">≥ 2 次</option><option value="3">≥ 3 次</option><option value="4">≥ 4 次</option></select></div>
+              <div class="d-flex gap-2">
+                <button class="btn btn-primary" id="btn_zs_repeat">查詢重複 SKU</button>
+              </div>
+            </div>
+            <div id="zs_repeat_result" class="text-secondary small"></div>
+            <div class="table-responsive">
+              <table class="table table-vcenter"><thead><tr><th>Site</th><th>店舖</th><th>SKU</th><th>Brand</th><th>描述</th><th>出現</th><th>週次</th><th>上次回覆</th><th>未 / 已</th></tr></thead><tbody id="zs_repeat_body"><tr><td colspan="9" class="text-center text-secondary">捲動到此處自動載入…</td></tr></tbody></table>
+            </div>
             <h4 class="mt-4">統一匯出（跨批次篩選）</h4>
             <p class="text-secondary small">可按批次、Site Code、回覆狀態、回覆原因篩選後一次匯出（原文 22 欄 + 回覆原因 + 補充 + 狀態）。匯出為唯讀，不會鎖定店舖回覆。</p>
             <div class="d-flex gap-2 mb-2 flex-wrap align-items-end">

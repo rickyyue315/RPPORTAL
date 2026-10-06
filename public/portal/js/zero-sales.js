@@ -4,7 +4,9 @@
   const p = window.portal;
   let items = [];
   let reasons = [];
+  let batches = [];
   let currentId = null;
+  let onlyRepeat = false;
 
   const COLS = [
     { key: 'Brand', label: 'Brand' },
@@ -29,6 +31,21 @@
     return (it.payload && it.payload[key]) || (key === 'SKU' ? it.sku : key === 'Brand' ? '' : '');
   }
 
+  function repeatCount(it) {
+    return typeof it.occurrence_count === 'number' ? it.occurrence_count : (it.is_repeat ? 2 : 1);
+  }
+
+  function isRepeat(it) {
+    if (typeof it.is_repeat === 'boolean') return it.is_repeat;
+    return repeatCount(it) >= 2;
+  }
+
+  function prevSummary(it) {
+    if (!isRepeat(it) || !it.prev_week_label) return '';
+    const reason = it.prev_reason_label || (it.prev_status === 'replied' ? '已回覆' : '未回覆');
+    return `上次 ${it.prev_week_label}：${reason}`;
+  }
+
   /** 'EYG - EO YUNG GAM(HAN BANG)' 只顯示 Brand Code 'EYG' */
   function brandCode(it) {
     const full = payloadVal(it, 'Brand');
@@ -42,20 +59,53 @@
     $('reply_reason').innerHTML = reasons.map((r) => `<option value="${p.escapeHtml(r.code)}">${p.escapeHtml(r.label)}</option>`).join('');
   }
 
+  async function loadBatches(preserveSelection = false) {
+    const prev = preserveSelection && $('f_batch') ? $('f_batch').value : '';
+    const data = await p.api('/api/portal/zero-sales/batches');
+    batches = data.batches || [];
+    const sel = $('f_batch');
+    if (!batches.length) {
+      sel.innerHTML = '<option value="all">暫無派發</option>';
+      sel.value = 'all';
+      return;
+    }
+    sel.innerHTML =
+      batches.map((b, i) => `<option value="${p.escapeHtml(b.id)}">${p.escapeHtml(b.week_label)}（${b.pending} 未回覆 / ${b.total}）${i === 0 ? ' — 最新' : ''}</option>`).join('') +
+      '<option value="all">全部週次</option>';
+    // 預設最新一週，避免 W41+W42 累積愈來愈長；refresh 時保留原選擇
+    if (preserveSelection && prev) {
+      const stillThere = [...sel.options].some((o) => o.value === prev);
+      sel.value = stillThere ? prev : batches[0].id;
+    } else {
+      sel.value = batches[0].id;
+    }
+  }
+
   async function loadList() {
-    const status = $('f_status').value;
-    const qs = status ? `?status=${encodeURIComponent(status)}` : '';
+    const statusVal = $('f_status').value;
+    // 「重複上榜」為前端篩選（後端 status 只支援 pending / replied），不送 status 參數
+    onlyRepeat = statusVal === 'repeat';
+    const status = onlyRepeat ? '' : statusVal;
+    const batch = $('f_batch') ? $('f_batch').value : '';
+    const params = new URLSearchParams();
+    if (status) params.set('status', status);
+    // 空 / all = 跨週全部；否則只取該週，預設為最新一週
+    if (batch && batch !== 'all') params.set('batch_id', batch);
+    const qs = params.toString() ? `?${params.toString()}` : '';
     const data = await p.api(`/api/portal/zero-sales/my${qs}`);
-    items = data.items || [];
+    const all = data.items || [];
+    items = onlyRepeat ? all.filter(isRepeat) : all;
     const replied = items.filter((i) => i.status === 'replied').length;
     const rate = items.length ? Math.round((replied / items.length) * 100) : 0;
+    const repeatN = all.filter(isRepeat).length;
     const shop = data.shop ? ` ${p.escapeHtml(data.shop)}` : '';
+    const weekLabel = batch && batch !== 'all' ? (batches.find((b) => b.id === batch) || {}).week_label : '全部週次';
     const bar = document.getElementById('zs_progress_bar');
     if (bar) bar.style.width = `${rate}%`;
     $('site_info').innerHTML =
       `<div class="site-banner">${p.escapeHtml(data.site_code)}${shop}</div>` +
-      `<div>共 ${items.length} 個指定 SKU（${replied} 已回覆 · ${rate}%）</div>` +
-      `<div class="hint">如非你店舖，請按右上「登出」再重新輸入自己嘅 Site Code。</div>`;
+      `<div>${p.escapeHtml(weekLabel || '')}：共 ${items.length} 個指定 SKU（${replied} 已回覆 · ${rate}%）${repeatN ? `｜其中 <b>${repeatN}</b> 個重複上榜（≥2次）` : ''}${onlyRepeat ? '｜現只顯示重複上榜' : ''}</div>` +
+      `<div class="hint">預設只顯示最新一週，如需查看舊週次請切換上方「週次」。重複上榜會顯示上次回覆及第幾次，提醒跟進改善。如非你店舖，請按右上「登出」再重新輸入自己嘅 Site Code。</div>`;
     render();
   }
 
@@ -74,19 +124,30 @@
     }
     let html = '<table class="zs-table"><thead><tr><th>週次</th>';
     COLS.forEach((c) => { html += `<th>${p.escapeHtml(c.label)}</th>`; });
-    html += '<th>SKU上載日期</th><th>狀態</th><th>店舖回覆</th><th></th></tr></thead><tbody>';
+    html += '<th>SKU上載日期</th><th>狀態</th><th>店舖回覆</th><th>重複提示</th><th></th></tr></thead><tbody>';
     filtered.forEach((it) => {
       const badge = it.status === 'replied' ? '<span class="badge-replied">已回覆</span>' : '<span class="badge-pending">未回覆</span>';
       const reply = it.status === 'replied' ? `${p.escapeHtml(it.reason_label || '')}${it.reason_note ? `<div class="hint">${p.escapeHtml(it.reason_note)}</div>` : ''}` : '—';
       const n = editCount(it);
       const locked = !canEdit(it);
       const btnLabel = n === 0 ? '回覆' : locked ? '已鎖定' : '修改';
-      html += `<tr><td>${p.escapeHtml(it.week_label || '')}</td>`;
+      const rc = repeatCount(it);
+      let repeatCell = '—';
+      if (isRepeat(it)) {
+        const prev = prevSummary(it);
+        const prevNote = it.prev_reason_note ? `（${p.escapeHtml(it.prev_reason_note)}）` : '';
+        const notImproved = it.prev_status === 'pending'
+          ? '<div class="hint" style="color:#b42318">上次未回覆，仍未改善</div>'
+          : '';
+        repeatCell = `<span class="badge-repeat">第${rc}次上榜</span>` +
+          (prev ? `<div class="hint">${p.escapeHtml(prev)}${prevNote}</div>` : '') + notImproved;
+      }
+      html += `<tr${isRepeat(it) ? ' class="zs-repeat"' : ''}><td>${p.escapeHtml(it.week_label || '')}</td>`;
       COLS.forEach((c) => {
         const val = c.key === 'Brand' ? brandCode(it) : payloadVal(it, c.key);
         html += `<td>${p.escapeHtml(val)}</td>`;
       });
-      html += `<td>${p.escapeHtml(uploadDate(it))}</td><td>${badge}</td><td>${reply}</td><td><button class="btn ghost" data-reply="${it.id}" ${locked ? 'disabled' : ''}>${btnLabel}</button></td></tr>`;
+      html += `<td>${p.escapeHtml(uploadDate(it))}</td><td>${badge}</td><td>${reply}</td><td>${repeatCell}</td><td><button class="btn ghost" data-reply="${it.id}" ${locked ? 'disabled' : ''}>${btnLabel}</button></td></tr>`;
     });
     html += '</tbody></table>';
     $('zs_list').innerHTML = html;
@@ -108,6 +169,17 @@
     const n = editCount(it);
     $('reply_title').textContent = n === 0 ? `回覆 — ${it.sku}` : `修改回覆（最後一次機會） — ${it.sku}`;
     $('reply_sku_info').textContent = `${it.week_label || ''}｜${payloadVal(it, 'Brand')}｜${payloadVal(it, 'SKU Desc')}${n >= 1 ? '｜注意：每 SKU 只可修改一次，儲存後將鎖定' : ''}`;
+    const histEl = $('reply_history');
+    if (histEl) {
+      if (isRepeat(it) && it.prev_week_label) {
+        const prevReason = it.prev_reason_label || (it.prev_status === 'replied' ? '已回覆' : '未回覆');
+        const prevNote = it.prev_reason_note ? `（${it.prev_reason_note}）` : '';
+        const warn = it.prev_status === 'pending' ? '上次未回覆，仍未改善，請今次務必跟進。' : '上次已回覆但今週又再上榜，請檢視上次措施是否有效。';
+        histEl.textContent = `此 SKU 第${repeatCount(it)}次上榜。上次（${it.prev_week_label}）：${prevReason}${prevNote}。${warn}`;
+      } else {
+        histEl.textContent = '此 SKU 首次上榜。';
+      }
+    }
     $('reply_reason').value = it.reason_code || (reasons[0] && reasons[0].code) || '';
     $('reply_note').value = it.reason_note || '';
     p.showAlert($('reply_error'), '', '');
@@ -124,6 +196,8 @@
         body: JSON.stringify({ reason_code: $('reply_reason').value, reason_note: $('reply_note').value }),
       });
       $('reply_dialog').close();
+      // 回覆後更新週次計數，但保留店舖正睇緊嘅週次選擇
+      await loadBatches(true);
       await loadList();
     } catch (err) {
       p.showAlert($('reply_error'), 'error', p.escapeHtml(err.message));
@@ -133,9 +207,10 @@
   });
 
   $('btn_refresh').addEventListener('click', async () => {
-    try { await loadList(); } catch (err) { p.showAlert($('list_error'), 'error', p.escapeHtml(err.message)); }
+    try { await loadBatches(true); await loadList(); } catch (err) { p.showAlert($('list_error'), 'error', p.escapeHtml(err.message)); }
   });
   $('f_status').addEventListener('change', () => $('btn_refresh').click());
+  if ($('f_batch')) $('f_batch').addEventListener('change', () => $('btn_refresh').click());
   $('f_search').addEventListener('input', render);
   $('logout_link').addEventListener('click', (e) => { e.preventDefault(); p.logout(); });
 
@@ -146,6 +221,7 @@
     } catch { return; }
     $('store_header').textContent = `90日零銷售回覆 — ${site}`;
     await loadReasons();
+    await loadBatches();
     await loadList();
   })();
 })();

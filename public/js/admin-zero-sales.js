@@ -234,6 +234,7 @@
       $('zs_file').value = '';
       await loadBatches();
       await loadSummary();
+      await loadRepeats();
     } catch (err) {
       res.innerHTML = `<div class="alert alert-danger">${esc(err.message)}</div>`;
     }
@@ -263,6 +264,7 @@
       // 區內統計文字
       if (statBox) {
         statBox.innerHTML = `共 <b>${s.batches}</b> 個批次｜總 <b>${s.total}</b> 行｜已回覆 <b class="text-success">${s.replied}</b>｜未回覆 <b class="text-danger">${s.pending}</b>｜回覆率 <b>${s.reply_rate}%</b>｜涉及 <b>${s.stores_total}</b> 間店（<b>${s.stores_pending}</b> 間仍有待回覆，<b>${s.stores_done}</b> 間已完成）｜已鎖定（用完修改） <b>${s.locked}</b> 行`
+          + (s.repeat_groups ? `｜重複上榜 <b class="text-danger">${s.repeat_groups}</b> 組（${s.repeat_rows} 行）` : '｜重複上榜 0 組')
           + (lb ? `<br>最新批次：<b>${esc(lb.week_label)}</b> ${lb.replied}/${lb.total}（未 ${lb.pending}）｜${esc(lb.created_at)}` : '');
       }
       // 原因分佈
@@ -296,6 +298,50 @@
       if (statBox) statBox.innerHTML = `<div class="alert alert-danger">${esc(err.message)}</div>`;
       if (reasonBody) reasonBody.innerHTML = `<tr><td colspan="3" class="text-center text-danger">${esc(err.message)}</td></tr>`;
       if (storeBody) storeBody.innerHTML = `<tr><td colspan="5" class="text-center text-danger">${esc(err.message)}</td></tr>`;
+    }
+  }
+
+  /* 重複上榜 SKU 統計（同店同 SKU 跨週 ≥2 次） ---------------------- */
+  async function loadRepeats() {
+    const body = $('zs_repeat_body');
+    const res = $('zs_repeat_result');
+    if (!body) return;
+    const site = ($('zs_rep_site')?.value || '').trim();
+    const q = ($('zs_rep_q')?.value || '').trim();
+    const min = $('zs_rep_min')?.value || '2';
+    const qs = new URLSearchParams();
+    if (site) qs.set('site_code', site);
+    if (q) qs.set('q', q);
+    if (min) qs.set('min_count', min);
+    qs.set('limit', '200');
+    if (res) res.innerHTML = '<div class="text-secondary small">查詢中…</div>';
+    try {
+      const data = await gFetch(`/api/admin/zero-sales/repeats?${qs.toString()}`);
+      const rows = data.repeats || [];
+      if (res) res.innerHTML = rows.length
+        ? `共 <b>${rows.length}</b> 組重複上榜（只顯示首 200，搜尋可收窄）`
+        : '沒有重複上榜 SKU（全部只出現過一次）。';
+      if (!rows.length) {
+        body.innerHTML = '<tr><td colspan="9" class="text-center text-secondary">沒有重複上榜 SKU</td></tr>';
+        return;
+      }
+      body.innerHTML = rows.slice(0, 200).map((r) => {
+        const weeks = (r.weeks || []).map((w) => esc(w)).join(' → ');
+        const lastReply = r.last_reason_label
+          ? `${esc(r.last_reason_label)}${r.last_reason_note ? `（${esc(r.last_reason_note)}）` : ''}`
+          : (r.last_status === 'replied' ? '已回覆' : '<span class="text-danger">未回覆</span>');
+        return `<tr>
+          <td><b>${esc(r.site_code)}</b></td><td>${esc(r.shop || '—')}</td>
+          <td>${esc(r.sku)}</td><td>${esc(r.brand || '')}</td><td>${esc(r.sku_desc || '')}</td>
+          <td><b class="text-danger">${r.occurrence_count} 次</b></td>
+          <td class="small">${weeks}</td>
+          <td class="small">${esc(r.last_week_label || '')}｜${r.last_status === 'replied' ? '<span class="badge bg-success">已回覆</span>' : '<span class="badge bg-warning">未回覆</span>'}<br>${lastReply}</td>
+          <td>未 <b class="text-danger">${r.pending_count}</b> / 已 <span class="text-success">${r.replied_count}</span></td>
+        </tr>`;
+      }).join('');
+    } catch (err) {
+      if (res) res.innerHTML = `<div class="alert alert-danger">${esc(err.message)}</div>`;
+      body.innerHTML = `<tr><td colspan="9" class="text-center text-danger">${esc(err.message)}</td></tr>`;
     }
   }
 
@@ -376,6 +422,7 @@
   async function refreshAfterDelete() {
     await loadBatches();
     await loadSummary();
+    await loadRepeats();
     if (currentBatch) await loadItems();
   }
 
@@ -607,6 +654,8 @@
       const v = expBatch.value;
       if (v) { currentBatch = v; loadItems(); }
     });
+    const repBtn = $('btn_zs_repeat');
+    if (repBtn) repBtn.addEventListener('click', loadRepeats);
     // 懶載入：捲動到零銷售區塊才請求 batches / reasons / summary，首屏更快
     let started = false;
     const start = () => {
@@ -615,9 +664,10 @@
       loadBatches();
       loadReasons();
       loadSummary();
+      loadRepeats();
     };
     // 供頂部「立即更新」一併刷新
-    globalThis.__zsRefresh = () => { started = true; loadBatches(); loadReasons(); loadSummary(); };
+    globalThis.__zsRefresh = () => { started = true; loadBatches(); loadReasons(); loadSummary(); loadRepeats(); };
     const anchor = $('zs_card') || $('zs_batches_body');
     if (!('IntersectionObserver' in window)) { start(); return; }
     const io = new IntersectionObserver((entries) => {

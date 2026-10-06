@@ -36,12 +36,16 @@
       <h2>90日零銷售 SKU 回覆</h2>
       <div id="site_info"><div class="loading">載入中…</div></div>
       <div class="zs-progress" aria-hidden="true"><i id="zs_progress_bar" style="width:0%"></i></div>
-      <p class="hint" style="margin-bottom:0">RP Team 每週派發你店舖的指定零銷售 SKU，請逐條選擇原因並可填補充說明。每 SKU 可修改一次（初次回覆 + 1 次修改），用完後會鎖定，如需再改請聯絡 RP Team。</p>
+      <p class="hint" style="margin-bottom:0">RP Team 每週派發你店舖的指定零銷售 SKU，請逐條選擇原因並可填補充說明。每 SKU 可修改一次（初次回覆 + 1 次修改），用完後會鎖定，如需再改請聯絡 RP Team。連續兩週出現同一 SKU 會標示「第幾次上榜」及上次回覆，提醒跟進改善。</p>
 
       <div class="zs-toolbar" role="search">
         <div class="field">
+          <label for="f_batch">週次（預設最新一週）</label>
+          <select id="f_batch"><option value="">載入中…</option></select>
+        </div>
+        <div class="field">
           <label for="f_status">狀態篩選</label>
-          <select id="f_status"><option value="">全部</option><option value="pending">未回覆</option><option value="replied">已回覆</option></select>
+          <select id="f_status"><option value="">全部</option><option value="pending">未回覆</option><option value="replied">已回覆</option><option value="repeat">重複上榜（≥2次）</option></select>
         </div>
         <div class="field field--search">
           <label for="f_search">搜尋 SKU / Brand / 描述</label>
@@ -61,6 +65,7 @@
     <div class="reply-head">
       <h3 id="reply_title">回覆</h3>
       <div id="reply_sku_info" class="hint"></div>
+      <div id="reply_history" class="hint"></div>
     </div>
     <div class="reply-body">
       <div style="margin:0 0 12px">

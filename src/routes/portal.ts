@@ -64,6 +64,7 @@ import { getUploadedFile, validateUploadedXlsx } from '../lib/upload.js';
 import { createImportBatch, findPortalImportBatchByIdempotencyKey, getPortalImportBatchRecord, importBatchResponse, lockImportIdempotencyKey, type ImportBatchRow } from '../services/importBatches.js';
 import { query, withTransaction } from '../db/pool.js';
 import {
+  listMyBatches as listMyZeroSalesBatches,
   listMyItems as listMyZeroSalesItems,
   listReasons as listZeroSalesReasons,
   replyItem as replyZeroSalesItem,
@@ -883,6 +884,18 @@ portalRouter.get(
   adminActionLimiter,
   asyncHandler(async (_req: Request, res: Response) => {
     res.json({ reasons: await listZeroSalesReasons(true) });
+  }),
+);
+
+/** GET /api/portal/zero-sales/batches — 本店可見週次 (新到舊，預設第一個 = 最新一週) */
+portalRouter.get(
+  '/zero-sales/batches',
+  requirePortalUser,
+  requireStoreSite,
+  adminActionLimiter,
+  asyncHandler(async (req: Request, res: Response) => {
+    const batches = await listMyZeroSalesBatches(req.storeSiteCode!);
+    res.json({ site_code: req.storeSiteCode, batches });
   }),
 );
 

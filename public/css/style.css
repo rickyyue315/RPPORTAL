@@ -1117,6 +1117,13 @@ table.zs-table td:nth-child(3) { font-family: Consolas, 'Courier New', monospace
 .badge-pending::before { background: #d99a06; }
 .badge-replied { background: var(--success-bg); color: #0a5c36; border: 1px solid #a9dfbf; }
 .badge-replied::before { background: var(--success); }
+.badge-repeat {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 3px 11px; border-radius: 999px; font-size: 12px; font-weight: 700; white-space: nowrap;
+  background: #fee2e2; color: #991b1b; border: 1px solid #fecaca;
+}
+table.zs-table tbody tr.zs-repeat td { background: #fff7f7; }
+table.zs-table tbody tr.zs-repeat:hover td { background: #feecec; }
 .zs-table .btn.ghost { min-height: 32px; padding: 5px 16px; font-size: 13px; border-radius: 8px; }
 .zs-table .btn.ghost:disabled { background: #eef1f4; border-color: var(--border); color: var(--muted); cursor: not-allowed; }
 dialog#reply_dialog { border: none; border-radius: var(--radius-lg); padding: 0; max-width: 560px; width: 92vw; box-shadow: var(--shadow-lg); }

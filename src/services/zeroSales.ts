@@ -33,6 +33,16 @@ export interface ZeroSalesItemRow {
   batch_date?: string;
   /** 已回覆次數：0=未回覆，1=已回覆未改過，2=已用完修改機會 */
   reply_count: number;
+  /** 同店同 SKU 跨批次累計出現次數（含本行） */
+  occurrence_count?: number;
+  /** 是否重複上榜（occurrence_count >= 2） */
+  is_repeat?: boolean;
+  /** 上一次出現的週次 / 回覆（無則為 null） */
+  prev_week_label?: string | null;
+  prev_status?: string | null;
+  prev_reason_label?: string | null;
+  prev_reason_note?: string;
+  prev_replied_at?: string | null;
 }
 
 export interface ZeroSalesReasonRow {
@@ -71,6 +81,10 @@ export interface ZeroSalesSummary {
   stores_total: number;
   stores_pending: number;
   stores_done: number;
+  /** 同店同 SKU 出現 ≥2 次的組數（仍未改善的高危組） */
+  repeat_groups: number;
+  /** 屬於重複組的總行數 */
+  repeat_rows: number;
   latest_batch: {
     id: string;
     week_label: string;
@@ -154,6 +168,18 @@ export async function getZeroSalesSummary(batchId?: string): Promise<ZeroSalesSu
   );
   const lb = latest.rows[0] ?? null;
 
+  // 重複上榜：只在跨批次總覽計算；若指定單一批次則必為 0（批次內 site+sku 唯一）
+  let repeatGroups = 0;
+  let repeatRows = 0;
+  if (!batchId) {
+    const repeat = await query<{ groups: string; rows: string }>(
+      `SELECT COUNT(*)::text AS groups, COALESCE(SUM(cnt), 0)::text AS rows
+         FROM (SELECT COUNT(*) AS cnt FROM zero_sales_items GROUP BY site_code, sku HAVING COUNT(*) >= 2) t`,
+    );
+    repeatGroups = Number(repeat.rows[0]?.groups ?? 0);
+    repeatRows = Number(repeat.rows[0]?.rows ?? 0);
+  }
+
   return {
     batches: Number(o.batches ?? 0),
     total,
@@ -164,6 +190,8 @@ export async function getZeroSalesSummary(batchId?: string): Promise<ZeroSalesSu
     stores_total: storesTotal,
     stores_pending: storesPending,
     stores_done: Math.max(0, storesTotal - storesPending),
+    repeat_groups: repeatGroups,
+    repeat_rows: repeatRows,
     latest_batch: lb
       ? {
           id: lb.id,
@@ -276,12 +304,186 @@ export async function listBatchItems(batchId: string, opts: { siteCode?: string;
      WHERE ${where.join(' AND ')} ORDER BY i.site_code, i.sku LIMIT 2000`,
     params,
   );
-  return r.rows.map((row) => ({
+  const mapped = r.rows.map((row) => ({
     ...row,
     payload: typeof row.payload === 'string' ? JSON.parse(row.payload as unknown as string) : (row.payload ?? {}),
     replied_at: row.replied_at ? toHKString(row.replied_at) : null,
     batch_created_at: row.batch_created_at ? toHKString(row.batch_created_at as unknown as string) : undefined,
     batch_date: row.batch_created_at ? toHKDateString(row.batch_created_at as unknown as string) : undefined,
+  }));
+  return attachZeroSalesHistory(mapped);
+}
+
+interface ZeroSalesHistoryEntry {
+  batch_id: string;
+  site_code: string;
+  sku: string;
+  week_label: string;
+  batch_created_at: string;
+  status: string;
+  reason_label: string | null;
+  reason_note: string;
+  replied_at: string | null;
+}
+
+/**
+ * 為每行附加跨批次重複資訊：同店同 SKU 出現次數 + 上一次的週次/回覆。
+ * 以 site 分組一次過查全量歷史，避免每行 N+1 查詢。
+ */
+async function attachZeroSalesHistory<T extends ZeroSalesItemRow>(items: T[]): Promise<T[]> {
+  if (!items.length) return items;
+  const skusBySite = new Map<string, Set<string>>();
+  for (const it of items) {
+    if (!it.site_code || !it.sku) continue;
+    let set = skusBySite.get(it.site_code);
+    if (!set) { set = new Set<string>(); skusBySite.set(it.site_code, set); }
+    set.add(it.sku);
+  }
+  const historyByKey = new Map<string, ZeroSalesHistoryEntry[]>();
+  for (const [siteCode, skuSet] of skusBySite) {
+    const skus = [...skuSet];
+    if (!skus.length) continue;
+    const r = await query<ZeroSalesHistoryEntry>(
+      `SELECT h.batch_id, h.site_code, h.sku, hb.week_label, hb.created_at AS batch_created_at,
+              h.status, h.reason_label, COALESCE(h.reason_note, '') AS reason_note, h.replied_at
+         FROM zero_sales_items h
+         JOIN zero_sales_batches hb ON hb.id = h.batch_id
+        WHERE h.site_code = $1 AND h.sku = ANY($2::text[])
+        ORDER BY h.sku, hb.created_at DESC`,
+      [siteCode, skus],
+    );
+    for (const h of r.rows) {
+      const key = `${h.site_code}|${h.sku}`;
+      const list = historyByKey.get(key) ?? [];
+      list.push(h);
+      historyByKey.set(key, list);
+    }
+  }
+  return items.map((it) => {
+    const list = historyByKey.get(`${it.site_code}|${it.sku}`) ?? [];
+    const occurrence_count = list.length || 1;
+    const idx = list.findIndex((h) => h.batch_id === it.batch_id);
+    // 上一次 = 同 SKU 按時間排在現行之前的第一個；找不到（理論上不發生）則退回最新且非本行
+    const prev = idx >= 0 ? (list[idx + 1] ?? null) : (list.find((h) => h.batch_id !== it.batch_id) ?? null);
+    return {
+      ...it,
+      occurrence_count,
+      is_repeat: occurrence_count >= 2,
+      prev_week_label: prev?.week_label ?? null,
+      prev_status: prev?.status ?? null,
+      prev_reason_label: prev?.reason_label ?? null,
+      prev_reason_note: prev?.reason_note ?? '',
+      prev_replied_at: prev?.replied_at ? toHKString(prev.replied_at) : null,
+    };
+  });
+}
+
+export interface ZeroSalesRepeatRow {
+  site_code: string;
+  shop: string;
+  sku: string;
+  brand: string;
+  sku_desc: string;
+  occurrence_count: number;
+  pending_count: number;
+  replied_count: number;
+  weeks: string[];
+  first_seen: string;
+  last_seen: string;
+  last_week_label: string;
+  last_status: string;
+  last_reason_label: string;
+  last_reason_note: string;
+  last_replied_at: string | null;
+}
+
+export interface ZeroSalesRepeatFilter {
+  siteCode?: string;
+  /** 模糊搜尋 SKU / Site Code */
+  q?: string;
+  /** 最少出現次數，預設 2（連續兩週即命中，不要求必須相鄰） */
+  minCount?: number;
+  limit?: number;
+}
+
+/** 後台重複上榜統計：同店同 SKU 跨批次出現 ≥ minCount，按次數倒序（上限 500） */
+export async function listZeroSalesRepeats(filter: ZeroSalesRepeatFilter = {}): Promise<ZeroSalesRepeatRow[]> {
+  const minCount = Math.min(20, Math.max(2, Math.floor(filter.minCount ?? 2) || 2));
+  const limit = Math.min(500, Math.max(1, Math.floor(filter.limit ?? 200) || 200));
+  const where: string[] = [];
+  const params: unknown[] = [];
+  if (filter.siteCode) {
+    params.push(filter.siteCode);
+    where.push(`i.site_code = $${params.length}`);
+  }
+  if (filter.q) {
+    params.push(`%${filter.q}%`);
+    where.push(`(i.sku ILIKE $${params.length} OR i.site_code ILIKE $${params.length})`);
+  }
+  params.push(minCount);
+  const havingParam = `$${params.length}`;
+  params.push(limit);
+  const limitParam = `$${params.length}`;
+  const whereSql = where.length ? `WHERE ${where.join(' AND ')}` : '';
+  const r = await query<{
+    site_code: string;
+    shop: string;
+    sku: string;
+    brand: string;
+    sku_desc: string;
+    occurrence_count: string;
+    pending_count: string;
+    replied_count: string;
+    weeks: string[];
+    first_seen_raw: string;
+    last_seen_raw: string;
+    last_week_label: string;
+    last_status: string;
+    last_reason_label: string;
+    last_reason_note: string;
+    last_replied_raw: string | null;
+  }>(
+    `SELECT i.site_code, COALESCE(MAX(s.shop), '') AS shop, i.sku,
+            COUNT(*)::text AS occurrence_count,
+            COUNT(*) FILTER (WHERE i.status = 'pending')::text AS pending_count,
+            COUNT(*) FILTER (WHERE i.status = 'replied')::text AS replied_count,
+            ARRAY_AGG(b.week_label ORDER BY b.created_at DESC) AS weeks,
+            MIN(b.created_at)::text AS first_seen_raw,
+            MAX(b.created_at)::text AS last_seen_raw,
+            (ARRAY_AGG(b.week_label ORDER BY b.created_at DESC))[1] AS last_week_label,
+            (ARRAY_AGG(i.status ORDER BY b.created_at DESC))[1] AS last_status,
+            (ARRAY_AGG(COALESCE(i.reason_label, '') ORDER BY b.created_at DESC))[1] AS last_reason_label,
+            (ARRAY_AGG(COALESCE(i.reason_note, '') ORDER BY b.created_at DESC))[1] AS last_reason_note,
+            (ARRAY_AGG(i.payload->>'Brand' ORDER BY b.created_at DESC))[1] AS brand,
+            (ARRAY_AGG(i.payload->>'SKU Desc' ORDER BY b.created_at DESC))[1] AS sku_desc,
+            (ARRAY_AGG(i.replied_at ORDER BY b.created_at DESC))[1]::text AS last_replied_raw
+       FROM zero_sales_items i
+       JOIN zero_sales_batches b ON b.id = i.batch_id
+       LEFT JOIN stores s ON s.site_code = i.site_code
+      ${whereSql}
+      GROUP BY i.site_code, i.sku
+     HAVING COUNT(*) >= ${havingParam}
+      ORDER BY COUNT(*) DESC, MAX(b.created_at) DESC
+      LIMIT ${limitParam}`,
+    params,
+  );
+  return r.rows.map((row) => ({
+    site_code: row.site_code,
+    shop: row.shop ?? '',
+    sku: row.sku,
+    brand: row.brand ?? '',
+    sku_desc: row.sku_desc ?? '',
+    occurrence_count: Number(row.occurrence_count ?? 0),
+    pending_count: Number(row.pending_count ?? 0),
+    replied_count: Number(row.replied_count ?? 0),
+    weeks: row.weeks ?? [],
+    first_seen: row.first_seen_raw ? toHKDateString(row.first_seen_raw) : '',
+    last_seen: row.last_seen_raw ? toHKDateString(row.last_seen_raw) : '',
+    last_week_label: row.last_week_label ?? '',
+    last_status: row.last_status ?? '',
+    last_reason_label: row.last_reason_label ?? '',
+    last_reason_note: row.last_reason_note ?? '',
+    last_replied_at: row.last_replied_raw ? toHKString(row.last_replied_raw) : null,
   }));
 }
 
@@ -296,16 +498,42 @@ export async function listMyItems(siteCode: string, opts: { status?: string; bat
      WHERE ${where.join(' AND ')} ORDER BY b.created_at DESC, i.sku LIMIT 1000`,
     params,
   );
-  return r.rows.map((row) => ({
+  const mapped = r.rows.map((row) => ({
     ...row,
     payload: typeof row.payload === 'string' ? JSON.parse(row.payload as unknown as string) : (row.payload ?? {}),
     replied_at: row.replied_at ? toHKString(row.replied_at) : null,
     batch_created_at: row.batch_created_at ? toHKString(row.batch_created_at as unknown as string) : undefined,
     batch_date: row.batch_created_at ? toHKDateString(row.batch_created_at as unknown as string) : undefined,
   }));
+  return attachZeroSalesHistory(mapped);
 }
 
 export class ZeroSalesReplyError extends Error {}
+
+/** 店舖可見的週次清單：只包含曾派發給該店的行，按新到舊排（預設選第一個 = 最新一週） */
+export interface ZeroSalesMyBatchRow {
+  id: string;
+  week_label: string;
+  created_at: string;
+  total: number;
+  replied: number;
+  pending: number;
+}
+
+export async function listMyBatches(siteCode: string): Promise<ZeroSalesMyBatchRow[]> {
+  const r = await query<ZeroSalesMyBatchRow>(
+    `SELECT b.id, b.week_label, b.created_at,
+            count(*)::int AS total,
+            count(*) FILTER (WHERE i.status = 'replied')::int AS replied,
+            count(*) FILTER (WHERE i.status = 'pending')::int AS pending
+       FROM zero_sales_batches b
+       JOIN zero_sales_items i ON i.batch_id = b.id AND i.site_code = $1
+      GROUP BY b.id, b.week_label, b.created_at
+      ORDER BY b.created_at DESC LIMIT 52`,
+    [siteCode],
+  );
+  return r.rows.map((b) => ({ ...b, created_at: toHKString(b.created_at) }));
+}
 
 /** 刪除整個批次（items 經 FK ON DELETE CASCADE 一併清除），回傳週次及清除行數供審計 */
 export async function deleteZeroSalesBatch(batchId: string): Promise<{ weekLabel: string; deletedItems: number } | null> {

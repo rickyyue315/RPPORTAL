@@ -452,7 +452,7 @@
               <select id="zs_stats_batch" class="form-select" style="max-width:300px" aria-label="統計範圍"><option value="">全部批次（跨批次）</option></select>
               <button class="btn btn-sm" id="btn_zs_stats_refresh">重新整理</button>
             </div>
-            <div class="hint">預設統計全部批次；選擇個別週次後只統計該批次，原因分佈及待回覆店舖排行會一併切換</div>
+            <div class="hint">預設統計全部批次；選擇個別週次後只統計該批次，原因分佈及待回覆店舖（按 OM）會一併切換</div>
             <div id="zs_stats_result" class="text-secondary small">捲動到此處自動載入…</div>
             <div class="row g-3 mt-1">
               <div class="col-md-6">
@@ -462,9 +462,15 @@
                 </div>
               </div>
               <div class="col-md-6">
-                <h5 class="text-secondary">待回覆店舖排行（Top 50）</h5>
+                <h5 class="text-secondary">待回覆店舖（按 OM）</h5>
                 <div class="table-responsive">
-                  <table class="table table-vcenter"><thead><tr><th>Site</th><th>店舖</th><th>總數</th><th>已回覆</th><th>未回覆</th></tr></thead><tbody id="zs_store_stats_body"><tr><td colspan="5" class="text-center text-secondary">—</td></tr></tbody></table>
+                  <table class="table table-vcenter"><thead><tr><th>OM</th><th>待回覆店數</th><th>未回覆行數</th><th>操作</th></tr></thead><tbody id="zs_om_stats_body"><tr><td colspan="4" class="text-center text-secondary">—</td></tr></tbody></table>
+                </div>
+                <div id="zs_om_stores_wrap" class="mt-2" hidden>
+                  <h6 class="text-secondary mb-1" id="zs_om_stores_title">店舖名單</h6>
+                  <div class="table-responsive">
+                    <table class="table table-vcenter"><thead><tr><th>Site</th><th>店舖</th><th>總數</th><th>已回覆</th><th>未回覆</th></tr></thead><tbody id="zs_om_stores_body"></tbody></table>
+                  </div>
                 </div>
               </div>
             </div>

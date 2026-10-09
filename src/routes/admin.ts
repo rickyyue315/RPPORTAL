@@ -109,6 +109,7 @@ import {
   listItemsForExport as listZeroSalesForExport,
   listReasons as listZeroSalesReasons,
   listZeroSalesRepeats,
+  listZeroSalesPendingStores,
   deleteZeroSalesBatch,
   deleteZeroSalesBatchSite,
   deleteZeroSalesItem,
@@ -2436,6 +2437,23 @@ adminRouter.get(
       return;
     }
     res.json(await getZeroSalesSummaryStats(trimmed || undefined));
+  }),
+);
+
+/** GET /api/admin/zero-sales/pending-stores — 某 OM 待回覆店舖名單（OM 下鑽用）；不帶 om 為全部 OM，只回傳仍有 pending 的店 */
+adminRouter.get(
+  '/zero-sales/pending-stores',
+  requireAdmin,
+  adminActionLimiter,
+  asyncHandler(async (req: Request, res: Response) => {
+    const { batch_id, om } = req.query as Record<string, string | undefined>;
+    const batchId = batch_id?.trim() || undefined;
+    if (batchId && !/^[0-9a-fA-F-]{36}$/.test(batchId)) {
+      res.status(400).json({ error: '批次編號無效' });
+      return;
+    }
+    const omFilter = om?.trim().slice(0, 100) || undefined;
+    res.json({ stores: await listZeroSalesPendingStores({ batchId, om: omFilter }) });
   }),
 );
 

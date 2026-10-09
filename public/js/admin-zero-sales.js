@@ -3,6 +3,7 @@
   const $ = (id) => document.getElementById(id);
   let csrf = null;
   let currentBatch = null;
+  let selectedOm = '';
   let reasonsCache = [];
   let itemRows = [];
   let batchesCache = [];
@@ -261,7 +262,7 @@
     const note = $('zs_summary_note');
     const statBox = $('zs_stats_result');
     const reasonBody = $('zs_reason_stats_body');
-    const storeBody = $('zs_store_stats_body');
+    const omBody = $('zs_om_stats_body');
     const scopeBatch = $('zs_stats_batch')?.value || '';
     const scopeLabel = scopeBatch ? (batchesCache.find((b) => b.id === scopeBatch)?.week_label || '') : '';
     try {
@@ -307,24 +308,78 @@
           }).join('');
         }
       }
-      // 待回覆店舖
-      if (storeBody) {
-        const rows = s.pending_by_store || [];
-        const pendingRows = rows.filter((r) => r.pending > 0);
-        if (!pendingRows.length) {
-          storeBody.innerHTML = '<tr><td colspan="5" class="text-center text-secondary">全部店舖已回覆完成</td></tr>';
+      // 待回覆店舖（按 OM 匯總，點 OM 下鑽看店舖名單）
+      if (omBody) {
+        const rows = (s.pending_by_om || []).filter((r) => (r.stores_pending ?? 0) > 0 || (r.pending ?? 0) > 0);
+        if (!rows.length) {
+          omBody.innerHTML = '<tr><td colspan="4" class="text-center text-secondary">全部店舖已回覆完成</td></tr>';
+          hideOmStores();
         } else {
-          storeBody.innerHTML = pendingRows.slice(0, 50).map((r) => `<tr>
-            <td><b>${esc(r.site_code)}</b></td><td>${esc(r.shop || '—')}</td>
-            <td>${r.total}</td><td class="text-success">${r.replied}</td><td class="text-danger"><b>${r.pending}</b></td>
-          </tr>`).join('');
+          omBody.innerHTML = rows.map((r) => {
+            const active = selectedOm && r.om === selectedOm ? ' btn-primary' : '';
+            return `<tr>
+              <td><b>${esc(r.om || '（未設定）')}</b><div class="text-secondary small">共 ${r.stores_total ?? 0} 間店</div></td>
+              <td class="text-danger"><b>${r.stores_pending ?? 0}</b></td>
+              <td class="text-danger"><b>${r.pending ?? 0}</b></td>
+              <td><button class="btn btn-sm${active}" data-zs-om="${esc(r.om || '（未設定）')}">查看店舖</button></td>
+            </tr>`;
+          }).join('');
+          omBody.querySelectorAll('[data-zs-om]').forEach((btn) => {
+            btn.addEventListener('click', () => { selectedOm = btn.dataset.zsOm || ''; loadOmStores(); });
+          });
+          // 轉批次後：已選 OM 若仍在名單內就跟著切範圍重載，否則收起
+          if (selectedOm) {
+            if (rows.some((r) => (r.om || '（未設定）') === selectedOm)) loadOmStores(true);
+            else hideOmStores();
+          }
         }
       }
     } catch (err) {
       if (note) note.textContent = `統計載入失敗：${err.message}`;
       if (statBox) statBox.innerHTML = `<div class="alert alert-danger">${esc(err.message)}</div>`;
       if (reasonBody) reasonBody.innerHTML = `<tr><td colspan="3" class="text-center text-danger">${esc(err.message)}</td></tr>`;
-      if (storeBody) storeBody.innerHTML = `<tr><td colspan="5" class="text-center text-danger">${esc(err.message)}</td></tr>`;
+      if (omBody) omBody.innerHTML = `<tr><td colspan="4" class="text-center text-danger">${esc(err.message)}</td></tr>`;
+    }
+  }
+
+  function hideOmStores() {
+    selectedOm = '';
+    const wrap = $('zs_om_stores_wrap');
+    if (wrap) wrap.hidden = true;
+  }
+
+  /* OM 下鑽：顯示該 OM 仍有待回覆的店舖名單（跟隨上方批次範圍） */
+  async function loadOmStores(keepSelection) {
+    const wrap = $('zs_om_stores_wrap');
+    const title = $('zs_om_stores_title');
+    const body = $('zs_om_stores_body');
+    if (!wrap || !body) return;
+    if (!selectedOm) { wrap.hidden = true; return; }
+    const scopeBatch = $('zs_stats_batch')?.value || '';
+    const qs = new URLSearchParams();
+    if (scopeBatch) qs.set('batch_id', scopeBatch);
+    qs.set('om', selectedOm);
+    wrap.hidden = false;
+    if (title) title.innerHTML = `OM「<b>${esc(selectedOm)}</b>」待回覆店舖 <span class="text-secondary">（載入中…）</span>`;
+    body.innerHTML = '<tr><td colspan="5" class="text-center text-secondary">載入中…</td></tr>';
+    try {
+      const data = await gFetch(`/api/admin/zero-sales/pending-stores?${qs.toString()}`);
+      const rows = data.stores || [];
+      if (title) title.innerHTML = `OM「<b>${esc(selectedOm)}</b>」待回覆店舖（<b>${rows.length}</b> 間） <button class="btn btn-sm ms-2" id="zs_om_close">收起</button>`;
+      const closeBtn = $('zs_om_close');
+      if (closeBtn) closeBtn.addEventListener('click', () => { hideOmStores(); loadSummary(); });
+      if (!rows.length) {
+        body.innerHTML = '<tr><td colspan="5" class="text-center text-secondary">此 OM 已全部回覆完成</td></tr>';
+        return;
+      }
+      body.innerHTML = rows.map((r) => `<tr>
+        <td><b>${esc(r.site_code)}</b></td><td>${esc(r.shop || '—')}</td>
+        <td>${r.total}</td><td class="text-success">${r.replied}</td><td class="text-danger"><b>${r.pending}</b></td>
+      </tr>`).join('');
+      if (!keepSelection) wrap.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    } catch (err) {
+      if (title) title.textContent = `OM「${selectedOm}」待回覆店舖`;
+      body.innerHTML = `<tr><td colspan="5" class="text-center text-danger">${esc(err.message)}</td></tr>`;
     }
   }
 

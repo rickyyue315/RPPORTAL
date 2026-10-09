@@ -94,9 +94,19 @@ export interface ZeroSalesSummary {
     created_at: string;
   } | null;
   by_reason: Array<{ reason_code: string; reason_label: string; count: number }>;
+  /** 待回覆店舖（按 OM 匯總）：每列為一個 OM 的待回覆店數 / 行數 */
+  pending_by_om: Array<{
+    om: string;
+    stores_total: number;
+    stores_pending: number;
+    total: number;
+    replied: number;
+    pending: number;
+  }>;
   pending_by_store: Array<{
     site_code: string;
     shop: string;
+    om: string;
     total: number;
     replied: number;
     pending: number;
@@ -144,18 +154,34 @@ export async function getZeroSalesSummary(batchId?: string): Promise<ZeroSalesSu
     params,
   );
 
-  const storeRows = await query<{ site_code: string; shop: string; total: string; replied: string; pending: string }>(
+  const storeRows = await query<{ site_code: string; shop: string; om: string; total: string; replied: string; pending: string }>(
     `SELECT i.site_code,
             COALESCE(s.shop, '') AS shop,
+            COALESCE(s.om, '') AS om,
             count(*)::text AS total,
             count(*) FILTER (WHERE i.status = 'replied')::text AS replied,
             count(*) FILTER (WHERE i.status = 'pending')::text AS pending
        FROM zero_sales_items i
        LEFT JOIN stores s ON s.site_code = i.site_code
       WHERE TRUE ${batchFilter}
-      GROUP BY i.site_code, s.shop
+      GROUP BY i.site_code, s.shop, s.om
       ORDER BY count(*) FILTER (WHERE i.status = 'pending') DESC, i.site_code
       LIMIT 50`,
+    params,
+  );
+
+  const omRows = await query<{ om: string; stores_total: string; stores_pending: string; total: string; replied: string; pending: string }>(
+    `SELECT COALESCE(NULLIF(BTRIM(COALESCE(s.om, '')), ''), '（未設定）') AS om,
+            count(DISTINCT i.site_code)::text AS stores_total,
+            count(DISTINCT CASE WHEN i.status = 'pending' THEN i.site_code END)::text AS stores_pending,
+            count(*)::text AS total,
+            count(*) FILTER (WHERE i.status = 'replied')::text AS replied,
+            count(*) FILTER (WHERE i.status = 'pending')::text AS pending
+       FROM zero_sales_items i
+       LEFT JOIN stores s ON s.site_code = i.site_code
+      WHERE TRUE ${batchFilter}
+      GROUP BY COALESCE(NULLIF(BTRIM(COALESCE(s.om, '')), ''), '（未設定）')
+      ORDER BY count(*) FILTER (WHERE i.status = 'pending') DESC, om`,
     params,
   );
 
@@ -210,11 +236,73 @@ export async function getZeroSalesSummary(batchId?: string): Promise<ZeroSalesSu
     pending_by_store: storeRows.rows.map((r) => ({
       site_code: r.site_code,
       shop: r.shop ?? '',
+      om: r.om ?? '',
+      total: Number(r.total ?? 0),
+      replied: Number(r.replied ?? 0),
+      pending: Number(r.pending ?? 0),
+    })),
+    pending_by_om: omRows.rows.map((r) => ({
+      om: r.om,
+      stores_total: Number(r.stores_total ?? 0),
+      stores_pending: Number(r.stores_pending ?? 0),
       total: Number(r.total ?? 0),
       replied: Number(r.replied ?? 0),
       pending: Number(r.pending ?? 0),
     })),
   };
+}
+
+export interface ZeroSalesPendingStoreRow {
+  site_code: string;
+  shop: string;
+  om: string;
+  total: number;
+  replied: number;
+  pending: number;
+}
+
+/** 後台 OM 下鑽：取某 OM（或全部 OM）仍有待回覆的店舖名單；與 summary 同樣支援 batch 範圍 */
+export async function listZeroSalesPendingStores(filter: { batchId?: string; om?: string } = {}): Promise<ZeroSalesPendingStoreRow[]> {
+  const where: string[] = [];
+  const params: unknown[] = [];
+  if (filter.batchId) {
+    params.push(filter.batchId);
+    where.push(`i.batch_id = $${params.length}`);
+  }
+  const om = (filter.om ?? '').trim();
+  if (om) {
+    if (om === '（未設定）') {
+      where.push(`(s.om IS NULL OR BTRIM(COALESCE(s.om, '')) = '')`);
+    } else {
+      params.push(om);
+      where.push(`BTRIM(COALESCE(s.om, '')) = $${params.length}`);
+    }
+  }
+  const whereSql = where.length ? `WHERE ${where.join(' AND ')}` : '';
+  const r = await query<{ site_code: string; shop: string; om: string; total: string; replied: string; pending: string }>(
+    `SELECT i.site_code,
+            COALESCE(MAX(s.shop), '') AS shop,
+            COALESCE(MAX(s.om), '') AS om,
+            COUNT(*)::text AS total,
+            COUNT(*) FILTER (WHERE i.status = 'replied')::text AS replied,
+            COUNT(*) FILTER (WHERE i.status = 'pending')::text AS pending
+       FROM zero_sales_items i
+       LEFT JOIN stores s ON s.site_code = i.site_code
+      ${whereSql}
+      GROUP BY i.site_code
+     HAVING COUNT(*) FILTER (WHERE i.status = 'pending') > 0
+      ORDER BY COUNT(*) FILTER (WHERE i.status = 'pending') DESC, i.site_code
+      LIMIT 1000`,
+    params,
+  );
+  return r.rows.map((row) => ({
+    site_code: row.site_code,
+    shop: row.shop ?? '',
+    om: row.om ?? '',
+    total: Number(row.total ?? 0),
+    replied: Number(row.replied ?? 0),
+    pending: Number(row.pending ?? 0),
+  }));
 }
 
 export interface ZeroSalesExportFilter {

@@ -213,5 +213,31 @@ export async function buildZeroSalesExportBuffer(items: ZeroSalesExportItem[]): 
     ]);
   }
   sheet.columns = headers.map(() => ({ width: 18 }));
+
+  const pendingSheet = workbook.addWorksheet('未回覆店舖');
+  const pendingHeaders = ['Site Code', 'Shop Name', 'OM', '週次', '總 SKU 數', '已回覆', '未回覆', '未回覆 SKU', '跟進備註'];
+  pendingSheet.addRow(pendingHeaders);
+  pendingHeaders.forEach((_, i) => { pendingSheet.getCell(1, i + 1).style = headerStyle; });
+  const storeMap = new Map<string, { site_code: string; shop: string; om: string; week: string; total: number; replied: number; skus: string[] }>();
+  for (const it of items) {
+    const key = `${it.site_code}|${it.batch_label}`;
+    let s = storeMap.get(key);
+    if (!s) {
+      s = { site_code: it.site_code, shop: it.payload?.['Shop Name'] ?? '', om: it.payload?.['OM'] ?? '', week: it.batch_label, total: 0, replied: 0, skus: [] };
+      storeMap.set(key, s);
+    }
+    s.total++;
+    if (it.status === 'replied') s.replied++;
+    else s.skus.push(it.sku);
+  }
+  const pendingStores = [...storeMap.values()]
+    .filter((s) => s.skus.length > 0)
+    .sort((a, b) => b.skus.length - a.skus.length || a.site_code.localeCompare(b.site_code));
+  for (const s of pendingStores) {
+    pendingSheet.addRow([s.site_code, s.shop, s.om, s.week, s.total, s.replied, s.skus.length, s.skus.join(', '), '']);
+  }
+  pendingSheet.columns = pendingHeaders.map(() => ({ width: 18 }));
+  pendingSheet.getColumn(2).width = 28;
+  pendingSheet.getColumn(8).width = 50;
   return Buffer.from(await workbook.xlsx.writeBuffer());
 }

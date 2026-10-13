@@ -260,7 +260,17 @@ export async function buildZeroSalesExportBuffer(items: ZeroSalesExportItem[], r
   pendingSheet.getColumn(9).width = 40;
 
   buildSkuReasonSheet(workbook, items, reasonLabels, headerStyle);
+  buildBuyerSheet(workbook, items, headerStyle);
   return Buffer.from(await workbook.xlsx.writeBuffer());
+}
+
+/** 「主要原因 (首2位)」顯示格式：原因 (筆數)；多過一個以「；」分隔，同筆數按原因設定的先後次序 */
+function formatTopReasons(counts: Map<string, number>): string {
+  return [...counts]
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 2)
+    .map(([label, n]) => `${label} (${n})`)
+    .join('；');
 }
 
 interface SkuReasonStat {
@@ -361,5 +371,78 @@ function buildSkuReasonSheet(
   });
 
   const widths = [16, 26, 44, 20, 26, 13, 14, 18, ...reasonCols.map(() => 16), 10];
+  widths.forEach((w, i) => { sheet.getColumn(i + 1).width = w; });
+}
+
+interface BuyerStat {
+  buyer: string;
+  /** 該 Buyer 的 Zero Sales 不重複 SKU 數 */
+  skus: number;
+  /** 該 Buyer 的 Shop Stock Qty (CM) 總計 */
+  stock: number;
+  /** 回覆原因計數（只計已回覆） */
+  counts: Map<string, number>;
+}
+
+/**
+ * 工作表「Buyer 統計」：每 Buyer 一列，統計 Zero Sales 不重複 SKU 數（含未回覆）、Shop Stock Qty (CM)（重複 SKU 加總），
+ * 以及最高 2 位的回覆原因（只計已回覆）；版面與其他統計表一致（第3列群組標題、第4列欄名、第5列起資料），末行為合計。
+ * 未設定 Buyer 的行歸入「（未設定）」。
+ */
+function buildBuyerSheet(
+  workbook: ExcelJS.Workbook,
+  items: ZeroSalesExportItem[],
+  headerStyle: Partial<ExcelJS.Style>,
+): void {
+  const byBuyer = new Map<string, BuyerStat & { skuSet: Set<string> }>();
+  for (const it of items) {
+    const buyer = (it.payload?.['Buyer'] ?? '') || '（未設定）';
+    let b = byBuyer.get(buyer);
+    if (!b) {
+      b = { buyer, skus: 0, stock: 0, counts: new Map(), skuSet: new Set() };
+      byBuyer.set(buyer, b);
+    }
+    b.skuSet.add(it.sku);
+    const qty = parseQty(it.payload?.['Shop Stock Qty (CM)']);
+    if (qty !== null) b.stock += qty;
+    if (it.status === 'replied') {
+      const label = replyReasonLabel(it);
+      b.counts.set(label, (b.counts.get(label) ?? 0) + 1);
+    }
+  }
+  const buyerStats = [...byBuyer.values()]
+    .map(({ skuSet, ...b }) => ({ ...b, skus: skuSet.size }))
+    .sort((a, b) => b.skus - a.skus || b.stock - a.stock || a.buyer.localeCompare(b.buyer));
+
+  // 合計的 SKU 數為全表不重複 SKU（同一 SKU 可能出現在多個 Buyer，不能直接加總每列）
+  const totalSkus = new Set(items.map((it) => it.sku)).size;
+  const totalStock = buyerStats.reduce((acc, b) => acc + b.stock, 0);
+  const totalCounts = new Map<string, number>();
+  for (const b of buyerStats) {
+    for (const [label, n] of b.counts) totalCounts.set(label, (totalCounts.get(label) ?? 0) + n);
+  }
+  const HEADER_ROW = 4;
+  const FIRST_DATA_ROW = 5;
+  const headers = ['Buyer', 'SKU 數', 'Shop Stock Qty (CM)(總計)', '主要原因 (首2位)'];
+  const sheet = workbook.addWorksheet('Buyer 統計');
+  sheet.getCell(3, 1).value = '店舖回覆 (原因)';
+  const centerStyle: Partial<ExcelJS.Style> = { ...headerStyle, alignment: { horizontal: 'center', vertical: 'middle', wrapText: true } };
+  for (let c = 1; c <= headers.length; c++) sheet.getCell(3, c).style = centerStyle;
+  headers.forEach((h, i) => {
+    const cell = sheet.getCell(HEADER_ROW, i + 1);
+    cell.value = h;
+    cell.style = centerStyle;
+  });
+  buyerStats.forEach((b, idx) => {
+    const values: Array<string | number> = [b.buyer, b.skus, b.stock, formatTopReasons(b.counts)];
+    values.forEach((v, i) => { sheet.getCell(FIRST_DATA_ROW + idx, i + 1).value = v; });
+  });
+  const totalValues: Array<string | number> = ['合計', totalSkus, totalStock, formatTopReasons(totalCounts)];
+  totalValues.forEach((v, i) => {
+    const cell = sheet.getCell(FIRST_DATA_ROW + buyerStats.length, i + 1);
+    cell.value = v;
+    cell.font = { bold: true };
+  });
+  const widths = [26, 10, 24, 52];
   widths.forEach((w, i) => { sheet.getColumn(i + 1).width = w; });
 }

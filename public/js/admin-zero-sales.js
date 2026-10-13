@@ -249,7 +249,7 @@
       $('zs_file').value = '';
       await loadBatches();
       await loadSummary();
-      await loadRepeats();
+      refreshRepeatsIfOpen();
     } catch (err) {
       res.innerHTML = `<div class="alert alert-danger">${esc(err.message)}</div>`;
     }
@@ -427,6 +427,12 @@
     }
   }
 
+  /** 重複上榜區塊預設收起：收起時不載入（省版面及請求），已展開才同步刷新 */
+  function refreshRepeatsIfOpen() {
+    const wrap = $('zs_repeat_collapse');
+    if (wrap && wrap.classList.contains('show')) loadRepeats();
+  }
+
   /* 刪除：批次 / 批次某店 / 批次某店某SKU（二次確認，不可還原） ---- */
 
   function confirmZsDelete(title, lines) {
@@ -504,7 +510,7 @@
   async function refreshAfterDelete() {
     await loadBatches();
     await loadSummary();
-    await loadRepeats();
+    refreshRepeatsIfOpen();
     if (currentBatch) await loadItems();
   }
 
@@ -740,6 +746,9 @@
     });
     const repBtn = $('btn_zs_repeat');
     if (repBtn) repBtn.addEventListener('click', loadRepeats);
+    // 重複上榜區塊預設收起，展開時才載入資料
+    const repWrap = $('zs_repeat_collapse');
+    if (repWrap) repWrap.addEventListener('shown.bs.collapse', () => { loadRepeats(); });
     // 懶載入：捲動到零銷售區塊才請求 batches / reasons / summary，首屏更快
     let started = false;
     const start = () => {
@@ -748,10 +757,9 @@
       loadBatches();
       loadReasons();
       loadSummary();
-      loadRepeats();
     };
-    // 供頂部「立即更新」一併刷新
-    globalThis.__zsRefresh = () => { started = true; loadBatches(); loadReasons(); loadSummary(); loadRepeats(); };
+    // 供頂部「立即更新」一併刷新（重複上榜收起時不載入）
+    globalThis.__zsRefresh = () => { started = true; loadBatches(); loadReasons(); loadSummary(); refreshRepeatsIfOpen(); };
     const anchor = $('zs_card') || $('zs_batches_body');
     if (!('IntersectionObserver' in window)) { start(); return; }
     const io = new IntersectionObserver((entries) => {

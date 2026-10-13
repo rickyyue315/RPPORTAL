@@ -1073,6 +1073,8 @@ a.btn-disabled {
 }
 
 /* ============ zero-sales 表格頁美化 ============ */
+.zs-page .topbar-inner,
+.zs-page .portal-main.container { max-width: min(1680px, 96vw); }
 .zs-head-card .site-banner {
   font-size: 30px; font-weight: 800; letter-spacing: 1px;
   color: var(--brand-darker);
@@ -1099,7 +1101,12 @@ a.btn-disabled {
   border: 1px solid var(--border); border-radius: var(--radius);
   overflow: auto; max-height: 62vh; box-shadow: var(--shadow-sm);
 }
-table.zs-table { width: 100%; border-collapse: separate; border-spacing: 0; min-width: 760px; }
+table.zs-table { width: 100%; border-collapse: separate; border-spacing: 0; min-width: 960px; }
+table.zs-table th:nth-child(1), table.zs-table td:nth-child(1),
+table.zs-table th:nth-child(3), table.zs-table td:nth-child(3),
+table.zs-table th:last-child, table.zs-table td:last-child { white-space: nowrap; }
+table.zs-table td:nth-child(7) { min-width: 200px; }
+table.zs-table td:nth-child(8) { min-width: 230px; }
 table.zs-table th, table.zs-table td { font-size: 13px; padding: 10px 12px; border: 0; border-bottom: 1px solid var(--border); }
 table.zs-table thead th {
   position: sticky; top: 0; z-index: 2;

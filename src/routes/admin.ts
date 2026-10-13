@@ -2509,6 +2509,7 @@ adminRouter.get(
       res.status(404).json({ error: '沒有符合條件的零銷售資料可以匯出' });
       return;
     }
+    const reasonLabels = (await listZeroSalesReasons(false)).map((r) => r.label);
     const buffer = await buildZeroSalesExportBuffer(items.map((i) => ({
       site_code: i.site_code,
       sku: i.sku,
@@ -2521,7 +2522,7 @@ adminRouter.get(
       replied_by: i.replied_by,
       batch_label: i.week_label ?? '',
       reply_count: i.reply_count ?? (i.status === 'replied' ? 1 : 0),
-    })));
+    })), reasonLabels);
     const stamp = toHKDateString(new Date()).replace(/-/g, '');
     const label = (items[0]?.week_label ?? 'all').replace(/[^\w\-]+/g, '_');
     await writeAuditEvent({
@@ -2620,6 +2621,7 @@ adminRouter.get(
       res.status(404).json({ error: '此批次沒有資料' });
       return;
     }
+    const reasonLabels = (await listZeroSalesReasons(false)).map((r) => r.label);
     const buffer = await buildZeroSalesExportBuffer(items.map((i) => ({
       site_code: i.site_code,
       sku: i.sku,
@@ -2632,7 +2634,7 @@ adminRouter.get(
       replied_by: i.replied_by,
       batch_label: i.week_label ?? '',
       reply_count: i.reply_count ?? (i.status === 'replied' ? 1 : 0),
-    })));
+    })), reasonLabels);
     const label = (items[0]?.week_label ?? 'batch').replace(/[^\w\-]+/g, '_');
     res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
     res.setHeader('Content-Disposition', `attachment; filename="Zero_Sales_${label}.xlsx"`);

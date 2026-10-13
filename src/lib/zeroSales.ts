@@ -191,8 +191,22 @@ export interface ZeroSalesExportItem {
   reply_count: number;
 }
 
-/** Admin 匯出：原22欄 + 回覆原因 + 補充 + 狀態 + 修改次數 */
-export async function buildZeroSalesExportBuffer(items: ZeroSalesExportItem[]): Promise<Buffer> {
+const UNCLASSIFIED_REASON = '（未分類）';
+
+function replyReasonLabel(item: ZeroSalesExportItem): string {
+  return item.reason_label || UNCLASSIFIED_REASON;
+}
+
+/** 數量欄解析：去除千分位，空白或非數字回傳 null（不計入加總） */
+function parseQty(text: string | undefined): number | null {
+  const t = (text ?? '').replace(/,/g, '').trim();
+  if (!t) return null;
+  const n = Number(t);
+  return Number.isFinite(n) ? n : null;
+}
+
+/** Admin 匯出：Zero Sales 回覆 / 未回覆店舖 / SKU 原因統計；reasonLabels 決定原因欄的順序（含已停用原因） */
+export async function buildZeroSalesExportBuffer(items: ZeroSalesExportItem[], reasonLabels: string[] = []): Promise<Buffer> {
   const workbook = new ExcelJS.Workbook();
   const sheet = workbook.addWorksheet('Zero Sales 回覆');
   const headers = [...ZERO_SALES_COLUMNS.slice(0, 22), '店舖回覆 (原因)', '補充說明', '回覆狀態', '修改次數', '回覆時間', '回覆人'];
@@ -215,29 +229,137 @@ export async function buildZeroSalesExportBuffer(items: ZeroSalesExportItem[]): 
   sheet.columns = headers.map(() => ({ width: 18 }));
 
   const pendingSheet = workbook.addWorksheet('未回覆店舖');
-  const pendingHeaders = ['Site Code', 'Shop Name', 'OM', '週次', '總 SKU 數', '已回覆', '未回覆', '未回覆 SKU', '跟進備註'];
+  const pendingHeaders = ['Site Code', 'Shop Name', 'OM', '週次', '總 SKU 數', '已回覆', '未回覆', '未回覆 SKU', '店舖回覆 (原因)', '跟進備註'];
   pendingSheet.addRow(pendingHeaders);
   pendingHeaders.forEach((_, i) => { pendingSheet.getCell(1, i + 1).style = headerStyle; });
-  const storeMap = new Map<string, { site_code: string; shop: string; om: string; week: string; total: number; replied: number; skus: string[] }>();
+  const storeMap = new Map<string, { site_code: string; shop: string; om: string; week: string; total: number; replied: number; skus: string[]; reasons: Map<string, number> }>();
   for (const it of items) {
     const key = `${it.site_code}|${it.batch_label}`;
     let s = storeMap.get(key);
     if (!s) {
-      s = { site_code: it.site_code, shop: it.payload?.['Shop Name'] ?? '', om: it.payload?.['OM'] ?? '', week: it.batch_label, total: 0, replied: 0, skus: [] };
+      s = { site_code: it.site_code, shop: it.payload?.['Shop Name'] ?? '', om: it.payload?.['OM'] ?? '', week: it.batch_label, total: 0, replied: 0, skus: [], reasons: new Map() };
       storeMap.set(key, s);
     }
     s.total++;
-    if (it.status === 'replied') s.replied++;
-    else s.skus.push(it.sku);
+    if (it.status === 'replied') {
+      s.replied++;
+      const label = replyReasonLabel(it);
+      s.reasons.set(label, (s.reasons.get(label) ?? 0) + 1);
+    } else s.skus.push(it.sku);
   }
   const pendingStores = [...storeMap.values()]
     .filter((s) => s.skus.length > 0)
     .sort((a, b) => b.skus.length - a.skus.length || a.site_code.localeCompare(b.site_code));
   for (const s of pendingStores) {
-    pendingSheet.addRow([s.site_code, s.shop, s.om, s.week, s.total, s.replied, s.skus.length, s.skus.join(', '), '']);
+    const reasonText = [...s.reasons].map(([label, n]) => `${label} (${n})`).join('；');
+    pendingSheet.addRow([s.site_code, s.shop, s.om, s.week, s.total, s.replied, s.skus.length, s.skus.join(', '), reasonText, '']);
   }
   pendingSheet.columns = pendingHeaders.map(() => ({ width: 18 }));
   pendingSheet.getColumn(2).width = 28;
   pendingSheet.getColumn(8).width = 50;
+  pendingSheet.getColumn(9).width = 40;
+
+  buildSkuReasonSheet(workbook, items, reasonLabels, headerStyle);
   return Buffer.from(await workbook.xlsx.writeBuffer());
+}
+
+interface SkuReasonStat {
+  sku: string;
+  brand: string;
+  sku_desc: string;
+  buyer: string;
+  adj_mch1: string;
+  item_status: string;
+  supply_source: string;
+  /** Shop Stock Qty (CM) 加總（重複 SKU 用總計）；全部空白則為 null */
+  stock: number | null;
+  replied: number;
+  counts: Map<string, number>;
+}
+
+/** 工作表「店舖回覆 (原因)」：樞紐式版面（第3列為群組標題、第4列為欄名、第5列起為資料）；每 SKU 一行（重複 SKU 庫存加總），只列有回覆的 SKU，按各回覆原因計數，末行為合計 */
+function buildSkuReasonSheet(
+  workbook: ExcelJS.Workbook,
+  items: ZeroSalesExportItem[],
+  reasonLabels: string[],
+  headerStyle: Partial<ExcelJS.Style>,
+): void {
+  const reasonCols = [...new Set(reasonLabels)];
+  for (const it of items) {
+    if (it.status !== 'replied') continue;
+    const label = replyReasonLabel(it);
+    if (!reasonCols.includes(label)) reasonCols.push(label);
+  }
+
+  const skuMap = new Map<string, SkuReasonStat>();
+  for (const it of items) {
+    const p = it.payload ?? {};
+    let s = skuMap.get(it.sku);
+    if (!s) {
+      s = { sku: it.sku, brand: '', sku_desc: '', buyer: '', adj_mch1: '', item_status: '', supply_source: '', stock: null, replied: 0, counts: new Map() };
+      skuMap.set(it.sku, s);
+    }
+    s.brand = s.brand || (p['Brand'] ?? '');
+    s.sku_desc = s.sku_desc || (p['SKU Desc'] ?? '');
+    s.buyer = s.buyer || (p['Buyer'] ?? '');
+    s.adj_mch1 = s.adj_mch1 || (p['Adj. MCH1'] ?? '');
+    s.item_status = s.item_status || (p['Item Status'] ?? '');
+    s.supply_source = s.supply_source || (p['Supply Source'] ?? '');
+    const qty = parseQty(p['Shop Stock Qty (CM)']);
+    if (qty !== null) s.stock = (s.stock ?? 0) + qty;
+    if (it.status === 'replied') {
+      s.replied++;
+      const label = replyReasonLabel(it);
+      s.counts.set(label, (s.counts.get(label) ?? 0) + 1);
+    }
+  }
+  const skuStats = [...skuMap.values()]
+    .filter((s) => s.replied > 0)
+    .sort((a, b) => a.sku.localeCompare(b.sku));
+
+  const HEADER_ROW = 4;
+  const FIRST_DATA_ROW = 5;
+  const headers = ['SKU', 'Brand', 'SKU Desc', 'Buyer', 'Adj. MCH1', 'Item Status', 'Supply Source', 'Shop Stock Qty (CM)(總計)', ...reasonCols, '總計'];
+  const groupStart = 9;
+  const groupEnd = headers.length;
+  const sheet = workbook.addWorksheet('店舖回覆 (原因)');
+
+  sheet.getCell(3, 1).value = '計數 - Site Code';
+  if (reasonCols.length) {
+    sheet.mergeCells(3, groupStart, 3, groupEnd);
+    sheet.getCell(3, groupStart).value = '店舖回覆 (原因)';
+  }
+  const centerStyle: Partial<ExcelJS.Style> = { ...headerStyle, alignment: { horizontal: 'center', vertical: 'middle', wrapText: true } };
+  for (let c = 1; c <= groupEnd; c++) sheet.getCell(3, c).style = centerStyle;
+  headers.forEach((h, i) => {
+    const cell = sheet.getCell(HEADER_ROW, i + 1);
+    cell.value = h;
+    cell.style = centerStyle;
+  });
+  sheet.getRow(HEADER_ROW).height = 45;
+
+  skuStats.forEach((s, idx) => {
+    const values: Array<string | number> = [
+      s.sku, s.brand, s.sku_desc, s.buyer, s.adj_mch1, s.item_status, s.supply_source, s.stock ?? '',
+      ...reasonCols.map((label) => s.counts.get(label) ?? 0),
+      s.replied,
+    ];
+    values.forEach((v, i) => { sheet.getCell(FIRST_DATA_ROW + idx, i + 1).value = v; });
+  });
+
+  const sumOf = (pick: (s: SkuReasonStat) => number): number => skuStats.reduce((acc, s) => acc + pick(s), 0);
+  const totalRowNum = FIRST_DATA_ROW + skuStats.length;
+  const totalValues: Array<string | number> = [
+    '合計', '', '', '', '', '', '', sumOf((s) => s.stock ?? 0),
+    ...reasonCols.map((label) => sumOf((s) => s.counts.get(label) ?? 0)),
+    sumOf((s) => s.replied),
+  ];
+  totalValues.forEach((v, i) => {
+    const cell = sheet.getCell(totalRowNum, i + 1);
+    cell.value = v;
+    cell.font = { bold: true };
+  });
+
+  const widths = [16, 26, 44, 20, 26, 13, 14, 18, ...reasonCols.map(() => 16), 10];
+  widths.forEach((w, i) => { sheet.getColumn(i + 1).width = w; });
 }

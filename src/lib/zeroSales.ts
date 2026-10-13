@@ -258,6 +258,10 @@ export async function buildZeroSalesExportBuffer(items: ZeroSalesExportItem[], r
   pendingSheet.getColumn(2).width = 28;
   pendingSheet.getColumn(8).width = 50;
   pendingSheet.getColumn(9).width = 40;
+  // 註解：說明括號內數字的意義（括號內為行數）
+  const pendingNote = pendingSheet.getCell(pendingStores.length + 3, 1);
+  pendingNote.value = '註：括號內數字為行數（該店以該原因回覆的行數）。';
+  pendingNote.font = { italic: true, color: { argb: 'FF808080' } };
 
   buildSkuReasonSheet(workbook, items, reasonLabels, headerStyle);
   buildBuyerSheet(workbook, items, headerStyle);
@@ -384,13 +388,13 @@ interface BuyerStat {
   stock: number;
   /** 回覆原因計數（只計已回覆） */
   counts: Map<string, number>;
-  /** 品牌 → 不重複 SKU 集合（用於品牌數及首2位品牌） */
-  brandSkus: Map<string, Set<string>>;
+  /** 品牌 → 行數（用於品牌數及首2位品牌） */
+  brandRows: Map<string, number>;
 }
 
 /**
  * 工作表「Buyer 統計」：每 Buyer 一列，統計 Zero Sales 不重複 SKU 數（含未回覆）、品牌數、Shop Stock Qty (CM)（重複 SKU 加總）、
- * 首 2 位品牌（按不重複 SKU 數）及首 2 位回覆原因（只計已回覆）；版面與其他統計表一致（第3列群組標題、第4列欄名、第5列起資料），末行為合計。
+ * 首 2 位品牌及首 2 位回覆原因（括號內為行數；品牌計所有行，原因只計已回覆行）；版面與其他統計表一致（第3列群組標題、第4列欄名、第5列起資料），末行為合計，下方加註解說明括號內數字的意義。
  * 未設定 Buyer / Brand 的行歸入「（未設定）」。
  */
 function buildBuyerSheet(
@@ -399,22 +403,18 @@ function buildBuyerSheet(
   headerStyle: Partial<ExcelJS.Style>,
 ): void {
   const itemBrand = (it: ZeroSalesExportItem): string => (it.payload?.['Brand'] ?? '') || '（未設定）';
-  const toCounts = (brandSkus: Map<string, Set<string>>): Map<string, number> =>
-    new Map([...brandSkus].map(([brand, skus]) => [brand, skus.size] as const));
 
   const byBuyer = new Map<string, BuyerStat & { skuSet: Set<string> }>();
   for (const it of items) {
     const buyer = (it.payload?.['Buyer'] ?? '') || '（未設定）';
     let b = byBuyer.get(buyer);
     if (!b) {
-      b = { buyer, skus: 0, brands: 0, stock: 0, counts: new Map(), brandSkus: new Map(), skuSet: new Set() };
+      b = { buyer, skus: 0, brands: 0, stock: 0, counts: new Map(), brandRows: new Map(), skuSet: new Set() };
       byBuyer.set(buyer, b);
     }
     b.skuSet.add(it.sku);
     const brand = itemBrand(it);
-    let brandSet = b.brandSkus.get(brand);
-    if (!brandSet) { brandSet = new Set(); b.brandSkus.set(brand, brandSet); }
-    brandSet.add(it.sku);
+    b.brandRows.set(brand, (b.brandRows.get(brand) ?? 0) + 1);
     const qty = parseQty(it.payload?.['Shop Stock Qty (CM)']);
     if (qty !== null) b.stock += qty;
     if (it.status === 'replied') {
@@ -423,17 +423,15 @@ function buildBuyerSheet(
     }
   }
   const buyerStats = [...byBuyer.values()]
-    .map(({ skuSet, ...b }) => ({ ...b, skus: skuSet.size, brands: b.brandSkus.size }))
+    .map(({ skuSet, ...b }) => ({ ...b, skus: skuSet.size, brands: b.brandRows.size }))
     .sort((a, b) => b.skus - a.skus || b.stock - a.stock || a.buyer.localeCompare(b.buyer));
 
   // 合計的 SKU / 品牌數為全表不重複（同一 SKU 可能出現在多個 Buyer，不能直接加總每列）
   const totalSkus = new Set(items.map((it) => it.sku)).size;
-  const totalBrandSkus = new Map<string, Set<string>>();
+  const totalBrandRows = new Map<string, number>();
   for (const it of items) {
     const brand = itemBrand(it);
-    let set = totalBrandSkus.get(brand);
-    if (!set) { set = new Set(); totalBrandSkus.set(brand, set); }
-    set.add(it.sku);
+    totalBrandRows.set(brand, (totalBrandRows.get(brand) ?? 0) + 1);
   }
   const totalStock = buyerStats.reduce((acc, b) => acc + b.stock, 0);
   const totalCounts = new Map<string, number>();
@@ -455,15 +453,15 @@ function buildBuyerSheet(
   buyerStats.forEach((b, idx) => {
     const values: Array<string | number> = [
       b.buyer, b.skus, b.brands,
-      formatTopEntries(toCounts(b.brandSkus)),
+      formatTopEntries(b.brandRows),
       b.stock,
       formatTopEntries(b.counts),
     ];
     values.forEach((v, i) => { sheet.getCell(FIRST_DATA_ROW + idx, i + 1).value = v; });
   });
   const totalValues: Array<string | number> = [
-    '合計', totalSkus, totalBrandSkus.size,
-    formatTopEntries(toCounts(totalBrandSkus)),
+    '合計', totalSkus, totalBrandRows.size,
+    formatTopEntries(totalBrandRows),
     totalStock,
     formatTopEntries(totalCounts),
   ];
@@ -472,6 +470,10 @@ function buildBuyerSheet(
     cell.value = v;
     cell.font = { bold: true };
   });
+  // 註解：說明括號內數字的意義（括號內為行數）
+  const noteCell = sheet.getCell(FIRST_DATA_ROW + buyerStats.length + 2, 1);
+  noteCell.value = '註：括號內數字為行數（品牌為該品牌的行數；原因為該原因的已回覆行數）。';
+  noteCell.font = { italic: true, color: { argb: 'FF808080' } };
   const widths = [26, 10, 10, 34, 24, 52];
   widths.forEach((w, i) => { sheet.getColumn(i + 1).width = w; });
 }

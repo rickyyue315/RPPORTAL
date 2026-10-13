@@ -142,13 +142,16 @@ describe('buildZeroSalesExportBuffer', () => {
     expect(headers).toEqual(['Buyer', 'SKU 數', '品牌數', '主要品牌 (首2位)', 'Shop Stock Qty (CM)(總計)', '主要原因 (首2位)']);
 
     const rows = await readSheet(buf, 'Buyer 統計', STAT_HEADER_ROW);
-    const dataRows = rows.filter((r) => r['Buyer'] !== '合計');
+    const dataRows = rows.filter((r) => r['Buyer'] !== '合計' && r['SKU 數'] !== '');
+    // 註解列：括號內數字為行數
+    expect(rows.some((r) => String(r['Buyer']).startsWith('註：') && String(r['Buyer']).includes('行數'))).toBe(true);
     // 同一 Buyer 內只計不重複 SKU；未回覆的 SKU 亦計入 SKU 數及庫存
     expect(dataRows.map((r) => r['Buyer'])).toEqual(['103 - Terence Lee', '（未設定）']);
     const buyer = dataRows.find((r) => r['Buyer'] === '103 - Terence Lee')!;
     expect(buyer['SKU 數']).toBe(3);
     expect(buyer['品牌數']).toBe(1);
-    expect(buyer['主要品牌 (首2位)']).toBe('B1 (3)');
+    // 行數：B1 共 5 行（三個站各一行 SKU 1001，加 2002 及 3003）
+    expect(buyer['主要品牌 (首2位)']).toBe('B1 (5)');
     expect(buyer['Shop Stock Qty (CM)(總計)']).toBe(1212);
     // 只有已回覆計入原因：1.無陳列 2 筆、6.其他 1 筆 → 首2位
     expect(buyer['主要原因 (首2位)']).toBe('1.無陳列 (2)；6.其他（須填補充） (1)');
@@ -163,12 +166,12 @@ describe('buildZeroSalesExportBuffer', () => {
     // 合計的 SKU 數為全表不重複 SKU（1001/2002/3003/4004）
     expect(total['SKU 數']).toBe(4);
     expect(total['品牌數']).toBe(1);
-    expect(total['主要品牌 (首2位)']).toBe('B1 (4)');
+    expect(total['主要品牌 (首2位)']).toBe('B1 (6)');
     expect(total['Shop Stock Qty (CM)(總計)']).toBe(1221);
     expect(total['主要原因 (首2位)']).toBe('1.無陳列 (3)；6.其他（須填補充） (1)');
   });
 
-  it('Buyer 統計：品牌數及首2位品牌（按不重複 SKU 數，重複 SKU 只計一次）', async () => {
+  it('Buyer 統計：品牌數及首2位品牌（括號內為行數）', async () => {
     const brandItems: ZeroSalesExportItem[] = [
       item({ sku: 'X1', payload: { Brand: 'EVI - EVIAN', Buyer: '103 - Terence Lee', 'Shop Stock Qty (CM)': '1' } }),
       item({ sku: 'X2', payload: { Brand: 'EVI - EVIAN', Buyer: '103 - Terence Lee', 'Shop Stock Qty (CM)': '1' } }),
@@ -182,11 +185,11 @@ describe('buildZeroSalesExportBuffer', () => {
     const buyer = rows.find((r) => r['Buyer'] === '103 - Terence Lee')!;
     expect(buyer['SKU 數']).toBe(5);
     expect(buyer['品牌數']).toBe(3);
-    // EVI 2 隻、MAX 2 隻（同一 SKU 跨店只計一次）、COO 1 隻 → 首2位（同數按首次出現次序）
-    expect(buyer['主要品牌 (首2位)']).toBe('EVI - EVIAN (2)；MAX - SKII (2)');
+    // 行數：MAX 3 行（同一 SKU 跨店各計一行）、EVI 2 行、COO 1 行 → 首2位
+    expect(buyer['主要品牌 (首2位)']).toBe('MAX - SKII (3)；EVI - EVIAN (2)');
     const total = rows.find((r) => r['Buyer'] === '合計')!;
     expect(total['品牌數']).toBe(3);
-    expect(total['主要品牌 (首2位)']).toBe('EVI - EVIAN (2)；MAX - SKII (2)');
+    expect(total['主要品牌 (首2位)']).toBe('MAX - SKII (3)；EVI - EVIAN (2)');
   });
 
   it('Buyer 統計：按 SKU 數、庫存、名稱排序', async () => {
@@ -198,7 +201,7 @@ describe('buildZeroSalesExportBuffer', () => {
     ];
     const buf = await buildZeroSalesExportBuffer(sortItems, REASONS);
     const rows = await readSheet(buf, 'Buyer 統計', STAT_HEADER_ROW);
-    expect(rows.filter((r) => r['Buyer'] !== '合計').map((r) => r['Buyer'])).toEqual([
+    expect(rows.filter((r) => r['Buyer'] !== '合計' && r['SKU 數'] !== '').map((r) => r['Buyer'])).toEqual([
       '200 - B Buyer', '300 - A Buyer', '100 - C Buyer',
     ]);
   });
@@ -206,6 +209,8 @@ describe('buildZeroSalesExportBuffer', () => {
   it('未回覆店舖：新增店舖回覆 (原因) 彙總，無回覆則留空', async () => {
     const buf = await buildZeroSalesExportBuffer(items, REASONS);
     const rows = await readSheet(buf, '未回覆店舖');
+    // 註解列：括號內數字為行數
+    expect(rows.some((r) => String(r['Site Code']).startsWith('註：') && String(r['Site Code']).includes('行數'))).toBe(true);
     expect(rows.find((r) => r['Site Code'] === 'HA02')!['店舖回覆 (原因)']).toBe('1.無陳列 (3)');
     expect(rows.find((r) => r['Site Code'] === 'HB11')!['店舖回覆 (原因)']).toBe('');
     expect(rows.find((r) => r['Site Code'] === 'HA06')).toBeUndefined();

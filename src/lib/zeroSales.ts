@@ -265,7 +265,19 @@ export async function buildZeroSalesExportBuffer(items: ZeroSalesExportItem[], r
 
   buildSkuReasonSheet(workbook, items, reasonLabels, headerStyle);
   buildBuyerSheet(workbook, items, headerStyle);
+  applyDefaultFont(workbook);
   return Buffer.from(await workbook.xlsx.writeBuffer());
+}
+
+/** 全份 Excel 統一字體：Arial 10（保留原有粗體／斜體／顏色） */
+function applyDefaultFont(workbook: ExcelJS.Workbook): void {
+  for (const ws of workbook.worksheets) {
+    ws.eachRow((row) => {
+      row.eachCell((cell) => {
+        cell.font = { ...(cell.font ?? {}), name: 'Arial', size: 10 };
+      });
+    });
+  }
 }
 
 /** 「首2位」顯示格式：名稱 (數量)；多過一個以「；」分隔，同數量按原本出現次序（原因按設定次序、品牌按首次出現次序） */

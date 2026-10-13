@@ -84,6 +84,32 @@ describe('buildZeroSalesExportBuffer', () => {
     expect(wb.worksheets.map((w) => w.name)).toEqual(['Zero Sales 回覆', '未回覆店舖', STAT_SHEET, 'Buyer 統計']);
   });
 
+  it('全份 Excel 字體為 Arial 10（標題粗體、註解斜體保留）', async () => {
+    const buf = await buildZeroSalesExportBuffer(items, REASONS);
+    const wb = await loadWorkbook(buf);
+    const headerCells: Array<[string, number, number]> = [
+      ['Zero Sales 回覆', 1, 1],
+      ['未回覆店舖', 1, 1],
+      [STAT_SHEET, STAT_HEADER_ROW, 1],
+      ['Buyer 統計', STAT_HEADER_ROW, 1],
+    ];
+    for (const [name, r, c] of headerCells) {
+      const ws = wb.getWorksheet(name)!;
+      expect(ws.getCell(r, c).font).toMatchObject({ name: 'Arial', size: 10, bold: true });
+    }
+    // 資料列
+    const stat = wb.getWorksheet(STAT_SHEET)!;
+    expect(stat.getCell(5, 1).font).toMatchObject({ name: 'Arial', size: 10 });
+    // 註解列（斜體保留）
+    let noteFont: Partial<ExcelJS.Font> | undefined;
+    wb.getWorksheet('Buyer 統計')!.eachRow((row) => {
+      row.eachCell((cell) => {
+        if (typeof cell.value === 'string' && cell.value.startsWith('註：')) noteFont = cell.font;
+      });
+    });
+    expect(noteFont).toMatchObject({ name: 'Arial', size: 10, italic: true });
+  });
+
   it('店舖回覆 (原因)：樞紐版面，第3列群組標題、第4列欄名', async () => {
     const buf = await buildZeroSalesExportBuffer(items, REASONS);
     const ws = (await loadWorkbook(buf)).getWorksheet(STAT_SHEET)!;

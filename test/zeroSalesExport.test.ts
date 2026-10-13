@@ -89,6 +89,9 @@ describe('buildZeroSalesExportBuffer', () => {
     const ws = (await loadWorkbook(buf)).getWorksheet(STAT_SHEET)!;
     expect(ws.getCell(3, 1).value).toBe('計數 - Site Code');
     expect(ws.getCell(3, 9).value).toBe('店舖回覆 (原因)');
+    // 標題底色 #DAEEF3
+    expect(ws.getCell(3, 1).fill?.fgColor?.argb).toBe('FFDAEEF3');
+    expect(ws.getCell(STAT_HEADER_ROW, 1).fill?.fgColor?.argb).toBe('FFDAEEF3');
     const headers = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12].map((c) => ws.getCell(STAT_HEADER_ROW, c).value);
     expect(headers).toEqual([
       'SKU', 'Brand', 'SKU Desc', 'Buyer', 'Adj. MCH1', 'Item Status', 'Supply Source', 'Shop Stock Qty (CM)(總計)',

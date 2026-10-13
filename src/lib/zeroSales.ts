@@ -211,7 +211,7 @@ export async function buildZeroSalesExportBuffer(items: ZeroSalesExportItem[], r
   const sheet = workbook.addWorksheet('Zero Sales 回覆');
   const headers = [...ZERO_SALES_COLUMNS.slice(0, 22), '店舖回覆 (原因)', '補充說明', '回覆狀態', '修改次數', '回覆時間', '回覆人'];
   const headerStyle: Partial<ExcelJS.Style> = {
-    font: { bold: true }, fill: { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFD9E1F2' } },
+    font: { bold: true }, fill: { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFDAEEF3' } },
   };
   sheet.addRow(headers);
   headers.forEach((_, i) => { sheet.getCell(1, i + 1).style = headerStyle; });

@@ -138,8 +138,8 @@ describe('buildZeroSalesExportBuffer', () => {
     const buf = await buildZeroSalesExportBuffer(items, REASONS);
     const ws = (await loadWorkbook(buf)).getWorksheet('Buyer 統計')!;
     expect(ws.getCell(3, 1).value).toBe('店舖回覆 (原因)');
-    const headers = [1, 2, 3, 4].map((c) => ws.getCell(STAT_HEADER_ROW, c).value);
-    expect(headers).toEqual(['Buyer', 'SKU 數', 'Shop Stock Qty (CM)(總計)', '主要原因 (首2位)']);
+    const headers = [1, 2, 3, 4, 5, 6].map((c) => ws.getCell(STAT_HEADER_ROW, c).value);
+    expect(headers).toEqual(['Buyer', 'SKU 數', '品牌數', '主要品牌 (首2位)', 'Shop Stock Qty (CM)(總計)', '主要原因 (首2位)']);
 
     const rows = await readSheet(buf, 'Buyer 統計', STAT_HEADER_ROW);
     const dataRows = rows.filter((r) => r['Buyer'] !== '合計');
@@ -147,19 +147,46 @@ describe('buildZeroSalesExportBuffer', () => {
     expect(dataRows.map((r) => r['Buyer'])).toEqual(['103 - Terence Lee', '（未設定）']);
     const buyer = dataRows.find((r) => r['Buyer'] === '103 - Terence Lee')!;
     expect(buyer['SKU 數']).toBe(3);
+    expect(buyer['品牌數']).toBe(1);
+    expect(buyer['主要品牌 (首2位)']).toBe('B1 (3)');
     expect(buyer['Shop Stock Qty (CM)(總計)']).toBe(1212);
     // 只有已回覆計入原因：1.無陳列 2 筆、6.其他 1 筆 → 首2位
     expect(buyer['主要原因 (首2位)']).toBe('1.無陳列 (2)；6.其他（須填補充） (1)');
     const unset = dataRows.find((r) => r['Buyer'] === '（未設定）')!;
     expect(unset['SKU 數']).toBe(1);
+    expect(unset['品牌數']).toBe(1);
+    expect(unset['主要品牌 (首2位)']).toBe('B1 (1)');
     expect(unset['Shop Stock Qty (CM)(總計)']).toBe(9);
     expect(unset['主要原因 (首2位)']).toBe('1.無陳列 (1)');
 
     const total = rows.find((r) => r['Buyer'] === '合計')!;
     // 合計的 SKU 數為全表不重複 SKU（1001/2002/3003/4004）
     expect(total['SKU 數']).toBe(4);
+    expect(total['品牌數']).toBe(1);
+    expect(total['主要品牌 (首2位)']).toBe('B1 (4)');
     expect(total['Shop Stock Qty (CM)(總計)']).toBe(1221);
     expect(total['主要原因 (首2位)']).toBe('1.無陳列 (3)；6.其他（須填補充） (1)');
+  });
+
+  it('Buyer 統計：品牌數及首2位品牌（按不重複 SKU 數，重複 SKU 只計一次）', async () => {
+    const brandItems: ZeroSalesExportItem[] = [
+      item({ sku: 'X1', payload: { Brand: 'EVI - EVIAN', Buyer: '103 - Terence Lee', 'Shop Stock Qty (CM)': '1' } }),
+      item({ sku: 'X2', payload: { Brand: 'EVI - EVIAN', Buyer: '103 - Terence Lee', 'Shop Stock Qty (CM)': '1' } }),
+      item({ sku: 'X3', payload: { Brand: 'MAX - SKII', Buyer: '103 - Terence Lee', 'Shop Stock Qty (CM)': '1' } }),
+      item({ site_code: 'HB11', sku: 'X3', payload: { Brand: 'MAX - SKII', Buyer: '103 - Terence Lee', 'Shop Stock Qty (CM)': '1' } }),
+      item({ sku: 'X4', payload: { Brand: 'MAX - SKII', Buyer: '103 - Terence Lee', 'Shop Stock Qty (CM)': '1' } }),
+      item({ sku: 'X5', payload: { Brand: 'COO - COSMOS', Buyer: '103 - Terence Lee', 'Shop Stock Qty (CM)': '1' } }),
+    ];
+    const buf = await buildZeroSalesExportBuffer(brandItems, REASONS);
+    const rows = await readSheet(buf, 'Buyer 統計', STAT_HEADER_ROW);
+    const buyer = rows.find((r) => r['Buyer'] === '103 - Terence Lee')!;
+    expect(buyer['SKU 數']).toBe(5);
+    expect(buyer['品牌數']).toBe(3);
+    // EVI 2 隻、MAX 2 隻（同一 SKU 跨店只計一次）、COO 1 隻 → 首2位（同數按首次出現次序）
+    expect(buyer['主要品牌 (首2位)']).toBe('EVI - EVIAN (2)；MAX - SKII (2)');
+    const total = rows.find((r) => r['Buyer'] === '合計')!;
+    expect(total['品牌數']).toBe(3);
+    expect(total['主要品牌 (首2位)']).toBe('EVI - EVIAN (2)；MAX - SKII (2)');
   });
 
   it('Buyer 統計：按 SKU 數、庫存、名稱排序', async () => {

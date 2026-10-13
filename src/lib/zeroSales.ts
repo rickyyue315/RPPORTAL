@@ -264,8 +264,8 @@ export async function buildZeroSalesExportBuffer(items: ZeroSalesExportItem[], r
   return Buffer.from(await workbook.xlsx.writeBuffer());
 }
 
-/** 「主要原因 (首2位)」顯示格式：原因 (筆數)；多過一個以「；」分隔，同筆數按原因設定的先後次序 */
-function formatTopReasons(counts: Map<string, number>): string {
+/** 「首2位」顯示格式：名稱 (數量)；多過一個以「；」分隔，同數量按原本出現次序（原因按設定次序、品牌按首次出現次序） */
+function formatTopEntries(counts: Map<string, number>): string {
   return [...counts]
     .sort((a, b) => b[1] - a[1])
     .slice(0, 2)
@@ -378,31 +378,43 @@ interface BuyerStat {
   buyer: string;
   /** 該 Buyer 的 Zero Sales 不重複 SKU 數 */
   skus: number;
+  /** 該 Buyer 的 Zero Sales 不重複品牌數 */
+  brands: number;
   /** 該 Buyer 的 Shop Stock Qty (CM) 總計 */
   stock: number;
   /** 回覆原因計數（只計已回覆） */
   counts: Map<string, number>;
+  /** 品牌 → 不重複 SKU 集合（用於品牌數及首2位品牌） */
+  brandSkus: Map<string, Set<string>>;
 }
 
 /**
- * 工作表「Buyer 統計」：每 Buyer 一列，統計 Zero Sales 不重複 SKU 數（含未回覆）、Shop Stock Qty (CM)（重複 SKU 加總），
- * 以及最高 2 位的回覆原因（只計已回覆）；版面與其他統計表一致（第3列群組標題、第4列欄名、第5列起資料），末行為合計。
- * 未設定 Buyer 的行歸入「（未設定）」。
+ * 工作表「Buyer 統計」：每 Buyer 一列，統計 Zero Sales 不重複 SKU 數（含未回覆）、品牌數、Shop Stock Qty (CM)（重複 SKU 加總）、
+ * 首 2 位品牌（按不重複 SKU 數）及首 2 位回覆原因（只計已回覆）；版面與其他統計表一致（第3列群組標題、第4列欄名、第5列起資料），末行為合計。
+ * 未設定 Buyer / Brand 的行歸入「（未設定）」。
  */
 function buildBuyerSheet(
   workbook: ExcelJS.Workbook,
   items: ZeroSalesExportItem[],
   headerStyle: Partial<ExcelJS.Style>,
 ): void {
+  const itemBrand = (it: ZeroSalesExportItem): string => (it.payload?.['Brand'] ?? '') || '（未設定）';
+  const toCounts = (brandSkus: Map<string, Set<string>>): Map<string, number> =>
+    new Map([...brandSkus].map(([brand, skus]) => [brand, skus.size] as const));
+
   const byBuyer = new Map<string, BuyerStat & { skuSet: Set<string> }>();
   for (const it of items) {
     const buyer = (it.payload?.['Buyer'] ?? '') || '（未設定）';
     let b = byBuyer.get(buyer);
     if (!b) {
-      b = { buyer, skus: 0, stock: 0, counts: new Map(), skuSet: new Set() };
+      b = { buyer, skus: 0, brands: 0, stock: 0, counts: new Map(), brandSkus: new Map(), skuSet: new Set() };
       byBuyer.set(buyer, b);
     }
     b.skuSet.add(it.sku);
+    const brand = itemBrand(it);
+    let brandSet = b.brandSkus.get(brand);
+    if (!brandSet) { brandSet = new Set(); b.brandSkus.set(brand, brandSet); }
+    brandSet.add(it.sku);
     const qty = parseQty(it.payload?.['Shop Stock Qty (CM)']);
     if (qty !== null) b.stock += qty;
     if (it.status === 'replied') {
@@ -411,11 +423,18 @@ function buildBuyerSheet(
     }
   }
   const buyerStats = [...byBuyer.values()]
-    .map(({ skuSet, ...b }) => ({ ...b, skus: skuSet.size }))
+    .map(({ skuSet, ...b }) => ({ ...b, skus: skuSet.size, brands: b.brandSkus.size }))
     .sort((a, b) => b.skus - a.skus || b.stock - a.stock || a.buyer.localeCompare(b.buyer));
 
-  // 合計的 SKU 數為全表不重複 SKU（同一 SKU 可能出現在多個 Buyer，不能直接加總每列）
+  // 合計的 SKU / 品牌數為全表不重複（同一 SKU 可能出現在多個 Buyer，不能直接加總每列）
   const totalSkus = new Set(items.map((it) => it.sku)).size;
+  const totalBrandSkus = new Map<string, Set<string>>();
+  for (const it of items) {
+    const brand = itemBrand(it);
+    let set = totalBrandSkus.get(brand);
+    if (!set) { set = new Set(); totalBrandSkus.set(brand, set); }
+    set.add(it.sku);
+  }
   const totalStock = buyerStats.reduce((acc, b) => acc + b.stock, 0);
   const totalCounts = new Map<string, number>();
   for (const b of buyerStats) {
@@ -423,7 +442,7 @@ function buildBuyerSheet(
   }
   const HEADER_ROW = 4;
   const FIRST_DATA_ROW = 5;
-  const headers = ['Buyer', 'SKU 數', 'Shop Stock Qty (CM)(總計)', '主要原因 (首2位)'];
+  const headers = ['Buyer', 'SKU 數', '品牌數', '主要品牌 (首2位)', 'Shop Stock Qty (CM)(總計)', '主要原因 (首2位)'];
   const sheet = workbook.addWorksheet('Buyer 統計');
   sheet.getCell(3, 1).value = '店舖回覆 (原因)';
   const centerStyle: Partial<ExcelJS.Style> = { ...headerStyle, alignment: { horizontal: 'center', vertical: 'middle', wrapText: true } };
@@ -434,15 +453,25 @@ function buildBuyerSheet(
     cell.style = centerStyle;
   });
   buyerStats.forEach((b, idx) => {
-    const values: Array<string | number> = [b.buyer, b.skus, b.stock, formatTopReasons(b.counts)];
+    const values: Array<string | number> = [
+      b.buyer, b.skus, b.brands,
+      formatTopEntries(toCounts(b.brandSkus)),
+      b.stock,
+      formatTopEntries(b.counts),
+    ];
     values.forEach((v, i) => { sheet.getCell(FIRST_DATA_ROW + idx, i + 1).value = v; });
   });
-  const totalValues: Array<string | number> = ['合計', totalSkus, totalStock, formatTopReasons(totalCounts)];
+  const totalValues: Array<string | number> = [
+    '合計', totalSkus, totalBrandSkus.size,
+    formatTopEntries(toCounts(totalBrandSkus)),
+    totalStock,
+    formatTopEntries(totalCounts),
+  ];
   totalValues.forEach((v, i) => {
     const cell = sheet.getCell(FIRST_DATA_ROW + buyerStats.length, i + 1);
     cell.value = v;
     cell.font = { bold: true };
   });
-  const widths = [26, 10, 24, 52];
+  const widths = [26, 10, 10, 34, 24, 52];
   widths.forEach((w, i) => { sheet.getColumn(i + 1).width = w; });
 }

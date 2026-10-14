@@ -33,7 +33,7 @@ export interface ZeroSalesItemRow {
   batch_date?: string;
   /** 已回覆次數：0=未回覆，1=已回覆未改過，2=已用完修改機會 */
   reply_count: number;
-  /** 同店同 SKU 跨批次累計出現次數（含本行） */
+  /** 截至本行所屬批次（含本行）同店同 SKU 累計出現次數（當時為止，非全期總數） */
   occurrence_count?: number;
   /** 是否重複上榜（occurrence_count >= 2） */
   is_repeat?: boolean;
@@ -415,7 +415,8 @@ interface ZeroSalesHistoryEntry {
 }
 
 /**
- * 為每行附加跨批次重複資訊：同店同 SKU 出現次數 + 上一次的週次/回覆。
+ * 為每行附加跨批次重複資訊：截至該行所屬批次（含本行）的同店同 SKU 出現次數 + 上一次的週次/回覆。
+ * 出現次數為「當時為止」而非全期總數：只計時間上不晚於本行的批次，舊週顯示「第幾次上榜」會逐週遞增（1、2、3…）。
  * 以 site 分組一次過查全量歷史，避免每行 N+1 查詢。
  */
 async function attachZeroSalesHistory<T extends ZeroSalesItemRow>(items: T[]): Promise<T[]> {
@@ -437,7 +438,7 @@ async function attachZeroSalesHistory<T extends ZeroSalesItemRow>(items: T[]): P
          FROM zero_sales_items h
          JOIN zero_sales_batches hb ON hb.id = h.batch_id
         WHERE h.site_code = $1 AND h.sku = ANY($2::text[])
-        ORDER BY h.sku, hb.created_at DESC`,
+        ORDER BY h.sku, hb.created_at DESC, hb.id DESC`,
       [siteCode, skus],
     );
     for (const h of r.rows) {
@@ -449,8 +450,10 @@ async function attachZeroSalesHistory<T extends ZeroSalesItemRow>(items: T[]): P
   }
   return items.map((it) => {
     const list = historyByKey.get(`${it.site_code}|${it.sku}`) ?? [];
-    const occurrence_count = list.length || 1;
     const idx = list.findIndex((h) => h.batch_id === it.batch_id);
+    // 截至本行所屬批次（含本行）的累計出現次數：list 已按 created_at DESC（新→舊）排序，
+    // 本行連同更舊的行數即「當時為止」次數；找不到本行（理論上不發生）則退回全期總數
+    const occurrence_count = idx >= 0 ? list.length - idx : (list.length || 1);
     // 上一次 = 同 SKU 按時間排在現行之前的第一個；找不到（理論上不發生）則退回最新且非本行
     const prev = idx >= 0 ? (list[idx + 1] ?? null) : (list.find((h) => h.batch_id !== it.batch_id) ?? null);
     return {

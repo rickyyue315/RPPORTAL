@@ -21,6 +21,7 @@ let app: Express;
 let db: PGlite;
 let w41Id = '';
 let w42Id = '';
+let w43Id = '';
 
 type Agent = ReturnType<typeof request.agent> & { _csrf?: string };
 
@@ -85,9 +86,19 @@ beforeAll(async () => {
     createdBy: 'test',
   });
   w42Id = w42.batchId;
-  // 保證 W41 早於 W42（避免同毫秒排序不穩）
+  // W43：HA02 有 A1001（第三次上榜）
+  const w43 = await createZeroSalesBatch({
+    weekLabel: '2026-W43-repeat',
+    note: 'test',
+    rows: [{ siteCode: 'HA02', sku: 'A1001', data: { Brand: 'B1', 'SKU Desc': '重複SKU' } }],
+    contentHash: `hash-w43-${Date.now()}`,
+    createdBy: 'test',
+  });
+  w43Id = w43.batchId;
+  // 保證 W41 早於 W42 早於 W43（避免同毫秒排序不穩）
   await db.query('UPDATE zero_sales_batches SET created_at = $2 WHERE id = $1', [w41Id, '2026-09-01T00:00:00Z']);
   await db.query('UPDATE zero_sales_batches SET created_at = $2 WHERE id = $1', [w42Id, '2026-09-08T00:00:00Z']);
+  await db.query('UPDATE zero_sales_batches SET created_at = $2 WHERE id = $1', [w43Id, '2026-09-15T00:00:00Z']);
   // W41 的 A1001 已回覆季節性
   await db.query(
     `UPDATE zero_sales_items SET status = 'replied', reason_code = 'seasonal', reason_label = '4.季節性/非當季產品',
@@ -117,9 +128,23 @@ describe('zero-sales repeat history (store)', () => {
   it('resolves history relative to the viewed batch (older batch has no previous)', async () => {
     const items = await listZeroSalesMyItems('HA02', { batchId: w41Id });
     const first = items.find((i) => i.sku === 'A1001')!;
-    // 睇緊 W41 時，W42 尚未發生，上一次應為空
-    expect(first.occurrence_count).toBe(2);
+    // 睇緊 W41 時，W42/W43 尚未發生：截至該週只出現過 1 次，未算重複，上一次應為空
+    expect(first.occurrence_count).toBe(1);
+    expect(first.is_repeat).toBe(false);
     expect(first.prev_week_label).toBeNull();
+  });
+
+  it('counts occurrences as of each batch (第3次只計到該週為止)', async () => {
+    const w43Items = await listZeroSalesMyItems('HA02', { batchId: w43Id });
+    const third = w43Items.find((i) => i.sku === 'A1001')!;
+    expect(third.occurrence_count).toBe(3);
+    expect(third.is_repeat).toBe(true);
+    expect(third.prev_week_label).toBe('2026-W42-repeat');
+
+    // 再對照 W42：截至 W42 只算 2 次
+    const w42Items = await listZeroSalesMyItems('HA02', { batchId: w42Id });
+    const second = w42Items.find((i) => i.sku === 'A1001')!;
+    expect(second.occurrence_count).toBe(2);
   });
 });
 
@@ -128,15 +153,16 @@ describe('zero-sales repeats (admin)', () => {
     const rows = await listZeroSalesRepeats({ minCount: 2 });
     const hit = rows.find((r) => r.site_code === 'HA02' && r.sku === 'A1001');
     expect(hit).toBeDefined();
-    expect(hit!.occurrence_count).toBe(2);
-    expect(hit!.weeks).toEqual(['2026-W42-repeat', '2026-W41-repeat']);
+    expect(hit!.occurrence_count).toBe(3);
+    expect(hit!.weeks).toEqual(['2026-W43-repeat', '2026-W42-repeat', '2026-W41-repeat']);
     expect(hit!.replied_count).toBe(1);
-    expect(hit!.pending_count).toBe(1);
+    expect(hit!.pending_count).toBe(2);
     expect(hit!.brand).toBe('B1');
   });
 
   it('supports minCount / site / keyword filters', async () => {
-    expect(await listZeroSalesRepeats({ minCount: 3 })).toHaveLength(0);
+    expect(await listZeroSalesRepeats({ minCount: 3 })).toHaveLength(1);
+    expect(await listZeroSalesRepeats({ minCount: 4 })).toHaveLength(0);
     expect(await listZeroSalesRepeats({ siteCode: 'ZZ99', minCount: 2 })).toHaveLength(0);
     const byQ = await listZeroSalesRepeats({ q: 'A1001', minCount: 2 });
     expect(byQ.some((r) => r.sku === 'A1001')).toBe(true);

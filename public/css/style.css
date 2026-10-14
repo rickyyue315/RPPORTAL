@@ -235,6 +235,10 @@ a:hover {
   color: var(--muted);
   font-size: 13px;
 }
+.site-footer .app-version {
+  opacity: 0.8;
+  white-space: nowrap;
+}
 
 .container {
   max-width: 920px;

@@ -114,6 +114,12 @@ Repository 已配置 GitHub Actions（`.github/workflows/ci.yml`）：push 時�
 - `om_recovery_codes`：每組 OM（及 master）嘅「搵返申請編號」Recovery Code；`code` 明文（僅管理後台顯示原碼）＋ `code_hash`（SHA-256，公開查詢常數時間比對用），管理後台設定（migration 012/013）
 - `audit_events`：提交／查詢／修改／匯入／匯出／鎖定／登入／Recovery Code 管理／IP 清理審計；管理員 Audit Report 同時包含版本歷史及 audit events
 
+## 版本管理
+
+- 系統版本以 `Ver x.y.z` 格式顯示於每頁底部（`Developed by RP Team - Ricky Yue · Ver x.y.z`）。
+- 版本號的單一維護點是 `public/js/version.js` 的 `NDRF_APP_VERSION`；每次更新須同步修改 `package.json` 的 `version`（`test/version.test.ts` 會自動檢查兩者一致，以及每頁都顯示版本）。
+- 版本規則（Semantic Versioning）：`x`（major）重大改動／不相容更新；`y`（minor）新增功能；`z`（patch）修正及微調。每次部署更新請遞增對應數字。
+
 ## 年度維護
 
 - **行貨退貨時間表**：每年更新 `return-schedule.json`（加入新年度的窗口），並視需要調整 `RETURN_ENFORCEMENT_START`。應用程式啟動時若目前年度沒有配置窗口會直接拒絕啟動（fail-fast），不會靜默關閉功能；可用 `npm run schedule:check` 預先檢查。

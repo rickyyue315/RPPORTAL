@@ -161,6 +161,17 @@
     });
     html += '</tbody></table>';
     $('zs_list').innerHTML = html;
+    // 一次過顯示 10 筆：按表頭 + 首 10 行實際高度設定容器上限（--zs-fit）；
+    // 多過 10 筆時上限止於第 10 行，照舊在容器內捲動；≤10 筆則完全展開不設捲軸
+    const wrap = document.querySelector('.zs-table-wrap');
+    const table = $('zs_list').querySelector('table.zs-table');
+    if (wrap && table) {
+      const rows = table.querySelectorAll('tbody tr');
+      let fit = table.querySelector('thead tr').getBoundingClientRect().height;
+      for (let i = 0; i < rows.length && i < 10; i++) fit += rows[i].getBoundingClientRect().height;
+      // +3 = 容器上下 border 各 1px + 高度取整余數
+      wrap.style.setProperty('--zs-fit', `${Math.ceil(fit) + 3}px`);
+    }
     const cc = document.getElementById('zs_count');
     if (cc) cc.textContent = `顯示 ${filtered.length} / ${items.length} 筆`;
     $('zs_list').querySelectorAll('[data-reply]').forEach((btn) => {

@@ -52,7 +52,7 @@ import {
 } from '../services/ndrfWorkflow.js';
 import { writeAuditEvent } from '../lib/audit.js';
 import { normalizeText } from '../lib/fields.js';
-import { toHKString } from '../lib/time.js';
+import { toHKDateString, toHKString } from '../lib/time.js';
 import { CSRF_COOKIE } from '../middleware/csrf.js';
 import {
   EXCEL_UPLOAD_EXTENSION_ERROR,
@@ -70,6 +70,7 @@ import {
   replyItem as replyZeroSalesItem,
   ZeroSalesReplyError,
 } from '../services/zeroSales.js';
+import { buildZeroSalesStoreExportBuffer } from '../lib/zeroSales.js';
 
 export const portalRouter = Router();
 
@@ -913,6 +914,75 @@ portalRouter.get(
     });
     const store = await getStore(req.storeSiteCode!);
     res.json({ site_code: req.storeSiteCode, shop: store?.shop ?? '', items });
+  }),
+);
+
+/** GET /api/portal/zero-sales/my/export — 匯出本舖的零銷售清單 (只含本店 SKU；篩選與列表一致：status / batch_id / repeat / q) */
+portalRouter.get(
+  '/zero-sales/my/export',
+  requirePortalUser,
+  requireStoreSite,
+  excelExportLimiter,
+  asyncHandler(async (req: Request, res: Response) => {
+    const { status, batch_id, repeat, q } = req.query as Record<string, string | undefined>;
+    const batchId = batch_id?.trim() || undefined;
+    if (batchId && !/^[0-9a-fA-F-]{36}$/.test(batchId)) {
+      res.status(400).json({ error: '批次編號無效' });
+      return;
+    }
+    if (status && status !== 'pending' && status !== 'replied') {
+      res.status(400).json({ error: '狀態篩選無效' });
+      return;
+    }
+    // 與店舖頁列表同一資料來源：以登入店舖的 site_code 限定，只可能取得本舖被派發的 SKU
+    let items = await listMyZeroSalesItems(req.storeSiteCode!, {
+      status: status === 'pending' || status === 'replied' ? status : undefined,
+      batchId,
+    });
+    if (repeat === '1') items = items.filter((it) => (it.occurrence_count ?? 1) >= 2);
+    // 搜尋語意與前端一致：SKU / Brand / 描述 不分大小寫包含
+    const needle = (q ?? '').trim().toUpperCase();
+    if (needle) {
+      items = items.filter((it) =>
+        `${it.sku} ${it.payload?.['Brand'] ?? ''} ${it.payload?.['SKU Desc'] ?? ''}`.toUpperCase().includes(needle),
+      );
+    }
+    if (!items.length) {
+      res.status(404).json({ error: '沒有符合條件的零銷售資料可以匯出' });
+      return;
+    }
+    const buffer = await buildZeroSalesStoreExportBuffer(items.map((it) => ({
+      week_label: it.week_label ?? '',
+      sku: it.sku,
+      payload: it.payload,
+      status: it.status,
+      reason_label: it.reason_label,
+      reason_note: it.reason_note,
+      batch_date: it.batch_date ?? (it.batch_created_at ?? '').slice(0, 10),
+      occurrence_count: it.occurrence_count ?? 1,
+      prev_week_label: it.prev_week_label ?? null,
+      prev_status: it.prev_status ?? null,
+      prev_reason_label: it.prev_reason_label ?? null,
+    })));
+    const stamp = toHKDateString(new Date()).replace(/-/g, '');
+    const label = (items[0]?.week_label ?? 'all').replace(/[^\w\-]+/g, '_');
+    await writeAuditEvent({
+      eventType: 'zero_sales_store_export',
+      actorRole: 'store',
+      actor: req.portalUser!.username,
+      ip: getClientIp(req),
+      metadata: {
+        site_code: req.storeSiteCode,
+        batch_id: batchId ?? null,
+        status: status ?? null,
+        repeat: repeat === '1',
+        q: needle || null,
+        count: items.length,
+      },
+    });
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition', `attachment; filename="Zero_Sales_${req.storeSiteCode}_${label}_${stamp}.xlsx"`);
+    res.send(buffer);
   }),
 );
 

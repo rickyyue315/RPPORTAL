@@ -81,16 +81,25 @@
     }
   }
 
-  async function loadList() {
+  /** 週次 + 狀態（含重複上榜）篩選；列表與匯出共用，確保匯出 = 畫面所見 */
+  function filterParams() {
     const statusVal = $('f_status').value;
-    // 「重複上榜」為前端篩選（後端 status 只支援 pending / replied），不送 status 參數
-    onlyRepeat = statusVal === 'repeat';
-    const status = onlyRepeat ? '' : statusVal;
-    const batch = $('f_batch') ? $('f_batch').value : '';
     const params = new URLSearchParams();
-    if (status) params.set('status', status);
+    if (statusVal === 'repeat') {
+      params.set('repeat', '1');
+    } else if (statusVal) {
+      params.set('status', statusVal);
+    }
+    const batch = $('f_batch') ? $('f_batch').value : '';
     // 空 / all = 跨週全部；否則只取該週，預設為最新一週
     if (batch && batch !== 'all') params.set('batch_id', batch);
+    return params;
+  }
+
+  async function loadList() {
+    // 「重複上榜」為前端篩選（後端 status 只支援 pending / replied）
+    onlyRepeat = $('f_status').value === 'repeat';
+    const params = filterParams();
     const qs = params.toString() ? `?${params.toString()}` : '';
     const data = await p.api(`/api/portal/zero-sales/my${qs}`);
     const all = data.items || [];
@@ -209,6 +218,36 @@
   $('btn_refresh').addEventListener('click', async () => {
     try { await loadBatches(true); await loadList(); } catch (err) { p.showAlert($('list_error'), 'error', p.escapeHtml(err.message)); }
   });
+
+  $('btn_export').addEventListener('click', async () => {
+    const btn = $('btn_export');
+    btn.disabled = true;
+    try {
+      // 與列表同一篩選（週次 / 狀態 / 重複上榜）+ 搜尋字，匯出 = 畫面所見；後端以登入店舖限定，只含本舖 SKU
+      const params = filterParams();
+      const q = ($('f_search').value || '').trim();
+      if (q) params.set('q', q);
+      const qs = params.toString() ? `?${params.toString()}` : '';
+      const res = await fetch(`/api/portal/zero-sales/my/export${qs}`, { credentials: 'same-origin' });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error || '匯出失敗');
+      }
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      const match = /filename="([^"]+)"/.exec(res.headers.get('Content-Disposition') || '');
+      a.href = url;
+      a.download = match ? match[1] : 'Zero_Sales_Export.xlsx';
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      p.showAlert($('list_error'), 'error', p.escapeHtml(err.message));
+    } finally {
+      btn.disabled = false;
+    }
+  });
+
   $('f_status').addEventListener('change', () => $('btn_refresh').click());
   if ($('f_batch')) $('f_batch').addEventListener('change', () => $('btn_refresh').click());
   $('f_search').addEventListener('input', render);

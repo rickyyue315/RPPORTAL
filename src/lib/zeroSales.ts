@@ -289,6 +289,81 @@ function formatTopEntries(counts: Map<string, number>): string {
     .join('；');
 }
 
+/** 店舖版面匯出欄位：與店舖頁表格一致（前8欄），另加存貨量 / RP Type / Safety Stock */
+export const ZERO_SALES_STORE_EXPORT_COLUMNS = [
+  '週次',
+  'Brand',
+  'SKU',
+  '描述',
+  'SKU上載日期',
+  '狀態',
+  '店舖本次回覆',
+  '重複提示',
+  '存貨量',
+  'RP Type',
+  'Safety Stock',
+] as const;
+
+export interface ZeroSalesStoreExportItem {
+  week_label: string;
+  sku: string;
+  payload: Record<string, string>;
+  status: string;
+  reason_label: string | null;
+  reason_note: string | null;
+  /** SKU 上載日期 (YYYY-MM-DD) */
+  batch_date: string;
+  /** 跨批次累計上榜次數（<2 為首次） */
+  occurrence_count: number;
+  prev_week_label: string | null;
+  prev_status: string | null;
+  prev_reason_label: string | null;
+}
+
+/** 「重複提示」欄：第N次上榜（上次 週次：原因）；首次上榜為空白 */
+function repeatHint(it: ZeroSalesStoreExportItem): string {
+  if ((it.occurrence_count ?? 1) < 2) return '';
+  const prevReason = it.prev_reason_label || (it.prev_status === 'replied' ? '已回覆' : '未回覆');
+  const prev = it.prev_week_label ? `（上次 ${it.prev_week_label}：${prevReason}）` : '';
+  return `第${it.occurrence_count}次上榜${prev}`;
+}
+
+/** 店舖版面匯出：單工作表、只含該店被派發的 SKU，欄位與店舖頁表格一致 */
+export async function buildZeroSalesStoreExportBuffer(items: ZeroSalesStoreExportItem[]): Promise<Buffer> {
+  const workbook = new ExcelJS.Workbook();
+  const sheet = workbook.addWorksheet('零銷售回覆');
+  const headers = [...ZERO_SALES_STORE_EXPORT_COLUMNS];
+  const headerStyle: Partial<ExcelJS.Style> = {
+    font: { bold: true },
+    fill: { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFDAEEF3' } },
+    alignment: { vertical: 'middle', wrapText: true },
+  };
+  sheet.addRow(headers);
+  headers.forEach((_, i) => { sheet.getCell(1, i + 1).style = headerStyle; });
+  for (const it of items) {
+    const p = it.payload ?? {};
+    const replied = it.status === 'replied';
+    sheet.addRow([
+      it.week_label ?? '',
+      p['Brand'] ?? '',
+      it.sku,
+      p['SKU Desc'] ?? '',
+      it.batch_date ?? '',
+      replied ? '已回覆' : '未回覆',
+      replied ? [it.reason_label || '', it.reason_note || ''].filter(Boolean).join('\n') : '',
+      repeatHint(it),
+      parseQty(p['Shop Stock Qty (CM)']) ?? p['Shop Stock Qty (CM)'] ?? '',
+      p['RP Type'] ?? '',
+      p['Safety Stock (現時)'] ?? '',
+    ]);
+  }
+  const widths = [12, 22, 16, 36, 14, 10, 36, 34, 12, 12, 14];
+  widths.forEach((w, i) => { sheet.getColumn(i + 1).width = w; });
+  sheet.views = [{ state: 'frozen', ySplit: 1 }];
+  applyDefaultFont(workbook);
+  return Buffer.from(await workbook.xlsx.writeBuffer());
+}
+
 interface SkuReasonStat {
   sku: string;
   brand: string;

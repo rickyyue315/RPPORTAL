@@ -108,7 +108,8 @@
     const rate = items.length ? Math.round((replied / items.length) * 100) : 0;
     const repeatN = all.filter(isRepeat).length;
     const shop = data.shop ? ` ${p.escapeHtml(data.shop)}` : '';
-    const weekLabel = batch && batch !== 'all' ? (batches.find((b) => b.id === batch) || {}).week_label : '全部週次';
+    const batchVal = $('f_batch') ? $('f_batch').value : '';
+    const weekLabel = batchVal && batchVal !== 'all' ? (batches.find((b) => b.id === batchVal) || {}).week_label : '全部週次';
     const bar = document.getElementById('zs_progress_bar');
     if (bar) bar.style.width = `${rate}%`;
     $('site_info').innerHTML =

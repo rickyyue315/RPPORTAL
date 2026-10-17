@@ -82,3 +82,36 @@ export async function checkDatabase(): Promise<boolean> {
     return false;
   }
 }
+
+/**
+ * Wait for PostgreSQL before running migrations. Railway starts the web
+ * service and its database concurrently, so the first connection can fail
+ * while PostgreSQL is still provisioning.
+ */
+export async function waitForDatabase(): Promise<void> {
+  const attempts = config.databaseStartupRetries;
+  const delayMs = config.databaseStartupRetryMs;
+  let lastError: unknown;
+
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    try {
+      const client = await pool.connect();
+      try {
+        await client.query('SELECT 1');
+      } finally {
+        client.release();
+      }
+      if (attempt > 1) {
+        console.log(`[db] ready after ${attempt} attempts`);
+      }
+      return;
+    } catch (err) {
+      lastError = err;
+      if (attempt === attempts) break;
+      console.warn(`[db] not ready (attempt ${attempt}/${attempts}); retrying in ${delayMs}ms`);
+      await new Promise((resolve) => setTimeout(resolve, delayMs));
+    }
+  }
+
+  throw lastError instanceof Error ? lastError : new Error('Database did not become ready');
+}

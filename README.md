@@ -1,6 +1,6 @@
 # NDRF 申報平台
 
-SASA RP Team 非正常補貨（NDRF）申報平台。申請端以「Site Code／使用者名稱＋密碼」進入，管理端需密碼登入，部署於 Zeabur（Web/API 服務 + PostgreSQL）。
+SASA RP Team 非正常補貨（NDRF）申報平台。申請端以「Site Code／使用者名稱＋密碼」進入，管理端需密碼登入，部署於 Railway（Web/API 服務 + PostgreSQL），以 Dockerfile 建置，並附 Railway Infrastructure as Code 設定。
 
 ## 功能
 
@@ -22,14 +22,15 @@ SASA RP Team 非正常補貨（NDRF）申報平台。申請端以「Site Code／
 
 ## 技術
 
-- Node.js + TypeScript + Express
+- Node.js 22 + TypeScript + Express
 - PostgreSQL（pg）
 - ExcelJS（xlsx 讀寫）
 - helmet、express-rate-limit
+- Railway 部署（Dockerfile + Infrastructure as Code `.railway/railway.ts`）
 
 ## 本機開發
 
-需求：Node.js 20+，Docker（或本機 PostgreSQL）。
+需求：Node.js 22+，Docker（或本機 PostgreSQL）。
 
 ```bash
 # 1. 啟動資料庫
@@ -64,26 +65,63 @@ npm run schedule:check  # 檢查退貨時間表是否涵蓋今年
 
 Repository 已配置 GitHub Actions（`.github/workflows/ci.yml`）：push 時自動執行 `npm ci` + typecheck + build + test。
 
-## 部署至 Zeabur
+## 部署至 Railway
 
-1. 建立 **PostgreSQL** 服務，取得 `DATABASE_URL`。
-2. 建立 **Web 服務**，以 Git 或直接上載本目錄部署。Zeabur 會自動偵測 `Dockerfile` 並建置。
-3. 在 Web 服務的環境變數設定（全部放入 Zeabur Secrets，不寫入程式碼）：
+Railway 會自動偵測根目錄的 `Dockerfile` 建置；應用程式直接讀取 Railway 注入的 `PORT`。建議把 Web 服務及 PostgreSQL 放在新加坡區域（`asia-southeast1`），香港用戶延遲最低。
+
+### 方式 A：用 Infrastructure as Code 建立（建議新項目）
+
+Repository 已包含 `.railway/railway.ts`，會建立 `web` 服務、`postgres` 資料庫，並自動把 `DATABASE_URL` 連到資料庫。
+
+Railway 需要已授權 GitHub App 讀取 `rickyyue315/RPPORTAL`（私人 repo 請先在 Railway 帳戶 Settings → Integrations 授權），否則 apply 後會拉不到程式碼。
+
+```bash
+# 安裝 Railway CLI（只需一次）
+npm install -g @railway/cli
+
+# 安裝 IaC SDK（package.json 已列為 devDependency）
+npm install
+
+railway login
+railway init          # 新項目；如已有項目則改用 railway link
+railway config plan   # 預覽會建立的資源，不會改動 Railway
+railway config apply  # 確認後建立 Web + PostgreSQL
+```
+
+首次 apply 後，到 Railway Dashboard → `web` → **Variables** 設定以下 secrets（IaC 以 `preserve()` 保留，不會寫入 repo；如 `railway config plan` 提示這兩個變數未設定，可先在 Dashboard 建立再 apply）：
+
+- `ADMIN_PASSWORD`
+- `PORTAL_SHARED_PASSWORD`
+
+設定後 Railway 會自動重新部署。未設定 `ADMIN_PASSWORD` 時管理員登入會停用；未設定 `PORTAL_SHARED_PASSWORD` 時會用預設 `SASA1234`，正式環境必須更改。
+
+> `.railway/railway.ts` 只由 Railway CLI 讀取，部署時不會使用。若你已在 Railway 手動建立服務，請先 `railway config pull` 匯入現有設定再修改；直接 apply 有機會建立重複資源，或刪除未列出的資源。
+
+### 方式 B：在 Railway Dashboard 手動建立
+
+1. **New Project → Deploy from GitHub repo**，選擇 `rickyyue315/RPPORTAL`（repo 根目錄就是 `ndrf-portal`，不需要設定 Root Directory）。Railway 會自動使用 `Dockerfile`。
+2. **New → Database → PostgreSQL**。
+3. 在 `web` 服務的 **Variables** 設定 `DATABASE_URL = ${{Postgres.DATABASE_URL}}`（private networking；不要用 public URL），其餘見下表。
+4. **Settings → Healthcheck**：Path `/health`，Timeout `300` 秒（首次啟動要跑 migration）。
+5. **Settings → Region**：選 `asia-southeast1`（新加坡）。
+6. **Settings → Networking → Generate Domain**，取得 HTTPS 網域。
+7. （建議）**Settings → Deploy → Restart Policy**：`On Failure`。
+
+### 環境變數
 
 | 變數 | 說明 |
 |---|---|
-| `DATABASE_URL` | PostgreSQL 連線字串（Zeabur PostgreSQL 提供） |
+| `DATABASE_URL` | `${{Postgres.DATABASE_URL}}`（Railway PostgreSQL 參考變數；用 private URL） |
 | `NODE_ENV` | `production` |
-| `PORT` | `3000` |
 | `ADMIN_USERNAME` | 管理員使用者名稱（預設 `admin`） |
-| `ADMIN_PASSWORD` | 管理員密碼（重要：於 Zeabur Secrets 直接填寫密碼字串，不需要 bcrypt hash） |
+| `ADMIN_PASSWORD` | 管理員密碼（重要：直接填寫密碼字串，不需要 bcrypt hash） |
 | `PORTAL_SHARED_PASSWORD` | Portal（Store／Buyer／SCT）密碼（預設 `SASA1234`）：所有店舖頁面（零銷售回覆、一般 NDRF、Urgent、突發性銷售、行貨退貨）共用「Site Code＋此密碼」一次登入；Urgent／突發性銷售／行貨退貨的提交及 Excel 匯入 API 亦要求此 Store session，且只接受登入店舖自己的 Site Code |
 | `SESSION_TTL_HOURS` | 登入 session 有效期（小時，預設 8） |
 | `LOGIN_LOCK_THRESHOLD` | 失敗登入鎖定次數（預設 5，按 IP 計算） |
 | `LOGIN_LOCK_MINUTES` | 鎖定分鐘數（預設 15） |
 | `LOGIN_USERNAME_LOCK_THRESHOLD` | Portal 按使用者名稱計算的失敗登入鎖定次數（預設 50；Store 帳號名稱為公開 Site Code，故按 IP 鎖定為主，username 需更高門檻以防遠端鎖死個別帳號） |
-| `TRUST_PROXY` | `true`（Zeabur 反向代理後） |
-| `TRUST_PROXY_HOPS` | `1`（可信 reverse proxy hop 數） |
+| `TRUST_PROXY` | `true`（Railway edge 反向代理後） |
+| `TRUST_PROXY_HOPS` | `1`（Railway edge 為單一 hop；如前面再加 Cloudflare 才需調整） |
 | `APP_TIMEZONE` | `Asia/Hong_Kong` |
 | `IP_RETENTION_DAYS` | `365` |
 | `MAX_UPLOAD_MB` | `5` |
@@ -96,9 +134,51 @@ Repository 已配置 GitHub Actions（`.github/workflows/ci.yml`）：push 時�
 | `RETURN_SCHEDULE_PATH` | `./return-schedule.json` |
 | `RETURN_ENFORCEMENT_START` | `2026-08-01` |
 | `CORS_ORIGINS` | 留空（同源）或填允許來源，逗號分隔 |
+| `PUBLIC_WRITE_SUSPENSION_ENABLED` | `true` 暫停公開提交／修改／Excel 匯入；重新開通時設 `false` |
+| `PUBLIC_WRITE_SUSPENSION_AT` | 暫停生效時間（預設 `2026-08-11T23:59:59+08:00`） |
+| `NORMAL_NDRF_PORTAL_ENABLED` | `true` 開放一般 NDRF Portal 新提交；Admin 管理及匯出不受影響 |
+| `NDRF_REJECT_COOLDOWN_HOURS` | Reject 後重新申請冷卻時數（預設 `720`） |
+| `NDRF_AUTO_APPROVE_ENABLED` | Buyer SLA 逾期自動批准開關（預設 `true`） |
+| `NDRF_AUTO_APPROVE_DAYS` | Buyer 審批日數（預設 `7`） |
+| `DB_STARTUP_RETRIES` | 啟動時等待 PostgreSQL 的次數（預設 `20`） |
+| `DB_STARTUP_RETRY_MS` | 每次重試間隔（毫秒，預設 `2000`） |
+| `SHUTDOWN_TIMEOUT_MS` | 收到 SIGTERM 後強制結束前的等待時間（毫秒，預設 `25000`） |
+| `RAILWAY_DEPLOYMENT_DRAINING_SECONDS` | `30`（Railway 舊部署收到 SIGTERM 後的寬限時間） |
+| `RAILWAY_DEPLOYMENT_OVERLAP_SECONDS` | `10`（可選；新舊部署重疊時間，減少部署期間中斷） |
 
-4. 容器啟動時會自動執行 migration，並在門店主檔為空時載入內建 `stores-template.csv`；migration 使用 PostgreSQL advisory lock，避免多個 replica 同時套用 schema。
-5. 在 Zeabur 設定網域並啟用 HTTPS。健康檢查路徑：`/health`。
+**不要設定 `PORT`**：Railway 會自動注入，應用程式會直接使用；手動設定反而可能與 Railway 的 healthcheck／路由不一致。
+
+### 部署行為
+
+- 容器啟動時會先等待 PostgreSQL 可用（最多 `DB_STARTUP_RETRIES × DB_STARTUP_RETRY_MS`），再自動執行 migration；migration 使用 PostgreSQL advisory lock，多個 replica 同時啟動也安全。
+- 門店主檔為空時會自動載入內建 `stores-template.csv`。
+- 匯出 Excel 原檔存於 PostgreSQL（`export_batch_files`），不依賴 Railway volume；容器重啟或重新部署不會遺失。
+- 應用程式處理 `SIGTERM`，並在 `SHUTDOWN_TIMEOUT_MS` 內完成關閉；配合 Railway draining 可減少部署期間中斷。
+- 健康檢查路徑：`/health`（會檢查資料庫，正常回 `200`，資料庫不可用回 `503`）。
+- 預設 1 個 replica 已足夠；如要水平擴展，session、rate limit 及 migration lock 都在 PostgreSQL，可直接增加 replica。
+
+### 由 Zeabur 搬遷資料
+
+1. 在可連到 Zeabur PostgreSQL 的機器匯出（用 Zeabur 的 public／external connection string）：
+
+```bash
+pg_dump "$ZEABUR_DATABASE_URL" \
+  --no-owner --no-privileges --format=custom \
+  --file=ndrf.dump
+```
+
+2. 在 Railway PostgreSQL → **Connect** 取得 **Public Network** URL，匯入：
+
+```bash
+pg_restore --no-owner --no-privileges --clean --if-exists \
+  --dbname "$RAILWAY_PUBLIC_DATABASE_URL" ndrf.dump
+```
+
+3. 部署新版本。應用程式啟動時會比對 `schema_migrations`，只補跑未套用的 migration。
+4. 核對 `stores`、`submissions`、`portal_users` 等資料表筆數，再切換 DNS／網域。
+5. 搬遷後立即在管理後台檢查 Recovery Code、Return Schedule 及 `PUBLIC_WRITE_SUSPENSION_*` 設定。
+
+> `pg_dump`／`pg_restore` 版本建議與來源 PostgreSQL 16 相同或更新。Railway 的 public URL 需要 TLS；連線字串已包含 `sslmode=require` 時可直接使用。
 
 ## 資料模型
 
@@ -127,7 +207,8 @@ Repository 已配置 GitHub Actions（`.github/workflows/ci.yml`）：push 時�
 
 ## 已知限制
 
-- `npm audit` 報告 2 個 moderate 漏洞（`uuid`，經 `exceljs` 傳遞）。目前**沒有非破壞性修復版本**（`npm audit fix --force` 會把 exceljs 降級到 3.4.0，屬 breaking change）。實際風險低：該漏洞只影響 uuid v3/v5/v6 並傳入 `buf` 的用法，本平台經 exceljs 使用 uuid v4 且不傳 `buf`。建議在 exceljs 釋出修復版後升級，或日後評估替換 Excel 函示庫。
+- `npm audit --omit=dev`（正式依賴）報告 2 個 moderate 漏洞（`uuid`，經 `exceljs` 傳遞）。目前**沒有非破壞性修復版本**（`npm audit fix --force` 會把 exceljs 降級到 3.4.0，屬 breaking change）。實際風險低：該漏洞只影響 uuid v3/v5/v6 並傳入 `buf` 的用法，本平台經 exceljs 使用 uuid v4 且不傳 `buf`。建議在 exceljs 釋出修復版後升級，或日後評估替換 Excel 函示庫。
+- 其餘 audit 報告來自 devDependencies（`vitest`／`vite` 測試工具鏈），不進入正式 Docker image，亦不影響 Railway 部署；待升級 vitest 5（breaking change）時一併處理。
 
 ## 注意事項
 

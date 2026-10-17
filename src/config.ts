@@ -54,6 +54,13 @@ export const config = {
   env: process.env.NODE_ENV ?? 'development',
   port: int('PORT', 3000),
   databaseUrl: process.env.DATABASE_URL ?? required('DATABASE_URL'),
+  // Railway can start the container before PostgreSQL is accepting
+  // connections (especially on a first deploy). Wait before migrating.
+  databaseStartupRetries: Math.max(1, int('DB_STARTUP_RETRIES', 20)),
+  databaseStartupRetryMs: Math.max(100, int('DB_STARTUP_RETRY_MS', 2000)),
+  // Keep this below Railway's draining window so the process can close the
+  // HTTP server and database pool cleanly before SIGKILL.
+  shutdownTimeoutMs: Math.max(1000, int('SHUTDOWN_TIMEOUT_MS', 25_000)),
   adminUsername: process.env.ADMIN_USERNAME ?? 'admin',
   adminPassword: process.env.ADMIN_PASSWORD ?? '',
   // One shared password for all Portal accounts (Store / Buyer / SCT): after

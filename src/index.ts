@@ -1,7 +1,7 @@
 import { createApp } from './app.js';
 import { config } from './config.js';
 import { migrate } from './db/migrate.js';
-import { pool, withAdvisoryLock } from './db/pool.js';
+import { pool, waitForDatabase, withAdvisoryLock } from './db/pool.js';
 import { writeAuditEvent } from './lib/audit.js';
 import { countRecoveryCodes } from './lib/recovery.js';
 import { seedStoresFromFile, countStores } from './services/stores.js';
@@ -51,6 +51,7 @@ async function main(): Promise<void> {
     console.warn('[boot] ADMIN_PASSWORD 未設定 — 管理員登入已停用，後台將拒絕存取');
   }
 
+  await waitForDatabase();
   await migrate();
 
   const recoveryCodeCount = await countRecoveryCodes();
@@ -123,7 +124,7 @@ async function runBuyerAutoApproveScheduler(): Promise<void> {
           .catch((err) => console.error('[boot] error closing database pool', err))
           .finally(() => process.exit(0));
       });
-      setTimeout(() => process.exit(1), 10_000).unref();
+      setTimeout(() => process.exit(1), config.shutdownTimeoutMs).unref();
     });
   }
 }

@@ -11,6 +11,10 @@
 process.env.ADMIN_USERNAME = process.env.ADMIN_USERNAME ?? 'admin';
 process.env.ADMIN_PASSWORD = process.env.ADMIN_PASSWORD ?? 'smoke-password';
 process.env.PORTAL_SHARED_PASSWORD = process.env.PORTAL_SHARED_PASSWORD ?? 'SASA1234';
+// The production suspension window is time-based; exercise the real write
+// paths regardless of the current date (matches .env.test).
+process.env.PUBLIC_WRITE_SUSPENSION_ENABLED =
+  process.env.PUBLIC_WRITE_SUSPENSION_ENABLED ?? 'false';
 // Config requires DATABASE_URL at import time even though the smoke test runs
 // against an in-memory PGlite; provide a harmless default for local runs.
 process.env.DATABASE_URL = process.env.DATABASE_URL ?? 'postgres://smoke:smoke@localhost:5432/smoke';

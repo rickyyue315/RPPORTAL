@@ -1,7 +1,12 @@
 node_modules
 dist
 .env
+.env.test
 .git
+.github
+.railway
+test
+vitest.config.ts.timestamp-*.mjs
 Dockerfile
 docker-compose.yml
 *.log

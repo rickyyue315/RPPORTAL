@@ -22,7 +22,7 @@ SASA RP Team 非正常補貨（NDRF）申報平台。申請端以「Site Code／
 
 ## 技術
 
-- Node.js 22 + TypeScript + Express
+- Node.js 24 + TypeScript + Express
 - PostgreSQL（pg）
 - ExcelJS（xlsx 讀寫）
 - helmet、express-rate-limit
@@ -30,7 +30,7 @@ SASA RP Team 非正常補貨（NDRF）申報平台。申請端以「Site Code／
 
 ## 本機開發
 
-需求：Node.js 22+，Docker（或本機 PostgreSQL）。
+需求：Node.js 24+，Docker（或本機 PostgreSQL）。
 
 ```bash
 # 1. 啟動資料庫

@@ -204,6 +204,7 @@ body.drawer-open { overflow: hidden; }
 .badge-zs-ok { background: #eafaf1; color: #0a5c36; border-color: #a9dfbf; }
 .badge-zs-muted { background: #eef2f6; color: #475569; border-color: #d7dee7; }
 .badge-zs-warn { background: #fef9e7; color: #7a4d00; border-color: #f9e79f; }
+.badge-zs-info { background: #e6f1fb; color: #185fa5; border-color: #b5d4f4; }
 
 /* ghost 按鈕與 Tabler 對齊 */
 .btn.ghost, .btn.btn-ghost {

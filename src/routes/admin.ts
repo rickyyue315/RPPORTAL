@@ -2803,7 +2803,8 @@ const zeroSalesAdminReplySchema = z.object({
   reason_note: z.string().max(2000).optional().default(''),
 });
 
-/** PUT /api/admin/zero-sales/batches/:id/items/:itemId/reply — 管理員代改店舖回覆（不受鎖定限制，不佔用店舖修改次數） */
+/** PUT /api/admin/zero-sales/batches/:id/items/:itemId/reply — 管理員代改／代填店舖回覆
+ *  （已回覆可改；已封存週次的 pending 行可由管理員代填，例如店舖截單後 email 補交） */
 adminRouter.put(
   '/zero-sales/batches/:id/items/:itemId/reply',
   requireUuidParam('id', 'itemId'),
@@ -2816,14 +2817,15 @@ adminRouter.put(
       return;
     }
     try {
-      const { before, item } = await adminReplyItem({
+      const { before, item, entered } = await adminReplyItem({
         batchId: req.params.id as string,
         itemId: req.params.itemId as string,
         reasonCode: parsed.data.reason_code,
         reasonNote: parsed.data.reason_note ?? '',
+        adminUser: req.adminUsername!,
       });
       await writeAuditEvent({
-        eventType: 'zero_sales_reply_edited',
+        eventType: entered ? 'zero_sales_reply_entered' : 'zero_sales_reply_edited',
         actorRole: 'admin',
         actor: req.adminUsername,
         ip: getClientIp(req),
@@ -2832,11 +2834,13 @@ adminRouter.put(
           batch_id: item.batch_id,
           site_code: item.site_code,
           sku: item.sku,
+          entered,
+          replied_by: item.replied_by,
           before: { reason_code: before.reason_code, reason_note: before.reason_note },
           after: { reason_code: item.reason_code, reason_note: item.reason_note },
         },
       });
-      res.json({ ok: true, item });
+      res.json({ ok: true, item, entered });
     } catch (err) {
       if (err instanceof ZeroSalesReplyError) {
         res.status(400).json({ error: err.message });

@@ -209,7 +209,7 @@
         body.innerHTML = '<tr><td colspan="9" class="text-center text-secondary">此篩選沒有資料</td></tr>';
         return;
       }
-      if (res) res.innerHTML = `<div class="text-secondary small">批次 ${esc(currentBatch.slice(0, 8))}｜共 ${rows.length} 筆｜已回覆 ${rows.filter((r) => r.status === 'replied').length}｜已鎖定（用完修改） ${rows.filter((r) => (r.reply_count ?? (r.status === 'replied' ? 1 : 0)) >= 2).length}${rows[0]?.is_open === false ? '｜<b>此批次已封存，店舖不可再回覆</b>' : ''} <a href="/api/admin/zero-sales/batches/${currentBatch}/export">匯出 Excel</a></div>`;
+      if (res) res.innerHTML = `<div class="text-secondary small">批次 ${esc(currentBatch.slice(0, 8))}｜共 ${rows.length} 筆｜已回覆 ${rows.filter((r) => r.status === 'replied').length}｜已鎖定（用完修改） ${rows.filter((r) => (r.reply_count ?? (r.status === 'replied' ? 1 : 0)) >= 2).length}${rows[0]?.is_open === false ? '｜<b>此批次已封存，店舖不可再回覆（管理員可代回覆）</b>' : ''} <a href="/api/admin/zero-sales/batches/${currentBatch}/export">匯出 Excel</a></div>`;
       const archived = rows[0]?.is_open === false;
       body.innerHTML = rows.slice(0, 200).map((i) => {
         const n = i.reply_count ?? (i.status === 'replied' ? 1 : 0);
@@ -217,9 +217,10 @@
         const lockTag = n >= 2 ? ' <span class="badge-zs badge-zs-muted">已鎖定</span>' : n === 1 ? ' <span class="text-secondary small">可再改1次</span>' : '';
         const editBtn = i.status === 'replied'
           ? `<button class="btn btn-sm" data-zs-item-edit="${i.id}">編輯回覆</button>`
-          : '';
+          : `<button class="btn btn-sm" data-zs-item-edit="${i.id}">代回覆</button>`;
+        const enteredByAdmin = (i.replied_by || '').startsWith('管理員代填');
         const statusBadge = i.status === 'replied'
-          ? `<span class="badge-zs badge-zs-ok">已回覆${archived ? '（已封存）' : ''}</span>`
+          ? `<span class="badge-zs badge-zs-ok">已回覆${archived ? '（已封存）' : ''}</span>${enteredByAdmin ? ' <span class="badge-zs badge-zs-info">代填</span>' : ''}`
           : `<span class="badge-zs ${archived ? 'badge-zs-muted' : 'badge-zs-warn'}">未回覆${archived ? '（已截止）' : ''}</span>`;
         return `<tr>
         <td>${esc(i.site_code)}</td><td>${esc(i.sku)}</td>
@@ -646,19 +647,24 @@
 
   function openEditReply(itemId, triggerBtn) {
     const item = itemRows.find((x) => x.id === itemId);
-    if (!item || item.status !== 'replied') return;
+    if (!item) return;
     openEditReplyOverlay(item, triggerBtn);
   }
 
   function openEditReplyOverlay(item, triggerBtn) {
+    const entering = item.status !== 'replied';
     const overlay = document.createElement('div');
     overlay.id = 'zs_edit_reply_overlay';
-    overlay.innerHTML = `<div class="modal-box" role="dialog" aria-modal="true" aria-label="編輯店舖回覆">
-      <h3>編輯店舖回覆</h3>
-      <p class="text-secondary small" style="margin:6px 0">店舖：${esc(item.site_code)}｜SKU：${esc(item.sku)}${item.replied_by ? `｜原回覆人：${esc(item.replied_by)}` : ''}</p>
+    overlay.innerHTML = `<div class="modal-box" role="dialog" aria-modal="true" aria-label="${entering ? '代店舖輸入回覆' : '編輯店舖回覆'}">
+      <h3>${entering ? '代店舖輸入回覆' : '編輯店舖回覆'}</h3>
+      <p class="text-secondary small" style="margin:6px 0">店舖：${esc(item.site_code)}｜SKU：${esc(item.sku)}${item.replied_by ? `｜原回覆人：${esc(item.replied_by)}` : ''}｜${item.is_open === false ? '此週次已封存' : '此週次仍開放'}</p>
       <div class="mb-2"><label class="form-label">回覆原因</label><select id="zs_edit_reason" class="form-select"><option value="">載入中…</option></select></div>
-      <div class="mb-2"><label class="form-label">補充說明</label><textarea id="zs_edit_note" class="form-control" rows="3" maxlength="2000" placeholder="選擇須補充的原因時必填"></textarea></div>
-      <p class="text-secondary small" style="margin:6px 0">管理員修改不受鎖定限制，亦不佔用店舖的修改次數；更改會記錄在審計日誌。</p>
+      <div class="mb-2"><label class="form-label">補充說明</label><textarea id="zs_edit_note" class="form-control" rows="3" maxlength="2000" placeholder="${entering ? '如店舖以 email 補交，建議註明日期及提供者' : '選擇須補充的原因時必填'}"></textarea></div>
+      <p class="text-secondary small" style="margin:6px 0">${entering
+        ? (item.is_open === false
+          ? '店舖截單後以 email 補交時使用：儲存後狀態變為「已回覆」，回覆人記錄為「管理員代填（你的帳號）」，並寫入審計日誌。'
+          : '此週次仍開放，店舖可自行回覆；如你代填，店舖仍可再修改一次。')
+        : '管理員修改不受鎖定限制，亦不佔用店舖的修改次數；更改會記錄在審計日誌。'}</p>
       <div id="zs_edit_reply_error" class="text-danger small"></div>
       <div class="d-flex gap-2 justify-content-end mt-3">
         <button class="btn btn-primary" data-save>儲存</button>
@@ -696,7 +702,7 @@
       }
       saveBtn.disabled = true; saveBtn.textContent = '儲存中…';
       try {
-        await aFetch(`/api/admin/zero-sales/batches/${currentBatch}/items/${item.id}/reply`, {
+        const saved = await aFetch(`/api/admin/zero-sales/batches/${currentBatch}/items/${item.id}/reply`, {
           method: 'PUT',
           body: JSON.stringify({ reason_code: reasonCode, reason_note: noteVal }),
         });
@@ -706,7 +712,8 @@
         // 原地提示、不捲動頁面（避免跳去最底），再重載明細並停留原位
         const y = window.scrollY;
         if (currentBatch) await loadItems({ preserveFocusId: editedId });
-        zsDeleteResult(`<div class="alert alert-success">已更新回覆：${esc(editedLabel)}。</div>`, false);
+        const action = saved?.entered ? '已代填回覆' : '已更新回覆';
+        zsDeleteResult(`<div class="alert alert-success">${action}：${esc(editedLabel)}。</div>`, false);
         if (typeof y === 'number') window.scrollTo(0, y);
       } catch (err) {
         errBox.textContent = err.message;

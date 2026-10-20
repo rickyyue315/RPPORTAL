@@ -916,15 +916,20 @@ export async function replyItem(input: {
   };
 }
 
-/** 管理員代改店舖回覆：不受「只可修改一次」鎖定限制，亦不佔用店舖的修改次數（reply_count 不變） */
+/** 管理員代改／代填店舖回覆：不受「只可修改一次」鎖定限制，亦不佔用店舖的修改次數。
+ *  已封存週次常見「店舖截單後以 email 補交」，管理員可將 pending 行直接填成 replied。
+ *  `entered` = 之前未回覆、今次由管理員代填；`false` = 修改既有回覆。 */
 export async function adminReplyItem(input: {
   batchId: string;
   itemId: string;
   reasonCode: string;
   reasonNote: string;
+  /** 管理員帳號，寫入 replied_by 供日後追查 */
+  adminUser: string;
 }): Promise<{
   before: { reason_code: string | null; reason_label: string | null; reason_note: string };
   item: ZeroSalesItemRow;
+  entered: boolean;
 }> {
   const reasons = await listReasons(false);
   const found = reasons.find((r) => r.code === input.reasonCode);
@@ -932,13 +937,46 @@ export async function adminReplyItem(input: {
   const note = (input.reasonNote ?? '').trim();
   if (found.require_note && !note) throw new ZeroSalesReplyError(`選擇「${found.label}」必須填寫補充說明`);
   if (note.length > 2000) throw new ZeroSalesReplyError('補充說明最多 2000 字');
-  const current = await query<{ reason_code: string | null; reason_label: string | null; reason_note: string }>(
-    'SELECT reason_code, reason_label, reason_note FROM zero_sales_items WHERE id = $1 AND batch_id = $2',
+  const current = await query<{
+    status: string;
+    reply_count: number;
+    reason_code: string | null;
+    reason_label: string | null;
+    reason_note: string;
+  }>(
+    'SELECT status, reply_count, reason_code, reason_label, reason_note FROM zero_sales_items WHERE id = $1 AND batch_id = $2',
     [input.itemId, input.batchId],
   );
   const cur = current.rows[0];
   if (!cur) throw new ZeroSalesReplyError('找不到此 SKU 行（可能已被刪除）');
-  if (!cur.reason_code) throw new ZeroSalesReplyError('此 SKU 尚未回覆，沒有可編輯的回覆');
+  const before = { reason_code: cur.reason_code, reason_label: cur.reason_label, reason_note: cur.reason_note };
+
+  if (cur.status === 'pending') {
+    // 代填：狀態轉 replied、記錄回覆人為管理員、給予 1 次（店舖仍可在開放週次修改一次）
+    const inserted = await query<ZeroSalesItemRow>(
+      `UPDATE zero_sales_items
+          SET status = 'replied', reason_code = $1, reason_label = $2, reason_note = $3,
+              replied_at = now(), replied_by = $4, replied_by_user_id = NULL,
+              updated_at = now(), reply_count = GREATEST(reply_count, 1)
+        WHERE id = $5 AND batch_id = $6 AND status = 'pending'
+        RETURNING *`,
+      [found.code, found.label, note, `管理員代填（${input.adminUser}）`, input.itemId, input.batchId],
+    );
+    const row = inserted.rows[0];
+    if (!row) throw new ZeroSalesReplyError('此 SKU 狀態已改變，請重新載入後再試');
+    return {
+      before,
+      item: {
+        ...row,
+        payload: typeof row.payload === 'string' ? JSON.parse(row.payload as unknown as string) : (row.payload ?? {}),
+        replied_at: row.replied_at ? toHKString(row.replied_at) : null,
+        batch_date: undefined,
+      },
+      entered: true,
+    };
+  }
+
+  if (!cur.reason_code) throw new ZeroSalesReplyError('此 SKU 沒有可編輯的回覆原因');
   const r = await query<ZeroSalesItemRow>(
     `UPDATE zero_sales_items SET reason_code = $1, reason_label = $2, reason_note = $3, updated_at = now()
      WHERE id = $4 AND batch_id = $5
@@ -948,12 +986,13 @@ export async function adminReplyItem(input: {
   const row = r.rows[0];
   if (!row) throw new ZeroSalesReplyError('找不到此 SKU 行（可能已被刪除）');
   return {
-    before: { reason_code: cur.reason_code, reason_label: cur.reason_label, reason_note: cur.reason_note },
+    before,
     item: {
       ...row,
       payload: typeof row.payload === 'string' ? JSON.parse(row.payload as unknown as string) : (row.payload ?? {}),
       replied_at: row.replied_at ? toHKString(row.replied_at) : null,
       batch_date: undefined,
     },
+    entered: false,
   };
 }

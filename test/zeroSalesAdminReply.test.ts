@@ -147,15 +147,27 @@ describe('zero-sales admin reply edit', () => {
     expect(badReason.status).toBe(400);
   });
 
-  it('rejects editing a pending item and an unknown item', async () => {
+  it('enters a reply for a pending item and rejects an unknown item', async () => {
     const agent = await adminAgent();
     const { batchId } = await seedBatch('2026-W52-admin-pending');
     const pendingId = await itemIdOf(batchId, '1000002');
-    const pending = await agent
+    const entered = await agent
       .put(`/api/admin/zero-sales/batches/${batchId}/items/${pendingId}/reply`)
       .set('x-csrf-token', agent._csrf ?? '')
-      .send({ reason_code: 'seasonal', reason_note: '' });
-    expect(pending.status).toBe(400);
+      .send({ reason_code: 'seasonal', reason_note: '店舖截單後 email 補交' });
+    expect(entered.status).toBe(200);
+    expect(entered.body.entered).toBe(true);
+    const after = await getItem(batchId, '1000002');
+    expect(after.status).toBe('replied');
+    expect(after.reason_code).toBe('seasonal');
+    expect(after.reason_note).toBe('店舖截單後 email 補交');
+    expect(after.reply_count).toBe(1);
+    expect(after.replied_by).toContain('管理員代填');
+    const audit = await db.query<{ count: string }>(
+      `SELECT count(*)::text AS count FROM audit_events WHERE event_type = 'zero_sales_reply_entered' AND actor_role = 'admin'`,
+    );
+    expect(Number(audit.rows[0]!.count)).toBeGreaterThanOrEqual(1);
+
     const missing = await agent
       .put(`/api/admin/zero-sales/batches/${batchId}/items/00000000-0000-4000-8000-000000000000/reply`)
       .set('x-csrf-token', agent._csrf ?? '')

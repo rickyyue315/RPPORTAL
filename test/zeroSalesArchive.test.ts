@@ -248,4 +248,24 @@ describe('zero-sales 即時封存', () => {
     expect(batches.find((b) => b.id === w43Id)).toBeUndefined();
     expect(batches.find((b) => b.id === w42Id)?.is_open).toBe(true);
   });
+
+  it('已封存週次的未回覆行可由管理員代填（店舖 email 補交）', async () => {
+    const agent = await adminAgent();
+    const id = await itemId(w41Id, 'A2');
+    const res = await agent
+      .put(`/api/admin/zero-sales/batches/${w41Id}/items/${id}/reply`)
+      .set('x-csrf-token', agent._csrf ?? '')
+      .send({ reason_code: 'in_warehouse', reason_note: '店舖 10月20日 email 補交' });
+    expect(res.status).toBe(200);
+    expect(res.body.entered).toBe(true);
+
+    const row = await db.query<{ status: string; replied_by: string; reply_count: number; reason_note: string }>(
+      'SELECT status, replied_by, reply_count, reason_note FROM zero_sales_items WHERE id = $1',
+      [id],
+    );
+    expect(row.rows[0]!.status).toBe('replied');
+    expect(row.rows[0]!.replied_by).toContain('管理員代填');
+    expect(row.rows[0]!.reply_count).toBe(1);
+    expect(row.rows[0]!.reason_note).toBe('店舖 10月20日 email 補交');
+  });
 });

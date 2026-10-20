@@ -126,8 +126,8 @@
       if (!rows.length) { body.innerHTML = '<tr><td colspan="8" class="text-center text-secondary">暫無批次</td></tr>'; return; }
       body.innerHTML = rows.map((b) => {
         const statusTag = b.is_open
-          ? '<span class="badge bg-success">開放中</span>'
-          : `<span class="badge bg-secondary">已封存</span><div class="text-secondary small">${esc(b.closed_at || '')}</div>`;
+          ? '<span class="badge-zs badge-zs-ok">開放中</span>'
+          : `<span class="badge-zs badge-zs-muted">已封存</span><div class="text-secondary small">${b.close_reason === 'auto' ? '自動封存於' : '封存於'} ${esc(b.closed_at || '')}</div>`;
         const toggleBtn = b.is_open
           ? `<button class="btn btn-sm btn-outline-secondary" data-zs-close="${b.id}" data-week="${esc(b.week_label)}">封存</button>`
           : `<button class="btn btn-sm btn-outline-primary" data-zs-reopen="${b.id}" data-week="${esc(b.week_label)}">重開</button>`;
@@ -214,13 +214,13 @@
       body.innerHTML = rows.slice(0, 200).map((i) => {
         const n = i.reply_count ?? (i.status === 'replied' ? 1 : 0);
         const upDate = i.batch_date || (i.batch_created_at || '').slice(0, 10);
-        const lockTag = n >= 2 ? ' <span class="badge bg-secondary">已鎖定</span>' : n === 1 ? ' <span class="text-secondary small">可再改1次</span>' : '';
+        const lockTag = n >= 2 ? ' <span class="badge-zs badge-zs-muted">已鎖定</span>' : n === 1 ? ' <span class="text-secondary small">可再改1次</span>' : '';
         const editBtn = i.status === 'replied'
           ? `<button class="btn btn-sm" data-zs-item-edit="${i.id}">編輯回覆</button>`
           : '';
         const statusBadge = i.status === 'replied'
-          ? `<span class="badge bg-success">已回覆${archived ? '（已封存）' : ''}</span>`
-          : `<span class="badge ${archived ? 'bg-secondary' : 'bg-warning'}">未回覆${archived ? '（已截止）' : ''}</span>`;
+          ? `<span class="badge-zs badge-zs-ok">已回覆${archived ? '（已封存）' : ''}</span>`
+          : `<span class="badge-zs ${archived ? 'badge-zs-muted' : 'badge-zs-warn'}">未回覆${archived ? '（已截止）' : ''}</span>`;
         return `<tr>
         <td>${esc(i.site_code)}</td><td>${esc(i.sku)}</td>
         <td>${esc(i.payload?.['Brand'] || '')}</td><td>${esc(i.payload?.['SKU Desc'] || '')}</td>
@@ -440,7 +440,7 @@
           <td>${esc(r.sku)}</td><td>${esc(r.brand || '')}</td><td>${esc(r.sku_desc || '')}</td>
           <td><b class="text-danger">${r.occurrence_count} 次</b></td>
           <td class="small">${weeks}</td>
-          <td class="small">${esc(r.last_week_label || '')}｜${r.last_status === 'replied' ? '<span class="badge bg-success">已回覆</span>' : '<span class="badge bg-warning">未回覆</span>'}<br>${lastReply}</td>
+          <td class="small">${esc(r.last_week_label || '')}｜${r.last_status === 'replied' ? '<span class="badge-zs badge-zs-ok">已回覆</span>' : '<span class="badge-zs badge-zs-warn">未回覆</span>'}<br>${lastReply}</td>
           <td>未 <b class="text-danger">${r.pending_count}</b> / 已 <span class="text-success">${r.replied_count}</span></td>
         </tr>`;
       }).join('');
@@ -845,7 +845,7 @@
       if (!rows.length) { body.innerHTML = '<tr><td colspan="6" class="text-center text-secondary">暫無原因</td></tr>'; return; }
       body.innerHTML = rows.map((r) => `<tr>
         <td>${esc(r.code)}</td><td>${esc(r.label)}</td><td>${r.sort_order}</td>
-        <td>${r.require_note ? '是' : '否'}</td><td>${r.active ? '<span class="badge bg-success">啟用</span>' : '<span class="badge bg-secondary">停用</span>'}</td>
+        <td>${r.require_note ? '是' : '否'}</td><td>${r.active ? '<span class="badge-zs badge-zs-ok">啟用</span>' : '<span class="badge-zs badge-zs-muted">停用</span>'}</td>
         <td><div class="d-flex gap-1">
           <button class="btn btn-sm" data-zs-reason-edit="${esc(r.code)}">編輯</button>
           <button class="btn btn-sm btn-outline-danger" data-zs-reason-toggle="${esc(r.code)}" data-active="${r.active ? 0 : 1}">${r.active ? '停用' : '啟用'}</button>

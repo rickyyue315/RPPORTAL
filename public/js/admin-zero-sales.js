@@ -124,18 +124,33 @@
       fillExportBatchSelect(rows);
       fillStatsBatchSelect(rows);
       if (!rows.length) { body.innerHTML = '<tr><td colspan="8" class="text-center text-secondary">暫無批次</td></tr>'; return; }
-      body.innerHTML = rows.map((b) => `<tr>
-        <td><b>${esc(b.week_label)}</b><div class="text-secondary small">${esc(b.note || '')}</div></td>
+      body.innerHTML = rows.map((b) => {
+        const statusTag = b.is_open
+          ? '<span class="badge bg-success">開放中</span>'
+          : `<span class="badge bg-secondary">已封存</span><div class="text-secondary small">${esc(b.closed_at || '')}</div>`;
+        const toggleBtn = b.is_open
+          ? `<button class="btn btn-sm btn-outline-secondary" data-zs-close="${b.id}" data-week="${esc(b.week_label)}">封存</button>`
+          : `<button class="btn btn-sm btn-outline-primary" data-zs-reopen="${b.id}" data-week="${esc(b.week_label)}">重開</button>`;
+        return `<tr>
+        <td><b>${esc(b.week_label)}</b><div class="text-secondary small">${esc(b.note || '')}</div><div class="mt-1">${statusTag}</div></td>
         <td>${b.row_count}</td><td>${b.store_count}</td>
-        <td class="text-success">${b.replied_count ?? 0}</td><td class="text-danger">${b.pending_count ?? 0}</td>
+        <td class="text-success">${b.replied_count ?? 0}</td><td class="${b.is_open ? 'text-danger' : 'text-secondary'}">${b.pending_count ?? 0}</td>
         <td>${esc(b.created_by)}</td><td>${esc(b.created_at)}</td>
         <td><div class="d-flex gap-1 flex-wrap">
           <button class="btn btn-sm" data-zs-view="${b.id}">明細</button>
           <a class="btn btn-sm btn-outline-primary" href="/api/admin/zero-sales/batches/${b.id}/export">匯出</a>
+          ${toggleBtn}
           <button class="btn btn-sm btn-outline-danger" data-zs-del="${b.id}" data-week="${esc(b.week_label)}" data-rows="${b.row_count}">刪除</button>
-        </div></td></tr>`).join('');
+        </div></td></tr>`;
+      }).join('');
       body.querySelectorAll('[data-zs-view]').forEach((btn) => {
         btn.addEventListener('click', () => { currentBatch = btn.dataset.zsView; syncExportBatchSelect(); loadItems(); });
+      });
+      body.querySelectorAll('[data-zs-close]').forEach((btn) => {
+        btn.addEventListener('click', () => closeBatch(btn.dataset.zsClose, btn.dataset.week || ''));
+      });
+      body.querySelectorAll('[data-zs-reopen]').forEach((btn) => {
+        btn.addEventListener('click', () => reopenBatch(btn.dataset.zsReopen, btn.dataset.week || ''));
       });
       body.querySelectorAll('[data-zs-del]').forEach((btn) => {
         btn.addEventListener('click', () => deleteBatch(btn.dataset.zsDel, btn.dataset.week || '', Number(btn.dataset.rows || 0)));
@@ -149,7 +164,7 @@
 
   function batchOptionLabel(b) {
     const total = (b.replied_count ?? 0) + (b.pending_count ?? 0);
-    return `${esc(b.week_label)}（共 ${total}｜未 ${b.pending_count ?? 0}）`;
+    return `${esc(b.week_label)}（共 ${total}｜未 ${b.pending_count ?? 0}）${b.is_open ? '' : '｜已封存'}`;
   }
 
   function fillExportBatchSelect(rows) {
@@ -194,7 +209,8 @@
         body.innerHTML = '<tr><td colspan="9" class="text-center text-secondary">此篩選沒有資料</td></tr>';
         return;
       }
-      if (res) res.innerHTML = `<div class="text-secondary small">批次 ${esc(currentBatch.slice(0, 8))}｜共 ${rows.length} 筆｜已回覆 ${rows.filter((r) => r.status === 'replied').length}｜已鎖定（用完修改） ${rows.filter((r) => (r.reply_count ?? (r.status === 'replied' ? 1 : 0)) >= 2).length} <a href="/api/admin/zero-sales/batches/${currentBatch}/export">匯出 Excel</a></div>`;
+      if (res) res.innerHTML = `<div class="text-secondary small">批次 ${esc(currentBatch.slice(0, 8))}｜共 ${rows.length} 筆｜已回覆 ${rows.filter((r) => r.status === 'replied').length}｜已鎖定（用完修改） ${rows.filter((r) => (r.reply_count ?? (r.status === 'replied' ? 1 : 0)) >= 2).length}${rows[0]?.is_open === false ? '｜<b>此批次已封存，店舖不可再回覆</b>' : ''} <a href="/api/admin/zero-sales/batches/${currentBatch}/export">匯出 Excel</a></div>`;
+      const archived = rows[0]?.is_open === false;
       body.innerHTML = rows.slice(0, 200).map((i) => {
         const n = i.reply_count ?? (i.status === 'replied' ? 1 : 0);
         const upDate = i.batch_date || (i.batch_created_at || '').slice(0, 10);
@@ -202,11 +218,14 @@
         const editBtn = i.status === 'replied'
           ? `<button class="btn btn-sm" data-zs-item-edit="${i.id}">編輯回覆</button>`
           : '';
+        const statusBadge = i.status === 'replied'
+          ? `<span class="badge bg-success">已回覆${archived ? '（已封存）' : ''}</span>`
+          : `<span class="badge ${archived ? 'bg-secondary' : 'bg-warning'}">未回覆${archived ? '（已截止）' : ''}</span>`;
         return `<tr>
         <td>${esc(i.site_code)}</td><td>${esc(i.sku)}</td>
         <td>${esc(i.payload?.['Brand'] || '')}</td><td>${esc(i.payload?.['SKU Desc'] || '')}</td>
         <td>${esc(upDate)}</td>
-        <td>${i.status === 'replied' ? '<span class="badge bg-success">已回覆</span>' : '<span class="badge bg-warning">未回覆</span>'}</td>
+        <td>${statusBadge}</td>
         <td style="white-space:nowrap">${n}次${lockTag}</td>
         <td>${esc(i.reason_label || '')}${i.reason_note ? `（${esc(i.reason_note)}）` : ''}</td>
         <td><div class="d-flex gap-1 flex-wrap">${editBtn}<button class="btn btn-sm btn-outline-danger" data-zs-item-del="${i.id}" data-site="${esc(i.site_code)}" data-sku="${esc(i.sku)}">刪除</button></div></td></tr>`;
@@ -245,7 +264,11 @@
     res.innerHTML = '<div class="alert alert-info">上載中…</div>';
     try {
       const data = await aFetch('/api/admin/zero-sales/batches', { method: 'POST', body: fd });
-      res.innerHTML = `<div class="alert alert-success">已建立批次（${data.totalRows} 行）</div>`;
+      const closed = (data.closedBatches || []);
+      const closedText = closed.length
+        ? `；已自動封存 ${closed.map((b) => `「${esc(b.week_label)}」（${b.pending} 個未回覆 SKU）`).join('、')}`
+        : '';
+      res.innerHTML = `<div class="alert alert-success">已建立批次（${data.totalRows} 行）${closedText}。舊週次已轉為唯讀，店舖不能再回覆。</div>`;
       $('zs_file').value = '';
       await loadBatches();
       await loadSummary();
@@ -282,7 +305,7 @@
       setText('s_zs_latest', lbOverall ? `${lbOverall.week_label} ${lbOverall.replied}/${lbOverall.total}` : '—');
       if (note) {
         note.textContent = o.total
-          ? `共 ${o.batches} 個批次｜${o.total} 行｜回覆率 ${o.reply_rate}%｜已鎖定 ${o.locked} 行`
+          ? `共 ${o.batches} 個批次｜${o.total} 行｜回覆率 ${o.reply_rate}%｜已鎖定 ${o.locked} 行${o.overdue ? `｜逾期未回覆 ${o.overdue} 行（已封存）` : ''}`
           : '暫無零銷售資料';
       }
       // 區內統計（跟隨下拉範圍）
@@ -291,7 +314,7 @@
         const head = scopeBatch
           ? `批次 <b>${esc(scopeLabel || scopeBatch.slice(0, 8))}</b>｜`
           : `共 <b>${s.batches}</b> 個批次｜`;
-        statBox.innerHTML = `${head}總 <b>${s.total}</b> 行｜已回覆 <b class="text-success">${s.replied}</b>｜未回覆 <b class="text-danger">${s.pending}</b>｜回覆率 <b>${s.reply_rate}%</b>｜涉及 <b>${s.stores_total}</b> 間店（<b>${s.stores_pending}</b> 間仍有待回覆，<b>${s.stores_done}</b> 間已完成）｜已鎖定（用完修改） <b>${s.locked}</b> 行`
+        statBox.innerHTML = `${head}總 <b>${s.total}</b> 行｜已回覆 <b class="text-success">${s.replied}</b>｜未回覆 <b class="text-danger">${s.pending}</b>${s.overdue ? `｜逾期未回覆 <b class="text-secondary">${s.overdue}</b>（已封存）` : ''}｜回覆率 <b>${s.reply_rate}%</b>｜涉及 <b>${s.stores_total}</b> 間店（<b>${s.stores_pending}</b> 間仍有待回覆${s.stores_overdue ? `，<b>${s.stores_overdue}</b> 間有逾期未回覆` : ''}，<b>${s.stores_done}</b> 間已完成）｜已鎖定（用完修改） <b>${s.locked}</b> 行`
           + (scopeBatch ? '' : (s.repeat_groups ? `｜重複上榜 <b class="text-danger">${s.repeat_groups}</b> 組（${s.repeat_rows} 行）` : '｜重複上榜 0 組'))
           + (!scopeBatch && lb ? `<br>最新批次：<b>${esc(lb.week_label)}</b> ${lb.replied}/${lb.total}（未 ${lb.pending}）｜${esc(lb.created_at)}` : '');
       }
@@ -312,7 +335,7 @@
       if (omBody) {
         const rows = (s.pending_by_om || []).filter((r) => (r.stores_pending ?? 0) > 0 || (r.pending ?? 0) > 0);
         if (!rows.length) {
-          omBody.innerHTML = '<tr><td colspan="4" class="text-center text-secondary">全部店舖已回覆完成</td></tr>';
+          omBody.innerHTML = '<tr><td colspan="4" class="text-center text-secondary">目前沒有待回覆店舖（已封存的逾期紀錄不計）</td></tr>';
           hideOmStores();
         } else {
           omBody.innerHTML = rows.map((r) => {
@@ -435,15 +458,15 @@
 
   /* 刪除：批次 / 批次某店 / 批次某店某SKU（二次確認，不可還原） ---- */
 
-  function confirmZsDelete(title, lines) {
+  function confirmZsDelete(title, lines, okLabel = '確認刪除', danger = true) {
     return new Promise((resolve) => {
       const overlay = document.createElement('div');
       overlay.id = 'zs_delete_overlay';
       overlay.innerHTML = `<div class="modal-box" role="alertdialog" aria-modal="true" aria-label="${esc(title)}">
-        <h3 class="text-danger">${esc(title)}</h3>
+        <h3 class="${danger ? 'text-danger' : ''}">${esc(title)}</h3>
         ${(lines || []).map((l) => `<p class="text-secondary small" style="margin:6px 0">${esc(l)}</p>`).join('')}
         <div class="d-flex gap-2 justify-content-end mt-4">
-          <button class="btn btn-danger" data-ok>確認刪除</button>
+          <button class="btn ${danger ? 'btn-danger' : 'btn-primary'}" data-ok>${esc(okLabel)}</button>
           <button class="btn" data-cancel>取消</button>
         </div></div>`;
       document.body.appendChild(overlay);
@@ -512,6 +535,41 @@
     await loadSummary();
     refreshRepeatsIfOpen();
     if (currentBatch) await loadItems();
+  }
+
+  async function closeBatch(batchId, weekLabel) {
+    if (!batchId) return;
+    const ok = await confirmZsDelete('確認封存此週次？', [
+      `週次：${weekLabel || batchId.slice(0, 8)}`,
+      '封存後店舖即時不可再回覆或修改，該週次會轉為灰色唯讀紀錄。',
+      '已提交的回覆與統計會保留；可隨時按「重開」讓店舖補答。',
+    ], '確認封存', false);
+    if (!ok) return;
+    try {
+      const data = await aFetch(`/api/admin/zero-sales/batches/${batchId}/close`, { method: 'PUT' });
+      const note = data.pending
+        ? `（${data.pending} 個 SKU 未回覆，已轉為逾期紀錄）`
+        : '（所有 SKU 已回覆）';
+      $('zs_batch_result').innerHTML = `<div class="alert alert-success">已封存「${esc(data.week_label)}」${note}。</div>`;
+      await loadBatches();
+      await loadSummary();
+      refreshRepeatsIfOpen();
+    } catch (err) {
+      $('zs_batch_result').innerHTML = `<div class="alert alert-danger">${esc(err.message)}</div>`;
+    }
+  }
+
+  async function reopenBatch(batchId, weekLabel) {
+    if (!batchId) return;
+    try {
+      const data = await aFetch(`/api/admin/zero-sales/batches/${batchId}/reopen`, { method: 'PUT' });
+      $('zs_batch_result').innerHTML = `<div class="alert alert-success">已重開「${esc(data.week_label || weekLabel)}」，店舖現可補答；下次上載新批次時會再次自動封存。</div>`;
+      await loadBatches();
+      await loadSummary();
+      refreshRepeatsIfOpen();
+    } catch (err) {
+      $('zs_batch_result').innerHTML = `<div class="alert alert-danger">${esc(err.message)}</div>`;
+    }
   }
 
   async function deleteBatch(batchId, weekLabel, rowCount) {

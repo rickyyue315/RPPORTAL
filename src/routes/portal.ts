@@ -68,6 +68,7 @@ import {
   listMyItems as listMyZeroSalesItems,
   listReasons as listZeroSalesReasons,
   replyItem as replyZeroSalesItem,
+  ZeroSalesBatchClosedError,
   ZeroSalesReplyError,
 } from '../services/zeroSales.js';
 import { buildZeroSalesStoreExportBuffer } from '../lib/zeroSales.js';
@@ -959,6 +960,7 @@ portalRouter.get(
       reason_label: it.reason_label,
       reason_note: it.reason_note,
       batch_date: it.batch_date ?? (it.batch_created_at ?? '').slice(0, 10),
+      is_open: it.is_open !== false,
       occurrence_count: it.occurrence_count ?? 1,
       prev_week_label: it.prev_week_label ?? null,
       prev_status: it.prev_status ?? null,
@@ -1022,6 +1024,11 @@ portalRouter.put(
       });
       res.json({ ok: true, item });
     } catch (err) {
+      if (err instanceof ZeroSalesBatchClosedError) {
+        // 409 = 週次已封存，前端據 code 自動跳去最新一週
+        res.status(409).json({ error: err.message, code: 'BATCH_CLOSED' });
+        return;
+      }
       if (err instanceof ZeroSalesReplyError) {
         res.status(400).json({ error: err.message });
         return;

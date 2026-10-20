@@ -189,6 +189,8 @@ export interface ZeroSalesExportItem {
   replied_by: string | null;
   batch_label: string;
   reply_count: number;
+  /** 所屬週次是否仍可回覆；false = 已封存（未回覆即逾期，不列入待回覆店舖） */
+  is_open?: boolean;
 }
 
 const UNCLASSIFIED_REASON = '（未分類）';
@@ -209,7 +211,7 @@ function parseQty(text: string | undefined): number | null {
 export async function buildZeroSalesExportBuffer(items: ZeroSalesExportItem[], reasonLabels: string[] = []): Promise<Buffer> {
   const workbook = new ExcelJS.Workbook();
   const sheet = workbook.addWorksheet('Zero Sales 回覆');
-  const headers = [...ZERO_SALES_COLUMNS.slice(0, 22), '店舖回覆 (原因)', '補充說明', '回覆狀態', '修改次數', '回覆時間', '回覆人'];
+  const headers = [...ZERO_SALES_COLUMNS.slice(0, 22), '店舖回覆 (原因)', '補充說明', '回覆狀態', '修改次數', '回覆時間', '回覆人', '記錄狀態'];
   const headerStyle: Partial<ExcelJS.Style> = {
     font: { bold: true }, fill: { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFDAEEF3' } },
   };
@@ -224,6 +226,7 @@ export async function buildZeroSalesExportBuffer(items: ZeroSalesExportItem[], r
       it.reply_count ?? (it.status === 'replied' ? 1 : 0),
       it.replied_at ?? '',
       it.replied_by ?? '',
+      it.is_open === false ? '已截止（已封存）' : '可回覆',
     ]);
   }
   sheet.columns = headers.map(() => ({ width: 18 }));
@@ -234,6 +237,8 @@ export async function buildZeroSalesExportBuffer(items: ZeroSalesExportItem[], r
   pendingHeaders.forEach((_, i) => { pendingSheet.getCell(1, i + 1).style = headerStyle; });
   const storeMap = new Map<string, { site_code: string; shop: string; om: string; week: string; total: number; replied: number; skus: string[]; reasons: Map<string, number> }>();
   for (const it of items) {
+    // 已封存週次的未回覆行屬「逾期」，不再列入待跟進店舖（仍保留在主表，記錄狀態欄會標示）
+    if (it.status !== 'replied' && it.is_open === false) continue;
     const key = `${it.site_code}|${it.batch_label}`;
     let s = storeMap.get(key);
     if (!s) {
@@ -313,6 +318,8 @@ export interface ZeroSalesStoreExportItem {
   reason_note: string | null;
   /** SKU 上載日期 (YYYY-MM-DD) */
   batch_date: string;
+  /** 所屬週次是否仍可回覆；false = 已封存（匯出時狀態會標示為已截止／已封存） */
+  is_open?: boolean;
   /** 跨批次累計上榜次數（<2 為首次） */
   occurrence_count: number;
   prev_week_label: string | null;
@@ -343,13 +350,18 @@ export async function buildZeroSalesStoreExportBuffer(items: ZeroSalesStoreExpor
   for (const it of items) {
     const p = it.payload ?? {};
     const replied = it.status === 'replied';
+    const archived = it.is_open === false;
+    // 已封存週次：狀態欄同時交代回覆結果與「不可再回覆」，避免匯出表被當成待辦清單
+    const statusText = archived
+      ? (replied ? '已回覆（已封存）' : '未回覆（已截止）')
+      : (replied ? '已回覆' : '未回覆');
     sheet.addRow([
       it.week_label ?? '',
       p['Brand'] ?? '',
       it.sku,
       p['SKU Desc'] ?? '',
       it.batch_date ?? '',
-      replied ? '已回覆' : '未回覆',
+      statusText,
       replied ? [it.reason_label || '', it.reason_note || ''].filter(Boolean).join('\n') : '',
       repeatHint(it),
       parseQty(p['Shop Stock Qty (CM)']) ?? p['Shop Stock Qty (CM)'] ?? '',

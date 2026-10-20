@@ -114,6 +114,8 @@ import {
   deleteZeroSalesBatchSite,
   deleteZeroSalesItem,
   adminReplyItem,
+  closeZeroSalesBatch,
+  reopenZeroSalesBatch,
   ZeroSalesReplyError,
 } from '../services/zeroSales.js';
 
@@ -2522,6 +2524,7 @@ adminRouter.get(
       replied_by: i.replied_by,
       batch_label: i.week_label ?? '',
       reply_count: i.reply_count ?? (i.status === 'replied' ? 1 : 0),
+      is_open: i.is_open !== false,
     })), reasonLabels);
     const stamp = toHKDateString(new Date()).replace(/-/g, '');
     const label = (items[0]?.week_label ?? 'all').replace(/[^\w\-]+/g, '_');
@@ -2575,7 +2578,7 @@ adminRouter.post(
       res.status(400).json({ error: '匯入失敗', totalRows: parsed.totalRows, errors: parsed.errors ?? [] });
       return;
     }
-    const { batchId } = await createZeroSalesBatch({
+    const { batchId, closedBatches } = await createZeroSalesBatch({
       weekLabel: meta.data.week_label,
       note: meta.data.note ?? '',
       rows: parsed.rows.map((r) => ({ siteCode: r.siteCode, sku: r.sku, data: r.data })),
@@ -2587,9 +2590,16 @@ adminRouter.post(
       actorRole: 'admin',
       actor: req.adminUsername,
       ip: getClientIp(req),
-      metadata: { filename: file.originalname, week_label: meta.data.week_label, batchId, totalRows: parsed.totalRows },
+      metadata: {
+        filename: file.originalname,
+        week_label: meta.data.week_label,
+        batchId,
+        totalRows: parsed.totalRows,
+        // 即時封存：記錄被自動封存的舊批次及當時未回覆行數，方便日後追查
+        closed_batches: closedBatches.map((b) => ({ batch_id: b.id, week_label: b.week_label, pending: b.pending })),
+      },
     });
-    res.status(201).json({ ok: true, batchId, totalRows: parsed.totalRows });
+    res.status(201).json({ ok: true, batchId, totalRows: parsed.totalRows, closedBatches });
   }),
 );
 
@@ -2634,6 +2644,7 @@ adminRouter.get(
       replied_by: i.replied_by,
       batch_label: i.week_label ?? '',
       reply_count: i.reply_count ?? (i.status === 'replied' ? 1 : 0),
+      is_open: i.is_open !== false,
     })), reasonLabels);
     const label = (items[0]?.week_label ?? 'batch').replace(/[^\w\-]+/g, '_');
     res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
@@ -2660,9 +2671,72 @@ adminRouter.delete(
       actorRole: 'admin',
       actor: req.adminUsername,
       ip: getClientIp(req),
-      metadata: { scope: 'batch', batch_id: batchId, week_label: result.weekLabel, deleted_items: result.deletedItems },
+      metadata: {
+        scope: 'batch',
+        batch_id: batchId,
+        week_label: result.weekLabel,
+        deleted_items: result.deletedItems,
+        reopened_week_label: result.reopenedWeekLabel,
+      },
     });
-    res.json({ ok: true, deleted_items: result.deletedItems });
+    res.json({ ok: true, deleted_items: result.deletedItems, reopened_week_label: result.reopenedWeekLabel });
+  }),
+);
+
+/** PUT /api/admin/zero-sales/batches/:id/close — 手動封存某週次（店舖即時不可再回覆） */
+adminRouter.put(
+  '/zero-sales/batches/:id/close',
+  requireUuidParam('id'),
+  requireAdmin,
+  adminActionLimiter,
+  asyncHandler(async (req: Request, res: Response) => {
+    const batchId = req.params.id as string;
+    const result = await closeZeroSalesBatch(batchId, req.adminUsername!);
+    if (!result) {
+      res.status(404).json({ error: '找不到此批次' });
+      return;
+    }
+    if (!result.alreadyClosed) {
+      await writeAuditEvent({
+        eventType: 'zero_sales_batch_closed',
+        actorRole: 'admin',
+        actor: req.adminUsername,
+        ip: getClientIp(req),
+        metadata: { batch_id: batchId, week_label: result.weekLabel, pending: result.pending, reason: 'manual' },
+      });
+    }
+    res.json({
+      ok: true,
+      week_label: result.weekLabel,
+      pending: result.pending,
+      already_closed: result.alreadyClosed,
+    });
+  }),
+);
+
+/** PUT /api/admin/zero-sales/batches/:id/reopen — 例外重開舊週次讓店舖補答（新批次上載時會再自動封存） */
+adminRouter.put(
+  '/zero-sales/batches/:id/reopen',
+  requireUuidParam('id'),
+  requireAdmin,
+  adminActionLimiter,
+  asyncHandler(async (req: Request, res: Response) => {
+    const batchId = req.params.id as string;
+    const result = await reopenZeroSalesBatch(batchId);
+    if (!result) {
+      res.status(404).json({ error: '找不到此批次' });
+      return;
+    }
+    if (!result.wasOpen) {
+      await writeAuditEvent({
+        eventType: 'zero_sales_batch_reopened',
+        actorRole: 'admin',
+        actor: req.adminUsername,
+        ip: getClientIp(req),
+        metadata: { batch_id: batchId, week_label: result.weekLabel },
+      });
+    }
+    res.json({ ok: true, week_label: result.weekLabel, already_open: result.wasOpen });
   }),
 );
 

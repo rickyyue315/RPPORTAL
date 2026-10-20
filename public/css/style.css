@@ -1120,15 +1120,18 @@ table.zs-table thead th {
 }
 table.zs-table tbody tr:hover td { background: #f2f8fe; }
 table.zs-table td:nth-child(3) { font-family: Consolas, 'Courier New', monospace; font-weight: 700; color: var(--brand-dark); }
-.badge-pending, .badge-replied {
+.badge-pending, .badge-replied, .badge-archived {
   display: inline-flex; align-items: center; gap: 5px;
   padding: 3px 11px; border-radius: 999px; font-size: 12px; font-weight: 700; white-space: nowrap;
 }
-.badge-pending::before, .badge-replied::before { content: ''; width: 7px; height: 7px; border-radius: 50%; }
+.badge-pending::before, .badge-replied::before, .badge-archived::before { content: ''; width: 7px; height: 7px; border-radius: 50%; }
 .badge-pending { background: var(--warning-bg); color: #6b4a06; border: 1px solid #ecd88a; }
 .badge-pending::before { background: #d99a06; }
 .badge-replied { background: var(--success-bg); color: #0a5c36; border: 1px solid #a9dfbf; }
 .badge-replied::before { background: var(--success); }
+/* 已封存週次：中性灰，不再用「待辦」的黃色，避免店舖以為仍要處理 */
+.badge-archived { background: #eef2f6; color: #64748b; border: 1px solid #d7dee7; }
+.badge-archived::before { background: #94a3b8; }
 .badge-repeat {
   display: inline-flex; align-items: center; gap: 5px;
   padding: 3px 11px; border-radius: 999px; font-size: 12px; font-weight: 700; white-space: nowrap;
@@ -1136,6 +1139,23 @@ table.zs-table td:nth-child(3) { font-family: Consolas, 'Courier New', monospace
 }
 table.zs-table tbody tr.zs-repeat td { background: #fff7f7; }
 table.zs-table tbody tr.zs-repeat:hover td { background: #feecec; }
+/* 舊週次整行灰階：視覺上明確是「紀錄」而非「工作」 */
+table.zs-table tbody tr.zs-archived td,
+table.zs-table tbody tr.zs-archived:hover td { background: #f8fafc; color: #8a97a6; }
+table.zs-table tbody tr.zs-archived td:nth-child(3) { color: #8a97a6; }
+table.zs-table tbody tr.zs-archived .badge-repeat { opacity: .75; }
+.zs-week-tag {
+  display: inline-block; margin-left: 6px; padding: 1px 7px; border-radius: 999px;
+  background: #e2e8f0; color: #475569; font-size: 11px; font-weight: 700; vertical-align: middle;
+}
+.zs-closed { color: #94a3b8; font-size: 12.5px; font-weight: 700; white-space: nowrap; }
+.zs-archived-banner {
+  margin: 8px 0 10px; padding: 10px 14px; border-radius: 8px;
+  background: #f1f5f9; border: 1px solid #dbe3ec; border-left: 4px solid #94a3b8;
+  color: #475569; font-size: 13px;
+}
+.zs-archived-banner .btn { margin-left: 8px; }
+.zs-progress > i.is-archived { background: #cbd5e1; }
 .zs-table .btn.ghost { min-height: 32px; padding: 5px 16px; font-size: 13px; border-radius: 8px; }
 .zs-table .btn.ghost:disabled { background: #eef1f4; border-color: var(--border); color: var(--muted); cursor: not-allowed; }
 dialog#reply_dialog { border: none; border-radius: var(--radius-lg); padding: 0; max-width: 560px; width: 92vw; box-shadow: var(--shadow-lg); }

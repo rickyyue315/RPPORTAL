@@ -11,8 +11,22 @@ export interface ZeroSalesBatchRow {
   content_hash: string;
   created_by: string;
   created_at: string;
+  /** 封存時間 (null = 派發中，店舖仍可回覆) */
+  closed_at: string | null;
+  closed_by: string;
+  close_reason: string;
+  /** 是否仍開放回覆；與 closed_at 同步，方便前端直接用 */
+  is_open: boolean;
   replied_count?: number;
   pending_count?: number;
+}
+
+/** 被新批次自動封存的舊批次（上載回應 / 審計用） */
+export interface ZeroSalesClosedBatch {
+  id: string;
+  week_label: string;
+  /** 封存時仍未回覆的行數（此後不可再回覆） */
+  pending: number;
 }
 
 export interface ZeroSalesItemRow {
@@ -29,6 +43,10 @@ export interface ZeroSalesItemRow {
   replied_by: string | null;
   week_label?: string;
   batch_created_at?: string;
+  /** 批次封存時間 (null = 仍可回覆) */
+  batch_closed_at?: string | null;
+  /** 此行所屬週次是否仍可回覆 */
+  is_open?: boolean;
   /** SKU 上載日期 (日 only，YYYY-MM-DD) */
   batch_date?: string;
   /** 已回覆次數：0=未回覆，1=已回覆未改過，2=已用完修改機會 */
@@ -68,18 +86,27 @@ export async function listBatches(): Promise<ZeroSalesBatchRow[]> {
       (SELECT count(*)::int FROM zero_sales_items i WHERE i.batch_id = b.id AND i.status = 'pending') AS pending_count
      FROM zero_sales_batches b ORDER BY b.created_at DESC LIMIT 100`,
   );
-  return r.rows.map((b) => ({ ...b, created_at: toHKString(b.created_at) }));
+  return r.rows.map((b) => ({
+    ...b,
+    created_at: toHKString(b.created_at),
+    closed_at: b.closed_at ? toHKString(b.closed_at) : null,
+    is_open: !b.closed_at,
+  }));
 }
 
 export interface ZeroSalesSummary {
   batches: number;
   total: number;
   replied: number;
+  /** 仍可回覆的未回覆行數（只在開放的週次） */
   pending: number;
+  /** 已封存週次中當時未回覆的行數（只供歷史統計，店舖不可再回覆） */
+  overdue: number;
   locked: number;
   reply_rate: number;
   stores_total: number;
   stores_pending: number;
+  stores_overdue: number;
   stores_done: number;
   /** 同店同 SKU 出現 ≥2 次的組數（仍未改善的高危組） */
   repeat_groups: number;
@@ -92,9 +119,11 @@ export interface ZeroSalesSummary {
     replied: number;
     pending: number;
     created_at: string;
+    closed_at: string | null;
+    is_open: boolean;
   } | null;
   by_reason: Array<{ reason_code: string; reason_label: string; count: number }>;
-  /** 待回覆店舖（按 OM 匯總）：每列為一個 OM 的待回覆店數 / 行數 */
+  /** 待回覆店舖（按 OM 匯總）：只計仍開放的週次；每列為一個 OM 的待回覆店數 / 行數 */
   pending_by_om: Array<{
     om: string;
     stores_total: number;
@@ -113,27 +142,44 @@ export interface ZeroSalesSummary {
   }>;
 }
 
-/** 跨批次總覽：總數 / 回覆率 / 原因分佈 / 待回覆店舖排行（供後台統計面板） */
+/**
+ * 跨批次總覽：總數 / 回覆率 / 原因分佈 / 待回覆店舖排行（供後台統計面板）。
+ * 跨批次模式下 pending 只計仍開放的週次，已封存而未回覆的行另計 overdue；
+ * 指定 batch_id 時則如實顯示該批次的 pending（供後台查歷史），overdue 固定為 0。
+ */
 export async function getZeroSalesSummary(batchId?: string): Promise<ZeroSalesSummary> {
   const batchFilter = batchId ? 'AND i.batch_id = $1' : '';
+  // 跨批次：「可回覆」= 批次 closed_at IS NULL；指定批次：不設限（照示該批歷史狀態）
+  const openFilter = batchId
+    ? 'TRUE'
+    : 'EXISTS (SELECT 1 FROM zero_sales_batches ob WHERE ob.id = i.batch_id AND ob.closed_at IS NULL)';
+  const closedFilter = batchId
+    ? 'FALSE'
+    : 'EXISTS (SELECT 1 FROM zero_sales_batches cb WHERE cb.id = i.batch_id AND cb.closed_at IS NOT NULL)';
   const params: unknown[] = batchId ? [batchId] : [];
   const overall = await query<{
     batches: string;
     total: string;
     replied: string;
     pending: string;
+    overdue: string;
     locked: string;
     stores_total: string;
     stores_pending: string;
+    stores_overdue: string;
+    stores_unresolved: string;
   }>(
     `SELECT
       (SELECT count(*)::text FROM zero_sales_batches) AS batches,
       (SELECT count(*)::text FROM zero_sales_items i WHERE TRUE ${batchFilter}) AS total,
       (SELECT count(*)::text FROM zero_sales_items i WHERE i.status = 'replied' ${batchFilter}) AS replied,
-      (SELECT count(*)::text FROM zero_sales_items i WHERE i.status = 'pending' ${batchFilter}) AS pending,
+      (SELECT count(*)::text FROM zero_sales_items i WHERE i.status = 'pending' AND (${openFilter}) ${batchFilter}) AS pending,
+      (SELECT count(*)::text FROM zero_sales_items i WHERE i.status = 'pending' AND (${closedFilter}) ${batchFilter}) AS overdue,
       (SELECT count(*)::text FROM zero_sales_items i WHERE i.reply_count >= 2 ${batchFilter}) AS locked,
       (SELECT count(DISTINCT i.site_code)::text FROM zero_sales_items i WHERE TRUE ${batchFilter}) AS stores_total,
-      (SELECT count(DISTINCT i.site_code)::text FROM zero_sales_items i WHERE i.status = 'pending' ${batchFilter}) AS stores_pending`,
+      (SELECT count(DISTINCT i.site_code)::text FROM zero_sales_items i WHERE i.status = 'pending' AND (${openFilter}) ${batchFilter}) AS stores_pending,
+      (SELECT count(DISTINCT i.site_code)::text FROM zero_sales_items i WHERE i.status = 'pending' AND (${closedFilter}) ${batchFilter}) AS stores_overdue,
+      (SELECT count(DISTINCT i.site_code)::text FROM zero_sales_items i WHERE i.status = 'pending' AND ((${openFilter}) OR (${closedFilter})) ${batchFilter}) AS stores_unresolved`,
     params,
   );
   const o = overall.rows[0]!;
@@ -142,6 +188,8 @@ export async function getZeroSalesSummary(batchId?: string): Promise<ZeroSalesSu
   const pending = Number(o.pending ?? 0);
   const storesTotal = Number(o.stores_total ?? 0);
   const storesPending = Number(o.stores_pending ?? 0);
+  const storesOverdue = Number(o.stores_overdue ?? 0);
+  const storesUnresolved = Number(o.stores_unresolved ?? 0);
 
   const reasonRows = await query<{ reason_code: string; reason_label: string; count: string }>(
     `SELECT COALESCE(i.reason_code, '') AS reason_code,
@@ -154,6 +202,7 @@ export async function getZeroSalesSummary(batchId?: string): Promise<ZeroSalesSu
     params,
   );
 
+  // 待跟進店舖：只計仍開放的週次（已封存而未回覆不可能再補，不應留在待辦）
   const storeRows = await query<{ site_code: string; shop: string; om: string; total: string; replied: string; pending: string }>(
     `SELECT i.site_code,
             COALESCE(s.shop, '') AS shop,
@@ -163,8 +212,9 @@ export async function getZeroSalesSummary(batchId?: string): Promise<ZeroSalesSu
             count(*) FILTER (WHERE i.status = 'pending')::text AS pending
        FROM zero_sales_items i
        LEFT JOIN stores s ON s.site_code = i.site_code
-      WHERE TRUE ${batchFilter}
+      WHERE TRUE ${batchFilter} AND (${openFilter})
       GROUP BY i.site_code, s.shop, s.om
+     HAVING count(*) FILTER (WHERE i.status = 'pending') > 0
       ORDER BY count(*) FILTER (WHERE i.status = 'pending') DESC, i.site_code
       LIMIT 50`,
     params,
@@ -179,14 +229,23 @@ export async function getZeroSalesSummary(batchId?: string): Promise<ZeroSalesSu
             count(*) FILTER (WHERE i.status = 'pending')::text AS pending
        FROM zero_sales_items i
        LEFT JOIN stores s ON s.site_code = i.site_code
-      WHERE TRUE ${batchFilter}
+      WHERE TRUE ${batchFilter} AND (${openFilter})
       GROUP BY COALESCE(NULLIF(BTRIM(COALESCE(s.om, '')), ''), '（未設定）')
+     HAVING count(*) FILTER (WHERE i.status = 'pending') > 0
       ORDER BY count(*) FILTER (WHERE i.status = 'pending') DESC, om`,
     params,
   );
 
-  const latest = await query<{ id: string; week_label: string; total: string; replied: string; pending: string; created_at: string }>(
-    `SELECT b.id, b.week_label, b.created_at,
+  const latest = await query<{
+    id: string;
+    week_label: string;
+    total: string;
+    replied: string;
+    pending: string;
+    created_at: string;
+    closed_at: string | null;
+  }>(
+    `SELECT b.id, b.week_label, b.created_at, b.closed_at,
             (SELECT count(*)::text FROM zero_sales_items i WHERE i.batch_id = b.id) AS total,
             (SELECT count(*)::text FROM zero_sales_items i WHERE i.batch_id = b.id AND i.status = 'replied') AS replied,
             (SELECT count(*)::text FROM zero_sales_items i WHERE i.batch_id = b.id AND i.status = 'pending') AS pending
@@ -211,11 +270,13 @@ export async function getZeroSalesSummary(batchId?: string): Promise<ZeroSalesSu
     total,
     replied,
     pending,
+    overdue: Number(o.overdue ?? 0),
     locked: Number(o.locked ?? 0),
     reply_rate: total ? Math.round((replied / total) * 1000) / 10 : 0,
     stores_total: storesTotal,
     stores_pending: storesPending,
-    stores_done: Math.max(0, storesTotal - storesPending),
+    stores_overdue: storesOverdue,
+    stores_done: Math.max(0, storesTotal - storesUnresolved),
     repeat_groups: repeatGroups,
     repeat_rows: repeatRows,
     latest_batch: lb
@@ -226,6 +287,8 @@ export async function getZeroSalesSummary(batchId?: string): Promise<ZeroSalesSu
           replied: Number(lb.replied ?? 0),
           pending: Number(lb.pending ?? 0),
           created_at: toHKString(lb.created_at),
+          closed_at: lb.closed_at ? toHKString(lb.closed_at) : null,
+          is_open: !lb.closed_at,
         }
       : null,
     by_reason: reasonRows.rows.map((r) => ({
@@ -261,13 +324,16 @@ export interface ZeroSalesPendingStoreRow {
   pending: number;
 }
 
-/** 後台 OM 下鑽：取某 OM（或全部 OM）仍有待回覆的店舖名單；與 summary 同樣支援 batch 範圍 */
+/** 後台 OM 下鑽：取某 OM（或全部 OM）仍有待回覆的店舖名單；與 summary 同樣支援 batch 範圍。
+ *  不指定批次時只計仍開放的週次（已封存的未回覆不會再變成回覆，不應留在待辦名單）。 */
 export async function listZeroSalesPendingStores(filter: { batchId?: string; om?: string } = {}): Promise<ZeroSalesPendingStoreRow[]> {
   const where: string[] = [];
   const params: unknown[] = [];
   if (filter.batchId) {
     params.push(filter.batchId);
     where.push(`i.batch_id = $${params.length}`);
+  } else {
+    where.push(`EXISTS (SELECT 1 FROM zero_sales_batches b WHERE b.id = i.batch_id AND b.closed_at IS NULL)`);
   }
   const om = (filter.om ?? '').trim();
   if (om) {
@@ -334,7 +400,8 @@ export async function listItemsForExport(filter: ZeroSalesExportFilter): Promise
   }
   const whereSql = where.length ? `WHERE ${where.join(' AND ')}` : '';
   const r = await query<ZeroSalesItemRow>(
-    `SELECT i.*, b.week_label, b.created_at AS batch_created_at FROM zero_sales_items i
+    `SELECT i.*, b.week_label, b.created_at AS batch_created_at, b.closed_at AS batch_closed_at
+     FROM zero_sales_items i
      JOIN zero_sales_batches b ON b.id = i.batch_id
      ${whereSql} ORDER BY b.created_at DESC, i.site_code, i.sku LIMIT 10000`,
     params,
@@ -344,6 +411,8 @@ export async function listItemsForExport(filter: ZeroSalesExportFilter): Promise
     payload: typeof row.payload === 'string' ? JSON.parse(row.payload as unknown as string) : (row.payload ?? {}),
     replied_at: row.replied_at ? toHKString(row.replied_at) : null,
     batch_created_at: row.batch_created_at ? toHKString(row.batch_created_at as unknown as string) : undefined,
+    batch_closed_at: row.batch_closed_at ? toHKString(row.batch_closed_at as unknown as string) : null,
+    is_open: !row.batch_closed_at,
     batch_date: row.batch_created_at ? toHKDateString(row.batch_created_at as unknown as string) : undefined,
   }));
 }
@@ -354,7 +423,7 @@ export async function createBatch(input: {
   rows: Array<{ siteCode: string; sku: string; data: Record<string, string> }>;
   contentHash: string;
   createdBy: string;
-}): Promise<{ batchId: string }> {
+}): Promise<{ batchId: string; closedBatches: ZeroSalesClosedBatch[] }> {
   return withTransaction(async (client) => {
     const ins = await client.query<{ id: string }>(
       `INSERT INTO zero_sales_batches (week_label, note, row_count, store_count, content_hash, created_by)
@@ -377,7 +446,25 @@ export async function createBatch(input: {
         [batchId, r.siteCode, r.sku, JSON.stringify(r.data)],
       );
     }
-    return { batchId };
+    // 即時封存：新批次上載後，之前所有仍開放的批次立刻轉為唯讀。
+    // 先插入新批次再封存其他批次，可避免兩個並行上載同時保持開放。
+    const closed = await client.query<{ id: string; week_label: string; pending: string }>(
+      `UPDATE zero_sales_batches b
+          SET closed_at = now(), closed_by = $1, close_reason = 'auto'
+        WHERE b.closed_at IS NULL AND b.id <> $2
+    RETURNING b.id, b.week_label,
+              (SELECT count(*)::text FROM zero_sales_items i
+                WHERE i.batch_id = b.id AND i.status = 'pending') AS pending`,
+      [input.createdBy, batchId],
+    );
+    return {
+      batchId,
+      closedBatches: closed.rows.map((r) => ({
+        id: r.id,
+        week_label: r.week_label,
+        pending: Number(r.pending ?? 0),
+      })),
+    };
   });
 }
 
@@ -387,7 +474,8 @@ export async function listBatchItems(batchId: string, opts: { siteCode?: string;
   if (opts.siteCode) { params.push(opts.siteCode); where.push(`i.site_code = $${params.length}`); }
   if (opts.status === 'pending' || opts.status === 'replied') { params.push(opts.status); where.push(`i.status = $${params.length}`); }
   const r = await query<ZeroSalesItemRow>(
-    `SELECT i.*, b.week_label, b.created_at AS batch_created_at FROM zero_sales_items i
+    `SELECT i.*, b.week_label, b.created_at AS batch_created_at, b.closed_at AS batch_closed_at
+     FROM zero_sales_items i
      JOIN zero_sales_batches b ON b.id = i.batch_id
      WHERE ${where.join(' AND ')} ORDER BY i.site_code, i.sku LIMIT 2000`,
     params,
@@ -397,6 +485,8 @@ export async function listBatchItems(batchId: string, opts: { siteCode?: string;
     payload: typeof row.payload === 'string' ? JSON.parse(row.payload as unknown as string) : (row.payload ?? {}),
     replied_at: row.replied_at ? toHKString(row.replied_at) : null,
     batch_created_at: row.batch_created_at ? toHKString(row.batch_created_at as unknown as string) : undefined,
+    batch_closed_at: row.batch_closed_at ? toHKString(row.batch_closed_at as unknown as string) : null,
+    is_open: !row.batch_closed_at,
     batch_date: row.batch_created_at ? toHKDateString(row.batch_created_at as unknown as string) : undefined,
   }));
   return attachZeroSalesHistory(mapped);
@@ -584,7 +674,8 @@ export async function listMyItems(siteCode: string, opts: { status?: string; bat
   if (opts.status === 'pending' || opts.status === 'replied') { params.push(opts.status); where.push(`i.status = $${params.length}`); }
   if (opts.batchId) { params.push(opts.batchId); where.push(`i.batch_id = $${params.length}`); }
   const r = await query<ZeroSalesItemRow>(
-    `SELECT i.*, b.week_label, b.created_at AS batch_created_at FROM zero_sales_items i
+    `SELECT i.*, b.week_label, b.created_at AS batch_created_at, b.closed_at AS batch_closed_at
+     FROM zero_sales_items i
      JOIN zero_sales_batches b ON b.id = i.batch_id
      WHERE ${where.join(' AND ')} ORDER BY b.created_at DESC, i.sku LIMIT 1000`,
     params,
@@ -594,6 +685,8 @@ export async function listMyItems(siteCode: string, opts: { status?: string; bat
     payload: typeof row.payload === 'string' ? JSON.parse(row.payload as unknown as string) : (row.payload ?? {}),
     replied_at: row.replied_at ? toHKString(row.replied_at) : null,
     batch_created_at: row.batch_created_at ? toHKString(row.batch_created_at as unknown as string) : undefined,
+    batch_closed_at: row.batch_closed_at ? toHKString(row.batch_closed_at as unknown as string) : null,
+    is_open: !row.batch_closed_at,
     batch_date: row.batch_created_at ? toHKDateString(row.batch_created_at as unknown as string) : undefined,
   }));
   return attachZeroSalesHistory(mapped);
@@ -601,11 +694,21 @@ export async function listMyItems(siteCode: string, opts: { status?: string; bat
 
 export class ZeroSalesReplyError extends Error {}
 
-/** 店舖可見的週次清單：只包含曾派發給該店的行，按新到舊排（預設選第一個 = 最新一週） */
+/** 店舖嘗試回覆已封存的週次：不可再寫入，前端應引導到最新一週 */
+export class ZeroSalesBatchClosedError extends ZeroSalesReplyError {
+  constructor(message: string) {
+    super(message);
+    this.name = 'ZeroSalesBatchClosedError';
+  }
+}
+
+/** 店舖可見的週次清單：只包含曾派發給該店的行，按新到舊排（預設選最新一個開放的週次） */
 export interface ZeroSalesMyBatchRow {
   id: string;
   week_label: string;
   created_at: string;
+  closed_at: string | null;
+  is_open: boolean;
   total: number;
   replied: number;
   pending: number;
@@ -613,24 +716,32 @@ export interface ZeroSalesMyBatchRow {
 
 export async function listMyBatches(siteCode: string): Promise<ZeroSalesMyBatchRow[]> {
   const r = await query<ZeroSalesMyBatchRow>(
-    `SELECT b.id, b.week_label, b.created_at,
+    `SELECT b.id, b.week_label, b.created_at, b.closed_at,
             count(*)::int AS total,
             count(*) FILTER (WHERE i.status = 'replied')::int AS replied,
             count(*) FILTER (WHERE i.status = 'pending')::int AS pending
        FROM zero_sales_batches b
        JOIN zero_sales_items i ON i.batch_id = b.id AND i.site_code = $1
-      GROUP BY b.id, b.week_label, b.created_at
+      GROUP BY b.id, b.week_label, b.created_at, b.closed_at
       ORDER BY b.created_at DESC LIMIT 52`,
     [siteCode],
   );
-  return r.rows.map((b) => ({ ...b, created_at: toHKString(b.created_at) }));
+  return r.rows.map((b) => ({
+    ...b,
+    created_at: toHKString(b.created_at),
+    closed_at: b.closed_at ? toHKString(b.closed_at) : null,
+    is_open: !b.closed_at,
+  }));
 }
 
-/** 刪除整個批次（items 經 FK ON DELETE CASCADE 一併清除），回傳週次及清除行數供審計 */
-export async function deleteZeroSalesBatch(batchId: string): Promise<{ weekLabel: string; deletedItems: number } | null> {
+/** 刪除整個批次（items 經 FK ON DELETE CASCADE 一併清除），回傳週次及清除行數供審計。
+ *  若刪除的是當時仍開放的批次，會自動重開剩下最新的批次，避免店舖完全沒有可回覆週次。 */
+export async function deleteZeroSalesBatch(
+  batchId: string,
+): Promise<{ weekLabel: string; deletedItems: number; reopenedWeekLabel: string | null } | null> {
   return withTransaction(async (client) => {
-    const existing = await client.query<{ week_label: string }>(
-      'SELECT week_label FROM zero_sales_batches WHERE id = $1',
+    const existing = await client.query<{ week_label: string; closed_at: string | null }>(
+      'SELECT week_label, closed_at FROM zero_sales_batches WHERE id = $1',
       [batchId],
     );
     const row = existing.rows[0];
@@ -640,7 +751,72 @@ export async function deleteZeroSalesBatch(batchId: string): Promise<{ weekLabel
       [batchId],
     );
     await client.query('DELETE FROM zero_sales_batches WHERE id = $1', [batchId]);
-    return { weekLabel: row.week_label, deletedItems: Number(counted.rows[0]?.count ?? 0) };
+    let reopenedWeekLabel: string | null = null;
+    if (!row.closed_at) {
+      const reopened = await client.query<{ week_label: string }>(
+        `UPDATE zero_sales_batches
+            SET closed_at = NULL, closed_by = '', close_reason = ''
+          WHERE id = (SELECT id FROM zero_sales_batches
+                       WHERE closed_at IS NOT NULL
+                       ORDER BY created_at DESC, id DESC LIMIT 1)
+      RETURNING week_label`,
+      );
+      reopenedWeekLabel = reopened.rows[0]?.week_label ?? null;
+    }
+    return { weekLabel: row.week_label, deletedItems: Number(counted.rows[0]?.count ?? 0), reopenedWeekLabel };
+  });
+}
+
+/** 手動封存某一週次（例：本週提早截止）。已封存則原樣回傳。 */
+export async function closeZeroSalesBatch(
+  batchId: string,
+  actor: string,
+): Promise<{ weekLabel: string; pending: number; alreadyClosed: boolean } | null> {
+  return withTransaction(async (client) => {
+    const cur = await client.query<{ week_label: string; closed_at: string | null }>(
+      'SELECT week_label, closed_at FROM zero_sales_batches WHERE id = $1',
+      [batchId],
+    );
+    const row = cur.rows[0];
+    if (!row) return null;
+    if (row.closed_at) {
+      const counted = await client.query<{ count: string }>(
+        `SELECT count(*)::text AS count FROM zero_sales_items WHERE batch_id = $1 AND status = 'pending'`,
+        [batchId],
+      );
+      return { weekLabel: row.week_label, pending: Number(counted.rows[0]?.count ?? 0), alreadyClosed: true };
+    }
+    const closed = await client.query<{ pending: string }>(
+      `UPDATE zero_sales_batches
+          SET closed_at = now(), closed_by = $2, close_reason = 'manual'
+        WHERE id = $1 AND closed_at IS NULL
+    RETURNING (SELECT count(*)::text FROM zero_sales_items i
+                WHERE i.batch_id = $1 AND i.status = 'pending') AS pending`,
+      [batchId, actor],
+    );
+    return {
+      weekLabel: row.week_label,
+      pending: Number(closed.rows[0]?.pending ?? 0),
+      alreadyClosed: false,
+    };
+  });
+}
+
+/** 例外重開某一舊週次（讓店舖補答）；新批次上載時會再次自動封存。 */
+export async function reopenZeroSalesBatch(batchId: string): Promise<{ weekLabel: string; wasOpen: boolean } | null> {
+  return withTransaction(async (client) => {
+    const cur = await client.query<{ week_label: string; closed_at: string | null }>(
+      'SELECT week_label, closed_at FROM zero_sales_batches WHERE id = $1',
+      [batchId],
+    );
+    const row = cur.rows[0];
+    if (!row) return null;
+    if (!row.closed_at) return { weekLabel: row.week_label, wasOpen: true };
+    await client.query(
+      `UPDATE zero_sales_batches SET closed_at = NULL, closed_by = '', close_reason = '' WHERE id = $1`,
+      [batchId],
+    );
+    return { weekLabel: row.week_label, wasOpen: false };
   });
 }
 
@@ -698,29 +874,44 @@ export async function replyItem(input: {
   const note = (input.reasonNote ?? '').trim();
   if (found.require_note && !note) throw new ZeroSalesReplyError(`選擇「${found.label}」必須填寫補充說明`);
   if (note.length > 2000) throw new ZeroSalesReplyError('補充說明最多 2000 字');
-  const current = await query<{ id: string; status: string; reply_count: number }>(
-    'SELECT id, status, reply_count FROM zero_sales_items WHERE id = $1 AND site_code = $2',
+  const current = await query<{ id: string; status: string; reply_count: number; closed_at: string | null; week_label: string }>(
+    `SELECT i.id, i.status, i.reply_count, b.closed_at, b.week_label
+       FROM zero_sales_items i
+       JOIN zero_sales_batches b ON b.id = i.batch_id
+      WHERE i.id = $1 AND i.site_code = $2`,
     [input.itemId, input.siteCode],
   );
   const cur = current.rows[0];
   if (!cur) throw new ZeroSalesReplyError('找不到此 SKU 指派');
+  if (cur.closed_at) {
+    throw new ZeroSalesBatchClosedError(
+      `「${cur.week_label}」已截止回覆（新一週已派發），此週次只供查閱。請到最新一週回覆。`,
+    );
+  }
   if ((cur.reply_count ?? 0) >= 2) {
     throw new ZeroSalesReplyError('此 SKU 已用完修改機會（只可修改一次），如需再更改請聯絡 RP Team');
   }
+  // UPDATE 同時檢查批次仍開放，避免「檢查後剛好被新批次封存」的競態
   const r = await query<ZeroSalesItemRow>(
-    `UPDATE zero_sales_items SET status = 'replied', reason_code = $1, reason_label = $2, reason_note = $3,
+    `UPDATE zero_sales_items i SET status = 'replied', reason_code = $1, reason_label = $2, reason_note = $3,
       replied_at = now(), replied_by = $4, replied_by_user_id = $5, updated_at = now(),
       reply_count = reply_count + 1
-     WHERE id = $6 AND site_code = $7
-     RETURNING *`,
+     WHERE i.id = $6 AND i.site_code = $7
+       AND EXISTS (SELECT 1 FROM zero_sales_batches b WHERE b.id = i.batch_id AND b.closed_at IS NULL)
+     RETURNING i.*`,
     [found.code, found.label, note, input.repliedBy, input.repliedByUserId, input.itemId, input.siteCode],
   );
   const row = r.rows[0];
-  if (!row) throw new ZeroSalesReplyError('找不到此 SKU 指派');
+  if (!row) {
+    throw new ZeroSalesBatchClosedError(
+      `「${cur.week_label}」已截止回覆（新一週已派發），此週次只供查閱。請到最新一週回覆。`,
+    );
+  }
   return {
     ...row,
     payload: typeof row.payload === 'string' ? JSON.parse(row.payload as unknown as string) : (row.payload ?? {}),
     replied_at: row.replied_at ? toHKString(row.replied_at) : null,
+    is_open: true,
     batch_date: undefined,
   };
 }

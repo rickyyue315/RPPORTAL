@@ -45,7 +45,54 @@
 
     <section class="card help-section" id="zero-sales" aria-labelledby="zero-sales-title">
       <h2 id="zero-sales-title">1. 90日零銷售回覆（店舖）</h2>
-      <p class="help-section-intro">RP Team 每週派發你店舖的指定90日零銷售SKU，每間店舖的SKU不同。店舖進入後只見自己店的清單，請逐條選擇原因；選擇「6.其他」時必須填寫補充說明。每 SKU 可修改一次（初次回覆 + 1次修改），用完後會鎖定，如需再改請聯絡 RP Team。</p>
+      <p class="help-section-intro">RP Team 每週派發你店舖的指定90日零銷售SKU，每間店舖的SKU不同。店舖進入後只見自己店的清單，請逐條選擇原因；選擇「6.其他」時必須填寫補充說明。每 SKU 可修改一次（初次回覆 + 1次修改），用完後會鎖定，如需再改請聯絡 RP Team。<b>只有最新一週可以回覆</b>：新一週派發後，上一週會自動封存成紀錄，只供查閱。</p>
+
+      <figure class="help-figure">
+        <div class="help-figure-scroll">
+          <svg viewBox="0 0 680 300" width="100%" role="img" xmlns="http://www.w3.org/2000/svg">
+            <title>零銷售週次生命週期</title>
+            <desc>W41 與 W42 在新一批上載後封存，只有 W43 仍開放回覆。</desc>
+            <defs>
+              <marker id="zs-arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+                <path d="M2 1L8 5L2 9" fill="none" stroke="context-stroke" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+              </marker>
+            </defs>
+            <text class="ts" x="600" y="38" text-anchor="end" fill="#5F5E5A">時間 →</text>
+            <line x1="70" y1="62" x2="610" y2="62" stroke="#B4B2A9" stroke-width="1"/>
+            <circle cx="130" cy="62" r="6" fill="#B4B2A9"/>
+            <circle cx="340" cy="62" r="6" fill="#B4B2A9"/>
+            <circle cx="550" cy="62" r="6" fill="#378ADD"/>
+            <text class="ts" x="232" y="84" text-anchor="middle" fill="#888780">上載 W42</text>
+            <text class="ts" x="442" y="84" text-anchor="middle" fill="#888780">上載 W43</text>
+            <g>
+              <rect x="50" y="92" width="160" height="112" rx="10" fill="#F1EFE8" stroke="#B4B2A9" stroke-width="0.5"/>
+              <text class="th" x="130" y="118" text-anchor="middle" dominant-baseline="central" fill="#444441">W41 名單</text>
+              <text class="ts" x="130" y="143" text-anchor="middle" dominant-baseline="central" fill="#5F5E5A">已封存</text>
+              <text class="ts" x="130" y="169" text-anchor="middle" dominant-baseline="central" fill="#888780">只供查閱</text>
+              <text class="ts" x="130" y="190" text-anchor="middle" dominant-baseline="central" fill="#888780">狀態停在當時</text>
+            </g>
+            <g>
+              <rect x="260" y="92" width="160" height="112" rx="10" fill="#F1EFE8" stroke="#B4B2A9" stroke-width="0.5"/>
+              <text class="th" x="340" y="118" text-anchor="middle" dominant-baseline="central" fill="#444441">W42 名單</text>
+              <text class="ts" x="340" y="143" text-anchor="middle" dominant-baseline="central" fill="#5F5E5A">已封存</text>
+              <text class="ts" x="340" y="169" text-anchor="middle" dominant-baseline="central" fill="#888780">只供查閱</text>
+              <text class="ts" x="340" y="190" text-anchor="middle" dominant-baseline="central" fill="#888780">狀態停在當時</text>
+            </g>
+            <g>
+              <rect x="470" y="92" width="160" height="112" rx="10" fill="#E6F1FB" stroke="#378ADD" stroke-width="0.5"/>
+              <text class="th" x="550" y="118" text-anchor="middle" dominant-baseline="central" fill="#0C447C">W43 名單</text>
+              <text class="ts" x="550" y="143" text-anchor="middle" dominant-baseline="central" fill="#185FA5">開放中</text>
+              <text class="ts" x="550" y="169" text-anchor="middle" dominant-baseline="central" fill="#185FA5">可回覆、可改一次</text>
+              <text class="ts" x="550" y="190" text-anchor="middle" dominant-baseline="central" fill="#185FA5">新一週上載時封存</text>
+            </g>
+            <path d="M216 148 L248 148" fill="none" stroke="#888780" stroke-width="1.5" marker-end="url(#zs-arrow)"/>
+            <path d="M426 148 L458 148" fill="none" stroke="#888780" stroke-width="1.5" marker-end="url(#zs-arrow)"/>
+            <rect x="50" y="230" width="580" height="44" rx="8" fill="#FAEEDA" stroke="#EF9F27" stroke-width="0.5"/>
+            <text class="ts" x="340" y="252" text-anchor="middle" dominant-baseline="central" fill="#633806">正常情況下同一時間只有最新一週可回覆；舊週次由管理員決定可否例外重開。</text>
+          </svg>
+        </div>
+        <figcaption>圖 1：每個週次都是獨立名單。上載新一週後，之前所有開放的週次會一併封存。</figcaption>
+      </figure>
 
       <div class="help-step">
         <div class="help-placeholder">
@@ -66,8 +113,51 @@
         <div>
           <h3><span class="help-step-number">2</span>查看本店指定SKU</h3>
           <p>清單顯示 <b>Brand、SKU、描述、RP Type、Safety Stock、CM庫存、Buyer、SKU上載日期</b>（只顯示日期）。可用上方「狀態」篩選<b>未回覆／已回覆</b>，或用搜尋框找 <b>SKU／Brand／描述</b>。每週派發的批次以「週次」區分，請優先處理未回覆的SKU。</p>
+          <div class="help-note"><b>舊週次＝歷史紀錄：</b>每個 SKU 的狀態只屬於該週次，不會因為有新一週而自動改變。新一週派發後，舊週次會整行變灰、狀態顯示「未回覆 · 已截止」，按鈕變成「已截止」，不能回覆或修改。要跟進請切換到最新一週；如真的需要補答舊週次，請聯絡 RP Team 重開該週次。</div>
         </div>
       </div>
+
+      <figure class="help-figure">
+        <div class="help-figure-scroll">
+          <svg viewBox="0 0 680 330" width="100%" role="img" xmlns="http://www.w3.org/2000/svg">
+            <title>舊週次與最新週次畫面分別</title>
+            <desc>舊週次整行灰色、狀態顯示已截止、不能回覆；最新週次可回覆。</desc>
+            <text class="th" x="40" y="36" fill="#444441">舊週次（例如 W41）</text>
+            <text class="th" x="360" y="36" fill="#0C447C">最新週次（例如 W43）</text>
+            <rect x="40" y="52" width="280" height="210" rx="10" fill="#F8FAFC" stroke="#D7DEE7" stroke-width="0.5"/>
+            <rect x="360" y="52" width="280" height="210" rx="10" fill="#FFFFFF" stroke="#B5D4F4" stroke-width="0.5"/>
+            <rect x="56" y="68" width="248" height="30" rx="6" fill="#EEF2F6"/>
+            <text class="ts" x="68" y="83" dominant-baseline="central" fill="#64748B">W41 · 已封存</text>
+            <text class="ts" x="292" y="83" text-anchor="end" dominant-baseline="central" fill="#94A3B8">只供查閱</text>
+            <rect x="56" y="108" width="248" height="42" rx="6" fill="#F8FAFC" stroke="#E2E8F0" stroke-width="0.5"/>
+            <text class="ts" x="68" y="122" dominant-baseline="central" fill="#8A97A6">SKU A1001</text>
+            <text class="ts" x="68" y="140" dominant-baseline="central" fill="#8A97A6">狀態：未回覆 · 已截止</text>
+            <text class="ts" x="292" y="129" text-anchor="end" dominant-baseline="central" fill="#94A3B8">已截止</text>
+            <rect x="56" y="158" width="248" height="42" rx="6" fill="#F8FAFC" stroke="#E2E8F0" stroke-width="0.5"/>
+            <text class="ts" x="68" y="172" dominant-baseline="central" fill="#8A97A6">SKU A1002</text>
+            <text class="ts" x="68" y="190" dominant-baseline="central" fill="#8A97A6">狀態：已回覆 · 已封存</text>
+            <text class="ts" x="292" y="179" text-anchor="end" dominant-baseline="central" fill="#94A3B8">已截止</text>
+            <text class="ts" x="56" y="224" fill="#64748B">整行灰色，沒有可按的「回覆／修改」。</text>
+            <text class="ts" x="56" y="244" fill="#94A3B8">狀態不會因 W43 而改變。</text>
+            <rect x="376" y="68" width="248" height="30" rx="6" fill="#E6F1FB"/>
+            <text class="ts" x="388" y="83" dominant-baseline="central" fill="#185FA5">W43 · 開放中</text>
+            <text class="ts" x="612" y="83" text-anchor="end" dominant-baseline="central" fill="#185FA5">可回覆</text>
+            <rect x="376" y="108" width="248" height="42" rx="6" fill="#FFFFFF" stroke="#D7DEE7" stroke-width="0.5"/>
+            <text class="ts" x="388" y="122" dominant-baseline="central" fill="#2C2C2A">SKU A1001</text>
+            <text class="ts" x="388" y="140" dominant-baseline="central" fill="#6B4A06">狀態：未回覆</text>
+            <rect x="560" y="120" width="52" height="22" rx="6" fill="#E6F1FB" stroke="#85B7EB" stroke-width="0.5"/>
+            <text class="ts" x="586" y="131" text-anchor="middle" dominant-baseline="central" fill="#185FA5">回覆</text>
+            <rect x="376" y="158" width="248" height="42" rx="6" fill="#FFFFFF" stroke="#D7DEE7" stroke-width="0.5"/>
+            <text class="ts" x="388" y="172" dominant-baseline="central" fill="#2C2C2A">SKU A1003</text>
+            <text class="ts" x="388" y="190" dominant-baseline="central" fill="#0A5C36">狀態：已回覆</text>
+            <text class="ts" x="586" y="179" text-anchor="middle" dominant-baseline="central" fill="#94A3B8">已鎖定</text>
+            <text class="ts" x="376" y="224" fill="#185FA5">正常白底，可按「回覆」或「修改」。</text>
+            <text class="ts" x="376" y="244" fill="#5F5E5A">W44 上載後，W43 會自動變灰。</text>
+            <text class="ts" x="40" y="294" fill="#5F5E5A">判斷準則：只有「開放中」那一週的狀態，才代表店舖現在要處理的工作。</text>
+          </svg>
+        </div>
+        <figcaption>圖 2：舊週次與最新週次的畫面分別。舊週次只供查閱，狀態不會再更新。</figcaption>
+      </figure>
 
       <div class="help-step">
         <div class="help-placeholder">

@@ -165,6 +165,39 @@
   flex-direction: column;
   align-items: stretch;
 }
+/* 全寬圖解：圖 1／圖 2 為內嵌 SVG，窄螢幕可橫向捲動，避免文字縮得太細 */
+.help-figure {
+  margin: 20px 0 24px;
+}
+.help-figure-scroll {
+  overflow-x: auto;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: #fff;
+  padding: 10px;
+}
+.help-figure svg {
+  display: block;
+  width: 100%;
+  max-width: 820px;
+  min-width: 560px;
+  height: auto;
+  margin: 0 auto;
+}
+.help-figure .th {
+  font-size: 14px;
+  font-weight: 500;
+}
+.help-figure .ts {
+  font-size: 12px;
+  font-weight: 400;
+}
+.help-figure figcaption {
+  margin-top: 8px;
+  color: var(--muted);
+  font-size: 13px;
+  text-align: center;
+}
 .help-footer {
   text-align: center;
   color: var(--muted);

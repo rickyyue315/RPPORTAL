@@ -7,6 +7,8 @@
   let batches = [];
   let currentId = null;
   let onlyRepeat = false;
+  /** 目前檢視的批次（null = 未載入）；is_open=false 代表已封存、只供查閱 */
+  let currentBatch = null;
 
   const COLS = [
     { key: 'Brand', label: 'Brand' },
@@ -69,16 +71,18 @@
       sel.value = 'all';
       return;
     }
-    sel.innerHTML =
-      batches.map((b, i) => `<option value="${p.escapeHtml(b.id)}">${p.escapeHtml(b.week_label)}（${b.pending} 未回覆 / ${b.total}）${i === 0 ? ' — 最新' : ''}</option>`).join('') +
-      '<option value="all">全部週次</option>';
-    // 預設最新一週，避免 W41+W42 累積愈來愈長；refresh 時保留原選擇
-    if (preserveSelection && prev) {
-      const stillThere = [...sel.options].some((o) => o.value === prev);
-      sel.value = stillThere ? prev : batches[0].id;
-    } else {
-      sel.value = batches[0].id;
-    }
+    // 預設落在最新一個「仍可回覆」的週次；若全部已封存（管理員手動封存）才退回最新一週
+    const fallback = (batches.find((b) => b.is_open) || batches[0]).id;
+    sel.innerHTML = batches.map((b) => {
+      // 已封存的週次不再顯示「未回覆」數字，避免變成永遠清不完的 to-do list
+      const label = b.is_open
+        ? `${b.week_label}（${b.pending} 未回覆 / ${b.total}）${b.id === batches[0].id ? ' — 最新' : ''}`
+        : `${b.week_label}（已封存 · ${b.total} 個 SKU）`;
+      return `<option value="${p.escapeHtml(b.id)}">${p.escapeHtml(label)}</option>`;
+    }).join('');
+    // refresh 時保留店舖正在看的週次（即使該週已被封存，仍可查看歷史）
+    if (preserveSelection && prev && batches.some((b) => b.id === prev)) sel.value = prev;
+    else sel.value = fallback;
   }
 
   /** 週次 + 狀態（含重複上榜）篩選；列表與匯出共用，確保匯出 = 畫面所見 */
@@ -104,22 +108,54 @@
     const data = await p.api(`/api/portal/zero-sales/my${qs}`);
     const all = data.items || [];
     items = onlyRepeat ? all.filter(isRepeat) : all;
+    const batchVal = $('f_batch') ? $('f_batch').value : '';
+    currentBatch = batches.find((b) => b.id === batchVal) || null;
+    const archived = !!(currentBatch && currentBatch.is_open === false);
     const replied = items.filter((i) => i.status === 'replied').length;
     const rate = items.length ? Math.round((replied / items.length) * 100) : 0;
     const repeatN = all.filter(isRepeat).length;
     const shop = data.shop ? ` ${p.escapeHtml(data.shop)}` : '';
-    const batchVal = $('f_batch') ? $('f_batch').value : '';
-    const weekLabel = batchVal && batchVal !== 'all' ? (batches.find((b) => b.id === batchVal) || {}).week_label : '全部週次';
+    const weekLabel = currentBatch ? currentBatch.week_label : '全部週次';
+    const latestOpen = batches.find((b) => b.is_open);
     const bar = document.getElementById('zs_progress_bar');
-    if (bar) bar.style.width = `${rate}%`;
-    $('site_info').innerHTML =
-      `<div class="site-banner">${p.escapeHtml(data.site_code)}${shop}</div>` +
-      `<div>${p.escapeHtml(weekLabel || '')}：共 ${items.length} 個指定 SKU（${replied} 已回覆 · ${rate}%）${repeatN ? `｜其中 <b>${repeatN}</b> 個重複上榜（≥2次）` : ''}${onlyRepeat ? '｜現只顯示重複上榜' : ''}</div>` +
-      `<div class="hint">預設只顯示最新一週，如需查看舊週次請切換上方「週次」。重複上榜會顯示上次回覆及第幾次，提醒跟進改善。如非你店舖，請按右上「登出」再重新輸入自己嘅 Site Code。</div>`;
+    if (bar) {
+      // 已封存週次用中性灰進度，避免看起來仍有「待完成」的感覺
+      const archivedRate = currentBatch && currentBatch.total
+        ? Math.round((currentBatch.replied / currentBatch.total) * 100)
+        : 0;
+      bar.style.width = `${archived ? archivedRate : rate}%`;
+      bar.classList.toggle('is-archived', archived);
+    }
+    if (archived) {
+      const histReplied = currentBatch ? currentBatch.replied : replied;
+      const histTotal = currentBatch ? currentBatch.total : items.length;
+      $('site_info').innerHTML =
+        `<div class="site-banner">${p.escapeHtml(data.site_code)}${shop}</div>` +
+        `<div class="zs-archived-banner"><b>${p.escapeHtml(weekLabel)} 已封存</b> — 此週次只供查閱，不能回覆。` +
+        (latestOpen
+          ? ` 最新一週為 <b>${p.escapeHtml(latestOpen.week_label)}</b>。 <button type="button" class="btn ghost btn-sm" id="zs_goto_latest">前往最新一週</button>`
+          : ' 目前沒有可回覆的週次，請等待 RP Team 派發新一週。') +
+        `</div>` +
+        `<div>歷史紀錄：共 ${histTotal} 個指定 SKU（${histReplied} 已回覆）${repeatN ? `｜其中 <b>${repeatN}</b> 個重複上榜（≥2次）` : ''}${onlyRepeat ? '｜現只顯示重複上榜' : ''}</div>` +
+        `<div class="hint">舊週次的狀態是「當時的紀錄」，不會隨新週次改變；請以最新一週為準。如非你店舖，請按右上「登出」再重新輸入自己嘅 Site Code。</div>`;
+    } else {
+      $('site_info').innerHTML =
+        `<div class="site-banner">${p.escapeHtml(data.site_code)}${shop}</div>` +
+        `<div>${p.escapeHtml(weekLabel || '')}：共 ${items.length} 個指定 SKU（${replied} 已回覆 · ${rate}%）${repeatN ? `｜其中 <b>${repeatN}</b> 個重複上榜（≥2次）` : ''}${onlyRepeat ? '｜現只顯示重複上榜' : ''}</div>` +
+        `<div class="hint">本週仍可回覆；新一週派發後，本週會自動封存成紀錄。重複上榜會顯示上次回覆及第幾次，提醒跟進改善。如非你店舖，請按右上「登出」再重新輸入自己嘅 Site Code。</div>`;
+    }
+    const goto = document.getElementById('zs_goto_latest');
+    if (goto && latestOpen) {
+      goto.addEventListener('click', () => {
+        $('f_batch').value = latestOpen.id;
+        $('btn_refresh').click();
+      });
+    }
     render();
   }
 
   function render() {
+    const archived = !!(currentBatch && currentBatch.is_open === false);
     const q = ($('f_search').value || '').trim().toUpperCase();
     const filtered = items.filter((it) => {
       if (!q) return true;
@@ -127,7 +163,7 @@
       return hay.includes(q);
     });
     if (!filtered.length) {
-      $('zs_list').innerHTML = '<div class="empty" style="padding:36px 16px">暫無指定 SKU — 試下轉「狀態」或清空搜尋字。</div>';
+      $('zs_list').innerHTML = `<div class="empty" style="padding:36px 16px">${archived ? '此週次沒有符合條件的歷史紀錄。' : '暫無指定 SKU — 試下轉「狀態」或清空搜尋字。'}</div>`;
       const c0 = document.getElementById('zs_count');
       if (c0) c0.textContent = '';
       return;
@@ -136,8 +172,11 @@
     COLS.forEach((c) => { html += `<th>${p.escapeHtml(c.label)}</th>`; });
     html += '<th>SKU上載日期</th><th>狀態</th><th>店舖回覆</th><th>重複提示</th><th></th></tr></thead><tbody>';
     filtered.forEach((it) => {
-      const badge = it.status === 'replied' ? '<span class="badge-replied">已回覆</span>' : '<span class="badge-pending">未回覆</span>';
-      const reply = it.status === 'replied' ? `${p.escapeHtml(it.reason_label || '')}${it.reason_note ? `<div class="hint">${p.escapeHtml(it.reason_note)}</div>` : ''}` : '—';
+      const replied = it.status === 'replied';
+      const badge = archived
+        ? `<span class="badge-archived">${replied ? '已回覆 · 已封存' : '未回覆 · 已截止'}</span>`
+        : (replied ? '<span class="badge-replied">已回覆</span>' : '<span class="badge-pending">未回覆</span>');
+      const reply = replied ? `${p.escapeHtml(it.reason_label || '')}${it.reason_note ? `<div class="hint">${p.escapeHtml(it.reason_note)}</div>` : ''}` : '—';
       const n = editCount(it);
       const locked = !canEdit(it);
       const btnLabel = n === 0 ? '回覆' : locked ? '已鎖定' : '修改';
@@ -152,12 +191,17 @@
         repeatCell = `<span class="badge-repeat">第${rc}次上榜</span>` +
           (prev ? `<div class="hint">${p.escapeHtml(prev)}${prevNote}</div>` : '') + notImproved;
       }
-      html += `<tr${isRepeat(it) ? ' class="zs-repeat"' : ''}><td>${p.escapeHtml(it.week_label || '')}</td>`;
+      const rowClass = archived ? 'zs-archived' : (isRepeat(it) ? 'zs-repeat' : '');
+      const weekCell = `${p.escapeHtml(it.week_label || '')}${archived ? '<span class="zs-week-tag">已封存</span>' : ''}`;
+      const action = archived
+        ? '<span class="zs-closed">已截止</span>'
+        : `<button class="btn ghost" data-reply="${it.id}" ${locked ? 'disabled' : ''}>${btnLabel}</button>`;
+      html += `<tr${rowClass ? ` class="${rowClass}"` : ''}><td>${weekCell}</td>`;
       COLS.forEach((c) => {
         const val = c.key === 'Brand' ? brandCode(it) : payloadVal(it, c.key);
         html += `<td>${p.escapeHtml(val)}</td>`;
       });
-      html += `<td>${p.escapeHtml(uploadDate(it))}</td><td>${badge}</td><td>${reply}</td><td>${repeatCell}</td><td><button class="btn ghost" data-reply="${it.id}" ${locked ? 'disabled' : ''}>${btnLabel}</button></td></tr>`;
+      html += `<td>${p.escapeHtml(uploadDate(it))}</td><td>${badge}</td><td>${reply}</td><td>${repeatCell}</td><td>${action}</td></tr>`;
     });
     html += '</tbody></table>';
     $('zs_list').innerHTML = html;
@@ -182,6 +226,10 @@
   function openReply(id) {
     const it = items.find((x) => x.id === id);
     if (!it) return;
+    if (currentBatch && currentBatch.is_open === false) {
+      p.showAlert($('list_error'), 'error', `「${p.escapeHtml(currentBatch.week_label)}」已封存，只供查閱，不能回覆。請切換到最新一週。`);
+      return;
+    }
     if (!canEdit(it)) {
       p.showAlert($('list_error'), 'error', '此 SKU 已用完修改機會（只可修改一次），如需再更改請聯絡 RP Team');
       return;
@@ -221,6 +269,14 @@
       await loadBatches(true);
       await loadList();
     } catch (err) {
+      // 週次在開啟彈窗後被新批次封存：關窗、重新載入週次並引導到最新一週
+      if (err.status === 409 && err.data?.code === 'BATCH_CLOSED') {
+        $('reply_dialog').close();
+        await loadBatches(true);
+        await loadList();
+        p.showAlert($('list_error'), 'error', p.escapeHtml(err.message));
+        return;
+      }
       p.showAlert($('reply_error'), 'error', p.escapeHtml(err.message));
     } finally {
       btn.disabled = false;

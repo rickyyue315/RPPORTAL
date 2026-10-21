@@ -118,6 +118,8 @@ export interface ZeroSalesSummary {
     total: number;
     replied: number;
     pending: number;
+    stores_total: number;
+    stores_pending: number;
     created_at: string;
     closed_at: string | null;
     is_open: boolean;
@@ -242,13 +244,17 @@ export async function getZeroSalesSummary(batchId?: string): Promise<ZeroSalesSu
     total: string;
     replied: string;
     pending: string;
+    stores_total: string;
+    stores_pending: string;
     created_at: string;
     closed_at: string | null;
   }>(
     `SELECT b.id, b.week_label, b.created_at, b.closed_at,
             (SELECT count(*)::text FROM zero_sales_items i WHERE i.batch_id = b.id) AS total,
             (SELECT count(*)::text FROM zero_sales_items i WHERE i.batch_id = b.id AND i.status = 'replied') AS replied,
-            (SELECT count(*)::text FROM zero_sales_items i WHERE i.batch_id = b.id AND i.status = 'pending') AS pending
+            (SELECT count(*)::text FROM zero_sales_items i WHERE i.batch_id = b.id AND i.status = 'pending') AS pending,
+            (SELECT count(DISTINCT i.site_code)::text FROM zero_sales_items i WHERE i.batch_id = b.id) AS stores_total,
+            (SELECT count(DISTINCT i.site_code)::text FROM zero_sales_items i WHERE i.batch_id = b.id AND i.status = 'pending') AS stores_pending
        FROM zero_sales_batches b ORDER BY b.created_at DESC LIMIT 1`,
   );
   const lb = latest.rows[0] ?? null;
@@ -286,6 +292,8 @@ export async function getZeroSalesSummary(batchId?: string): Promise<ZeroSalesSu
           total: Number(lb.total ?? 0),
           replied: Number(lb.replied ?? 0),
           pending: Number(lb.pending ?? 0),
+          stores_total: Number(lb.stores_total ?? 0),
+          stores_pending: Number(lb.stores_pending ?? 0),
           created_at: toHKString(lb.created_at),
           closed_at: lb.closed_at ? toHKString(lb.closed_at) : null,
           is_open: !lb.closed_at,

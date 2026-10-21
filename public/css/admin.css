@@ -235,12 +235,57 @@ body.drawer-open { overflow: hidden; }
 .file-drop.dragover, #store_drop.dragover { border-color: #0f5c9c !important; background: #f6faff !important; }
 #store_drop { border-style: dashed; }
 
+/* ---------- 零銷售總覽（總計 / 最新週次 雙行 KPI） ---------- */
+.zs-kpi-table-wrap { overflow-x: auto; }
+.zs-kpi-table { width: 100%; min-width: 720px; border-collapse: collapse; }
+.zs-kpi-table thead th {
+  padding: 0 10px 6px;
+  text-align: right;
+  font-size: 12px;
+  font-weight: 600;
+  color: #66727f;
+  white-space: nowrap;
+}
+.zs-kpi-table thead th small { display: block; font-size: 11px; font-weight: 400; color: #94a3b1; }
+.zs-kpi-table thead th.zs-kpi-scope { text-align: left; background: #fff; }
+.zs-kpi-table tbody th.zs-kpi-scope {
+  position: sticky;
+  left: 0;
+  z-index: 1;
+  padding: 6px 24px 6px 10px;
+  text-align: left;
+  white-space: nowrap;
+  font-size: 14px;
+  font-weight: 700;
+  color: #0a3d69;
+  background: #fff;
+}
+.zs-kpi-scope-sub { display: block; font-size: 12px; font-weight: 500; color: #66727f; }
+.zs-kpi-table tbody td {
+  padding: 6px 10px;
+  text-align: right;
+  font-size: 21px;
+  font-weight: 700;
+  line-height: 1.3;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.zs-kpi-table tbody tr.zs-kpi-latest th,
+.zs-kpi-table tbody tr.zs-kpi-latest td {
+  background: #f7fbff;
+  border-top: 1px dashed #c4d9ef;
+}
+.zs-kpi-table tbody tr.zs-kpi-latest th.zs-kpi-scope { background: #f7fbff; }
+.zs-kpi-table tbody tr.zs-kpi-latest td { font-size: 19px; }
+
 @media (max-width: 768px) {
   :root { --admin-drawer-w: 100vw; }
   .dl { grid-template-columns: 1fr; }
   .admin-table-wrap { max-height: none; }
   .toolbar .field { min-width: 44%; }
   .admin-nav-inner { padding: 0 8px; }
+  .zs-kpi-table tbody td { font-size: 18px; }
+  .zs-kpi-table tbody tr.zs-kpi-latest td { font-size: 17px; }
 }
 @media (prefers-reduced-motion: reduce) {
   * { animation: none !important; transition: none !important; }

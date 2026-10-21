@@ -121,13 +121,40 @@
             <div class="card border-primary">
               <div class="card-header"><h3 class="card-title">90日零銷售 SKU 回覆 — 總覽</h3><span id="zs_summary_note" class="ms-auto text-secondary small">載入中…</span></div>
               <div class="card-body">
-                <div class="row g-2 text-center">
-                  <div class="col-6 col-md-2"><div class="h2 mb-0" id="s_zs_total">—</div><div class="text-secondary small">總 SKU 行數</div></div>
-                  <div class="col-6 col-md-2"><div class="h2 mb-0 text-success" id="s_zs_replied">—</div><div class="text-secondary small">已回覆</div></div>
-                  <div class="col-6 col-md-2"><div class="h2 mb-0 text-danger" id="s_zs_pending">—</div><div class="text-secondary small">待回覆（可回覆）</div></div>
-                  <div class="col-6 col-md-2"><div class="h2 mb-0" id="s_zs_rate">—</div><div class="text-secondary small">回覆率</div></div>
-                  <div class="col-6 col-md-2"><div class="h3 mb-0" id="s_zs_stores">—</div><div class="text-secondary small">涉及店舖 / 待回覆店舖</div></div>
-                  <div class="col-6 col-md-2"><div class="h3 mb-0" id="s_zs_latest">—</div><div class="text-secondary small">最新批次進度</div></div>
+                <div class="zs-kpi-table-wrap">
+                  <table class="zs-kpi-table">
+                    <thead>
+                      <tr>
+                        <th scope="col" class="zs-kpi-scope">範圍</th>
+                        <th scope="col">總 SKU 行數</th>
+                        <th scope="col">已回覆</th>
+                        <th scope="col">待回覆<small>可回覆</small></th>
+                        <th scope="col">逾期未回覆<small>已封存</small></th>
+                        <th scope="col">回覆率</th>
+                        <th scope="col">店舖<small>涉及 / 待回覆</small></th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr>
+                        <th scope="row" class="zs-kpi-scope">總計<span id="s_zs_total_batches" class="zs-kpi-scope-sub">—</span></th>
+                        <td id="s_zs_total">—</td>
+                        <td id="s_zs_replied" class="text-success">—</td>
+                        <td id="s_zs_pending" class="text-danger">—</td>
+                        <td id="s_zs_overdue" class="text-secondary">—</td>
+                        <td id="s_zs_rate">—</td>
+                        <td id="s_zs_stores">—</td>
+                      </tr>
+                      <tr class="zs-kpi-latest">
+                        <th scope="row" class="zs-kpi-scope">最新週次<span id="s_zs_latest_week" class="zs-kpi-scope-sub">—</span></th>
+                        <td id="l_zs_total">—</td>
+                        <td id="l_zs_replied" class="text-success">—</td>
+                        <td id="l_zs_pending" class="text-danger">—</td>
+                        <td id="l_zs_overdue" class="text-secondary">—</td>
+                        <td id="l_zs_rate">—</td>
+                        <td id="l_zs_stores">—</td>
+                      </tr>
+                    </tbody>
+                  </table>
                 </div>
                 <div class="mt-2 text-end"><a href="#sec-zero-sales" class="btn btn-sm btn-outline-primary">前往統計及匯出</a></div>
               </div>

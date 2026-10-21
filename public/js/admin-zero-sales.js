@@ -295,18 +295,35 @@
         scopeBatch ? gFetch(`/api/admin/zero-sales/summary?batch_id=${encodeURIComponent(scopeBatch)}`) : Promise.resolve(null),
       ]);
       const s = scoped || overall;
-      // 頂部總覽卡（跨批次）
+      // 頂部總覽卡（跨批次）：第一行總計、第二行最新週次
       const o = overall;
+      setText('s_zs_total_batches', `${o.batches ?? 0} 個批次`);
       setText('s_zs_total', String(o.total ?? 0));
       setText('s_zs_replied', String(o.replied ?? 0));
       setText('s_zs_pending', String(o.pending ?? 0));
+      setText('s_zs_overdue', String(o.overdue ?? 0));
       setText('s_zs_rate', `${o.reply_rate ?? 0}%`);
       setText('s_zs_stores', `${o.stores_total ?? 0} / ${o.stores_pending ?? 0}`);
       const lbOverall = o.latest_batch;
-      setText('s_zs_latest', lbOverall ? `${lbOverall.week_label} ${lbOverall.replied}/${lbOverall.total}` : '—');
+      if (lbOverall) {
+        // 已封存的最新週次：未回覆屬歷史（逾期），不再是可回覆的待辦
+        const open = !!lbOverall.is_open;
+        setText('s_zs_latest_week', `${lbOverall.week_label} · ${open ? '開放中' : '已封存'}`);
+        setText('l_zs_total', String(lbOverall.total ?? 0));
+        setText('l_zs_replied', String(lbOverall.replied ?? 0));
+        setText('l_zs_pending', open ? String(lbOverall.pending ?? 0) : '—');
+        setText('l_zs_overdue', open ? '—' : String(lbOverall.pending ?? 0));
+        const lbRate = lbOverall.total ? Math.round((lbOverall.replied / lbOverall.total) * 1000) / 10 : 0;
+        setText('l_zs_rate', `${lbRate}%`);
+        setText('l_zs_stores', `${lbOverall.stores_total ?? 0} / ${open ? (lbOverall.stores_pending ?? 0) : '—'}`);
+      } else {
+        setText('s_zs_latest_week', '暫無批次');
+        ['l_zs_total', 'l_zs_replied', 'l_zs_pending', 'l_zs_overdue', 'l_zs_rate', 'l_zs_stores']
+          .forEach((id) => setText(id, '—'));
+      }
       if (note) {
         note.textContent = o.total
-          ? `共 ${o.batches} 個批次｜${o.total} 行｜回覆率 ${o.reply_rate}%｜已鎖定 ${o.locked} 行${o.overdue ? `｜逾期未回覆 ${o.overdue} 行（已封存）` : ''}`
+          ? `已鎖定 ${o.locked} 行`
           : '暫無零銷售資料';
       }
       // 區內統計（跟隨下拉範圍）

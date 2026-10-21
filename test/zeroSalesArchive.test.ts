@@ -226,6 +226,12 @@ describe('zero-sales 即時封存', () => {
     expect(cross.stores_pending).toBe(1);
     expect(cross.stores_overdue).toBe(1);
     expect(cross.stores_done).toBe(0);
+    // 總覽卡「最新週次」那一行所需的批次層級店舖數
+    expect(cross.latest_batch?.week_label).toBe('2026-W43-arch');
+    expect(cross.latest_batch?.total).toBe(1);
+    expect(cross.latest_batch?.pending).toBe(1);
+    expect(cross.latest_batch?.stores_total).toBe(1);
+    expect(cross.latest_batch?.stores_pending).toBe(1);
     // 待回覆名單只含仍可回覆的 W43
     expect(cross.pending_by_store).toHaveLength(1);
     expect(cross.pending_by_store[0]!.total).toBe(1);

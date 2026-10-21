@@ -274,6 +274,153 @@ export async function buildZeroSalesExportBuffer(items: ZeroSalesExportItem[], r
   return Buffer.from(await workbook.xlsx.writeBuffer());
 }
 
+export interface ZeroSalesRepeatSkuExportRow {
+  sku: string;
+  brand: string;
+  sku_desc: string;
+  repeat_store_count: number;
+  listed_store_count: number;
+  repeat_rate: number;
+  repeat_rows: number;
+  total_rows: number;
+  max_occurrence: number;
+  pending_count: number;
+  replied_count: number;
+  last_week_label: string;
+  last_seen: string;
+}
+
+export interface ZeroSalesRepeatPairExportRow {
+  site_code: string;
+  shop: string;
+  sku: string;
+  brand: string;
+  sku_desc: string;
+  occurrence_count: number;
+  pending_count: number;
+  replied_count: number;
+  weeks: string[];
+  first_seen: string;
+  last_seen: string;
+  last_week_label: string;
+  last_status: string;
+  last_reason_label: string;
+  last_reason_note: string;
+  last_replied_at: string | null;
+}
+
+export interface ZeroSalesRepeatExportMeta {
+  minCount: number;
+  q?: string;
+  siteCode?: string;
+  /** 匯出時間（已轉香港時間字串） */
+  generatedAt: string;
+}
+
+export interface ZeroSalesRepeatExportInput {
+  /** 有提供才建立「跨店重複 SKU」工作表 */
+  skus?: ZeroSalesRepeatSkuExportRow[];
+  /** 有提供才建立「各店明細」工作表 */
+  pairs?: ZeroSalesRepeatPairExportRow[];
+  meta: ZeroSalesRepeatExportMeta;
+}
+
+/** 與前端一致的參考判斷：多店重複 → SKU 問題；單店重複 → 店舖問題 */
+function repeatSkuVerdict(row: ZeroSalesRepeatSkuExportRow): string {
+  const rate = Number(row.repeat_rate) || 0;
+  if (row.repeat_store_count >= 3 && rate >= 0.5) return 'SKU 問題';
+  if (row.repeat_store_count >= 2 && rate >= 0.5) return '疑似 SKU';
+  return '店舖問題';
+}
+
+function repeatExportNote(meta: ZeroSalesRepeatExportMeta): string {
+  const parts = [`重複定義：同一店舖同一 SKU 跨週（批次）出現 ≥ ${meta.minCount} 次`];
+  if (meta.siteCode) parts.push(`Site Code：${meta.siteCode}`);
+  if (meta.q) parts.push(`搜尋：${meta.q}`);
+  parts.push(`匯出時間：${meta.generatedAt}`);
+  return `註：${parts.join('；')}。`;
+}
+
+/**
+ * 重複上榜統計匯出：可只匯出「跨店重複 SKU」或「各店明細」，亦可兩者同時。
+ * 兩張表都以同一重複定義（同店同 SKU 跨批次 ≥ minCount）計算。
+ */
+export async function buildZeroSalesRepeatExportBuffer(
+  input: ZeroSalesRepeatExportInput,
+): Promise<Buffer> {
+  const workbook = new ExcelJS.Workbook();
+  const headerStyle: Partial<ExcelJS.Style> = {
+    font: { bold: true }, fill: { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFDAEEF3' } },
+  };
+  const noteStyle: Partial<ExcelJS.Style> = { font: { italic: true, color: { argb: 'FF808080' } } };
+  const note = repeatExportNote(input.meta);
+
+  if (input.skus) {
+    const sheet = workbook.addWorksheet('跨店重複 SKU');
+    const headers = [
+      '排名', 'SKU', 'Brand', 'SKU 描述', '重複店數', '曾上榜店數', '重複率',
+      '重複行數', '總行數', '單店最高次數', '未回覆', '已回覆',
+      '最後週次', '最後出現日期', '判斷（參考）',
+    ];
+    sheet.addRow(headers);
+    headers.forEach((_, i) => { sheet.getCell(1, i + 1).style = headerStyle; });
+    input.skus.forEach((r, i) => {
+      sheet.addRow([
+        i + 1, r.sku, r.brand, r.sku_desc,
+        r.repeat_store_count, r.listed_store_count, r.repeat_rate,
+        r.repeat_rows, r.total_rows, r.max_occurrence,
+        r.pending_count, r.replied_count,
+        r.last_week_label, r.last_seen, repeatSkuVerdict(r),
+      ]);
+    });
+    const widths = [6, 16, 22, 32, 10, 12, 10, 12, 10, 14, 10, 10, 12, 14, 14];
+    widths.forEach((w, i) => { sheet.getColumn(i + 1).width = w; });
+    sheet.getColumn(7).numFmt = '0%';
+    if (input.skus.length) {
+      sheet.autoFilter = { from: { row: 1, column: 1 }, to: { row: input.skus.length + 1, column: headers.length } };
+    }
+    sheet.views = [{ state: 'frozen', ySplit: 1 }];
+    const noteCell = sheet.getCell(input.skus.length + 3, 1);
+    noteCell.value = note;
+    noteCell.style = noteStyle;
+  }
+
+  if (input.pairs) {
+    const sheet = workbook.addWorksheet('各店明細');
+    const headers = [
+      'Site Code', '店舖', 'SKU', 'Brand', 'SKU 描述',
+      '出現次數', '未回覆', '已回覆', '首次出現', '最後出現', '最後週次',
+      '週次（新→舊）', '上次回覆', '上次回覆時間',
+    ];
+    sheet.addRow(headers);
+    headers.forEach((_, i) => { sheet.getCell(1, i + 1).style = headerStyle; });
+    for (const r of input.pairs) {
+      const lastReply = r.last_reason_label
+        ? `${r.last_reason_label}${r.last_reason_note ? `（${r.last_reason_note}）` : ''}`
+        : (r.last_status === 'replied' ? '已回覆' : '未回覆');
+      sheet.addRow([
+        r.site_code, r.shop, r.sku, r.brand, r.sku_desc,
+        r.occurrence_count, r.pending_count, r.replied_count,
+        r.first_seen, r.last_seen, r.last_week_label,
+        (r.weeks ?? []).join(' → '), lastReply, r.last_replied_at ?? '',
+      ]);
+    }
+    const widths = [12, 26, 16, 22, 32, 10, 10, 10, 12, 12, 12, 40, 32, 18];
+    widths.forEach((w, i) => { sheet.getColumn(i + 1).width = w; });
+    if (input.pairs.length) {
+      sheet.autoFilter = { from: { row: 1, column: 1 }, to: { row: input.pairs.length + 1, column: headers.length } };
+    }
+    sheet.views = [{ state: 'frozen', ySplit: 1 }];
+    const noteCell = sheet.getCell(input.pairs.length + 3, 1);
+    noteCell.value = note;
+    noteCell.style = noteStyle;
+  }
+
+  if (!workbook.worksheets.length) throw new Error('沒有重複上榜資料可以匯出');
+  applyDefaultFont(workbook);
+  return Buffer.from(await workbook.xlsx.writeBuffer());
+}
+
 /** 全份 Excel 統一字體：Arial 10（保留原有粗體／斜體／顏色） */
 function applyDefaultFont(workbook: ExcelJS.Workbook): void {
   for (const ws of workbook.worksheets) {

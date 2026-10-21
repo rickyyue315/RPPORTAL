@@ -646,10 +646,10 @@ export interface ZeroSalesRepeatFilter {
   limit?: number;
 }
 
-/** 後台重複上榜統計：同店同 SKU 跨批次出現 ≥ minCount，按次數倒序（上限 500） */
+/** 後台重複上榜統計：同店同 SKU 跨批次出現 ≥ minCount，按次數倒序（匯出最多 5000 行；API 只允許 500） */
 export async function listZeroSalesRepeats(filter: ZeroSalesRepeatFilter = {}): Promise<ZeroSalesRepeatRow[]> {
   const minCount = Math.min(20, Math.max(2, Math.floor(filter.minCount ?? 2) || 2));
-  const limit = Math.min(500, Math.max(1, Math.floor(filter.limit ?? 200) || 200));
+  const limit = Math.min(5000, Math.max(1, Math.floor(filter.limit ?? 200) || 200));
   const where: string[] = [];
   const params: unknown[] = [];
   if (filter.siteCode) {

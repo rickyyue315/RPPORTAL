@@ -545,12 +545,14 @@
                 <div><label class="form-label">最少次數</label><select id="zs_rep_sku_min" class="form-select"><option value="2">≥ 2 次</option><option value="3">≥ 3 次</option><option value="4">≥ 4 次</option></select></div>
                 <div class="d-flex gap-2">
                   <button class="btn btn-primary" id="btn_zs_repeat_sku">查詢 Top SKU</button>
+                  <button class="btn" id="btn_zs_repeat_sku_export">匯出 Top SKU</button>
                 </div>
               </div>
               <div id="zs_repeat_sku_result" class="text-secondary small"></div>
               <div class="table-responsive">
                 <table class="table table-vcenter"><thead><tr><th>#</th><th>SKU</th><th>Brand</th><th>描述</th><th>重複店數</th><th>曾上榜店數</th><th>重複率</th><th>重複行數 / 總行數</th><th>最高次數</th><th>最後週次</th><th>未 / 已</th><th>判斷</th><th></th></tr></thead><tbody id="zs_repeat_sku_body"><tr><td colspan="13" class="text-center text-secondary">展開後自動載入…</td></tr></tbody></table>
               </div>
+              <div id="zs_repeat_sku_export_result" class="small"></div>
               <h6 class="mt-4">各店明細（同店同 SKU）</h6>
               <p class="text-secondary small mb-2">可按店舖或 SKU 搜尋，派發前重點跟進。預設按出現次數倒序。</p>
               <div class="d-flex gap-2 mb-2 flex-wrap align-items-end">
@@ -559,12 +561,14 @@
                 <div><label class="form-label">最少次數</label><select id="zs_rep_min" class="form-select"><option value="2">≥ 2 次</option><option value="3">≥ 3 次</option><option value="4">≥ 4 次</option></select></div>
                 <div class="d-flex gap-2">
                   <button class="btn btn-primary" id="btn_zs_repeat">查詢重複 SKU</button>
+                  <button class="btn" id="btn_zs_repeat_export">匯出各店明細</button>
                 </div>
               </div>
               <div id="zs_repeat_result" class="text-secondary small"></div>
               <div class="table-responsive">
                 <table class="table table-vcenter"><thead><tr><th>Site</th><th>店舖</th><th>SKU</th><th>Brand</th><th>描述</th><th>出現</th><th>週次</th><th>上次回覆</th><th>未 / 已</th></tr></thead><tbody id="zs_repeat_body"><tr><td colspan="9" class="text-center text-secondary">展開後自動載入…</td></tr></tbody></table>
               </div>
+              <div id="zs_repeat_export_result" class="small"></div>
             </div>
             <h4 class="mt-4">統一匯出（跨批次篩選）</h4>
             <p class="text-secondary small">可按批次、Site Code、回覆狀態、回覆原因篩選後一次匯出，共四個工作表：「Zero Sales 回覆」（原文 22 欄 + 店舖回覆 (原因) + 補充 + 狀態）、「未回覆店舖」（含各店已回覆原因）、「店舖回覆 (原因)」（SKU / Brand / SKU Desc / Buyer / Adj. MCH1 / Item Status / Supply Source / Shop Stock Qty (CM)，重複 SKU 庫存加總，並按回覆原因計數）、「Buyer 統計」（每個 Buyer 的 Zero Sales SKU 數、品牌數、首 2 位品牌、庫存總計、首 2 位主要原因）。匯出為唯讀，不會鎖定店舖回覆。</p>

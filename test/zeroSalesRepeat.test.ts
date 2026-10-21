@@ -1,6 +1,7 @@
 import { describe, expect, it, beforeAll } from 'vitest';
 import request from 'supertest';
 import { PGlite } from '@electric-sql/pglite';
+import ExcelJS from 'exceljs';
 import type { Express } from 'express';
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
@@ -41,6 +42,15 @@ async function adminAgent(): Promise<Agent> {
   expect(res.status).toBe(200);
   agent._csrf = await csrf(agent);
   return agent;
+}
+
+/** supertest 預設不會解析未知二進制 content-type，需自帶 parser 收集原始位元組 */
+function getXlsx(agent: Agent, url: string) {
+  return agent.get(url).buffer(true).parse((res, cb) => {
+    const chunks: Buffer[] = [];
+    res.on('data', (c: Buffer) => chunks.push(c));
+    res.on('end', () => cb(null, Buffer.concat(chunks)));
+  });
 }
 
 beforeAll(async () => {
@@ -225,6 +235,66 @@ describe('zero-sales repeat SKUs (cross-store)', () => {
 
     const anon = request.agent(app);
     expect((await anon.get('/api/admin/zero-sales/repeat-skus')).status).toBe(401);
+  });
+});
+
+describe('zero-sales repeat exports', () => {
+  it('exports the cross-store repeat SKU ranking', async () => {
+    const agent = await adminAgent();
+    const res = await getXlsx(agent, '/api/admin/zero-sales/repeat-skus/export?min_count=2&limit=10');
+    expect(res.status).toBe(200);
+    expect(res.headers['content-type']).toContain('spreadsheetml');
+    const wb = new ExcelJS.Workbook();
+    await wb.xlsx.load(res.body);
+    const ws = wb.getWorksheet('跨店重複 SKU');
+    expect(ws).toBeDefined();
+    const headers = (ws!.getRow(1).values as unknown[]).slice(1);
+    expect(headers).toContain('重複店數');
+    expect(headers).toContain('判斷（參考）');
+
+    let found: ExcelJS.Row | null = null;
+    ws!.eachRow((row) => {
+      if (row.getCell(2).value === 'X9001') found = row;
+    });
+    expect(found).not.toBeNull();
+    const hit = found as unknown as ExcelJS.Row;
+    expect(hit.getCell(1).value).toBe(1);
+    expect(hit.getCell(5).value).toBe(2);
+    expect(hit.getCell(7).value).toBe(1);
+    expect(hit.getCell(15).value).toBe('疑似 SKU');
+  });
+
+  it('exports the per-store repeat detail', async () => {
+    const agent = await adminAgent();
+    const res = await getXlsx(agent, '/api/admin/zero-sales/repeats/export?min_count=2');
+    expect(res.status).toBe(200);
+    const wb = new ExcelJS.Workbook();
+    await wb.xlsx.load(res.body);
+    const ws = wb.getWorksheet('各店明細');
+    expect(ws).toBeDefined();
+    const headers = (ws!.getRow(1).values as unknown[]).slice(1);
+    expect(headers).toEqual([
+      'Site Code', '店舖', 'SKU', 'Brand', 'SKU 描述',
+      '出現次數', '未回覆', '已回覆', '首次出現', '最後出現', '最後週次',
+      '週次（新→舊）', '上次回覆', '上次回覆時間',
+    ]);
+    const skus: string[] = [];
+    ws!.eachRow((row, n) => {
+      if (n > 1) skus.push(String(row.getCell(3).value ?? ''));
+    });
+    expect(skus).toContain('X9001');
+    expect(skus).toContain('A1001');
+    expect(skus).toContain('X9002');
+  });
+
+  it('rejects export when nothing matches or the caller is anonymous', async () => {
+    const agent = await adminAgent();
+    expect((await agent.get('/api/admin/zero-sales/repeat-skus/export?q=NOPE-NOPE')).status).toBe(404);
+    expect((await agent.get('/api/admin/zero-sales/repeats/export?q=NOPE-NOPE')).status).toBe(404);
+
+    const anon = request.agent(app);
+    expect((await anon.get('/api/admin/zero-sales/repeat-skus/export')).status).toBe(401);
+    expect((await anon.get('/api/admin/zero-sales/repeats/export')).status).toBe(401);
   });
 });
 

@@ -98,6 +98,7 @@ import {
 import { createImportBatch, findImportBatchByContentHash } from '../services/importBatches.js';
 import {
   buildZeroSalesExportBuffer,
+  buildZeroSalesRepeatExportBuffer,
   generateZeroSalesTemplateWorkbook,
   parseZeroSalesWorkbook,
 } from '../lib/zeroSales.js';
@@ -2523,6 +2524,43 @@ adminRouter.get(
   }),
 );
 
+/** GET /api/admin/zero-sales/repeats/export — 匯出各店重複明細（同店同 SKU 跨批次 ≥ minCount，最多 5000 行） */
+adminRouter.get(
+  '/zero-sales/repeats/export',
+  requireAdmin,
+  excelExportLimiter,
+  asyncHandler(async (req: Request, res: Response) => {
+    const { site_code, q, min_count } = req.query as Record<string, string | undefined>;
+    const siteCode = site_code?.trim() ? normalizeSiteCode(site_code) : undefined;
+    const keyword = q?.trim().slice(0, 100) || undefined;
+    const minCount = min_count === undefined || min_count === '' ? 2 : Number(min_count);
+    if (!Number.isInteger(minCount) || minCount < 2 || minCount > 20) {
+      res.status(400).json({ error: 'min_count 須為 2 至 20 的整數' });
+      return;
+    }
+    const repeats = await listZeroSalesRepeats({ siteCode, q: keyword, minCount, limit: 5000 });
+    if (!repeats.length) {
+      res.status(404).json({ error: '沒有符合條件的重複上榜資料可以匯出' });
+      return;
+    }
+    const buffer = await buildZeroSalesRepeatExportBuffer({
+      pairs: repeats,
+      meta: { minCount, q: keyword, siteCode, generatedAt: toHKString(new Date()) },
+    });
+    const stamp = toHKDateString(new Date()).replace(/-/g, '');
+    await writeAuditEvent({
+      eventType: 'zero_sales_repeat_detail_export',
+      actorRole: 'admin',
+      actor: req.adminUsername,
+      ip: getClientIp(req),
+      metadata: { site_code: siteCode ?? null, q: keyword ?? null, min_count: minCount, count: repeats.length },
+    });
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition', `attachment; filename="Zero_Sales_Repeat_Detail_${stamp}.xlsx"`);
+    res.send(buffer);
+  }),
+);
+
 /** GET /api/admin/zero-sales/repeat-skus — 跨店重複上榜 SKU 排行（同一 SKU 在多間店舖重複上榜，按重複店數倒序） */
 adminRouter.get(
   '/zero-sales/repeat-skus',
@@ -2544,6 +2582,47 @@ adminRouter.get(
     }
     const skus = await listZeroSalesRepeatSkus({ siteCode, q: keyword, minCount, limit: lim });
     res.json({ skus });
+  }),
+);
+
+/** GET /api/admin/zero-sales/repeat-skus/export — 匯出跨店重複 SKU 排行（按重複店數倒序） */
+adminRouter.get(
+  '/zero-sales/repeat-skus/export',
+  requireAdmin,
+  excelExportLimiter,
+  asyncHandler(async (req: Request, res: Response) => {
+    const { q, min_count, limit } = req.query as Record<string, string | undefined>;
+    const keyword = q?.trim().slice(0, 100) || undefined;
+    const minCount = min_count === undefined || min_count === '' ? 2 : Number(min_count);
+    const lim = limit === undefined || limit === '' ? 10 : Number(limit);
+    if (!Number.isInteger(minCount) || minCount < 2 || minCount > 20) {
+      res.status(400).json({ error: 'min_count 須為 2 至 20 的整數' });
+      return;
+    }
+    if (!Number.isInteger(lim) || lim < 1 || lim > 100) {
+      res.status(400).json({ error: 'limit 須為 1 至 100 的整數' });
+      return;
+    }
+    const skus = await listZeroSalesRepeatSkus({ q: keyword, minCount, limit: lim });
+    if (!skus.length) {
+      res.status(404).json({ error: '沒有符合條件的重複上榜 SKU 可以匯出' });
+      return;
+    }
+    const buffer = await buildZeroSalesRepeatExportBuffer({
+      skus,
+      meta: { minCount, q: keyword, generatedAt: toHKString(new Date()) },
+    });
+    const stamp = toHKDateString(new Date()).replace(/-/g, '');
+    await writeAuditEvent({
+      eventType: 'zero_sales_repeat_sku_export',
+      actorRole: 'admin',
+      actor: req.adminUsername,
+      ip: getClientIp(req),
+      metadata: { q: keyword ?? null, min_count: minCount, limit: lim, count: skus.length },
+    });
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition', `attachment; filename="Zero_Sales_Repeat_SKU_${stamp}.xlsx"`);
+    res.send(buffer);
   }),
 );
 

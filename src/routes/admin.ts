@@ -110,6 +110,7 @@ import {
   listItemsForExport as listZeroSalesForExport,
   listReasons as listZeroSalesReasons,
   listZeroSalesRepeats,
+  listZeroSalesRepeatSkus,
   listZeroSalesPendingStores,
   deleteZeroSalesBatch,
   deleteZeroSalesBatchSite,
@@ -2519,6 +2520,30 @@ adminRouter.get(
     }
     const repeats = await listZeroSalesRepeats({ siteCode, q: keyword, minCount, limit: lim });
     res.json({ repeats });
+  }),
+);
+
+/** GET /api/admin/zero-sales/repeat-skus — 跨店重複上榜 SKU 排行（同一 SKU 在多間店舖重複上榜，按重複店數倒序） */
+adminRouter.get(
+  '/zero-sales/repeat-skus',
+  requireAdmin,
+  adminActionLimiter,
+  asyncHandler(async (req: Request, res: Response) => {
+    const { site_code, q, min_count, limit } = req.query as Record<string, string | undefined>;
+    const siteCode = site_code?.trim() ? normalizeSiteCode(site_code) : undefined;
+    const keyword = q?.trim().slice(0, 100) || undefined;
+    const minCount = min_count === undefined || min_count === '' ? 2 : Number(min_count);
+    const lim = limit === undefined || limit === '' ? 10 : Number(limit);
+    if (!Number.isInteger(minCount) || minCount < 2 || minCount > 20) {
+      res.status(400).json({ error: 'min_count 須為 2 至 20 的整數' });
+      return;
+    }
+    if (!Number.isInteger(lim) || lim < 1 || lim > 100) {
+      res.status(400).json({ error: 'limit 須為 1 至 100 的整數' });
+      return;
+    }
+    const skus = await listZeroSalesRepeatSkus({ siteCode, q: keyword, minCount, limit: lim });
+    res.json({ skus });
   }),
 );
 

@@ -12,6 +12,7 @@ import {
   createBatch as createZeroSalesBatch,
   listMyItems as listZeroSalesMyItems,
   listZeroSalesRepeats,
+  listZeroSalesRepeatSkus,
   getZeroSalesSummary,
 } from '../src/services/zeroSales.js';
 
@@ -59,6 +60,7 @@ beforeAll(async () => {
   }
   await replaceStores([
     { site_code: 'HA02', shop: '駱克', regional: 'HK', class1: 'B', class2: 'B2', size: 'S', om: 'Ivy', type: 'T' },
+    { site_code: 'ZB01', shop: '測試二店', regional: 'HK', class1: 'B', class2: 'B2', size: 'S', om: 'Ivy', type: 'T' },
   ]);
   app = createApp();
 
@@ -99,6 +101,31 @@ beforeAll(async () => {
   await db.query('UPDATE zero_sales_batches SET created_at = $2 WHERE id = $1', [w41Id, '2026-09-01T00:00:00Z']);
   await db.query('UPDATE zero_sales_batches SET created_at = $2 WHERE id = $1', [w42Id, '2026-09-08T00:00:00Z']);
   await db.query('UPDATE zero_sales_batches SET created_at = $2 WHERE id = $1', [w43Id, '2026-09-15T00:00:00Z']);
+  // W50 / W51：跨店重複 — X9001 在 HA02 + ZB01 兩間店都連續兩週上榜；X9002 只在 HA02 重複
+  const w50 = await createZeroSalesBatch({
+    weekLabel: '2026-W50-cross',
+    note: 'test-cross',
+    rows: [
+      { siteCode: 'HA02', sku: 'X9001', data: { Brand: 'B2', 'SKU Desc': '跨店重複SKU' } },
+      { siteCode: 'ZB01', sku: 'X9001', data: { Brand: 'B2', 'SKU Desc': '跨店重複SKU' } },
+      { siteCode: 'HA02', sku: 'X9002', data: { Brand: 'B2', 'SKU Desc': '單店重複SKU' } },
+    ],
+    contentHash: `hash-w50-${Date.now()}`,
+    createdBy: 'test',
+  });
+  const w51 = await createZeroSalesBatch({
+    weekLabel: '2026-W51-cross',
+    note: 'test-cross',
+    rows: [
+      { siteCode: 'HA02', sku: 'X9001', data: { Brand: 'B2', 'SKU Desc': '跨店重複SKU' } },
+      { siteCode: 'ZB01', sku: 'X9001', data: { Brand: 'B2', 'SKU Desc': '跨店重複SKU' } },
+      { siteCode: 'HA02', sku: 'X9002', data: { Brand: 'B2', 'SKU Desc': '單店重複SKU' } },
+    ],
+    contentHash: `hash-w51-${Date.now()}`,
+    createdBy: 'test',
+  });
+  await db.query('UPDATE zero_sales_batches SET created_at = $2 WHERE id = $1', [w50.batchId, '2026-09-22T00:00:00Z']);
+  await db.query('UPDATE zero_sales_batches SET created_at = $2 WHERE id = $1', [w51.batchId, '2026-09-29T00:00:00Z']);
   // W41 的 A1001 已回覆季節性
   await db.query(
     `UPDATE zero_sales_items SET status = 'replied', reason_code = 'seasonal', reason_label = '4.季節性/非當季產品',
@@ -145,6 +172,59 @@ describe('zero-sales repeat history (store)', () => {
     const w42Items = await listZeroSalesMyItems('HA02', { batchId: w42Id });
     const second = w42Items.find((i) => i.sku === 'A1001')!;
     expect(second.occurrence_count).toBe(2);
+  });
+});
+
+describe('zero-sales repeat SKUs (cross-store)', () => {
+  it('ranks SKUs by number of stores with repeated listings', async () => {
+    const rows = await listZeroSalesRepeatSkus({ minCount: 2, limit: 10 });
+    expect(rows[0].sku).toBe('X9001');
+    const hit = rows.find((r) => r.sku === 'X9001')!;
+    expect(hit.repeat_store_count).toBe(2);
+    expect(hit.listed_store_count).toBe(2);
+    expect(hit.repeat_rate).toBe(1);
+    expect(hit.repeat_rows).toBe(4);
+    expect(hit.total_rows).toBe(4);
+    expect(hit.max_occurrence).toBe(2);
+    expect(hit.pending_count).toBe(4);
+    expect(hit.replied_count).toBe(0);
+    expect(hit.brand).toBe('B2');
+    expect(hit.sku_desc).toBe('跨店重複SKU');
+    expect(hit.last_week_label).toBe('2026-W51-cross');
+    expect(hit.last_seen).toBe('2026-09-29');
+
+    const single = rows.find((r) => r.sku === 'X9002')!;
+    expect(single.repeat_store_count).toBe(1);
+    expect(single.listed_store_count).toBe(1);
+    expect(single.repeat_rate).toBe(1);
+    // 2 店重複排先於 1 店重複
+    expect(rows.findIndex((r) => r.sku === 'X9001')).toBeLessThan(rows.findIndex((r) => r.sku === 'X9002'));
+  });
+
+  it('supports minCount / site / keyword filters', async () => {
+    expect((await listZeroSalesRepeatSkus({ minCount: 3 })).some((r) => r.sku === 'X9001')).toBe(false);
+    const siteRows = await listZeroSalesRepeatSkus({ siteCode: 'ZB01', minCount: 2 });
+    expect(siteRows).toHaveLength(1);
+    expect(siteRows[0].sku).toBe('X9001');
+    expect(siteRows[0].listed_store_count).toBe(1);
+    const byQ = await listZeroSalesRepeatSkus({ q: 'X9001', minCount: 2 });
+    expect(byQ).toHaveLength(1);
+    expect(await listZeroSalesRepeatSkus({ q: 'NOPE-NOPE', minCount: 2 })).toHaveLength(0);
+  });
+
+  it('exposes repeat-skus via the admin API with validation', async () => {
+    const agent = await adminAgent();
+    const ok = await agent.get('/api/admin/zero-sales/repeat-skus?min_count=2&limit=10');
+    expect(ok.status).toBe(200);
+    expect(ok.body.skus[0].sku).toBe('X9001');
+
+    const badMin = await agent.get('/api/admin/zero-sales/repeat-skus?min_count=1');
+    expect(badMin.status).toBe(400);
+    const badLimit = await agent.get('/api/admin/zero-sales/repeat-skus?limit=101');
+    expect(badLimit.status).toBe(400);
+
+    const anon = request.agent(app);
+    expect((await anon.get('/api/admin/zero-sales/repeat-skus')).status).toBe(401);
   });
 });
 

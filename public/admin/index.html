@@ -536,7 +536,23 @@
               <a href="#" class="text-reset text-decoration-none" data-bs-toggle="collapse" data-bs-target="#zs_repeat_collapse" role="button" aria-expanded="false" aria-controls="zs_repeat_collapse">重複上榜 SKU 統計（同店同 SKU 跨週 ≥2 次） <svg xmlns="http://www.w3.org/2000/svg" class="icon" width="20" height="20" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none" stroke-linecap="round" stroke-linejoin="round"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><polyline points="6 9 12 15 18 9" /></svg></a>
             </h4>
             <div class="collapse" id="zs_repeat_collapse">
-              <p class="text-secondary small mt-1">連續多週出現代表上次措施未見效，可按店舖或 SKU 搜尋，派發前重點跟進。預設按出現次數倒序。</p>
+              <p class="text-secondary small mt-1">連續多週出現代表上次措施未見效。下方先按 <b>SKU 維度</b> 排行：同一款 SKU 若在<b>多間店舖</b>都重複上榜，較可能是 SKU 本身的問題（陳列／價格／推廣／季節性），而非個別店舖執行問題；重複店數少則較可能是店舖問題。</p>
+              <h6 class="mt-3">Top 重複上榜 SKU（跨店排行）</h6>
+              <p class="text-secondary small mb-2">重複率 = 有重複上榜的店數 ÷ 曾上榜店數。重複店數 ≥ 3 且重複率 ≥ 50% 會標示為「SKU 問題」；2 間店且重複率 ≥ 50% 標示為「疑似 SKU」。</p>
+              <div class="d-flex gap-2 mb-2 flex-wrap align-items-end">
+                <div><label class="form-label">顯示</label><select id="zs_rep_sku_limit" class="form-select"><option value="10" selected>Top 10</option><option value="20">Top 20</option><option value="50">Top 50</option></select></div>
+                <div class="flex-grow-1" style="min-width:200px"><label class="form-label">搜尋 SKU</label><input type="text" id="zs_rep_sku_q" class="form-control" placeholder="例如 1234567"></div>
+                <div><label class="form-label">最少次數</label><select id="zs_rep_sku_min" class="form-select"><option value="2">≥ 2 次</option><option value="3">≥ 3 次</option><option value="4">≥ 4 次</option></select></div>
+                <div class="d-flex gap-2">
+                  <button class="btn btn-primary" id="btn_zs_repeat_sku">查詢 Top SKU</button>
+                </div>
+              </div>
+              <div id="zs_repeat_sku_result" class="text-secondary small"></div>
+              <div class="table-responsive">
+                <table class="table table-vcenter"><thead><tr><th>#</th><th>SKU</th><th>Brand</th><th>描述</th><th>重複店數</th><th>曾上榜店數</th><th>重複率</th><th>重複行數 / 總行數</th><th>最高次數</th><th>最後週次</th><th>未 / 已</th><th>判斷</th><th></th></tr></thead><tbody id="zs_repeat_sku_body"><tr><td colspan="13" class="text-center text-secondary">展開後自動載入…</td></tr></tbody></table>
+              </div>
+              <h6 class="mt-4">各店明細（同店同 SKU）</h6>
+              <p class="text-secondary small mb-2">可按店舖或 SKU 搜尋，派發前重點跟進。預設按出現次數倒序。</p>
               <div class="d-flex gap-2 mb-2 flex-wrap align-items-end">
                 <div><label class="form-label">Site Code</label><input type="text" id="zs_rep_site" class="form-control" placeholder="例如 HC63" style="max-width:160px"></div>
                 <div class="flex-grow-1" style="min-width:200px"><label class="form-label">搜尋 SKU / Site</label><input type="text" id="zs_rep_q" class="form-control" placeholder="例如 1234567"></div>

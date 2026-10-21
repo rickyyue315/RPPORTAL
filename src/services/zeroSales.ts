@@ -727,6 +727,137 @@ export async function listZeroSalesRepeats(filter: ZeroSalesRepeatFilter = {}): 
   }));
 }
 
+export interface ZeroSalesRepeatSkuRow {
+  sku: string;
+  brand: string;
+  sku_desc: string;
+  /** 有重複上榜（同店同 SKU ≥ minCount）的店舖數 */
+  repeat_store_count: number;
+  /** 曾上榜（至少一次）的店舖數 */
+  listed_store_count: number;
+  /** 重複店數 ÷ 曾上榜店數（0–1） */
+  repeat_rate: number;
+  /** 屬重複組的行數 */
+  repeat_rows: number;
+  /** 全部行數（所有店舖所有週次） */
+  total_rows: number;
+  /** 單店最高上榜次數 */
+  max_occurrence: number;
+  pending_count: number;
+  replied_count: number;
+  last_week_label: string;
+  last_seen: string;
+}
+
+export interface ZeroSalesRepeatSkuFilter {
+  siteCode?: string;
+  /** 模糊搜尋 SKU */
+  q?: string;
+  /** 同店同 SKU 最少出現次數，預設 2 */
+  minCount?: number;
+  limit?: number;
+}
+
+/**
+ * 跨店重複上榜 SKU 排行：同一 SKU 在多間店舖各自重複上榜（同店同 SKU ≥ minCount）。
+ * 用於分辨「SKU 問題」與「店舖問題」：重複店數越多、重複率越高，
+ * 越可能是 SKU 本身（陳列／價格／推廣／季節性）而非個別店舖執行問題。
+ * 以重複店數倒序，再按重複行數、總行數倒序。
+ */
+export async function listZeroSalesRepeatSkus(
+  filter: ZeroSalesRepeatSkuFilter = {},
+): Promise<ZeroSalesRepeatSkuRow[]> {
+  const minCount = Math.min(20, Math.max(2, Math.floor(filter.minCount ?? 2) || 2));
+  const limit = Math.min(100, Math.max(1, Math.floor(filter.limit ?? 10) || 10));
+  const where: string[] = [];
+  const params: unknown[] = [];
+  if (filter.siteCode) {
+    params.push(filter.siteCode);
+    where.push(`i.site_code = $${params.length}`);
+  }
+  if (filter.q) {
+    params.push(`%${filter.q}%`);
+    where.push(`i.sku ILIKE $${params.length}`);
+  }
+  params.push(minCount);
+  const minParam = `$${params.length}`;
+  params.push(limit);
+  const limitParam = `$${params.length}`;
+  const whereSql = where.length ? `WHERE ${where.join(' AND ')}` : '';
+  const r = await query<{
+    sku: string;
+    brand: string | null;
+    sku_desc: string | null;
+    repeat_store_count: number;
+    listed_store_count: number;
+    repeat_rows: number;
+    total_rows: number;
+    max_occurrence: number;
+    pending_count: number;
+    replied_count: number;
+    last_week_label: string | null;
+    last_seen_raw: string | null;
+  }>(
+    `WITH pair AS (
+       SELECT i.site_code, i.sku,
+              COUNT(*)::int AS occ,
+              COUNT(*) FILTER (WHERE i.status = 'pending')::int AS pending_count,
+              COUNT(*) FILTER (WHERE i.status = 'replied')::int AS replied_count,
+              MAX(b.created_at) AS last_seen,
+              (ARRAY_AGG(b.week_label ORDER BY b.created_at DESC))[1] AS last_week_label,
+              (ARRAY_AGG(COALESCE(i.payload->>'Brand', '') ORDER BY b.created_at DESC))[1] AS brand,
+              (ARRAY_AGG(COALESCE(i.payload->>'SKU Desc', '') ORDER BY b.created_at DESC))[1] AS sku_desc
+         FROM zero_sales_items i
+         JOIN zero_sales_batches b ON b.id = i.batch_id
+        ${whereSql}
+        GROUP BY i.site_code, i.sku
+     ),
+     rollup AS (
+       SELECT p.sku,
+              COUNT(*) FILTER (WHERE p.occ >= ${minParam})::int AS repeat_store_count,
+              COUNT(*)::int AS listed_store_count,
+              COALESCE(SUM(p.occ) FILTER (WHERE p.occ >= ${minParam}), 0)::int AS repeat_rows,
+              SUM(p.occ)::int AS total_rows,
+              (MAX(p.occ) FILTER (WHERE p.occ >= ${minParam}))::int AS max_occurrence,
+              COALESCE(SUM(p.pending_count) FILTER (WHERE p.occ >= ${minParam}), 0)::int AS pending_count,
+              COALESCE(SUM(p.replied_count) FILTER (WHERE p.occ >= ${minParam}), 0)::int AS replied_count,
+              (MAX(p.last_seen) FILTER (WHERE p.occ >= ${minParam}))::text AS last_seen_raw,
+              (ARRAY_AGG(p.last_week_label ORDER BY p.last_seen DESC) FILTER (WHERE p.occ >= ${minParam}))[1] AS last_week_label,
+              (ARRAY_AGG(p.brand ORDER BY p.last_seen DESC) FILTER (WHERE p.occ >= ${minParam}))[1] AS brand,
+              (ARRAY_AGG(p.sku_desc ORDER BY p.last_seen DESC) FILTER (WHERE p.occ >= ${minParam}))[1] AS sku_desc
+         FROM pair p
+        GROUP BY p.sku
+       HAVING COUNT(*) FILTER (WHERE p.occ >= ${minParam}) >= 1
+     )
+     SELECT sku, brand, sku_desc, repeat_store_count, listed_store_count,
+            repeat_rows, total_rows, max_occurrence, pending_count, replied_count,
+            last_week_label, last_seen_raw
+       FROM rollup
+      ORDER BY repeat_store_count DESC, repeat_rows DESC, total_rows DESC, sku
+      LIMIT ${limitParam}`,
+    params,
+  );
+  return r.rows.map((row) => {
+    const repeatStoreCount = Number(row.repeat_store_count ?? 0);
+    const listedStoreCount = Number(row.listed_store_count ?? 0);
+    return {
+      sku: row.sku,
+      brand: row.brand ?? '',
+      sku_desc: row.sku_desc ?? '',
+      repeat_store_count: repeatStoreCount,
+      listed_store_count: listedStoreCount,
+      repeat_rate: listedStoreCount > 0 ? repeatStoreCount / listedStoreCount : 0,
+      repeat_rows: Number(row.repeat_rows ?? 0),
+      total_rows: Number(row.total_rows ?? 0),
+      max_occurrence: Number(row.max_occurrence ?? 0),
+      pending_count: Number(row.pending_count ?? 0),
+      replied_count: Number(row.replied_count ?? 0),
+      last_week_label: row.last_week_label ?? '',
+      last_seen: row.last_seen_raw ? toHKDateString(row.last_seen_raw) : '',
+    };
+  });
+}
+
 export async function listMyItems(siteCode: string, opts: { status?: string; batchId?: string }): Promise<ZeroSalesItemRow[]> {
   const where = ['i.site_code = $1'];
   const params: unknown[] = [siteCode];

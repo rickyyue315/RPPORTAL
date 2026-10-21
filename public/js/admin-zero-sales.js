@@ -7,6 +7,7 @@
   let reasonsCache = [];
   let itemRows = [];
   let batchesCache = [];
+  let repeatSkuRows = [];
   let zsBatchPage = 1;
   const ZS_BATCH_PAGE_SIZE_KEY = 'ndrf_admin_zs_batch_page_size';
 
@@ -504,10 +505,74 @@
     }
   }
 
+  /* 跨店重複上榜 SKU 排行（Top 10） -------------------------------- */
+  /** 以重複店數及重複率給出參考判斷：多店重複 → SKU 問題；單店重複 → 店舖問題 */
+  function repeatSkuVerdict(r) {
+    const rate = Number(r.repeat_rate) || 0;
+    if (r.repeat_store_count >= 3 && rate >= 0.5) {
+      return '<span class="badge-zs badge-zs-warn">SKU 問題</span>';
+    }
+    if (r.repeat_store_count >= 2 && rate >= 0.5) {
+      return '<span class="badge-zs badge-zs-info">疑似 SKU</span>';
+    }
+    return '<span class="badge-zs badge-zs-muted">店舖問題</span>';
+  }
+
+  async function loadRepeatSkus() {
+    const body = $('zs_repeat_sku_body');
+    const res = $('zs_repeat_sku_result');
+    if (!body) return;
+    const q = ($('zs_rep_sku_q')?.value || '').trim();
+    const min = $('zs_rep_sku_min')?.value || '2';
+    const limit = $('zs_rep_sku_limit')?.value || '10';
+    const qs = new URLSearchParams();
+    if (q) qs.set('q', q);
+    qs.set('min_count', min);
+    qs.set('limit', limit);
+    if (res) res.innerHTML = '<div class="text-secondary small">查詢中…</div>';
+    try {
+      const data = await gFetch(`/api/admin/zero-sales/repeat-skus?${qs.toString()}`);
+      const rows = data.skus || [];
+      repeatSkuRows = rows;
+      const skuIssueCount = rows.filter((r) => r.repeat_store_count >= 3 && Number(r.repeat_rate) >= 0.5).length;
+      if (res) res.innerHTML = rows.length
+        ? `共 <b>${rows.length}</b> 款 SKU 符合條件（按重複店數排序）${skuIssueCount ? `；其中 <b class="text-danger">${skuIssueCount}</b> 款屬 SKU 問題` : ''}`
+        : '沒有符合條件的重複上榜 SKU。';
+      if (!rows.length) {
+        body.innerHTML = '<tr><td colspan="13" class="text-center text-secondary">沒有重複上榜 SKU</td></tr>';
+        return;
+      }
+      body.innerHTML = rows.map((r, i) => {
+        const rate = Math.round((Number(r.repeat_rate) || 0) * 100);
+        return `<tr>
+          <td>${i + 1}</td>
+          <td><b>${esc(r.sku)}</b></td>
+          <td>${esc(r.brand || '')}</td>
+          <td>${esc(r.sku_desc || '')}</td>
+          <td class="${r.repeat_store_count >= 3 ? 'text-danger fw-bold' : ''}">${r.repeat_store_count} 店</td>
+          <td>${r.listed_store_count} 店</td>
+          <td>${rate}%</td>
+          <td>${r.repeat_rows} / ${r.total_rows}</td>
+          <td>${r.max_occurrence} 次</td>
+          <td class="small">${esc(r.last_week_label || '')}${r.last_seen ? `<br><span class="text-secondary">${esc(r.last_seen)}</span>` : ''}</td>
+          <td>未 <b class="text-danger">${r.pending_count}</b> / 已 <span class="text-success">${r.replied_count}</span></td>
+          <td>${repeatSkuVerdict(r)}</td>
+          <td><button type="button" class="btn btn-sm" data-repeat-idx="${i}">查看店舖</button></td>
+        </tr>`;
+      }).join('');
+    } catch (err) {
+      if (res) res.innerHTML = `<div class="alert alert-danger">${esc(err.message)}</div>`;
+      body.innerHTML = `<tr><td colspan="13" class="text-center text-danger">${esc(err.message)}</td></tr>`;
+    }
+  }
+
   /** 重複上榜區塊預設收起：收起時不載入（省版面及請求），已展開才同步刷新 */
   function refreshRepeatsIfOpen() {
     const wrap = $('zs_repeat_collapse');
-    if (wrap && wrap.classList.contains('show')) loadRepeats();
+    if (wrap && wrap.classList.contains('show')) {
+      loadRepeatSkus();
+      loadRepeats();
+    }
   }
 
   /* 刪除：批次 / 批次某店 / 批次某店某SKU（二次確認，不可還原） ---- */
@@ -864,13 +929,39 @@
     });
     const repBtn = $('btn_zs_repeat');
     if (repBtn) repBtn.addEventListener('click', loadRepeats);
+    const repSkuBtn = $('btn_zs_repeat_sku');
+    if (repSkuBtn) repSkuBtn.addEventListener('click', loadRepeatSkus);
+    const repSkuLimit = $('zs_rep_sku_limit');
+    if (repSkuLimit) repSkuLimit.addEventListener('change', loadRepeatSkus);
+    const repSkuMin = $('zs_rep_sku_min');
+    if (repSkuMin) repSkuMin.addEventListener('change', loadRepeatSkus);
+    const repSkuQ = $('zs_rep_sku_q');
+    if (repSkuQ) {
+      repSkuQ.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') { e.preventDefault(); loadRepeatSkus(); }
+      });
+    }
+    const repSkuBody = $('zs_repeat_sku_body');
+    if (repSkuBody) {
+      repSkuBody.addEventListener('click', (e) => {
+        const btn = e.target.closest('[data-repeat-idx]');
+        if (!btn) return;
+        const row = repeatSkuRows[Number(btn.getAttribute('data-repeat-idx'))];
+        if (!row) return;
+        const qInput = $('zs_rep_q');
+        if (qInput) qInput.value = row.sku || '';
+        const minSelect = $('zs_rep_min');
+        if (minSelect) minSelect.value = $('zs_rep_sku_min')?.value || '2';
+        loadRepeats();
+      });
+    }
     AdminPager.bindSize($('zs_batch_page_size'), ZS_BATCH_PAGE_SIZE_KEY, () => {
       zsBatchPage = 1;
       loadBatches();
     });
     // 重複上榜區塊預設收起，展開時才載入資料
     const repWrap = $('zs_repeat_collapse');
-    if (repWrap) repWrap.addEventListener('shown.bs.collapse', () => { loadRepeats(); });
+    if (repWrap) repWrap.addEventListener('shown.bs.collapse', () => { loadRepeatSkus(); loadRepeats(); });
     // 懶載入：捲動到零銷售區塊才請求 batches / reasons / summary，首屏更快
     let started = false;
     const start = () => {

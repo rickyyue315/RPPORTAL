@@ -79,16 +79,67 @@ export async function listReasons(activeOnly = true): Promise<ZeroSalesReasonRow
   return r.rows;
 }
 
+function mapBatchRow(b: ZeroSalesBatchRow): ZeroSalesBatchRow {
+  return {
+    ...b,
+    created_at: toHKString(b.created_at),
+    closed_at: b.closed_at ? toHKString(b.closed_at) : null,
+    is_open: !b.closed_at,
+  };
+}
+
 export async function listBatches(): Promise<ZeroSalesBatchRow[]> {
   const r = await query<ZeroSalesBatchRow>(
     `SELECT b.*,
       (SELECT count(*)::int FROM zero_sales_items i WHERE i.batch_id = b.id AND i.status = 'replied') AS replied_count,
       (SELECT count(*)::int FROM zero_sales_items i WHERE i.batch_id = b.id AND i.status = 'pending') AS pending_count
-     FROM zero_sales_batches b ORDER BY b.created_at DESC LIMIT 100`,
+     FROM zero_sales_batches b ORDER BY b.created_at DESC, b.id DESC LIMIT 100`,
+  );
+  return r.rows.map(mapBatchRow);
+}
+
+export interface ZeroSalesBatchPage {
+  batches: ZeroSalesBatchRow[];
+  total: number;
+}
+
+export async function listBatchesPage(opts: { page?: number; pageSize?: number } = {}): Promise<ZeroSalesBatchPage> {
+  const page = Math.max(1, Math.trunc(opts.page ?? 1) || 1);
+  const pageSize = Math.min(100, Math.max(1, Math.trunc(opts.pageSize ?? 20) || 20));
+  const offset = (page - 1) * pageSize;
+  const [count, r] = await Promise.all([
+    query<{ count: string }>('SELECT count(*)::text AS count FROM zero_sales_batches'),
+    query<ZeroSalesBatchRow>(
+      `SELECT b.*,
+        (SELECT count(*)::int FROM zero_sales_items i WHERE i.batch_id = b.id AND i.status = 'replied') AS replied_count,
+        (SELECT count(*)::int FROM zero_sales_items i WHERE i.batch_id = b.id AND i.status = 'pending') AS pending_count
+       FROM zero_sales_batches b ORDER BY b.created_at DESC, b.id DESC LIMIT $1 OFFSET $2`,
+      [pageSize, offset],
+    ),
+  ]);
+  return { total: Number(count.rows[0]?.count ?? 0), batches: r.rows.map(mapBatchRow) };
+}
+
+export interface ZeroSalesBatchOption {
+  id: string;
+  week_label: string;
+  closed_at: string | null;
+  close_reason: string;
+  replied_count: number;
+  pending_count: number;
+  is_open: boolean;
+}
+
+/** Lightweight list of every batch for the export / stats dropdowns (not paginated). */
+export async function listBatchOptions(): Promise<ZeroSalesBatchOption[]> {
+  const r = await query<Omit<ZeroSalesBatchOption, 'is_open'>>(
+    `SELECT b.id, b.week_label, b.closed_at, b.close_reason,
+      (SELECT count(*)::int FROM zero_sales_items i WHERE i.batch_id = b.id AND i.status = 'replied') AS replied_count,
+      (SELECT count(*)::int FROM zero_sales_items i WHERE i.batch_id = b.id AND i.status = 'pending') AS pending_count
+     FROM zero_sales_batches b ORDER BY b.created_at DESC, b.id DESC`,
   );
   return r.rows.map((b) => ({
     ...b,
-    created_at: toHKString(b.created_at),
     closed_at: b.closed_at ? toHKString(b.closed_at) : null,
     is_open: !b.closed_at,
   }));

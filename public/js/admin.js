@@ -2,11 +2,15 @@
   const $ = (id) => document.getElementById(id);
   let currentPage = 1;
   let totalPages = 1;
+  let puPage = 1;
+  let batchesPage = 1;
   let currentDetail = null;
   let pendingStoreFile = null;
   let csrfToken = null;
   const FILTER_STORAGE_KEY = 'ndrf_admin_filters_v1';
   const PAGE_SIZE_STORAGE_KEY = 'ndrf_admin_page_size';
+  const PU_PAGE_SIZE_KEY = 'ndrf_admin_pu_page_size';
+  const BATCH_PAGE_SIZE_KEY = 'ndrf_admin_batch_page_size';
   const DATE_FILTER_IDS = ['f_from', 'f_to', 'e_from', 'e_to', 'ue_from', 'ue_to', 'se_from', 'se_to', 're_from', 're_to'];
   const FILTER_INPUT_IDS = ['f_from', 'f_to', 'f_site', 'f_source', 'f_type', 'f_exported', 'f_workflow_status', 'f_auto_approved', 'f_modified', 'f_sku', 'f_rp_type', 'f_nd_code', 'f_appno'];
 
@@ -108,6 +112,16 @@
     return [20, 50, 100].includes(v) ? v : 20;
   }
 
+  function currentPuPageSize() {
+    const v = Number($('pu_page_size')?.value || 20);
+    return [20, 50, 100].includes(v) ? v : 20;
+  }
+
+  function currentBatchPageSize() {
+    const v = Number($('batch_page_size')?.value || 20);
+    return [20, 50, 100].includes(v) ? v : 20;
+  }
+
   function buildQuery() {
     const params = new URLSearchParams();
     const idMap = { application_no: 'appno', submission_type: 'type', site_code: 'site', rp_type: 'rp_type', nd_code: 'nd_code' };
@@ -134,12 +148,36 @@
     try {
       const data = await adminFetch(`/api/admin/submissions?${buildQuery()}`);
       totalPages = data.total_pages;
+      if (totalPages > 0 && data.page > totalPages) {
+        currentPage = totalPages;
+        await loadList();
+        return;
+      }
       renderList(data);
     } catch (err) {
       showAlert($('list_error'), 'error', escapeHtml(err.message));
       const tbody = $('list_body');
       if (tbody) tbody.innerHTML = '<tr><td colspan="12" class="empty">載入失敗，請重試</td></tr>';
     }
+  }
+
+  function renderPager(data) {
+    AdminPager.render({
+      nav: $('page_numbers'),
+      range: $('page_range'),
+      page: data.page,
+      total: data.total,
+      pageSize: data.page_size || currentPageSize(),
+      onPage: goToPage,
+      unit: '筆',
+    });
+  }
+
+  function goToPage(page) {
+    const target = Math.max(1, Math.min(Number(page) || 1, totalPages || 1));
+    if (target === currentPage) return;
+    currentPage = target;
+    loadList();
   }
 
   function renderList(data) {
@@ -149,9 +187,7 @@
     if (badge) badge.textContent = `共 ${data.total} 筆`;
     if (!data.submissions.length) {
       tbody.innerHTML = '<tr><td colspan="12" class="empty">沒有符合條件的申報<br><span class="hint">試試放寬日期或清除篩選條件</span></td></tr>';
-      $('page_info').textContent = '0 筆';
-      $('btn_prev').disabled = true;
-      $('btn_next').disabled = true;
+      renderPager(data);
       document.dispatchEvent(new CustomEvent('admin:list-updated', { detail: data }));
       return;
     }
@@ -211,9 +247,7 @@
     tbody.querySelectorAll('tr[data-id]').forEach((tr) => {
       tr.addEventListener('click', () => loadDetail(tr.dataset.id));
     });
-    $('page_info').textContent = `第 ${data.page} / ${data.total_pages} 頁（共 ${data.total} 筆）`;
-    $('btn_prev').disabled = data.page <= 1;
-    $('btn_next').disabled = data.page >= data.total_pages;
+    renderPager(data);
     document.dispatchEvent(new CustomEvent('admin:list-updated', { detail: data }));
   }
 
@@ -277,17 +311,13 @@
       loadList();
     });
   }
-  $('btn_prev').addEventListener('click', () => {
-    if (currentPage > 1) {
-      currentPage--;
-      loadList();
-    }
+  AdminPager.bindSize($('pu_page_size'), PU_PAGE_SIZE_KEY, () => {
+    puPage = 1;
+    loadPortalUsers();
   });
-  $('btn_next').addEventListener('click', () => {
-    if (currentPage < totalPages) {
-      currentPage++;
-      loadList();
-    }
+  AdminPager.bindSize($('batch_page_size'), BATCH_PAGE_SIZE_KEY, () => {
+    batchesPage = 1;
+    loadExportBatches();
   });
 
   async function loadDetail(id) {
@@ -567,7 +597,7 @@
       showAlert($('export_info'), 'success', '匯出成功，相關申報已鎖定。');
       loadList();
       loadSummary();
-      loadExportBatches();
+      loadExportBatches(true);
     } catch (err) {
       showAlert($('export_info'), 'error', escapeHtml(err.message));
       loadExportBatches();
@@ -693,7 +723,7 @@
       showAlert($('urgent_export_info'), 'success', '匯出成功，相關 Urgent Order 已鎖定。');
       loadList();
       loadSummary();
-      loadExportBatches();
+      loadExportBatches(true);
     } catch (err) {
       showAlert($('urgent_export_info'), 'error', escapeHtml(err.message));
       loadExportBatches();
@@ -711,7 +741,7 @@
       const token = await getCsrf();
       const response = await fetch('/api/admin/return/export', { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-csrf-token': token }, body: JSON.stringify({ from: $('re_from').value, to: $('re_to').value, site_code: $('re_site').value.trim(), include_exported: $('re_include').value === 'true' }) });
       if (!response.ok) { const data = await response.json().catch(() => ({ error: '匯出失敗' })); throw new Error(data.error || '匯出失敗'); }
-       const blob = await response.blob(); const disposition = response.headers.get('Content-Disposition') || ''; const match = disposition.match(/filename="([^"]+)"/); const url = URL.createObjectURL(blob); const anchor = document.createElement('a'); anchor.href = url; anchor.download = match ? match[1] : 'Return_Goods_Export.xlsx'; document.body.appendChild(anchor); anchor.click(); anchor.remove(); URL.revokeObjectURL(url); showAlert($('return_export_info'), 'success', '匯出成功，相關申報已鎖定。'); loadList(); loadSummary(); loadExportBatches();
+       const blob = await response.blob(); const disposition = response.headers.get('Content-Disposition') || ''; const match = disposition.match(/filename="([^"]+)"/); const url = URL.createObjectURL(blob); const anchor = document.createElement('a'); anchor.href = url; anchor.download = match ? match[1] : 'Return_Goods_Export.xlsx'; document.body.appendChild(anchor); anchor.click(); anchor.remove(); URL.revokeObjectURL(url); showAlert($('return_export_info'), 'success', '匯出成功，相關申報已鎖定。'); loadList(); loadSummary(); loadExportBatches(true);
      } catch (error) { showAlert($('return_export_info'), 'error', escapeHtml(error.message)); loadExportBatches(); } finally { btn.disabled = false; btn.textContent = '匯出並鎖定'; }
   });
 
@@ -840,10 +870,27 @@
     }).join('');
   }
 
-  async function loadExportBatches() {
+  async function loadExportBatches(resetPage = false) {
+    if (resetPage) batchesPage = 1;
     try {
-      const data = await adminFetch('/api/admin/batches');
+      const params = new URLSearchParams({ page: String(batchesPage), page_size: String(currentBatchPageSize()) });
+      const data = await adminFetch(`/api/admin/batches?${params.toString()}`);
+      const pages = Number(data.exports_total_pages) || 0;
+      if (pages > 0 && Number(data.exports_page) > pages) {
+        batchesPage = pages;
+        return loadExportBatches();
+      }
+      batchesPage = Number(data.exports_page) || 1;
       renderExportBatches(data);
+      AdminPager.render({
+        nav: $('batch_page_numbers'),
+        range: $('batch_page_range'),
+        page: batchesPage,
+        total: data.exports_total,
+        pageSize: currentBatchPageSize(),
+        onPage: (page) => { batchesPage = page; loadExportBatches(); },
+        unit: '個批次',
+      });
       const usage = data.archive_usage || { bytes: 0, files: 0, retention_days: 90 };
       $('export_archive_usage').textContent = `目前保存 ${usage.files} 個正式匯出檔案，共 ${formatFileSize(usage.bytes)}；保存期限 ${usage.retention_days} 日。`;
     } catch (err) {
@@ -954,7 +1001,7 @@
       showAlert($('sales_export_info'), 'success', '匯出成功，相關申報已鎖定。');
       loadList();
       loadSummary();
-      loadExportBatches();
+      loadExportBatches(true);
     } catch (error) {
       showAlert($('sales_export_info'), 'error', escapeHtml(error.message));
       loadExportBatches();
@@ -1143,12 +1190,20 @@
 
   async function loadPortalUsers() {
     try {
-      const data = await adminFetch('/api/admin/portal/users');
+      const params = new URLSearchParams({ page: String(puPage), page_size: String(currentPuPageSize()) });
+      const data = await adminFetch(`/api/admin/portal/users?${params.toString()}`);
+      const pages = Number(data.total_pages) || 0;
+      if (pages > 0 && Number(data.page) > pages) {
+        puPage = pages;
+        return loadPortalUsers();
+      }
+      puPage = Number(data.page) || 1;
       const tbody = $('portal_users_body');
       if (!tbody) return;
-      tbody.innerHTML = data.users.map((u) => {
-      const loginUrl = `${window.location.origin}/portal/?user=${encodeURIComponent(u.username)}`;
-      return `<tr>
+      tbody.innerHTML = data.users.length
+        ? data.users.map((u) => {
+          const loginUrl = `${window.location.origin}/portal/?user=${encodeURIComponent(u.username)}`;
+          return `<tr>
         <td><input type="checkbox" class="pu-select" data-id="${u.id}" aria-label="選擇 ${escapeHtml(u.username)}"></td>
         <td>${escapeHtml(u.username)}</td>
         <td>${escapeHtml(u.display_name || '—')}</td>
@@ -1161,7 +1216,8 @@
           <button class="btn ghost btn-pu-del" data-id="${u.id}" data-username="${escapeHtml(u.username)}">刪除</button>
         </td>
       </tr>`;
-      }).join('');
+        }).join('')
+        : '<tr><td colspan="8" class="text-center text-secondary">沒有帳戶</td></tr>';
       tbody.querySelectorAll('.btn-pu-toggle').forEach((btn) => {
         btn.addEventListener('click', () => togglePortalUser(btn.dataset.id, btn.dataset.active === 'true'));
       });
@@ -1173,11 +1229,22 @@
           try {
             await navigator.clipboard.writeText(btn.dataset.url || '');
             showAlert($('portal_users_result'), 'success', '登入連結已複製。');
-          } catch (err) {
+          } catch {
             window.prompt('複製登入連結：', btn.dataset.url || '');
           }
         });
       });
+      AdminPager.render({
+        nav: $('pu_page_numbers'),
+        range: $('pu_page_range'),
+        page: puPage,
+        total: data.total,
+        pageSize: currentPuPageSize(),
+        onPage: (page) => { puPage = page; loadPortalUsers(); },
+        unit: '個帳戶',
+      });
+      const selectAll = $('pu_select_all');
+      if (selectAll) selectAll.checked = false;
     } catch (err) {
       if ($('portal_users_body')) $('portal_users_body').innerHTML = `<tr><td colspan="8" class="text-center text-secondary">載入失敗：${escapeHtml(err.message)}</td></tr>`;
     }
@@ -1295,14 +1362,27 @@
     }
   });
 
+  async function fetchAllPortalUsers() {
+    const all = [];
+    let page = 1;
+    let totalPages = 1;
+    do {
+      const data = await adminFetch(`/api/admin/portal/users?page=${page}&page_size=100`);
+      all.push(...(data.users || []));
+      totalPages = Number(data.total_pages) || 0;
+      page += 1;
+    } while (page <= totalPages);
+    return all;
+  }
+
   $('btn_pu_export_links').addEventListener('click', async () => {
     const btn = $('btn_pu_export_links');
     btn.disabled = true;
     try {
-      const data = await adminFetch('/api/admin/portal/users');
+      const users = await fetchAllPortalUsers();
       const cell = (v) => `"${String(v ?? '').replace(/"/g, '""')}"`;
       const lines = ['使用者名稱,顯示名稱,角色,Site Code,狀態,登入連結'];
-      for (const u of data.users || []) {
+      for (const u of users) {
         const url = `${window.location.origin}/portal/?user=${encodeURIComponent(u.username)}`;
         lines.push([u.username, u.display_name || '', u.role, u.site_code || '', u.active ? '啟用' : '停用', url].map(cell).join(','));
       }
@@ -1314,7 +1394,7 @@
       a.click();
       a.remove();
       setTimeout(() => URL.revokeObjectURL(a.href), 5000);
-      showAlert($('portal_users_result'), 'success', `已匯出 ${(data.users || []).length} 個帳戶的登入連結（CSV，可用 Excel 開啟）。`);
+      showAlert($('portal_users_result'), 'success', `已匯出 ${users.length} 個帳戶的登入連結（CSV，可用 Excel 開啟）。`);
     } catch (err) {
       showAlert($('portal_users_result'), 'error', escapeHtml(err.message));
     } finally {
@@ -1586,19 +1666,27 @@
   });
 
   const lazyLoaded = new Set();
+  const lazyLoaders = {
+    'portal-users': loadPortalUsers,
+    'sku-master': loadSkuMaster,
+    'store-routes': loadStoreRoutes,
+    'rejection-reasons': loadRejectionReasons,
+    stores: loadStoreCount,
+    'recovery-codes': loadRecoveryCodes,
+  };
+
+  function loadLazySection(key) {
+    if (!key || lazyLoaded.has(key)) return;
+    const fn = lazyLoaders[key];
+    if (!fn) return;
+    lazyLoaded.add(key);
+    try { fn(); } catch {}
+  }
+
   function setupLazySections() {
-    const loaders = {
-      'portal-users': loadPortalUsers,
-      'sku-master': loadSkuMaster,
-      'store-routes': loadStoreRoutes,
-      'rejection-reasons': loadRejectionReasons,
-      'review-pending': loadReviewPending,
-      stores: loadStoreCount,
-      'recovery-codes': loadRecoveryCodes,
-    };
     const cards = document.querySelectorAll('[data-lazy-section]');
     if (!('IntersectionObserver' in window)) {
-      Object.values(loaders).forEach((fn) => { try { fn(); } catch {} });
+      Object.keys(lazyLoaders).forEach(loadLazySection);
       return;
     }
     const io = new IntersectionObserver((entries) => {
@@ -1606,11 +1694,7 @@
         if (!entry.isIntersecting) return;
         const key = entry.target.dataset.lazySection;
         if (!key || lazyLoaded.has(key)) return;
-        lazyLoaded.add(key);
-        const fn = loaders[key];
-        if (fn) {
-          try { fn(); } catch {}
-        }
+        loadLazySection(key);
         io.unobserve(entry.target);
       });
     }, { rootMargin: '400px 0px' });
@@ -1621,11 +1705,43 @@
     });
   }
 
+  const TAB_LAZY = {
+    accounts: ['portal-users', 'sku-master'],
+    review: ['store-routes', 'rejection-reasons'],
+    system: ['stores', 'recovery-codes'],
+  };
+
+  function refreshActiveTab(manual = false) {
+    const tab = globalThis.__adminActiveTab || 'overview';
+    if (tab === 'overview') loadSummary();
+    else if (tab === 'list') loadList();
+    else if (tab === 'batches') loadExportBatches();
+    else if (tab === 'review') {
+      loadReviewPending();
+      if (manual) {
+        loadStoreRoutes();
+        loadRejectionReasons();
+      }
+    } else if (tab === 'accounts' && manual) {
+      loadPortalUsers();
+      loadSkuMaster();
+    } else if (tab === 'system' && manual) {
+      loadStoreCount();
+      loadRecoveryCodes();
+    } else if (tab === 'zero-sales') {
+      try { globalThis.__zsRefresh?.(); } catch {}
+    }
+  }
+
+  document.addEventListener('admin:tab-activated', (event) => {
+    const tab = event.detail?.tab;
+    (TAB_LAZY[tab] || []).forEach(loadLazySection);
+    refreshActiveTab();
+  });
+
   // 供頂部導航「立即更新」使用
   globalThis.__adminRefresh = () => {
-    loadSummary();
-    loadList();
-    loadExportBatches();
+    refreshActiveTab(true);
     const note = document.getElementById('nav_refresh_note');
     if (note) {
       const now = new Date().toLocaleTimeString('zh-HK', { hour12: false });
@@ -1633,22 +1749,18 @@
     }
   };
 
+  setDefaultDateFilters();
+  setupLazySections();
+
   ensureAuth().then((username) => {
     if (!username) {
       window.location.replace('/admin/login.html');
-      return;
     }
-    setDefaultDateFilters();
-    loadList();
-    loadSummary();
-    loadExportBatches();
-    setupLazySections();
   });
+
   setInterval(() => {
     if (document.visibilityState === 'visible' && !document.body.classList.contains('drawer-open')) {
-      loadSummary();
-      loadList();
-      loadExportBatches();
+      refreshActiveTab();
     }
   }, 60000);
   populateNdCodeDatalists();

@@ -7,6 +7,13 @@
   let reasonsCache = [];
   let itemRows = [];
   let batchesCache = [];
+  let zsBatchPage = 1;
+  const ZS_BATCH_PAGE_SIZE_KEY = 'ndrf_admin_zs_batch_page_size';
+
+  function currentZsBatchPageSize() {
+    const v = Number($('zs_batch_page_size')?.value || 20);
+    return [20, 50, 100].includes(v) ? v : 20;
+  }
 
   async function getCsrf() {
     if (!csrf) {
@@ -114,16 +121,36 @@
     setWeekHint(`${esc(weekEl.value.trim())} ｜ ${esc(fmtDate(monday))}（一）至 ${esc(fmtDate(sunday))}（日）`);
   }
 
-  async function loadBatches() {
+  async function loadBatches(resetPage = false) {
+    if (resetPage) zsBatchPage = 1;
     const body = $('zs_batches_body');
     if (!body) return;
     try {
-      const data = await aFetch('/api/admin/zero-sales/batches');
+      const params = new URLSearchParams({ page: String(zsBatchPage), page_size: String(currentZsBatchPageSize()) });
+      const data = await aFetch(`/api/admin/zero-sales/batches?${params.toString()}`);
+      const pages = Number(data.total_pages) || 0;
+      if (pages > 0 && Number(data.page) > pages) {
+        zsBatchPage = pages;
+        return loadBatches();
+      }
+      zsBatchPage = Number(data.page) || 1;
       const rows = data.batches || [];
-      batchesCache = rows;
-      fillExportBatchSelect(rows);
-      fillStatsBatchSelect(rows);
-      if (!rows.length) { body.innerHTML = '<tr><td colspan="8" class="text-center text-secondary">暫無批次</td></tr>'; return; }
+      batchesCache = data.batch_options || rows;
+      fillExportBatchSelect(batchesCache);
+      fillStatsBatchSelect(batchesCache);
+      if (!rows.length) {
+        body.innerHTML = '<tr><td colspan="8" class="text-center text-secondary">暫無批次</td></tr>';
+        AdminPager.render({
+          nav: $('zs_batch_page_numbers'),
+          range: $('zs_batch_page_range'),
+          page: zsBatchPage,
+          total: data.total,
+          pageSize: currentZsBatchPageSize(),
+          onPage: (page) => { zsBatchPage = page; loadBatches(); },
+          unit: '個批次',
+        });
+        return;
+      }
       body.innerHTML = rows.map((b) => {
         const statusTag = b.is_open
           ? '<span class="badge-zs badge-zs-ok">開放中</span>'
@@ -157,6 +184,15 @@
       });
       if (!currentBatch && rows[0]) currentBatch = rows[0].id;
       syncExportBatchSelect();
+      AdminPager.render({
+        nav: $('zs_batch_page_numbers'),
+        range: $('zs_batch_page_range'),
+        page: zsBatchPage,
+        total: data.total,
+        pageSize: currentZsBatchPageSize(),
+        onPage: (page) => { zsBatchPage = page; loadBatches(); },
+        unit: '個批次',
+      });
     } catch (err) {
       body.innerHTML = `<tr><td colspan="8" class="text-center text-danger">${esc(err.message)}</td></tr>`;
     }
@@ -271,7 +307,7 @@
         : '';
       res.innerHTML = `<div class="alert alert-success">已建立批次（${data.totalRows} 行）${closedText}。舊週次已轉為唯讀，店舖不能再回覆。</div>`;
       $('zs_file').value = '';
-      await loadBatches();
+      await loadBatches(true);
       await loadSummary();
       refreshRepeatsIfOpen();
     } catch (err) {
@@ -828,6 +864,10 @@
     });
     const repBtn = $('btn_zs_repeat');
     if (repBtn) repBtn.addEventListener('click', loadRepeats);
+    AdminPager.bindSize($('zs_batch_page_size'), ZS_BATCH_PAGE_SIZE_KEY, () => {
+      zsBatchPage = 1;
+      loadBatches();
+    });
     // 重複上榜區塊預設收起，展開時才載入資料
     const repWrap = $('zs_repeat_collapse');
     if (repWrap) repWrap.addEventListener('shown.bs.collapse', () => { loadRepeats(); });

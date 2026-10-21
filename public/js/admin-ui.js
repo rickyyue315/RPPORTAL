@@ -14,28 +14,83 @@
     }
   }
 
-  /* ---------- 導航高亮 ---------- */
-  function initNavSpy() {
-    const links = [...document.querySelectorAll('#admin_nav_links a[data-nav]')];
-    if (!links.length) return;
-    const map = new Map(links.map((a) => [a.dataset.nav, a]));
-    const sections = [...document.querySelectorAll('.admin-section[id]')];
-    const setActive = (id) => {
-      links.forEach((a) => a.classList.toggle('active', a.dataset.nav === id));
+  /* ---------- 分區 Tabs（?tab= 深層連結） ---------- */
+  function initTabs() {
+    const tabs = [...document.querySelectorAll('#admin_nav_links [data-tab]')];
+    const panels = [...document.querySelectorAll('[data-tab-panel]')];
+    if (!tabs.length || !panels.length) return;
+    const valid = new Set(tabs.map((t) => t.dataset.tab));
+    const legacyHash = {
+      'sec-overview': 'overview',
+      'sec-list': 'list',
+      'sec-export': 'export',
+      'sec-batches': 'batches',
+      'sec-accounts': 'accounts',
+      'sec-review': 'review',
+      'sec-zero-sales': 'zero-sales',
+      'sec-system': 'system',
     };
-    if (!('IntersectionObserver' in window)) return;
-    const io = new IntersectionObserver((entries) => {
-      entries.forEach((e) => {
-        if (e.isIntersecting) setActive(e.target.id);
+    function fromLocation() {
+      const q = new URLSearchParams(location.search).get('tab');
+      if (q && valid.has(q)) return q;
+      const hash = location.hash.replace(/^#/, '');
+      if (legacyHash[hash] && valid.has(legacyHash[hash])) return legacyHash[hash];
+      return 'overview';
+    }
+    function activate(name, opts = {}) {
+      if (!valid.has(name)) name = 'overview';
+      const changed = globalThis.__adminActiveTab !== name;
+      panels.forEach((p) => { p.hidden = p.dataset.tabPanel !== name; });
+      tabs.forEach((t) => {
+        const on = t.dataset.tab === name;
+        t.classList.toggle('active', on);
+        t.setAttribute('aria-selected', on ? 'true' : 'false');
+        t.tabIndex = on ? 0 : -1;
       });
-    }, { rootMargin: '-30% 0px -60% 0px' });
-    sections.forEach((s) => io.observe(s));
-    links.forEach((a) => {
-      a.addEventListener('click', (e) => {
-        // 原生錨點跳轉即可，只更新高亮
-        setActive(a.dataset.nav);
+      globalThis.__adminActiveTab = name;
+      const url = new URL(location.href);
+      url.searchParams.set('tab', name);
+      url.hash = '';
+      const method = opts.push ? 'pushState' : 'replaceState';
+      history[method]({ tab: name }, '', url.toString());
+      if (opts.scroll !== false) window.scrollTo({ top: 0, left: 0, behavior: 'auto' });
+      if (changed || opts.force) {
+        document.dispatchEvent(new CustomEvent('admin:tab-activated', { detail: { tab: name } }));
+      }
+    }
+    tabs.forEach((tab, index) => {
+      tab.addEventListener('click', (e) => {
+        e.preventDefault();
+        if (tab.dataset.tab === globalThis.__adminActiveTab) return;
+        activate(tab.dataset.tab, { push: true });
+      });
+      tab.addEventListener('keydown', (e) => {
+        let next = null;
+        if (e.key === 'ArrowRight') next = tabs[(index + 1) % tabs.length];
+        else if (e.key === 'ArrowLeft') next = tabs[(index - 1 + tabs.length) % tabs.length];
+        else if (e.key === 'Home') next = tabs[0];
+        else if (e.key === 'End') next = tabs[tabs.length - 1];
+        else if (e.key === ' ' || e.key === 'Spacebar') {
+          e.preventDefault();
+          tab.click();
+          return;
+        }
+        if (!next) return;
+        e.preventDefault();
+        next.focus();
+        activate(next.dataset.tab, { push: true });
       });
     });
+    document.addEventListener('click', (e) => {
+      const link = e.target instanceof Element ? e.target.closest('[data-tab-link]') : null;
+      if (!link) return;
+      const name = link.dataset.tabLink;
+      if (!valid.has(name)) return;
+      e.preventDefault();
+      activate(name, { push: true });
+    });
+    window.addEventListener('popstate', () => activate(fromLocation(), { scroll: false }));
+    activate(fromLocation(), { scroll: false, force: true });
   }
 
   /* ---------- 匯出 Tabs ---------- */
@@ -197,7 +252,7 @@
   }
 
   function init() {
-    initNavSpy();
+    initTabs();
     initExportTabs();
     initAdvancedToggle();
     initPresets();

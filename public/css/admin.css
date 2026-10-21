@@ -35,6 +35,16 @@
 }
 .admin-nav a:hover { background: #eef4fa; color: #0f5c9c; text-decoration: none; }
 .admin-nav a.active { background: #0f5c9c; color: #fff; }
+.admin-tabs {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: thin;
+}
+.admin-tabs a { flex: 0 0 auto; }
+.admin-tab-panel[hidden] { display: none !important; }
 .admin-nav .nav-refresh {
   margin-left: auto;
   white-space: nowrap;
@@ -141,6 +151,20 @@ tr.row-selected:nth-child(even) td { background: #e3effc; }
 .admin-pagination { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-top: 12px; }
 .admin-pagination .page-size { display: flex; align-items: center; gap: 6px; font-size: 13px; color: #66727f; }
 .admin-pagination select { width: auto; padding: 6px 10px; font-size: 13px; }
+.page-range { margin-right: auto; }
+.page-numbers { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; }
+.page-numbers button {
+  min-width: 32px; height: 30px; padding: 0 8px;
+  border: 1px solid #c9d8e6; background: #fff; color: #0f5c9c;
+  border-radius: 6px; font-size: 13px; line-height: 1; cursor: pointer;
+}
+.page-numbers button:hover { background: #eef4fa; }
+.page-numbers button[aria-current="page"] { background: #0f5c9c; border-color: #0f5c9c; color: #fff; font-weight: 700; }
+.page-numbers button:disabled { color: #b6c1cc; border-color: #e3e8ed; background: #f6f8fa; cursor: default; }
+.page-numbers .page-ellipsis { padding: 0 2px; color: #9aa8b6; font-size: 13px; }
+@media (max-width: 640px) {
+  .page-range { width: 100%; margin-right: 0; }
+}
 
 /* ---------- 詳情抽屜 ---------- */
 #detail_overlay {

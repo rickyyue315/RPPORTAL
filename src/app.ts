@@ -112,7 +112,7 @@ export function createApp() {
         // admin.css must stay in sync with the JS overlays (a new overlay div
         // with a stale stylesheet renders as a full-width block at the page
         // bottom instead of a centred modal).
-        if (filePath.endsWith('/js/admin.js') || filePath.endsWith('/js/admin-zero-sales.js') || filePath.endsWith('/js/admin-ui.js') || filePath.endsWith('/css/admin.css')) {
+        if (filePath.endsWith('/js/admin.js') || filePath.endsWith('/js/admin-zero-sales.js') || filePath.endsWith('/js/admin-ui.js') || filePath.endsWith('/js/admin-pager.js') || filePath.endsWith('/css/admin.css')) {
           res.setHeader('Cache-Control', 'no-store');
         }
       },

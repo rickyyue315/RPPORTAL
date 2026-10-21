@@ -24,15 +24,17 @@
   </header>
 
   <nav class="admin-nav" aria-label="後台分區導航">
-    <div class="admin-nav-inner" id="admin_nav_links">
-      <a href="#sec-overview" data-nav="sec-overview">總覽</a>
-      <a href="#sec-list" data-nav="sec-list">申報清單</a>
-      <a href="#sec-export" data-nav="sec-export">匯出</a>
-      <a href="#sec-batches" data-nav="sec-batches">匯出批次</a>
-      <a href="#sec-accounts" data-nav="sec-accounts">帳戶 / 主檔</a>
-      <a href="#sec-review" data-nav="sec-review">審批設定</a>
-      <a href="#sec-zero-sales" data-nav="sec-zero-sales">零銷售</a>
-      <a href="#sec-system" data-nav="sec-system">系統</a>
+    <div class="admin-nav-inner">
+      <div class="admin-tabs" id="admin_nav_links" role="tablist" aria-label="後台分區">
+        <a href="?tab=overview" role="tab" id="tab-overview" data-tab="overview" aria-controls="panel-overview" aria-selected="true">總覽</a>
+        <a href="?tab=list" role="tab" id="tab-list" data-tab="list" aria-controls="panel-list" aria-selected="false" tabindex="-1">申報清單</a>
+        <a href="?tab=export" role="tab" id="tab-export" data-tab="export" aria-controls="panel-export" aria-selected="false" tabindex="-1">匯出</a>
+        <a href="?tab=batches" role="tab" id="tab-batches" data-tab="batches" aria-controls="panel-batches" aria-selected="false" tabindex="-1">匯出批次</a>
+        <a href="?tab=accounts" role="tab" id="tab-accounts" data-tab="accounts" aria-controls="panel-accounts" aria-selected="false" tabindex="-1">帳戶 / 主檔</a>
+        <a href="?tab=review" role="tab" id="tab-review" data-tab="review" aria-controls="panel-review" aria-selected="false" tabindex="-1">審批設定</a>
+        <a href="?tab=zero-sales" role="tab" id="tab-zero-sales" data-tab="zero-sales" aria-controls="panel-zero-sales" aria-selected="false" tabindex="-1">零銷售</a>
+        <a href="?tab=system" role="tab" id="tab-system" data-tab="system" aria-controls="panel-system" aria-selected="false" tabindex="-1">系統</a>
+      </div>
       <span class="nav-refresh"><span class="pulse-dot" title="每分鐘自動更新"></span><span id="nav_refresh_note">每分鐘自動更新</span><button class="btn btn-sm btn-outline-primary" id="btn_manual_refresh" type="button">立即更新</button></span>
     </div>
   </nav>
@@ -41,6 +43,7 @@
     <div class="page-body">
       <div class="container-xl">
 
+        <section class="admin-tab-panel" id="panel-overview" data-tab-panel="overview" role="tabpanel" aria-labelledby="tab-overview">
         <!-- ============ 總覽 ============ -->
         <div class="admin-section-title admin-section" id="sec-overview">總覽 <span class="count-badge" id="summary_note">載入中…</span></div>
         <div class="row row-deck row-cards mb-3" id="dash_wrap">
@@ -156,13 +159,16 @@
                     </tbody>
                   </table>
                 </div>
-                <div class="mt-2 text-end"><a href="#sec-zero-sales" class="btn btn-sm btn-outline-primary">前往統計及匯出</a></div>
+                <div class="mt-2 text-end"><a href="?tab=zero-sales" class="btn btn-sm btn-outline-primary" data-tab-link="zero-sales">前往統計及匯出</a></div>
               </div>
             </div>
           </div>
         </div>
 
+        </section>
+
         <!-- ============ 申報清單 ============ -->
+        <section class="admin-tab-panel" id="panel-list" data-tab-panel="list" role="tabpanel" aria-labelledby="tab-list" hidden>
         <div class="admin-section-title admin-section" id="sec-list">申報清單 <span class="count-badge" id="list_count_badge">—</span></div>
         <div class="card">
           <div class="card-header">
@@ -212,16 +218,18 @@
               </table>
             </div>
             <div class="admin-pagination">
-              <button class="btn btn-sm" id="btn_prev">上一頁</button>
-              <span id="page_info" class="text-secondary small"></span>
-              <button class="btn btn-sm" id="btn_next">下一頁</button>
+              <span id="page_range" class="page-range text-secondary small"></span>
+              <nav id="page_numbers" class="page-numbers" aria-label="申報清單分頁"></nav>
               <label class="page-size">每頁 <select id="f_page_size" class="form-select form-select-sm"><option value="20">20</option><option value="50">50</option><option value="100">100</option></select></label>
               <span class="text-secondary small">點列可開啟詳情 · Enter 可直接篩選</span>
             </div>
           </div>
         </div>
 
+        </section>
+
         <!-- ============ 匯出 ============ -->
+        <section class="admin-tab-panel" id="panel-export" data-tab-panel="export" role="tabpanel" aria-labelledby="tab-export" hidden>
         <div class="admin-section-title admin-section" id="sec-export">Excel 匯出</div>
         <div class="card">
           <div class="card-header">
@@ -286,7 +294,10 @@
           </div>
         </div>
 
+        </section>
+
         <!-- ============ 匯出批次 ============ -->
+        <section class="admin-tab-panel" id="panel-batches" data-tab-panel="batches" role="tabpanel" aria-labelledby="tab-batches" hidden>
         <div class="admin-section-title admin-section" id="sec-batches">匯出批次</div>
         <div class="card">
           <div class="card-header">
@@ -304,10 +315,18 @@
             <div class="table-responsive">
               <table class="table table-vcenter"><thead><tr><th>建立時間</th><th>檔案</th><th>類型</th><th>筆數</th><th>保存狀態</th><th>操作</th></tr></thead><tbody id="export_history_body"><tr><td colspan="6" class="text-center text-secondary">載入中…</td></tr></tbody></table>
             </div>
+            <div class="admin-pagination">
+              <span id="batch_page_range" class="page-range text-secondary small"></span>
+              <nav id="batch_page_numbers" class="page-numbers" aria-label="匯出批次分頁"></nav>
+              <label class="page-size">每頁 <select id="batch_page_size" class="form-select form-select-sm"><option value="20">20</option><option value="50">50</option><option value="100">100</option></select></label>
+            </div>
           </div>
         </div>
 
+        </section>
+
         <!-- ============ 帳戶 / 主檔 ============ -->
+        <section class="admin-tab-panel" id="panel-accounts" data-tab-panel="accounts" role="tabpanel" aria-labelledby="tab-accounts" hidden>
         <div class="admin-section-title admin-section" id="sec-accounts">帳戶 / 主檔</div>
         <div class="card" data-lazy-section="portal-users">
           <div class="card-header">
@@ -347,13 +366,18 @@
             </div>
             <div id="portal_users_result"></div>
             <div class="d-flex gap-2 mb-3 flex-wrap align-items-center">
-              <span class="text-secondary small">已勾選帳戶可批量操作：</span>
+              <span class="text-secondary small">已勾選帳戶可批量操作（只限本頁）：</span>
               <button class="btn btn-sm btn-outline-primary" id="btn_pu_bulk_activate">批量啟用</button>
               <button class="btn btn-sm" id="btn_pu_bulk_deactivate">批量停用</button>
               <button class="btn btn-sm btn-outline-danger" id="btn_pu_bulk_delete">批量刪除</button>
             </div>
             <div class="table-responsive">
-              <table class="table table-vcenter"><thead><tr><th><input type="checkbox" id="pu_select_all" title="全選"></th><th>使用者名稱</th><th>顯示名稱</th><th>角色</th><th>Site Code</th><th>狀態</th><th>登入連結</th><th>操作</th></tr></thead><tbody id="portal_users_body"><tr><td colspan="8" class="text-center text-secondary">捲動到此處自動載入…</td></tr></tbody></table>
+              <table class="table table-vcenter"><thead><tr><th><input type="checkbox" id="pu_select_all" title="全選本頁"></th><th>使用者名稱</th><th>顯示名稱</th><th>角色</th><th>Site Code</th><th>狀態</th><th>登入連結</th><th>操作</th></tr></thead><tbody id="portal_users_body"><tr><td colspan="8" class="text-center text-secondary">捲動到此處自動載入…</td></tr></tbody></table>
+            </div>
+            <div class="admin-pagination">
+              <span id="pu_page_range" class="page-range text-secondary small"></span>
+              <nav id="pu_page_numbers" class="page-numbers" aria-label="Portal 帳戶分頁"></nav>
+              <label class="page-size">每頁 <select id="pu_page_size" class="form-select form-select-sm"><option value="20">20</option><option value="50">50</option><option value="100">100</option></select></label>
             </div>
           </div>
         </div>
@@ -381,9 +405,12 @@
           </div>
         </div>
 
+        </section>
+
         <!-- ============ 審批設定 ============ -->
+        <section class="admin-tab-panel" id="panel-review" data-tab-panel="review" role="tabpanel" aria-labelledby="tab-review" hidden>
         <div class="admin-section-title admin-section" id="sec-review">審批設定</div>
-        <div class="card" data-lazy-section="review-pending">
+        <div class="card">
           <div class="card-header">
             <h3 class="card-title">Buyer 待審批提醒</h3>
             <div class="card-actions">
@@ -451,7 +478,10 @@
           </div>
         </div>
 
+        </section>
+
         <!-- ============ 零銷售 ============ -->
+        <section class="admin-tab-panel" id="panel-zero-sales" data-tab-panel="zero-sales" role="tabpanel" aria-labelledby="tab-zero-sales" hidden>
         <div class="admin-section-title admin-section" id="sec-zero-sales">90日零銷售回覆</div>
         <div class="card mt-0" id="zs_card" data-lazy-section="zero-sales">
           <div class="card-header">
@@ -538,6 +568,11 @@
             <div class="table-responsive">
               <table class="table table-vcenter"><thead><tr><th>週次</th><th>行數</th><th>店數</th><th>已回覆</th><th>未回覆</th><th>建立人</th><th>建立時間</th><th>操作</th></tr></thead><tbody id="zs_batches_body"><tr><td colspan="8" class="text-center text-secondary">捲動到此處自動載入…</td></tr></tbody></table>
             </div>
+            <div class="admin-pagination">
+              <span id="zs_batch_page_range" class="page-range text-secondary small"></span>
+              <nav id="zs_batch_page_numbers" class="page-numbers" aria-label="零銷售批次分頁"></nav>
+              <label class="page-size">每頁 <select id="zs_batch_page_size" class="form-select form-select-sm"><option value="20">20</option><option value="50">50</option><option value="100">100</option></select></label>
+            </div>
             <div class="d-flex gap-2 mt-2 flex-wrap">
               <input type="text" id="zs_filter_site" class="form-control" style="max-width:160px" placeholder="篩選 Site Code">
               <select id="zs_filter_status" class="form-select" style="max-width:160px"><option value="">全部狀態</option><option value="pending">未回覆</option><option value="replied">已回覆</option></select>
@@ -567,7 +602,10 @@
           </div>
         </div>
 
+        </section>
+
         <!-- ============ 系統 ============ -->
+        <section class="admin-tab-panel" id="panel-system" data-tab-panel="system" role="tabpanel" aria-labelledby="tab-system" hidden>
         <div class="admin-section-title admin-section" id="sec-system">系統</div>
         <div class="card" data-lazy-section="stores">
           <div class="card-header">
@@ -605,6 +643,7 @@
             <div id="recovery_code_result" class="mt-2"></div>
           </div>
         </div>
+        </section>
 
       </div>
     </div>
@@ -701,6 +740,7 @@
 <script src="https://cdn.jsdelivr.net/npm/@tabler/core@1.1.1/dist/js/tabler.min.js"></script>
 <script src="/js/options.js"></script>
 <script src="/js/api.js"></script>
+<script src="/js/admin-pager.js"></script>
 <script src="/js/admin.js"></script>
 <script src="/js/admin-zero-sales.js"></script>
 <script src="/js/admin-ui.js"></script>

@@ -104,7 +104,8 @@ import {
 import {
   createBatch as createZeroSalesBatch,
   getZeroSalesSummary as getZeroSalesSummaryStats,
-  listBatches as listZeroSalesBatches,
+  listBatchesPage as listZeroSalesBatchesPage,
+  listBatchOptions as listZeroSalesBatchOptions,
   listBatchItems as listZeroSalesBatchItems,
   listItemsForExport as listZeroSalesForExport,
   listReasons as listZeroSalesReasons,
@@ -197,6 +198,13 @@ function exportSubmissionType(filters: unknown): ExportSubmissionType {
     if (type === 'urgent' || type === 'sales' || type === 'return') return type;
   }
   return 'normal';
+}
+
+/** Shared page/page_size clamp for admin list endpoints. */
+function parsePagination(req: Request, defaultSize = 20): { page: number; size: number; offset: number } {
+  const page = Math.max(1, Number(req.query.page) || 1);
+  const size = Math.min(100, Math.max(1, Number(req.query.page_size) || defaultSize));
+  return { page, size, offset: (page - 1) * size };
 }
 
 async function buildArchivedExportBuffer(type: ExportSubmissionType, rows: SubmissionRow[]): Promise<Buffer> {
@@ -1509,11 +1517,14 @@ adminRouter.get(
   '/batches',
   requireAdmin,
   adminActionLimiter,
-  asyncHandler(async (_req: Request, res: Response) => {
+  asyncHandler(async (req: Request, res: Response) => {
+    const { page, size, offset } = parsePagination(req);
     const imports = await query(
       `SELECT id, filename, sheet_name, row_count, success_count, failed_count, created_by, submission_type, created_at
        FROM import_batches ORDER BY created_at DESC LIMIT 50`,
     );
+    const exportCount = await query<{ count: string }>('SELECT count(*)::text AS count FROM export_batches');
+    const exportsTotal = Number(exportCount.rows[0]?.count ?? 0);
     const exports = await query(
       `SELECT eb.id, eb.filename, eb.submission_count, eb.filters,
               eb.filters->>'submission_type' AS submission_type,
@@ -1523,7 +1534,8 @@ adminRouter.get(
               ebf.file_size AS archive_file_size, ebf.expires_at AS archive_expires_at
          FROM export_batches eb
          LEFT JOIN export_batch_files ebf ON ebf.export_batch_id = eb.id
-        ORDER BY eb.created_at DESC LIMIT 50`,
+        ORDER BY eb.created_at DESC, eb.id DESC LIMIT $1 OFFSET $2`,
+      [size, offset],
     );
     const archiveUsage = await query<{ bytes: string; files: string }>(
       `SELECT COALESCE(sum(file_size), 0)::text AS bytes, count(*)::text AS files
@@ -1538,6 +1550,10 @@ adminRouter.get(
         archive_expires_at: r.archive_expires_at ? toHKString(r.archive_expires_at as string) : null,
         archive_file_size: r.archive_file_size === null || r.archive_file_size === undefined ? null : Number(r.archive_file_size),
       })),
+      exports_total: exportsTotal,
+      exports_page: page,
+      exports_page_size: size,
+      exports_total_pages: Math.ceil(exportsTotal / size),
       archive_usage: {
         bytes: Number(archiveUsage.rows[0]?.bytes ?? 0),
         files: Number(archiveUsage.rows[0]?.files ?? 0),
@@ -1624,7 +1640,10 @@ adminRouter.get(
   '/portal/users',
   requireAdmin,
   adminActionLimiter,
-  asyncHandler(async (_req: Request, res: Response) => {
+  asyncHandler(async (req: Request, res: Response) => {
+    const { page, size, offset } = parsePagination(req);
+    const countResult = await query<{ count: string }>('SELECT count(*)::text AS count FROM portal_users');
+    const total = Number(countResult.rows[0]?.count ?? 0);
     const result = await query<{
       id: string;
       username: string;
@@ -1638,9 +1657,17 @@ adminRouter.get(
     }>(
       `SELECT id, username, display_name, role, site_code, must_change_password, active, created_at, initial_password
          FROM portal_users
-        ORDER BY role, site_code, username`,
+        ORDER BY role, site_code, username
+        LIMIT $1 OFFSET $2`,
+      [size, offset],
     );
-    res.json({ users: result.rows.map((row) => ({ ...row, created_at: toHKString(row.created_at) })) });
+    res.json({
+      users: result.rows.map((row) => ({ ...row, created_at: toHKString(row.created_at) })),
+      total,
+      page,
+      page_size: size,
+      total_pages: Math.ceil(total / size),
+    });
   }),
 );
 
@@ -2421,8 +2448,20 @@ adminRouter.get(
   '/zero-sales/batches',
   requireAdmin,
   adminActionLimiter,
-  asyncHandler(async (_req: Request, res: Response) => {
-    res.json({ batches: await listZeroSalesBatches() });
+  asyncHandler(async (req: Request, res: Response) => {
+    const { page, size } = parsePagination(req);
+    const [pageData, batchOptions] = await Promise.all([
+      listZeroSalesBatchesPage({ page, pageSize: size }),
+      listZeroSalesBatchOptions(),
+    ]);
+    res.json({
+      batches: pageData.batches,
+      batch_options: batchOptions,
+      total: pageData.total,
+      page,
+      page_size: size,
+      total_pages: Math.ceil(pageData.total / size),
+    });
   }),
 );
 

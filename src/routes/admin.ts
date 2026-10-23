@@ -99,6 +99,7 @@ import { createImportBatch, findImportBatchByContentHash } from '../services/imp
 import {
   buildZeroSalesExportBuffer,
   buildZeroSalesRepeatExportBuffer,
+  buildZeroSalesBuyerFollowupExportBuffer,
   generateZeroSalesTemplateWorkbook,
   parseZeroSalesWorkbook,
 } from '../lib/zeroSales.js';
@@ -112,6 +113,7 @@ import {
   listReasons as listZeroSalesReasons,
   listZeroSalesRepeats,
   listZeroSalesRepeatSkus,
+  listZeroSalesBuyerFollowup,
   listZeroSalesPendingStores,
   deleteZeroSalesBatch,
   deleteZeroSalesBatchSite,
@@ -2623,6 +2625,72 @@ adminRouter.get(
     });
     res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
     res.setHeader('Content-Disposition', `attachment; filename="Zero_Sales_Repeat_SKU_${stamp}.xlsx"`);
+    res.send(buffer);
+  }),
+);
+
+/** GET /api/admin/zero-sales/buyer-followup — Buyer 跟進一頁 JSON（跨店重複 SKU + 庫存 + Top 原因 + 店舖清單） */
+adminRouter.get(
+  '/zero-sales/buyer-followup',
+  requireAdmin,
+  adminActionLimiter,
+  asyncHandler(async (req: Request, res: Response) => {
+    const { q, buyer, min_count, limit } = req.query as Record<string, string | undefined>;
+    const keyword = q?.trim().slice(0, 100) || undefined;
+    const buyerQ = buyer?.trim().slice(0, 100) || undefined;
+    const minCount = min_count === undefined || min_count === '' ? 2 : Number(min_count);
+    const lim = limit === undefined || limit === '' ? 50 : Number(limit);
+    if (!Number.isInteger(minCount) || minCount < 2 || minCount > 20) {
+      res.status(400).json({ error: 'min_count 須為 2 至 20 的整數' });
+      return;
+    }
+    if (!Number.isInteger(lim) || lim < 1 || lim > 100) {
+      res.status(400).json({ error: 'limit 須為 1 至 100 的整數' });
+      return;
+    }
+    const rows = await listZeroSalesBuyerFollowup({ q: keyword, buyer: buyerQ, minCount, limit: lim });
+    res.json({ rows });
+  }),
+);
+
+/** GET /api/admin/zero-sales/buyer-followup/export — 匯出 Buyer 跟進一頁（單一工作表，重點標色） */
+adminRouter.get(
+  '/zero-sales/buyer-followup/export',
+  requireAdmin,
+  excelExportLimiter,
+  asyncHandler(async (req: Request, res: Response) => {
+    const { q, buyer, min_count, limit } = req.query as Record<string, string | undefined>;
+    const keyword = q?.trim().slice(0, 100) || undefined;
+    const buyerQ = buyer?.trim().slice(0, 100) || undefined;
+    const minCount = min_count === undefined || min_count === '' ? 2 : Number(min_count);
+    const lim = limit === undefined || limit === '' ? 50 : Number(limit);
+    if (!Number.isInteger(minCount) || minCount < 2 || minCount > 20) {
+      res.status(400).json({ error: 'min_count 須為 2 至 20 的整數' });
+      return;
+    }
+    if (!Number.isInteger(lim) || lim < 1 || lim > 100) {
+      res.status(400).json({ error: 'limit 須為 1 至 100 的整數' });
+      return;
+    }
+    const rows = await listZeroSalesBuyerFollowup({ q: keyword, buyer: buyerQ, minCount, limit: lim });
+    if (!rows.length) {
+      res.status(404).json({ error: '沒有符合條件的重複上榜 SKU 可以匯出' });
+      return;
+    }
+    const buffer = await buildZeroSalesBuyerFollowupExportBuffer(
+      rows,
+      { minCount, q: keyword, buyer: buyerQ, generatedAt: toHKString(new Date()) },
+    );
+    const stamp = toHKDateString(new Date()).replace(/-/g, '');
+    await writeAuditEvent({
+      eventType: 'zero_sales_buyer_followup_export',
+      actorRole: 'admin',
+      actor: req.adminUsername,
+      ip: getClientIp(req),
+      metadata: { q: keyword ?? null, buyer: buyerQ ?? null, min_count: minCount, limit: lim, count: rows.length },
+    });
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition', `attachment; filename="Zero_Sales_Buyer_Followup_${stamp}.xlsx"`);
     res.send(buffer);
   }),
 );

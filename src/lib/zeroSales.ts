@@ -284,6 +284,8 @@ export interface ZeroSalesRepeatSkuExportRow {
   sku: string;
   brand: string;
   sku_desc: string;
+  /** 主要 Buyer（服務層最新一行取值；舊資料可能為空） */
+  buyer?: string;
   repeat_store_count: number;
   listed_store_count: number;
   repeat_rate: number;
@@ -321,6 +323,7 @@ export interface ZeroSalesRepeatExportMeta {
   minCount: number;
   q?: string;
   siteCode?: string;
+  buyer?: string;
   /** 匯出時間（已轉香港時間字串） */
   generatedAt: string;
 }
@@ -345,6 +348,7 @@ function repeatExportNote(meta: ZeroSalesRepeatExportMeta): string {
   const parts = [`重複定義：同一店舖同一 SKU 跨週（批次）出現 ≥ ${meta.minCount} 次`];
   if (meta.siteCode) parts.push(`Site Code：${meta.siteCode}`);
   if (meta.q) parts.push(`搜尋：${meta.q}`);
+  if (meta.buyer) parts.push(`Buyer：${meta.buyer}`);
   parts.push(`匯出時間：${meta.generatedAt}`);
   return `註：${parts.join('；')}。`;
 }
@@ -366,7 +370,7 @@ export async function buildZeroSalesRepeatExportBuffer(
   if (input.skus) {
     const sheet = workbook.addWorksheet('跨店重複 SKU');
     const headers = [
-      '排名', 'SKU', 'Brand', 'SKU 描述', '重複店數', '曾上榜店數', '重複率',
+      '排名', 'SKU', 'Brand', 'SKU 描述', 'Buyer', '重複店數', '曾上榜店數', '重複率',
       '重複行數', '總行數', '單店最高次數', '未回覆', '已回覆',
       '最後週次', '最後出現日期', '判斷（參考）',
     ];
@@ -374,16 +378,16 @@ export async function buildZeroSalesRepeatExportBuffer(
     headers.forEach((_, i) => { sheet.getCell(1, i + 1).style = headerStyle; });
     input.skus.forEach((r, i) => {
       sheet.addRow([
-        i + 1, r.sku, r.brand, r.sku_desc,
+        i + 1, r.sku, r.brand, r.sku_desc, r.buyer ?? '',
         r.repeat_store_count, r.listed_store_count, r.repeat_rate,
         r.repeat_rows, r.total_rows, r.max_occurrence,
         r.pending_count, r.replied_count,
         r.last_week_label, r.last_seen, repeatSkuVerdict(r),
       ]);
     });
-    const widths = [6, 16, 22, 32, 10, 12, 10, 12, 10, 14, 10, 10, 12, 14, 14];
+    const widths = [6, 16, 22, 32, 18, 10, 12, 10, 12, 10, 14, 10, 10, 12, 14, 14];
     widths.forEach((w, i) => { sheet.getColumn(i + 1).width = w; });
-    sheet.getColumn(7).numFmt = '0%';
+    sheet.getColumn(8).numFmt = '0%';
     if (input.skus.length) {
       sheet.autoFilter = { from: { row: 1, column: 1 }, to: { row: input.skus.length + 1, column: headers.length } };
     }
@@ -425,6 +429,80 @@ export async function buildZeroSalesRepeatExportBuffer(
   }
 
   if (!workbook.worksheets.length) throw new Error('沒有重複上榜資料可以匯出');
+  applyDefaultFont(workbook);
+  return Buffer.from(await workbook.xlsx.writeBuffer());
+}
+
+export interface ZeroSalesBuyerFollowupExportRow extends ZeroSalesRepeatSkuExportRow {
+  stock_total: number;
+  top_reasons: string;
+  store_list: string;
+}
+
+/** Buyer 跟進一頁：單一工作表，按重複店數倒序，重點行自動標色，附 Buyer 備註欄。
+ *  欄位齊 Buyer／庫存總計／Top 原因／重複店舖清單，直接交 Buyer 跟進。 */
+export async function buildZeroSalesBuyerFollowupExportBuffer(
+  rows: ZeroSalesBuyerFollowupExportRow[],
+  meta: ZeroSalesRepeatExportMeta,
+): Promise<Buffer> {
+  if (!rows.length) throw new Error('沒有重複上榜資料可以匯出');
+  const workbook = new ExcelJS.Workbook();
+  const sheet = workbook.addWorksheet('Buyer跟進');
+  const headerStyle: Partial<ExcelJS.Style> = {
+    font: { bold: true, color: { argb: 'FFFFFFFF' } },
+    fill: { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF4472C4' } },
+    alignment: { horizontal: 'center', vertical: 'middle', wrapText: true },
+  };
+  const noteStyle: Partial<ExcelJS.Style> = { font: { italic: true, color: { argb: 'FF808080' } } };
+  const headers = [
+    '排名', 'SKU', 'Brand', 'SKU 描述', 'Buyer',
+    '重複店數', '曾上榜店數', '重複率', '重複行數', '總行數', '單店最高次數',
+    '庫存總計 (CM)', '未回覆', '已回覆', '主要回覆原因 (Top 2)',
+    '重複店舖清單', '最後週次', '最後出現', '判斷（參考）', 'Buyer 跟進備註',
+  ];
+  sheet.addRow(headers);
+  headers.forEach((_, i) => { sheet.getCell(1, i + 1).style = headerStyle; });
+  sheet.getRow(1).height = 30;
+  rows.forEach((r, i) => {
+    const row = sheet.addRow([
+      i + 1, r.sku, r.brand, r.sku_desc, r.buyer ?? '',
+      r.repeat_store_count, r.listed_store_count, r.repeat_rate,
+      r.repeat_rows, r.total_rows, r.max_occurrence,
+      r.stock_total ?? 0, r.pending_count, r.replied_count, r.top_reasons ?? '',
+      r.store_list ?? '', r.last_week_label, r.last_seen, repeatSkuVerdict(r), '',
+    ]);
+    // 突出多店重複：≥5 深紅底白字，≥3 淺紅底，≥2 黃底
+    let fill: string | null = null;
+    let fontColor: string | null = null;
+    if (r.repeat_store_count >= 5) { fill = 'FFC00000'; fontColor = 'FFFFFFFF'; }
+    else if (r.repeat_store_count >= 3) { fill = 'FFFFC7CE'; }
+    else if (r.repeat_store_count >= 2) { fill = 'FFFFEB9C'; }
+    if (fill) {
+      for (let c = 6; c <= 8; c++) {
+        const cell = row.getCell(c);
+        cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: fill } };
+        if (fontColor) cell.font = { bold: true, color: { argb: fontColor } };
+        else cell.font = { bold: true };
+      }
+    }
+    // SKU 問題加粗判斷欄
+    const verdict = String(row.getCell(19).value ?? '');
+    if (verdict === 'SKU 問題') {
+      row.getCell(19).font = { bold: true, color: { argb: 'FFC00000' } };
+    }
+    row.alignment = { vertical: 'middle', wrapText: true };
+  });
+  const widths = [6, 16, 20, 30, 16, 10, 12, 9, 10, 9, 12, 13, 9, 9, 34, 30, 12, 12, 12, 24];
+  widths.forEach((w, i) => { sheet.getColumn(i + 1).width = w; });
+  sheet.getColumn(8).numFmt = '0%';
+  sheet.autoFilter = { from: { row: 1, column: 1 }, to: { row: rows.length + 1, column: headers.length } };
+  sheet.views = [{ state: 'frozen', ySplit: 1 }];
+  // 打印一頁橫向設定：方便直接列印交 Buyer
+  sheet.pageSetup = { orientation: 'landscape', fitToPage: true, fitToWidth: 1, fitToHeight: 0, paperSize: 9 };
+  const note = repeatExportNote(meta);
+  const noteCell = sheet.getCell(rows.length + 3, 1);
+  noteCell.value = `${note} 重複店數 ≥3 淺紅底、≥5 深紅底；「Buyer 跟進備註」欄供 Buyer 填寫行動。`;
+  noteCell.style = noteStyle;
   applyDefaultFont(workbook);
   return Buffer.from(await workbook.xlsx.writeBuffer());
 }

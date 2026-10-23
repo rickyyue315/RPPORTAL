@@ -255,6 +255,7 @@ describe('zero-sales repeat exports', () => {
     expect(ws).toBeDefined();
     const headers = (ws!.getRow(1).values as unknown[]).slice(1);
     expect(headers).toContain('重複店數');
+    expect(headers).toContain('Buyer');
     expect(headers).toContain('判斷（參考）');
 
     let found: ExcelJS.Row | null = null;
@@ -264,9 +265,9 @@ describe('zero-sales repeat exports', () => {
     expect(found).not.toBeNull();
     const hit = found as unknown as ExcelJS.Row;
     expect(hit.getCell(1).value).toBe(1);
-    expect(hit.getCell(5).value).toBe(2);
-    expect(hit.getCell(7).value).toBe(1);
-    expect(hit.getCell(15).value).toBe('疑似 SKU');
+    expect(hit.getCell(6).value).toBe(2);
+    expect(hit.getCell(8).value).toBe(1);
+    expect(hit.getCell(16).value).toBe('疑似 SKU');
   });
 
   it('exports the per-store repeat detail', async () => {

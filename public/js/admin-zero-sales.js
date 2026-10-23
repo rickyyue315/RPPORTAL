@@ -631,6 +631,45 @@
     }
   }
 
+  /** 匯出 Buyer 跟進一頁：單一工作表，重點標色，直接交 Buyer */
+  async function downloadBuyerFollowupExport() {
+    const btn = $('btn_zs_buyer_followup_export');
+    const res = $('zs_repeat_sku_export_result');
+    const qs = new URLSearchParams();
+    const q = ($('zs_rep_sku_q')?.value || '').trim();
+    const min = $('zs_rep_sku_min')?.value || '2';
+    const limit = $('zs_rep_sku_limit')?.value || '50';
+    if (q) qs.set('q', q);
+    qs.set('min_count', min);
+    qs.set('limit', limit);
+    const original = '匯出 Buyer 跟進一頁';
+    if (btn) { btn.disabled = true; btn.textContent = '匯出中…'; }
+    if (res) res.innerHTML = '<div class="text-secondary small">匯出 Buyer 跟進一頁中…</div>';
+    try {
+      const response = await fetch(`/api/admin/zero-sales/buyer-followup/export?${qs}`, { credentials: 'same-origin' });
+      if (!response.ok) {
+        const data = await response.json().catch(() => ({ error: '匯出失敗' }));
+        throw new Error(data.error || '匯出失敗');
+      }
+      const blob = await response.blob();
+      const disp = response.headers.get('Content-Disposition') || '';
+      const match = disp.match(/filename="([^"]+)"/);
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = match ? match[1] : 'Zero_Sales_Buyer_Followup.xlsx';
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+      if (res) res.innerHTML = '<div class="text-success small">匯出成功（Buyer 跟進一頁：按重複店數排序，重點已標色）。</div>';
+    } catch (err) {
+      if (res) res.innerHTML = `<div class="text-danger small">${esc(err.message)}</div>`;
+    } finally {
+      if (btn) { btn.disabled = false; btn.textContent = original; }
+    }
+  }
+
   /** 重複上榜區塊預設收起：收起時不載入（省版面及請求），已展開才同步刷新 */
   function refreshRepeatsIfOpen() {
     const wrap = $('zs_repeat_collapse');
@@ -1034,6 +1073,8 @@
     if (repSkuBtn) repSkuBtn.addEventListener('click', loadRepeatSkus);
     const repSkuExport = $('btn_zs_repeat_sku_export');
     if (repSkuExport) repSkuExport.addEventListener('click', () => downloadRepeatExport('skus'));
+    const buyerBtn = $('btn_zs_buyer_followup_export');
+    if (buyerBtn) buyerBtn.addEventListener('click', downloadBuyerFollowupExport);
     const repSkuLimit = $('zs_rep_sku_limit');
     if (repSkuLimit) repSkuLimit.addEventListener('change', loadRepeatSkus);
     const repSkuMin = $('zs_rep_sku_min');

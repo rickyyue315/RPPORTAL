@@ -48,6 +48,7 @@ export type AuditEventType =
   | 'zero_sales_store_export'
   | 'zero_sales_repeat_sku_export'
   | 'zero_sales_repeat_detail_export'
+  | 'zero_sales_buyer_followup_export'
   | 'zero_sales_replied'
   | 'zero_sales_reply_edited'
   | 'zero_sales_reply_entered'

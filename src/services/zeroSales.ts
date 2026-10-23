@@ -892,6 +892,8 @@ export interface ZeroSalesRepeatSkuRow {
   sku: string;
   brand: string;
   sku_desc: string;
+  /** 該 SKU 主要 Buyer（取最新一行的 Buyer，跨店通常一致；不一致時取最新） */
+  buyer: string;
   /** 有重複上榜（同店同 SKU ≥ minCount）的店舖數 */
   repeat_store_count: number;
   /** 曾上榜（至少一次）的店舖數 */
@@ -914,6 +916,8 @@ export interface ZeroSalesRepeatSkuFilter {
   siteCode?: string;
   /** 模糊搜尋 SKU */
   q?: string;
+  /** 按 Buyer 模糊篩選（payload Buyer 欄） */
+  buyer?: string;
   /** 同店同 SKU 最少出現次數，預設 2 */
   minCount?: number;
   limit?: number;
@@ -940,6 +944,10 @@ export async function listZeroSalesRepeatSkus(
     params.push(`%${filter.q}%`);
     where.push(`i.sku ILIKE $${params.length}`);
   }
+  if (filter.buyer) {
+    params.push(`%${filter.buyer}%`);
+    where.push(`COALESCE(i.payload->>'Buyer', '') ILIKE $${params.length}`);
+  }
   params.push(minCount);
   const minParam = `$${params.length}`;
   params.push(limit);
@@ -949,6 +957,7 @@ export async function listZeroSalesRepeatSkus(
     sku: string;
     brand: string | null;
     sku_desc: string | null;
+    buyer: string | null;
     repeat_store_count: number;
     listed_store_count: number;
     repeat_rows: number;
@@ -967,7 +976,8 @@ export async function listZeroSalesRepeatSkus(
               MAX(b.created_at) AS last_seen,
               (ARRAY_AGG(b.week_label ORDER BY b.created_at DESC))[1] AS last_week_label,
               (ARRAY_AGG(COALESCE(i.payload->>'Brand', '') ORDER BY b.created_at DESC))[1] AS brand,
-              (ARRAY_AGG(COALESCE(i.payload->>'SKU Desc', '') ORDER BY b.created_at DESC))[1] AS sku_desc
+              (ARRAY_AGG(COALESCE(i.payload->>'SKU Desc', '') ORDER BY b.created_at DESC))[1] AS sku_desc,
+              (ARRAY_AGG(COALESCE(i.payload->>'Buyer', '') ORDER BY b.created_at DESC))[1] AS buyer
          FROM zero_sales_items i
          JOIN zero_sales_batches b ON b.id = i.batch_id
         ${whereSql}
@@ -985,12 +995,13 @@ export async function listZeroSalesRepeatSkus(
               (MAX(p.last_seen) FILTER (WHERE p.occ >= ${minParam}))::text AS last_seen_raw,
               (ARRAY_AGG(p.last_week_label ORDER BY p.last_seen DESC) FILTER (WHERE p.occ >= ${minParam}))[1] AS last_week_label,
               (ARRAY_AGG(p.brand ORDER BY p.last_seen DESC) FILTER (WHERE p.occ >= ${minParam}))[1] AS brand,
-              (ARRAY_AGG(p.sku_desc ORDER BY p.last_seen DESC) FILTER (WHERE p.occ >= ${minParam}))[1] AS sku_desc
+              (ARRAY_AGG(p.sku_desc ORDER BY p.last_seen DESC) FILTER (WHERE p.occ >= ${minParam}))[1] AS sku_desc,
+              (ARRAY_AGG(p.buyer ORDER BY p.last_seen DESC) FILTER (WHERE p.occ >= ${minParam}))[1] AS buyer
          FROM pair p
         GROUP BY p.sku
        HAVING COUNT(*) FILTER (WHERE p.occ >= ${minParam}) >= 1
      )
-     SELECT sku, brand, sku_desc, repeat_store_count, listed_store_count,
+     SELECT sku, brand, sku_desc, buyer, repeat_store_count, listed_store_count,
             repeat_rows, total_rows, max_occurrence, pending_count, replied_count,
             last_week_label, last_seen_raw
        FROM rollup
@@ -1005,6 +1016,7 @@ export async function listZeroSalesRepeatSkus(
       sku: row.sku,
       brand: row.brand ?? '',
       sku_desc: row.sku_desc ?? '',
+      buyer: row.buyer ?? '',
       repeat_store_count: repeatStoreCount,
       listed_store_count: listedStoreCount,
       repeat_rate: listedStoreCount > 0 ? repeatStoreCount / listedStoreCount : 0,
@@ -1381,4 +1393,86 @@ export async function adminReplyItem(input: {
     },
     entered: false,
   };
+}
+
+export interface ZeroSalesBuyerFollowupRow extends ZeroSalesRepeatSkuRow {
+  /** 重複店舖行的 Shop Stock Qty (CM) 總計（空白／非數字不計） */
+  stock_total: number;
+  /** 重複店舖行中已回覆原因 Top 2，格式「原因 (n)」以「；」分隔 */
+  top_reasons: string;
+  /** 有重複上榜的店舖清單（Site Code，字母排序，逗號分隔） */
+  store_list: string;
+}
+
+export interface ZeroSalesBuyerFollowupFilter extends ZeroSalesRepeatSkuFilter {}
+
+/** Buyer 跟進一頁：跨店重複 SKU 排行 + 庫存總計 + Top 原因 + 重複店舖清單。
+ *  以 listZeroSalesRepeatSkus 取排名，再一次過查該批 SKU 的全部行在 JS 彙總
+ *  （避免 SQL 解析「1,200」千分位庫存字串的方言差異，PGlite／PG 共用同一邏輯）。 */
+export async function listZeroSalesBuyerFollowup(
+  filter: ZeroSalesBuyerFollowupFilter = {},
+): Promise<ZeroSalesBuyerFollowupRow[]> {
+  const base = await listZeroSalesRepeatSkus(filter);
+  if (!base.length) return [];
+  const minCount = Math.min(20, Math.max(2, Math.floor(filter.minCount ?? 2) || 2));
+  const skus = base.map((r) => r.sku);
+  const r = await query<{
+    sku: string;
+    site_code: string;
+    stock_text: string | null;
+    reason_label: string | null;
+    status: string;
+  }>(
+    `SELECT i.sku, i.site_code,
+            i.payload->>'Shop Stock Qty (CM)' AS stock_text,
+            COALESCE(i.reason_label, '') AS reason_label,
+            i.status
+       FROM zero_sales_items i
+      WHERE i.sku = ANY($1::text[])`,
+    [skus],
+  );
+  const parseStock = (t: string | null | undefined): number | null => {
+    const s = (t ?? '').replace(/,/g, '').trim();
+    if (!s) return null;
+    const n = Number(s);
+    return Number.isFinite(n) ? n : null;
+  };
+  const bySku = new Map<string, Array<{ site_code: string; stock: number | null; reason: string; status: string }>>();
+  for (const row of r.rows) {
+    const list = bySku.get(row.sku) ?? [];
+    list.push({ site_code: row.site_code, stock: parseStock(row.stock_text), reason: row.reason_label || '', status: row.status });
+    bySku.set(row.sku, list);
+  }
+  return base.map((b) => {
+    const rows = bySku.get(b.sku) ?? [];
+    // 同店出現次數 ≥ minCount 的才算重複店舖（與排名定義一致）
+    const occ = new Map<string, number>();
+    for (const x of rows) occ.set(x.site_code, (occ.get(x.site_code) ?? 0) + 1);
+    const repeatSites = [...occ.entries()].filter(([, n]) => n >= minCount).map(([s]) => s).sort((x, y) => x.localeCompare(y));
+    const repeatSet = new Set(repeatSites);
+    const repeatRows = rows.filter((x) => repeatSet.has(x.site_code));
+    let stockTotal = 0;
+    let hasStock = false;
+    for (const x of repeatRows) {
+      if (x.stock !== null) { stockTotal += x.stock; hasStock = true; }
+    }
+    const reasonCounts = new Map<string, number>();
+    for (const x of repeatRows) {
+      if (x.status === 'replied') {
+        const label = x.reason || '（未分類）';
+        reasonCounts.set(label, (reasonCounts.get(label) ?? 0) + 1);
+      }
+    }
+    const topReasons = [...reasonCounts.entries()]
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 2)
+      .map(([label, n]) => `${label} (${n})`)
+      .join('；');
+    return {
+      ...b,
+      stock_total: hasStock ? stockTotal : 0,
+      top_reasons: topReasons,
+      store_list: repeatSites.join(', '),
+    };
+  });
 }

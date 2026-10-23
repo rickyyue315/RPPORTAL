@@ -186,8 +186,10 @@ describe('zero-sales auto apply previous reply', () => {
     expect((await getItem(w42Id, 'HA02', 'B1')).status).toBe('pending');
   });
 
-  it('exposes auto_filled / reply_limit to the store API payload', async () => {
+  it('exposes auto_filled / reply_limit to the store API payload and puts pending SKUs first', async () => {
     const items = await listZeroSalesMyItems('HA02', { batchId: w42Id });
+    // 未回覆 A2 / B1 排在已回覆（自動套用）A1 之前
+    expect(items.map((i) => i.sku)).toEqual(['A2', 'B1', 'A1']);
     const auto = items.find((i) => i.sku === 'A1')!;
     expect(auto.auto_filled).toBe(true);
     expect(auto.reply_limit).toBe(3);

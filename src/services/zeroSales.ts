@@ -1028,7 +1028,11 @@ export async function listMyItems(siteCode: string, opts: { status?: string; bat
     `SELECT i.*, b.week_label, b.created_at AS batch_created_at, b.closed_at AS batch_closed_at
      FROM zero_sales_items i
      JOIN zero_sales_batches b ON b.id = i.batch_id
-     WHERE ${where.join(' AND ')} ORDER BY b.created_at DESC, i.sku LIMIT 1000`,
+     WHERE ${where.join(' AND ')}
+     ORDER BY b.created_at DESC,
+              CASE WHEN i.status = 'pending' THEN 0 ELSE 1 END,
+              i.sku
+     LIMIT 1000`,
     params,
   );
   const mapped = r.rows.map((row) => ({

@@ -175,7 +175,8 @@ describe('GET /api/portal/zero-sales/my/export', () => {
     const res = await getXlsx(agent, '/api/portal/zero-sales/my/export');
     expect(res.status).toBe(200);
     const rows = await readStoreSheet(res.body as Buffer);
-    const w42 = rows.find((r) => r['週次'] === '2026-W42-route')!;
+    // W42 有兩行：已回覆的 1000001 及未回覆的 1000002；未回覆行會排前，所以要按 SKU 找
+    const w42 = rows.find((r) => r['週次'] === '2026-W42-route' && String(r['SKU']) === '1000001')!;
     // W43 已派發 → W42 自動封存：狀態會同時標示已封存，避免舊匯出表被當成待辦
     expect(w42['狀態']).toBe('已回覆（已封存）');
     expect(String(w42['店舖本次回覆'])).toContain('1.無陳列/陳列位置不佳');

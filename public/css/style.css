@@ -1176,6 +1176,16 @@ table.zs-table tbody tr.zs-archived .badge-repeat { opacity: .75; }
 .zs-progress > i.is-archived { background: #cbd5e1; }
 .zs-table .btn.ghost { min-height: 32px; padding: 5px 16px; font-size: 13px; border-radius: 8px; }
 .zs-table .btn.ghost:disabled { background: #eef1f4; border-color: var(--border); color: var(--muted); cursor: not-allowed; }
+/* 仍需要回覆的 SKU：「回覆」鍵用黃色高亮，並排在清單最前 */
+.zs-table .btn.zs-reply-needed {
+  background: linear-gradient(180deg, #ffe680, #ffd21f);
+  border: 1px solid #d4a000; color: #3d2a00; font-weight: 800;
+  box-shadow: 0 0 0 3px rgba(255, 210, 31, .25);
+}
+.zs-table .btn.zs-reply-needed:hover {
+  background: linear-gradient(180deg, #ffec9e, #ffd84d);
+  box-shadow: 0 0 0 5px rgba(255, 210, 31, .32);
+}
 /* 自動套用行的「修改」鍵：橙色高亮 + 輕微脈動，確保店舖留意要確認 */
 .zs-table .btn.zs-edit-highlight {
   background: linear-gradient(180deg, #ffc247, #f5a201);

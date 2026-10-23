@@ -159,7 +159,7 @@
       $('site_info').innerHTML =
         `<div class="site-banner">${p.escapeHtml(data.site_code)}${shop}</div>` +
         `<div>${p.escapeHtml(weekLabel || '')}：共 ${items.length} 個指定 SKU（${replied} 已回覆 · ${rate}%）${autoN ? `｜<b>${autoN}</b> 個已自動套用上次回覆` : ''}${repeatN ? `｜其中 <b>${repeatN}</b> 個重複上榜（≥2次）` : ''}${onlyRepeat ? '｜現只顯示重複上榜' : ''}</div>` +
-        `<div class="hint">本週仍可回覆；新一週派發後，本週會自動封存成紀錄。橙色「修改」代表系統已自動套用上次回覆，請確認或更正（可修改 2 次）。如非你店舖，請按右上「登出」再重新輸入自己嘅 Site Code。</div>`;
+        `<div class="hint">本週仍可回覆；未回覆 SKU 會排最前，黃色「回覆」按鈕代表仍需處理。新一週派發後，本週會自動封存成紀錄。橙色「修改」代表系統已自動套用上次回覆，請確認或更正（可修改 2 次）。如非你店舖，請按右上「登出」再重新輸入自己嘅 Site Code。</div>`;
     }
     const goto = document.getElementById('zs_goto_latest');
     if (goto && latestOpen) {
@@ -178,7 +178,7 @@
       if (!q) return true;
       const hay = `${it.sku} ${(it.payload && it.payload['Brand']) || ''} ${(it.payload && it.payload['SKU Desc']) || ''}`.toUpperCase();
       return hay.includes(q);
-    });
+    }).sort((a, b) => (a.status === 'pending' ? 0 : 1) - (b.status === 'pending' ? 0 : 1));
     if (!filtered.length) {
       $('zs_list').innerHTML = `<div class="empty" style="padding:36px 16px">${archived ? '此週次沒有符合條件的歷史紀錄。' : '暫無指定 SKU — 試下轉「狀態」或清空搜尋字。'}</div>`;
       const c0 = document.getElementById('zs_count');
@@ -222,9 +222,10 @@
       const rowClass = archived ? 'zs-archived' : (isRepeat(it) ? 'zs-repeat' : '');
       const weekCell = `${p.escapeHtml(it.week_label || '')}${archived ? '<span class="zs-week-tag">已封存</span>' : ''}`;
       const highlight = replyLimit(it) === 3 && !locked && !archived && n > 0;
+      const needReply = it.status === 'pending' && !archived;
       const action = archived
         ? '<span class="zs-closed">已截止</span>'
-        : `<button class="btn ghost${highlight ? ' zs-edit-highlight' : ''}" data-reply="${it.id}" ${locked ? 'disabled' : ''}${highlight ? ` title="此 SKU 可再修改 ${left} 次"` : ''}>${btnLabel}</button>`;
+        : `<button class="btn ghost${needReply ? ' zs-reply-needed' : ''}${highlight ? ' zs-edit-highlight' : ''}" data-reply="${it.id}" ${locked ? 'disabled' : ''}${needReply ? ' title="此 SKU 仍需要回覆"' : (highlight ? ` title="此 SKU 可再修改 ${left} 次"` : '')}>${btnLabel}</button>`;
       html += `<tr${rowClass ? ` class="${rowClass}"` : ''}><td>${weekCell}</td>`;
       COLS.forEach((c) => {
         const val = c.key === 'Brand' ? brandCode(it) : payloadVal(it, c.key);

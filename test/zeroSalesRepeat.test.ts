@@ -62,7 +62,7 @@ beforeAll(async () => {
       release: () => {},
     }),
   } as never);
-  const migrationFiles = ['001_init.sql', '002_drop_rp_type_completed_at.sql', '003_add_submission_type_qty.sql', '004_add_urgent_reason.sql', '005_add_sales_submission_type.sql', '006_add_return_submission_type.sql', '007_add_idempotency_and_import_recovery.sql', '008_add_export_file_archive.sql', '009_architecture_hardening.sql', '010_query_optimization.sql', '011_cleanup_legacy_schema.sql', '012_om_recovery_codes.sql', '013_recovery_code_plaintext.sql', '014_ndrf_workflow_portal.sql', '015_buyer_auto_approve.sql', '016_round_started_at.sql', '017_zero_sales.sql', '018_zero_sales_reasons.sql', '019_zero_sales_edit_once.sql', '020_portal_users_initial_password.sql', '021_store_passwordless.sql', '022_portal_passwordless.sql', '023_zero_sales_repeat_index.sql', '024_zero_sales_archive.sql'];
+  const migrationFiles = ['001_init.sql', '002_drop_rp_type_completed_at.sql', '003_add_submission_type_qty.sql', '004_add_urgent_reason.sql', '005_add_sales_submission_type.sql', '006_add_return_submission_type.sql', '007_add_idempotency_and_import_recovery.sql', '008_add_export_file_archive.sql', '009_architecture_hardening.sql', '010_query_optimization.sql', '011_cleanup_legacy_schema.sql', '012_om_recovery_codes.sql', '013_recovery_code_plaintext.sql', '014_ndrf_workflow_portal.sql', '015_buyer_auto_approve.sql', '016_round_started_at.sql', '017_zero_sales.sql', '018_zero_sales_reasons.sql', '019_zero_sales_edit_once.sql', '020_portal_users_initial_password.sql', '021_store_passwordless.sql', '022_portal_passwordless.sql', '023_zero_sales_repeat_index.sql', '024_zero_sales_archive.sql', '025_zero_sales_auto_reply.sql'];
   for (const file of migrationFiles) {
     let sql = await readFile(path.join(__dirname, '..', 'src', 'db', 'migrations', file), 'utf8');
     sql = sql.replace(/CREATE EXTENSION IF NOT EXISTS pgcrypto;\s*/g, '');
@@ -279,17 +279,22 @@ describe('zero-sales repeat exports', () => {
     expect(ws).toBeDefined();
     const headers = (ws!.getRow(1).values as unknown[]).slice(1);
     expect(headers).toEqual([
-      'Site Code', '店舖', 'SKU', 'Brand', 'SKU 描述',
+      'Site Code', '店舖', 'By OM', 'SKU', 'Brand', 'SKU 描述',
       '出現次數', '未回覆', '已回覆', '首次出現', '最後出現', '最後週次',
       '週次（新→舊）', '上次回覆', '上次回覆時間',
     ]);
     const skus: string[] = [];
+    const omBySku = new Map<string, string>();
     ws!.eachRow((row, n) => {
-      if (n > 1) skus.push(String(row.getCell(3).value ?? ''));
+      if (n > 1) {
+        skus.push(String(row.getCell(4).value ?? ''));
+        omBySku.set(String(row.getCell(4).value ?? ''), String(row.getCell(3).value ?? ''));
+      }
     });
     expect(skus).toContain('X9001');
     expect(skus).toContain('A1001');
     expect(skus).toContain('X9002');
+    expect(omBySku.get('X9001')).toBe('Ivy');
   });
 
   it('rejects export when nothing matches or the caller is anonymous', async () => {
@@ -313,6 +318,7 @@ describe('zero-sales repeats (admin)', () => {
     expect(hit!.replied_count).toBe(1);
     expect(hit!.pending_count).toBe(2);
     expect(hit!.brand).toBe('B1');
+    expect(hit!.om).toBe('Ivy');
   });
 
   it('supports minCount / site / keyword filters', async () => {

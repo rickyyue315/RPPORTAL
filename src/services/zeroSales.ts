@@ -63,6 +63,14 @@ export interface ZeroSalesItemRow {
   prev_reason_label?: string | null;
   prev_reason_note?: string;
   prev_replied_at?: string | null;
+  /** 此行的回覆是否由系統自動套用上次回覆（店舖尚未自行提交） */
+  auto_filled?: boolean;
+  auto_filled_at?: string | null;
+  /** 自動套用的來源批次 / 週次 */
+  auto_filled_from_batch_id?: string | null;
+  auto_filled_from_week?: string;
+  /** 此行的寫入上限：2 = 初次回覆 + 1 次修改；3 = 自動套用 + 2 次修改 */
+  reply_limit?: number;
 }
 
 export interface ZeroSalesReasonRow {
@@ -230,7 +238,7 @@ export async function getZeroSalesSummary(batchId?: string): Promise<ZeroSalesSu
       (SELECT count(*)::text FROM zero_sales_items i WHERE i.status = 'replied' ${batchFilter}) AS replied,
       (SELECT count(*)::text FROM zero_sales_items i WHERE i.status = 'pending' AND (${openFilter}) ${batchFilter}) AS pending,
       (SELECT count(*)::text FROM zero_sales_items i WHERE i.status = 'pending' AND (${closedFilter}) ${batchFilter}) AS overdue,
-      (SELECT count(*)::text FROM zero_sales_items i WHERE i.reply_count >= 2 ${batchFilter}) AS locked,
+      (SELECT count(*)::text FROM zero_sales_items i WHERE i.reply_count >= COALESCE(i.reply_limit, 2) ${batchFilter}) AS locked,
       (SELECT count(DISTINCT i.site_code)::text FROM zero_sales_items i WHERE TRUE ${batchFilter}) AS stores_total,
       (SELECT count(DISTINCT i.site_code)::text FROM zero_sales_items i WHERE i.status = 'pending' AND (${openFilter}) ${batchFilter}) AS stores_pending,
       (SELECT count(DISTINCT i.site_code)::text FROM zero_sales_items i WHERE i.status = 'pending' AND (${closedFilter}) ${batchFilter}) AS stores_overdue,
@@ -471,11 +479,139 @@ export async function listItemsForExport(filter: ZeroSalesExportFilter): Promise
     ...row,
     payload: typeof row.payload === 'string' ? JSON.parse(row.payload as unknown as string) : (row.payload ?? {}),
     replied_at: row.replied_at ? toHKString(row.replied_at) : null,
+    auto_filled_at: row.auto_filled_at ? toHKString(row.auto_filled_at as unknown as string) : null,
+    auto_filled: Boolean(row.auto_filled_at),
+    auto_filled_from_week: row.auto_filled_from_week ?? '',
+    reply_limit: row.reply_limit ?? 2,
     batch_created_at: row.batch_created_at ? toHKString(row.batch_created_at as unknown as string) : undefined,
     batch_closed_at: row.batch_closed_at ? toHKString(row.batch_closed_at as unknown as string) : null,
     is_open: !row.batch_closed_at,
     batch_date: row.batch_created_at ? toHKDateString(row.batch_created_at as unknown as string) : undefined,
   }));
+}
+
+export interface ZeroSalesAutoFillResult {
+  batch_id: string;
+  week_label: string;
+  /** 今次成功自動套用的行數 */
+  applied: number;
+  /** 執行前批次內的未回覆行數 */
+  pending_before: number;
+  /** 執行前批次內的已回覆行數 */
+  replied_before: number;
+  /** 執行後仍待回覆的行數 */
+  remaining_pending: number;
+}
+
+/**
+ * 為某一批次內「仍 pending」的重複上榜行，自動套用同店同 SKU 對上一次「出現」的店舖回覆。
+ * 只有上一次出現本身是已回覆時才會套用；上次未回覆則保持 pending（不拿更舊的回覆硬套）。
+ * - 永不修改 status='replied' 的行，所以已回覆店舖 / 已回覆 SKU 一定不受影響。
+ * - onlyUnrepliedStores=true 時，只處理「完全未有人手回覆」的店舖：
+ *   店舖只要有任何一行是店舖自行回覆（auto_filled_at IS NULL），全店跳過。
+ * - 上次原因已停用、或需要補充說明但上次沒有填，會跳過並保持 pending，交由店舖自行回覆。
+ */
+async function autoFillZeroSalesRepliesWithClient(
+  client: PoolClient,
+  batchId: string,
+  onlyUnrepliedStores: boolean,
+): Promise<ZeroSalesAutoFillResult | null> {
+  const batch = await client.query<{ week_label: string }>(
+    'SELECT week_label FROM zero_sales_batches WHERE id = $1',
+    [batchId],
+  );
+  const batchRow = batch.rows[0];
+  if (!batchRow) return null;
+
+  const applied = await client.query<{ applied: number }>(
+    `WITH target AS (
+       SELECT i.id, i.site_code, i.sku, b.created_at AS batch_created_at
+         FROM zero_sales_items i
+         JOIN zero_sales_batches b ON b.id = i.batch_id
+        WHERE i.batch_id = $1 AND i.status = 'pending'
+     ),
+     prev AS (
+       SELECT DISTINCT ON (t.id)
+              t.id AS item_id,
+              p.batch_id AS prev_batch_id,
+              pb.week_label AS prev_week_label,
+              p.status AS prev_status,
+              p.reason_code,
+              COALESCE(r.label, p.reason_label, p.reason_code) AS reason_label,
+              COALESCE(p.reason_note, '') AS reason_note,
+              r.active AS reason_active,
+              r.require_note AS reason_require_note
+         FROM target t
+         JOIN zero_sales_items p
+           ON p.site_code = t.site_code
+          AND p.sku = t.sku
+         JOIN zero_sales_batches pb ON pb.id = p.batch_id
+         LEFT JOIN zero_sales_reasons r ON r.code = p.reason_code
+        WHERE (pb.created_at, pb.id) < (t.batch_created_at, $1)
+        ORDER BY t.id, pb.created_at DESC, pb.id DESC
+     ),
+     updated AS (
+       UPDATE zero_sales_items i
+          SET status = 'replied',
+              reason_code = p.reason_code,
+              reason_label = p.reason_label,
+              reason_note = p.reason_note,
+              replied_at = now(),
+              replied_by = '系統自動套用（' || p.prev_week_label || '）',
+              replied_by_user_id = NULL,
+              reply_count = 1,
+              reply_limit = 3,
+              auto_filled_at = now(),
+              auto_filled_from_batch_id = p.prev_batch_id,
+              auto_filled_from_week = p.prev_week_label,
+              updated_at = now()
+         FROM prev p
+        WHERE i.id = p.item_id
+          AND i.status = 'pending'
+          AND p.prev_status = 'replied'
+          AND p.reason_code IS NOT NULL
+          AND p.reason_active IS TRUE
+          AND NOT (p.reason_require_note IS TRUE AND BTRIM(p.reason_note) = '')
+          AND ($2::boolean IS FALSE OR NOT EXISTS (
+            SELECT 1 FROM zero_sales_items x
+             WHERE x.batch_id = $1
+               AND x.site_code = i.site_code
+               AND x.status = 'replied'
+               AND x.auto_filled_at IS NULL
+          ))
+        RETURNING 1
+     )
+     SELECT count(*)::int AS applied FROM updated`,
+    [batchId, onlyUnrepliedStores],
+  );
+  const appliedCount = Number(applied.rows[0]?.applied ?? 0);
+
+  const after = await client.query<{ remaining_pending: number; replied_after: number }>(
+    `SELECT
+       (SELECT count(*)::int FROM zero_sales_items WHERE batch_id = $1 AND status = 'pending') AS remaining_pending,
+       (SELECT count(*)::int FROM zero_sales_items WHERE batch_id = $1 AND status = 'replied') AS replied_after`,
+    [batchId],
+  );
+  const remainingPending = Number(after.rows[0]?.remaining_pending ?? 0);
+  const repliedAfter = Number(after.rows[0]?.replied_after ?? 0);
+  return {
+    batch_id: batchId,
+    week_label: batchRow.week_label,
+    applied: appliedCount,
+    pending_before: remainingPending + appliedCount,
+    replied_before: Math.max(0, repliedAfter - appliedCount),
+    remaining_pending: remainingPending,
+  };
+}
+
+/** 後台手動為某一批次補套用（例如 2026-W43 已有部分店舖回覆，只套用未回覆店舖） */
+export async function autoFillZeroSalesReplies(
+  batchId: string,
+  opts: { onlyUnrepliedStores?: boolean } = {},
+): Promise<ZeroSalesAutoFillResult | null> {
+  return withTransaction((client) =>
+    autoFillZeroSalesRepliesWithClient(client, batchId, opts.onlyUnrepliedStores === true),
+  );
 }
 
 export async function createBatch(input: {
@@ -484,7 +620,9 @@ export async function createBatch(input: {
   rows: Array<{ siteCode: string; sku: string; data: Record<string, string> }>;
   contentHash: string;
   createdBy: string;
-}): Promise<{ batchId: string; closedBatches: ZeroSalesClosedBatch[] }> {
+  /** 預設 true：重複上榜 SKU 自動套用上一次的店舖回覆（只套用新批次的 pending 行） */
+  autoFillRepeats?: boolean;
+}): Promise<{ batchId: string; closedBatches: ZeroSalesClosedBatch[]; autoFilled: number }> {
   return withTransaction(async (client) => {
     const ins = await client.query<{ id: string }>(
       `INSERT INTO zero_sales_batches (week_label, note, row_count, store_count, content_hash, created_by)
@@ -518,6 +656,15 @@ export async function createBatch(input: {
                 WHERE i.batch_id = b.id AND i.status = 'pending') AS pending`,
       [input.createdBy, batchId],
     );
+
+    // 新批次所有行預設 pending，可安全地為重複上榜 SKU 套用上一次的店舖回覆。
+    // 呢個步驟只會改 pending 行，不會影響任何已回覆紀錄。
+    let autoFilled = 0;
+    if (input.autoFillRepeats !== false) {
+      const filled = await autoFillZeroSalesRepliesWithClient(client, batchId, false);
+      autoFilled = filled?.applied ?? 0;
+    }
+
     return {
       batchId,
       closedBatches: closed.rows.map((r) => ({
@@ -525,6 +672,7 @@ export async function createBatch(input: {
         week_label: r.week_label,
         pending: Number(r.pending ?? 0),
       })),
+      autoFilled,
     };
   });
 }
@@ -545,6 +693,10 @@ export async function listBatchItems(batchId: string, opts: { siteCode?: string;
     ...row,
     payload: typeof row.payload === 'string' ? JSON.parse(row.payload as unknown as string) : (row.payload ?? {}),
     replied_at: row.replied_at ? toHKString(row.replied_at) : null,
+    auto_filled_at: row.auto_filled_at ? toHKString(row.auto_filled_at as unknown as string) : null,
+    auto_filled: Boolean(row.auto_filled_at),
+    auto_filled_from_week: row.auto_filled_from_week ?? '',
+    reply_limit: row.reply_limit ?? 2,
     batch_created_at: row.batch_created_at ? toHKString(row.batch_created_at as unknown as string) : undefined,
     batch_closed_at: row.batch_closed_at ? toHKString(row.batch_closed_at as unknown as string) : null,
     is_open: !row.batch_closed_at,
@@ -625,6 +777,8 @@ async function attachZeroSalesHistory<T extends ZeroSalesItemRow>(items: T[]): P
 export interface ZeroSalesRepeatRow {
   site_code: string;
   shop: string;
+  /** 店舖所屬 OM（門店主檔未設定時為空字串） */
+  om: string;
   sku: string;
   brand: string;
   sku_desc: string;
@@ -672,6 +826,7 @@ export async function listZeroSalesRepeats(filter: ZeroSalesRepeatFilter = {}): 
   const r = await query<{
     site_code: string;
     shop: string;
+    om: string;
     sku: string;
     brand: string;
     sku_desc: string;
@@ -687,7 +842,8 @@ export async function listZeroSalesRepeats(filter: ZeroSalesRepeatFilter = {}): 
     last_reason_note: string;
     last_replied_raw: string | null;
   }>(
-    `SELECT i.site_code, COALESCE(MAX(s.shop), '') AS shop, i.sku,
+    `SELECT i.site_code, COALESCE(MAX(s.shop), '') AS shop,
+            COALESCE(MAX(NULLIF(BTRIM(s.om), '')), '') AS om, i.sku,
             COUNT(*)::text AS occurrence_count,
             COUNT(*) FILTER (WHERE i.status = 'pending')::text AS pending_count,
             COUNT(*) FILTER (WHERE i.status = 'replied')::text AS replied_count,
@@ -714,6 +870,7 @@ export async function listZeroSalesRepeats(filter: ZeroSalesRepeatFilter = {}): 
   return r.rows.map((row) => ({
     site_code: row.site_code,
     shop: row.shop ?? '',
+    om: row.om ?? '',
     sku: row.sku,
     brand: row.brand ?? '',
     sku_desc: row.sku_desc ?? '',
@@ -878,6 +1035,10 @@ export async function listMyItems(siteCode: string, opts: { status?: string; bat
     ...row,
     payload: typeof row.payload === 'string' ? JSON.parse(row.payload as unknown as string) : (row.payload ?? {}),
     replied_at: row.replied_at ? toHKString(row.replied_at) : null,
+    auto_filled_at: row.auto_filled_at ? toHKString(row.auto_filled_at as unknown as string) : null,
+    auto_filled: Boolean(row.auto_filled_at),
+    auto_filled_from_week: row.auto_filled_from_week ?? '',
+    reply_limit: row.reply_limit ?? 2,
     batch_created_at: row.batch_created_at ? toHKString(row.batch_created_at as unknown as string) : undefined,
     batch_closed_at: row.batch_closed_at ? toHKString(row.batch_closed_at as unknown as string) : null,
     is_open: !row.batch_closed_at,
@@ -1068,8 +1229,16 @@ export async function replyItem(input: {
   const note = (input.reasonNote ?? '').trim();
   if (found.require_note && !note) throw new ZeroSalesReplyError(`選擇「${found.label}」必須填寫補充說明`);
   if (note.length > 2000) throw new ZeroSalesReplyError('補充說明最多 2000 字');
-  const current = await query<{ id: string; status: string; reply_count: number; closed_at: string | null; week_label: string }>(
-    `SELECT i.id, i.status, i.reply_count, b.closed_at, b.week_label
+  const current = await query<{
+    id: string;
+    status: string;
+    reply_count: number;
+    reply_limit: number;
+    auto_filled_at: string | null;
+    closed_at: string | null;
+    week_label: string;
+  }>(
+    `SELECT i.id, i.status, i.reply_count, i.reply_limit, i.auto_filled_at, b.closed_at, b.week_label
        FROM zero_sales_items i
        JOIN zero_sales_batches b ON b.id = i.batch_id
       WHERE i.id = $1 AND i.site_code = $2`,
@@ -1082,14 +1251,18 @@ export async function replyItem(input: {
       `「${cur.week_label}」已截止回覆（新一週已派發），此週次只供查閱。請到最新一週回覆。`,
     );
   }
-  if ((cur.reply_count ?? 0) >= 2) {
-    throw new ZeroSalesReplyError('此 SKU 已用完修改機會（只可修改一次），如需再更改請聯絡 RP Team');
+  const limit = cur.reply_limit ?? (cur.auto_filled_at ? 3 : 2);
+  if ((cur.reply_count ?? 0) >= limit) {
+    const edits = Math.max(1, limit - 1);
+    throw new ZeroSalesReplyError(`此 SKU 已用完修改機會（可修改 ${edits} 次），如需再更改請聯絡 RP Team`);
   }
   // UPDATE 同時檢查批次仍開放，避免「檢查後剛好被新批次封存」的競態
   const r = await query<ZeroSalesItemRow>(
     `UPDATE zero_sales_items i SET status = 'replied', reason_code = $1, reason_label = $2, reason_note = $3,
       replied_at = now(), replied_by = $4, replied_by_user_id = $5, updated_at = now(),
-      reply_count = reply_count + 1
+      reply_count = reply_count + 1,
+      -- 店舖一經儲存（確認或修改），此行即變成店舖回覆，不再算「系統自動套用」
+      auto_filled_at = NULL
      WHERE i.id = $6 AND i.site_code = $7
        AND EXISTS (SELECT 1 FROM zero_sales_batches b WHERE b.id = i.batch_id AND b.closed_at IS NULL)
      RETURNING i.*`,
@@ -1105,6 +1278,10 @@ export async function replyItem(input: {
     ...row,
     payload: typeof row.payload === 'string' ? JSON.parse(row.payload as unknown as string) : (row.payload ?? {}),
     replied_at: row.replied_at ? toHKString(row.replied_at) : null,
+    auto_filled_at: row.auto_filled_at ? toHKString(row.auto_filled_at as unknown as string) : null,
+    auto_filled: Boolean(row.auto_filled_at),
+    auto_filled_from_week: row.auto_filled_from_week ?? '',
+    reply_limit: row.reply_limit ?? 2,
     is_open: true,
     batch_date: undefined,
   };
@@ -1151,7 +1328,8 @@ export async function adminReplyItem(input: {
       `UPDATE zero_sales_items
           SET status = 'replied', reason_code = $1, reason_label = $2, reason_note = $3,
               replied_at = now(), replied_by = $4, replied_by_user_id = NULL,
-              updated_at = now(), reply_count = GREATEST(reply_count, 1)
+              updated_at = now(), reply_count = GREATEST(reply_count, 1),
+              auto_filled_at = NULL
         WHERE id = $5 AND batch_id = $6 AND status = 'pending'
         RETURNING *`,
       [found.code, found.label, note, `管理員代填（${input.adminUser}）`, input.itemId, input.batchId],
@@ -1164,6 +1342,10 @@ export async function adminReplyItem(input: {
         ...row,
         payload: typeof row.payload === 'string' ? JSON.parse(row.payload as unknown as string) : (row.payload ?? {}),
         replied_at: row.replied_at ? toHKString(row.replied_at) : null,
+        auto_filled_at: row.auto_filled_at ? toHKString(row.auto_filled_at as unknown as string) : null,
+        auto_filled: Boolean(row.auto_filled_at),
+        auto_filled_from_week: row.auto_filled_from_week ?? '',
+        reply_limit: row.reply_limit ?? 2,
         batch_date: undefined,
       },
       entered: true,
@@ -1172,9 +1354,11 @@ export async function adminReplyItem(input: {
 
   if (!cur.reason_code) throw new ZeroSalesReplyError('此 SKU 沒有可編輯的回覆原因');
   const r = await query<ZeroSalesItemRow>(
-    `UPDATE zero_sales_items SET reason_code = $1, reason_label = $2, reason_note = $3, updated_at = now()
-     WHERE id = $4 AND batch_id = $5
-     RETURNING *`,
+    `UPDATE zero_sales_items
+        SET reason_code = $1, reason_label = $2, reason_note = $3, updated_at = now(),
+            auto_filled_at = NULL
+      WHERE id = $4 AND batch_id = $5
+      RETURNING *`,
     [found.code, found.label, note, input.itemId, input.batchId],
   );
   const row = r.rows[0];
@@ -1185,6 +1369,10 @@ export async function adminReplyItem(input: {
       ...row,
       payload: typeof row.payload === 'string' ? JSON.parse(row.payload as unknown as string) : (row.payload ?? {}),
       replied_at: row.replied_at ? toHKString(row.replied_at) : null,
+      auto_filled_at: row.auto_filled_at ? toHKString(row.auto_filled_at as unknown as string) : null,
+      auto_filled: Boolean(row.auto_filled_at),
+      auto_filled_from_week: row.auto_filled_from_week ?? '',
+      reply_limit: row.reply_limit ?? 2,
       batch_date: undefined,
     },
     entered: false,

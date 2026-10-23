@@ -117,6 +117,7 @@ import {
   deleteZeroSalesBatchSite,
   deleteZeroSalesItem,
   adminReplyItem,
+  autoFillZeroSalesReplies,
   closeZeroSalesBatch,
   reopenZeroSalesBatch,
   ZeroSalesReplyError,
@@ -2668,6 +2669,7 @@ adminRouter.get(
       batch_label: i.week_label ?? '',
       reply_count: i.reply_count ?? (i.status === 'replied' ? 1 : 0),
       is_open: i.is_open !== false,
+      auto_filled_from_week: i.auto_filled ? (i.auto_filled_from_week || null) : null,
     })), reasonLabels);
     const stamp = toHKDateString(new Date()).replace(/-/g, '');
     // 跨批次匯出時不可用最新批次名作檔名，否則會被誤認為只匯出了最新一批
@@ -2724,12 +2726,14 @@ adminRouter.post(
       res.status(400).json({ error: '匯入失敗', totalRows: parsed.totalRows, errors: parsed.errors ?? [] });
       return;
     }
-    const { batchId, closedBatches } = await createZeroSalesBatch({
+    const autoFillRepeats = String(req.body.auto_fill_repeats ?? '1') !== '0';
+    const { batchId, closedBatches, autoFilled } = await createZeroSalesBatch({
       weekLabel: meta.data.week_label,
       note: meta.data.note ?? '',
       rows: parsed.rows.map((r) => ({ siteCode: r.siteCode, sku: r.sku, data: r.data })),
       contentHash: parsed.contentHash ?? '',
       createdBy: req.adminUsername!,
+      autoFillRepeats,
     });
     await writeAuditEvent({
       eventType: 'zero_sales_batch_created',
@@ -2741,11 +2745,13 @@ adminRouter.post(
         week_label: meta.data.week_label,
         batchId,
         totalRows: parsed.totalRows,
+        auto_filled: autoFilled,
+        auto_fill_repeats: autoFillRepeats,
         // 即時封存：記錄被自動封存的舊批次及當時未回覆行數，方便日後追查
         closed_batches: closedBatches.map((b) => ({ batch_id: b.id, week_label: b.week_label, pending: b.pending })),
       },
     });
-    res.status(201).json({ ok: true, batchId, totalRows: parsed.totalRows, closedBatches });
+    res.status(201).json({ ok: true, batchId, totalRows: parsed.totalRows, closedBatches, autoFilled });
   }),
 );
 
@@ -2791,6 +2797,7 @@ adminRouter.get(
       batch_label: i.week_label ?? '',
       reply_count: i.reply_count ?? (i.status === 'replied' ? 1 : 0),
       is_open: i.is_open !== false,
+      auto_filled_from_week: i.auto_filled ? (i.auto_filled_from_week || null) : null,
     })), reasonLabels);
     const label = (items[0]?.week_label ?? 'batch').replace(/[^\w\-]+/g, '_');
     res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
@@ -2883,6 +2890,51 @@ adminRouter.put(
       });
     }
     res.json({ ok: true, week_label: result.weekLabel, already_open: result.wasOpen });
+  }),
+);
+
+const zeroSalesAutoFillSchema = z.object({
+  /** 預設 true：只套用完全未有人手回覆的店舖（適合已派發中的週次，例如 2026-W43） */
+  only_unreplied_stores: z.boolean().optional().default(true),
+});
+
+/** POST /api/admin/zero-sales/batches/:id/auto-fill — 為重複上榜 SKU 補套用上一次店舖回覆
+ *  只會更新 pending 行；已回覆的店舖 / SKU 永不覆寫。 */
+adminRouter.post(
+  '/zero-sales/batches/:id/auto-fill',
+  requireUuidParam('id'),
+  requireAdmin,
+  adminActionLimiter,
+  asyncHandler(async (req: Request, res: Response) => {
+    const parsed = zeroSalesAutoFillSchema.safeParse(req.body ?? {});
+    if (!parsed.success) {
+      res.status(400).json({ error: parsed.error.issues[0]?.message ?? '參數無效' });
+      return;
+    }
+    const batchId = req.params.id as string;
+    const result = await autoFillZeroSalesReplies(batchId, {
+      onlyUnrepliedStores: parsed.data.only_unreplied_stores,
+    });
+    if (!result) {
+      res.status(404).json({ error: '找不到此批次' });
+      return;
+    }
+    await writeAuditEvent({
+      eventType: 'zero_sales_auto_filled',
+      actorRole: 'admin',
+      actor: req.adminUsername,
+      ip: getClientIp(req),
+      metadata: {
+        batch_id: batchId,
+        week_label: result.week_label,
+        only_unreplied_stores: parsed.data.only_unreplied_stores,
+        applied: result.applied,
+        pending_before: result.pending_before,
+        replied_before: result.replied_before,
+        remaining_pending: result.remaining_pending,
+      },
+    });
+    res.json({ ok: true, ...result });
   }),
 );
 

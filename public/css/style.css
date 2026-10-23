@@ -1137,6 +1137,24 @@ table.zs-table td:nth-child(3) { font-family: Consolas, 'Courier New', monospace
   padding: 3px 11px; border-radius: 999px; font-size: 12px; font-weight: 700; white-space: nowrap;
   background: #fee2e2; color: #991b1b; border: 1px solid #fecaca;
 }
+/* 系統自動套用上次回覆：與「已回覆」並排，提醒店舖只需確認／可修改 */
+.badge-auto {
+  display: inline-flex; align-items: center; gap: 4px;
+  margin-left: 5px; padding: 3px 10px; border-radius: 999px;
+  font-size: 12px; font-weight: 700; white-space: nowrap;
+  background: #fff3cd; color: #8a4b00; border: 1px solid #f0c36d;
+}
+.badge-auto::before { content: '↻'; font-size: 12px; line-height: 1; }
+.zs-auto-note {
+  margin-top: 5px; padding: 5px 8px; border-radius: 6px;
+  background: #fff8e6; border-left: 3px solid #f0a500;
+  color: #8a4b00; font-size: 12px; line-height: 1.45;
+}
+#reply_auto_notice {
+  margin-top: 8px; padding: 9px 12px; border-radius: 8px;
+  background: rgba(255, 243, 205, .96); color: #6b3f00;
+  border: 1px solid #f0c36d; font-size: 12.5px; line-height: 1.5;
+}
 table.zs-table tbody tr.zs-repeat td { background: #fff7f7; }
 table.zs-table tbody tr.zs-repeat:hover td { background: #feecec; }
 /* 舊週次整行灰階：視覺上明確是「紀錄」而非「工作」 */
@@ -1158,6 +1176,21 @@ table.zs-table tbody tr.zs-archived .badge-repeat { opacity: .75; }
 .zs-progress > i.is-archived { background: #cbd5e1; }
 .zs-table .btn.ghost { min-height: 32px; padding: 5px 16px; font-size: 13px; border-radius: 8px; }
 .zs-table .btn.ghost:disabled { background: #eef1f4; border-color: var(--border); color: var(--muted); cursor: not-allowed; }
+/* 自動套用行的「修改」鍵：橙色高亮 + 輕微脈動，確保店舖留意要確認 */
+.zs-table .btn.zs-edit-highlight {
+  background: linear-gradient(180deg, #ffc247, #f5a201);
+  border: 1px solid #d97d00; color: #3d2600; font-weight: 800;
+  box-shadow: 0 0 0 3px rgba(245, 162, 1, .22);
+  animation: zs-edit-pulse 2.2s ease-in-out infinite;
+}
+.zs-table .btn.zs-edit-highlight:hover {
+  background: linear-gradient(180deg, #ffd06e, #ffb01f);
+  box-shadow: 0 0 0 5px rgba(245, 162, 1, .28);
+}
+@keyframes zs-edit-pulse {
+  0%, 100% { box-shadow: 0 0 0 3px rgba(245, 162, 1, .18); }
+  50% { box-shadow: 0 0 0 6px rgba(245, 162, 1, .32); }
+}
 dialog#reply_dialog { border: none; border-radius: var(--radius-lg); padding: 0; max-width: 560px; width: 92vw; box-shadow: var(--shadow-lg); }
 dialog#reply_dialog::backdrop { background: rgba(7, 30, 50, 0.5); backdrop-filter: blur(2px); }
 .reply-head { background: linear-gradient(135deg, var(--brand), var(--brand-dark)); color: #fff; padding: 18px 24px; border-radius: var(--radius-lg) var(--radius-lg) 0 0; }

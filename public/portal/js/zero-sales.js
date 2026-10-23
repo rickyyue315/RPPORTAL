@@ -25,8 +25,24 @@
     return it.status === 'replied' ? 1 : 0;
   }
 
+  function isAutoFilled(it) {
+    if (typeof it.auto_filled === 'boolean') return it.auto_filled;
+    return !!it.auto_filled_at;
+  }
+
+  /** 2 = 初次回覆 + 1 次修改；3 = 系統自動套用 + 2 次修改 */
+  function replyLimit(it) {
+    const limit = Number(it.reply_limit);
+    if (Number.isFinite(limit) && limit >= 2) return limit;
+    return isAutoFilled(it) ? 3 : 2;
+  }
+
+  function remainingEdits(it) {
+    return Math.max(0, replyLimit(it) - editCount(it));
+  }
+
   function canEdit(it) {
-    return editCount(it) < 2;
+    return editCount(it) < replyLimit(it);
   }
 
   function payloadVal(it, key) {
@@ -114,6 +130,7 @@
     const replied = items.filter((i) => i.status === 'replied').length;
     const rate = items.length ? Math.round((replied / items.length) * 100) : 0;
     const repeatN = all.filter(isRepeat).length;
+    const autoN = items.filter(isAutoFilled).length;
     const shop = data.shop ? ` ${p.escapeHtml(data.shop)}` : '';
     const weekLabel = currentBatch ? currentBatch.week_label : '全部週次';
     const latestOpen = batches.find((b) => b.is_open);
@@ -141,8 +158,8 @@
     } else {
       $('site_info').innerHTML =
         `<div class="site-banner">${p.escapeHtml(data.site_code)}${shop}</div>` +
-        `<div>${p.escapeHtml(weekLabel || '')}：共 ${items.length} 個指定 SKU（${replied} 已回覆 · ${rate}%）${repeatN ? `｜其中 <b>${repeatN}</b> 個重複上榜（≥2次）` : ''}${onlyRepeat ? '｜現只顯示重複上榜' : ''}</div>` +
-        `<div class="hint">本週仍可回覆；新一週派發後，本週會自動封存成紀錄。重複上榜會顯示上次回覆及第幾次，提醒跟進改善。如非你店舖，請按右上「登出」再重新輸入自己嘅 Site Code。</div>`;
+        `<div>${p.escapeHtml(weekLabel || '')}：共 ${items.length} 個指定 SKU（${replied} 已回覆 · ${rate}%）${autoN ? `｜<b>${autoN}</b> 個已自動套用上次回覆` : ''}${repeatN ? `｜其中 <b>${repeatN}</b> 個重複上榜（≥2次）` : ''}${onlyRepeat ? '｜現只顯示重複上榜' : ''}</div>` +
+        `<div class="hint">本週仍可回覆；新一週派發後，本週會自動封存成紀錄。橙色「修改」代表系統已自動套用上次回覆，請確認或更正（可修改 2 次）。如非你店舖，請按右上「登出」再重新輸入自己嘅 Site Code。</div>`;
     }
     const goto = document.getElementById('zs_goto_latest');
     if (goto && latestOpen) {
@@ -173,13 +190,22 @@
     html += '<th>SKU上載日期</th><th>狀態</th><th>店舖回覆</th><th>重複提示</th><th></th></tr></thead><tbody>';
     filtered.forEach((it) => {
       const replied = it.status === 'replied';
+      const auto = isAutoFilled(it);
+      const n = editCount(it);
+      const left = remainingEdits(it);
+      const locked = !canEdit(it);
       const badge = archived
         ? `<span class="badge-archived">${replied ? '已回覆 · 已封存' : '未回覆 · 已截止'}</span>`
-        : (replied ? '<span class="badge-replied">已回覆</span>' : '<span class="badge-pending">未回覆</span>');
-      const reply = replied ? `${p.escapeHtml(it.reason_label || '')}${it.reason_note ? `<div class="hint">${p.escapeHtml(it.reason_note)}</div>` : ''}` : '—';
-      const n = editCount(it);
-      const locked = !canEdit(it);
-      const btnLabel = n === 0 ? '回覆' : locked ? '已鎖定' : '修改';
+        : (replied
+          ? `<span class="badge-replied">已回覆</span>${auto ? '<span class="badge-auto">自動套用</span>' : ''}`
+          : '<span class="badge-pending">未回覆</span>');
+      let reply = replied ? `${p.escapeHtml(it.reason_label || '')}${it.reason_note ? `<div class="hint">${p.escapeHtml(it.reason_note)}</div>` : ''}` : '—';
+      if (replied && auto) {
+        const source = it.auto_filled_from_week ? `上次（${it.auto_filled_from_week}）回覆` : '上次回覆';
+        reply += `<div class="zs-auto-note">系統已自動套用${p.escapeHtml(source)}${locked ? '；修改機會已用完' : `；可再修改 ${left} 次`}</div>`;
+      }
+      const extended = replyLimit(it) === 3;
+      const btnLabel = n === 0 ? '回覆' : locked ? '已鎖定' : (extended ? (left === 1 ? '修改（最後 1 次）' : `修改（可改 ${left} 次）`) : '修改');
       const rc = repeatCount(it);
       let repeatCell = '—';
       if (isRepeat(it)) {
@@ -190,14 +216,15 @@
           : '';
         repeatCell = `<span class="badge-repeat">第${rc}次上榜</span>` +
           (prev ? `<div class="hint">${p.escapeHtml(prev)}${prevNote}</div>` : '') + notImproved +
-          // 上次已回覆 → 開啟回覆彈窗時可一鍵帶入上次內容（按鍵在彈窗內）
-          (it.prev_status === 'replied' && !archived && !locked ? '<div class="hint">回覆時可一鍵帶入上次內容</div>' : '');
+          // 上次已回覆 → 開啟回覆彈窗時自動帶入上次內容（按鍵在彈窗內可重設）
+          (it.prev_status === 'replied' && !archived && !locked && !auto ? '<div class="hint">回覆時會自動帶入上次內容</div>' : '');
       }
       const rowClass = archived ? 'zs-archived' : (isRepeat(it) ? 'zs-repeat' : '');
       const weekCell = `${p.escapeHtml(it.week_label || '')}${archived ? '<span class="zs-week-tag">已封存</span>' : ''}`;
+      const highlight = replyLimit(it) === 3 && !locked && !archived && n > 0;
       const action = archived
         ? '<span class="zs-closed">已截止</span>'
-        : `<button class="btn ghost" data-reply="${it.id}" ${locked ? 'disabled' : ''}>${btnLabel}</button>`;
+        : `<button class="btn ghost${highlight ? ' zs-edit-highlight' : ''}" data-reply="${it.id}" ${locked ? 'disabled' : ''}${highlight ? ` title="此 SKU 可再修改 ${left} 次"` : ''}>${btnLabel}</button>`;
       html += `<tr${rowClass ? ` class="${rowClass}"` : ''}><td>${weekCell}</td>`;
       COLS.forEach((c) => {
         const val = c.key === 'Brand' ? brandCode(it) : payloadVal(it, c.key);
@@ -229,19 +256,37 @@
    * 快捷「帶入上次回覆」：將上一次上榜（前一筆同店同 SKU 記錄）的回覆內容填入目前欄位。
    * 只填入、不自動提交 — 店舖確認或修改後按「儲存回覆」才會生效。
    */
-  function fillFromPrev(it) {
+  function fillFromPrev(it, opts = {}) {
     const sel = $('reply_reason');
-    const opts = Array.from(sel.options || []);
+    const options = Array.from(sel.options || []);
     // 上次的原因選項可能已被管理員停用：先以 code 對應，對不上再以顯示標籤對應
-    const match = opts.find((o) => o.value === it.prev_reason_code) ||
-      (it.prev_reason_label ? opts.find((o) => o.textContent === it.prev_reason_label) : null);
+    const match = options.find((o) => o.value === it.prev_reason_code) ||
+      (it.prev_reason_label ? options.find((o) => o.textContent === it.prev_reason_label) : null);
     if (match) sel.value = match.value;
     $('reply_note').value = it.prev_reason_note || '';
+    if (opts.silent) {
+      // 開啟彈窗時自動帶入：只更新歷史提示，不使用紅色／藍色錯誤區
+      const histEl = $('reply_history');
+      if (histEl) {
+        histEl.textContent += match
+          ? ` 已自動帶入上次（${it.prev_week_label}）的回覆內容，請確認或修改後按「儲存回覆」。`
+          : ' 上次回覆的原因選項已停用，請重新選擇最接近的原因。';
+      }
+      return Boolean(match);
+    }
     const msg = match
       ? `已帶入上次（${it.prev_week_label}）的回覆內容：${it.prev_reason_label || match.textContent}` +
         `${it.prev_reason_note ? `／${it.prev_reason_note}` : ''}。請確認或修改後按「儲存回覆」，未儲存前不會生效。`
       : '上次回覆的原因選項現已停用，已帶入補充說明，請重新選擇最接近的原因。';
     p.showAlert($('reply_error'), 'info', p.escapeHtml(msg));
+    return Boolean(match);
+  }
+
+  function setAutoNotice(text) {
+    const el = $('reply_auto_notice');
+    if (!el) return;
+    el.hidden = !text;
+    el.innerHTML = text || '';
   }
 
   function openReply(id) {
@@ -252,13 +297,21 @@
       return;
     }
     if (!canEdit(it)) {
-      p.showAlert($('list_error'), 'error', '此 SKU 已用完修改機會（只可修改一次），如需再更改請聯絡 RP Team');
+      p.showAlert($('list_error'), 'error', `此 SKU 已用完修改機會（可修改 ${Math.max(1, replyLimit(it) - 1)} 次），如需再更改請聯絡 RP Team`);
       return;
     }
     currentId = id;
     const n = editCount(it);
-    $('reply_title').textContent = n === 0 ? `回覆 — ${it.sku}` : `修改回覆（最後一次機會） — ${it.sku}`;
-    $('reply_sku_info').textContent = `${it.week_label || ''}｜${payloadVal(it, 'Brand')}｜${payloadVal(it, 'SKU Desc')}${n >= 1 ? '｜注意：每 SKU 只可修改一次，儲存後將鎖定' : ''}`;
+    const auto = isAutoFilled(it);
+    const left = remainingEdits(it);
+    $('reply_title').textContent = auto
+      ? `確認／修改自動套用回覆 — ${it.sku}`
+      : (n === 0 ? `回覆 — ${it.sku}` : `修改回覆 — ${it.sku}`);
+    const autoFrom = it.auto_filled_from_week ? ` ${it.auto_filled_from_week} ` : '上次';
+    $('reply_sku_info').textContent = `${it.week_label || ''}｜${payloadVal(it, 'Brand')}｜${payloadVal(it, 'SKU Desc')}` +
+      (auto
+        ? `｜系統已自動套用${autoFrom}的回覆；你仍可修改 ${left} 次`
+        : (n >= 1 ? `｜剩餘修改次數：${left} 次` : ''));
     const histEl = $('reply_history');
     if (histEl) {
       if (isRepeat(it) && it.prev_week_label) {
@@ -270,19 +323,24 @@
         histEl.textContent = '此 SKU 首次上榜。';
       }
     }
+    setAutoNotice(auto
+      ? `<b>系統已自動套用上次回覆。</b>請確認內容是否仍適用；如不適用，請直接修改後按「儲存回覆」。你仍可修改 <b>${left}</b> 次。`
+      : '');
     // 快捷按鍵顯示時機：重複上榜 且 上次已有回覆記錄（prev_status === 'replied'）
-    const canFillPrev = !!(isRepeat(it) && it.prev_week_label && it.prev_status === 'replied');
+    const canFillPrev = !auto && !!(isRepeat(it) && it.prev_week_label && it.prev_status === 'replied');
     const fillWrap = $('reply_fill_wrap');
     if (fillWrap) {
       fillWrap.hidden = !canFillPrev;
       if (canFillPrev) {
         const fillBtn = $('btn_fill_prev');
-        fillBtn.textContent = `帶入上次回覆（${it.prev_week_label}）`;
+        fillBtn.textContent = `重設為上次回覆（${it.prev_week_label}）`;
         fillBtn.onclick = () => fillFromPrev(it);
       }
     }
     $('reply_reason').value = it.reason_code || (reasons[0] && reasons[0].code) || '';
     $('reply_note').value = it.reason_note || '';
+    // 未自動套用的 pending 重複 SKU：開啟彈窗時先自動帶入上次回覆，店舖確認後再儲存
+    if (!auto && it.status === 'pending' && canFillPrev) fillFromPrev(it, { silent: true });
     p.showAlert($('reply_error'), '', '');
     $('reply_dialog').showModal();
   }

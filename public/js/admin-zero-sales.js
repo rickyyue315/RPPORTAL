@@ -159,6 +159,9 @@
         const toggleBtn = b.is_open
           ? `<button class="btn btn-sm btn-outline-secondary" data-zs-close="${b.id}" data-week="${esc(b.week_label)}">封存</button>`
           : `<button class="btn btn-sm btn-outline-primary" data-zs-reopen="${b.id}" data-week="${esc(b.week_label)}">重開</button>`;
+        const autoFillBtn = b.is_open
+          ? `<button class="btn btn-sm btn-outline-warning" data-zs-autofill="${b.id}" data-week="${esc(b.week_label)}">自動套用重複回覆</button>`
+          : '';
         return `<tr>
         <td><b>${esc(b.week_label)}</b><div class="text-secondary small">${esc(b.note || '')}</div><div class="mt-1">${statusTag}</div></td>
         <td>${b.row_count}</td><td>${b.store_count}</td>
@@ -167,6 +170,7 @@
         <td><div class="d-flex gap-1 flex-wrap">
           <button class="btn btn-sm" data-zs-view="${b.id}">明細</button>
           <a class="btn btn-sm btn-outline-primary" href="/api/admin/zero-sales/batches/${b.id}/export">匯出</a>
+          ${autoFillBtn}
           ${toggleBtn}
           <button class="btn btn-sm btn-outline-danger" data-zs-del="${b.id}" data-week="${esc(b.week_label)}" data-rows="${b.row_count}">刪除</button>
         </div></td></tr>`;
@@ -179,6 +183,9 @@
       });
       body.querySelectorAll('[data-zs-reopen]').forEach((btn) => {
         btn.addEventListener('click', () => reopenBatch(btn.dataset.zsReopen, btn.dataset.week || ''));
+      });
+      body.querySelectorAll('[data-zs-autofill]').forEach((btn) => {
+        btn.addEventListener('click', () => autoFillRepeats(btn.dataset.zsAutofill, btn.dataset.week || ''));
       });
       body.querySelectorAll('[data-zs-del]').forEach((btn) => {
         btn.addEventListener('click', () => deleteBatch(btn.dataset.zsDel, btn.dataset.week || '', Number(btn.dataset.rows || 0)));
@@ -246,25 +253,31 @@
         body.innerHTML = '<tr><td colspan="9" class="text-center text-secondary">此篩選沒有資料</td></tr>';
         return;
       }
-      if (res) res.innerHTML = `<div class="text-secondary small">批次 ${esc(currentBatch.slice(0, 8))}｜共 ${rows.length} 筆｜已回覆 ${rows.filter((r) => r.status === 'replied').length}｜已鎖定（用完修改） ${rows.filter((r) => (r.reply_count ?? (r.status === 'replied' ? 1 : 0)) >= 2).length}${rows[0]?.is_open === false ? '｜<b>此批次已封存，店舖不可再回覆（管理員可代回覆）</b>' : ''} <a href="/api/admin/zero-sales/batches/${currentBatch}/export">匯出 Excel</a></div>`;
+      const limitOf = (i) => Number(i.reply_limit) >= 2 ? Number(i.reply_limit) : (i.auto_filled_at ? 3 : 2);
+      if (res) res.innerHTML = `<div class="text-secondary small">批次 ${esc(currentBatch.slice(0, 8))}｜共 ${rows.length} 筆｜已回覆 ${rows.filter((r) => r.status === 'replied').length}｜已鎖定（用完修改） ${rows.filter((r) => (r.reply_count ?? (r.status === 'replied' ? 1 : 0)) >= limitOf(r)).length}${rows[0]?.is_open === false ? '｜<b>此批次已封存，店舖不可再回覆（管理員可代回覆）</b>' : ''} <a href="/api/admin/zero-sales/batches/${currentBatch}/export">匯出 Excel</a></div>`;
       const archived = rows[0]?.is_open === false;
       body.innerHTML = rows.slice(0, 200).map((i) => {
         const n = i.reply_count ?? (i.status === 'replied' ? 1 : 0);
+        const limit = limitOf(i);
+        const left = Math.max(0, limit - n);
+        const auto = !!i.auto_filled_at;
         const upDate = i.batch_date || (i.batch_created_at || '').slice(0, 10);
-        const lockTag = n >= 2 ? ' <span class="badge-zs badge-zs-muted">已鎖定</span>' : n === 1 ? ' <span class="text-secondary small">可再改1次</span>' : '';
+        const lockTag = n >= limit
+          ? ' <span class="badge-zs badge-zs-muted">已鎖定</span>'
+          : (left > 0 ? ` <span class="text-secondary small">可再改${left}次</span>` : '');
         const editBtn = i.status === 'replied'
           ? `<button class="btn btn-sm" data-zs-item-edit="${i.id}">編輯回覆</button>`
           : `<button class="btn btn-sm" data-zs-item-edit="${i.id}">代回覆</button>`;
         const enteredByAdmin = (i.replied_by || '').startsWith('管理員代填');
         const statusBadge = i.status === 'replied'
-          ? `<span class="badge-zs badge-zs-ok">已回覆${archived ? '（已封存）' : ''}</span>${enteredByAdmin ? ' <span class="badge-zs badge-zs-info">代填</span>' : ''}`
+          ? `<span class="badge-zs badge-zs-ok">已回覆${archived ? '（已封存）' : ''}</span>${auto ? ` <span class="badge-zs badge-zs-info">自動套用${i.auto_filled_from_week ? ` ${esc(i.auto_filled_from_week)}` : ''}</span>` : ''}${enteredByAdmin ? ' <span class="badge-zs badge-zs-info">代填</span>' : ''}`
           : `<span class="badge-zs ${archived ? 'badge-zs-muted' : 'badge-zs-warn'}">未回覆${archived ? '（已截止）' : ''}</span>`;
         return `<tr>
         <td>${esc(i.site_code)}</td><td>${esc(i.sku)}</td>
         <td>${esc(i.payload?.['Brand'] || '')}</td><td>${esc(i.payload?.['SKU Desc'] || '')}</td>
         <td>${esc(upDate)}</td>
         <td>${statusBadge}</td>
-        <td style="white-space:nowrap">${n}次${lockTag}</td>
+        <td style="white-space:nowrap">${n}/${limit}次${lockTag}</td>
         <td>${esc(i.reason_label || '')}${i.reason_note ? `（${esc(i.reason_note)}）` : ''}</td>
         <td><div class="d-flex gap-1 flex-wrap">${editBtn}<button class="btn btn-sm btn-outline-danger" data-zs-item-del="${i.id}" data-site="${esc(i.site_code)}" data-sku="${esc(i.sku)}">刪除</button></div></td></tr>`;
       }).join('')
@@ -299,6 +312,7 @@
     fd.append('file', file);
     fd.append('week_label', week);
     fd.append('note', $('zs_note').value || '');
+    fd.append('auto_fill_repeats', $('zs_auto_fill_upload')?.checked === false ? '0' : '1');
     res.innerHTML = '<div class="alert alert-info">上載中…</div>';
     try {
       const data = await aFetch('/api/admin/zero-sales/batches', { method: 'POST', body: fd });
@@ -306,7 +320,8 @@
       const closedText = closed.length
         ? `；已自動封存 ${closed.map((b) => `「${esc(b.week_label)}」（${b.pending} 個未回覆 SKU）`).join('、')}`
         : '';
-      res.innerHTML = `<div class="alert alert-success">已建立批次（${data.totalRows} 行）${closedText}。舊週次已轉為唯讀，店舖不能再回覆。</div>`;
+      const autoText = data.autoFilled ? `；已自動套用 ${data.autoFilled} 個重複 SKU 的上次回覆` : '';
+      res.innerHTML = `<div class="alert alert-success">已建立批次（${data.totalRows} 行）${autoText}${closedText}。舊週次已轉為唯讀，店舖不能再回覆。</div>`;
       $('zs_file').value = '';
       await loadBatches(true);
       await loadSummary();
@@ -482,7 +497,7 @@
         ? `共 <b>${rows.length}</b> 組重複上榜（只顯示首 200，搜尋可收窄）`
         : '沒有重複上榜 SKU（全部只出現過一次）。';
       if (!rows.length) {
-        body.innerHTML = '<tr><td colspan="9" class="text-center text-secondary">沒有重複上榜 SKU</td></tr>';
+        body.innerHTML = '<tr><td colspan="10" class="text-center text-secondary">沒有重複上榜 SKU</td></tr>';
         return;
       }
       body.innerHTML = rows.slice(0, 200).map((r) => {
@@ -492,6 +507,7 @@
           : (r.last_status === 'replied' ? '已回覆' : '<span class="text-danger">未回覆</span>');
         return `<tr>
           <td><b>${esc(r.site_code)}</b></td><td>${esc(r.shop || '—')}</td>
+          <td>${esc(r.om || '—')}</td>
           <td>${esc(r.sku)}</td><td>${esc(r.brand || '')}</td><td>${esc(r.sku_desc || '')}</td>
           <td><b class="text-danger">${r.occurrence_count} 次</b></td>
           <td class="small">${weeks}</td>
@@ -501,7 +517,7 @@
       }).join('');
     } catch (err) {
       if (res) res.innerHTML = `<div class="alert alert-danger">${esc(err.message)}</div>`;
-      body.innerHTML = `<tr><td colspan="9" class="text-center text-danger">${esc(err.message)}</td></tr>`;
+      body.innerHTML = `<tr><td colspan="10" class="text-center text-danger">${esc(err.message)}</td></tr>`;
     }
   }
 
@@ -740,6 +756,37 @@
     }
   }
 
+  /** 為已派發中的批次補套用重複 SKU 上次回覆（預設只限完全未回覆店舖） */
+  async function autoFillRepeats(batchId, weekLabel) {
+    if (!batchId) return;
+    const onlyUnreplied = $('zs_autofill_only_unreplied')?.checked !== false;
+    const ok = await confirmZsDelete('確認自動套用重複回覆？', [
+      `週次：${weekLabel || batchId.slice(0, 8)}`,
+      onlyUnreplied
+        ? '只會套用於「完全未回覆」的店舖；店舖只要有任何一行自行回覆，全店跳過。'
+        : '會套用於所有仍「未回覆」的 SKU；已回覆的店舖及 SKU 仍不會被覆寫。',
+      '系統會複製同店同 SKU 上一次的店舖回覆（原因 + 補充說明），店舖可按橙色「修改」鍵再改 2 次。',
+    ], '確認套用', false);
+    if (!ok) return;
+    $('zs_batch_result').innerHTML = '<div class="alert alert-info">自動套用中…</div>';
+    try {
+      const data = await aFetch(`/api/admin/zero-sales/batches/${batchId}/auto-fill`, {
+        method: 'POST',
+        body: JSON.stringify({ only_unreplied_stores: onlyUnreplied }),
+      });
+      const scope = onlyUnreplied ? '只限完全未回覆店舖' : '包括部分已回覆店舖的未回覆 SKU';
+      $('zs_batch_result').innerHTML = `<div class="alert alert-success">已自動套用「${esc(data.week_label || weekLabel)}」<b>${data.applied}</b> 個重複 SKU（${esc(scope)}）。批次原有 ${data.pending_before} 個未回覆，現剩 <b>${data.remaining_pending}</b> 個；已回覆的店舖及 SKU 未被更改。</div>`;
+      currentBatch = batchId;
+      syncExportBatchSelect();
+      await loadBatches();
+      await loadSummary();
+      refreshRepeatsIfOpen();
+      if (currentBatch) await loadItems();
+    } catch (err) {
+      $('zs_batch_result').innerHTML = `<div class="alert alert-danger">${esc(err.message)}</div>`;
+    }
+  }
+
   async function deleteBatch(batchId, weekLabel, rowCount) {
     if (!batchId) return;
     const ok = await confirmZsDelete('確認刪除整個批次？', [
@@ -820,18 +867,21 @@
 
   function openEditReplyOverlay(item, triggerBtn) {
     const entering = item.status !== 'replied';
+    const auto = !!item.auto_filled_at;
     const overlay = document.createElement('div');
     overlay.id = 'zs_edit_reply_overlay';
     overlay.innerHTML = `<div class="modal-box" role="dialog" aria-modal="true" aria-label="${entering ? '代店舖輸入回覆' : '編輯店舖回覆'}">
       <h3>${entering ? '代店舖輸入回覆' : '編輯店舖回覆'}</h3>
-      <p class="text-secondary small" style="margin:6px 0">店舖：${esc(item.site_code)}｜SKU：${esc(item.sku)}${item.replied_by ? `｜原回覆人：${esc(item.replied_by)}` : ''}｜${item.is_open === false ? '此週次已封存' : '此週次仍開放'}</p>
+      <p class="text-secondary small" style="margin:6px 0">店舖：${esc(item.site_code)}｜SKU：${esc(item.sku)}${item.replied_by ? `｜原回覆人：${esc(item.replied_by)}` : ''}${auto ? `｜系統自動套用${item.auto_filled_from_week ? `自 ${esc(item.auto_filled_from_week)}` : ''}` : ''}｜${item.is_open === false ? '此週次已封存' : '此週次仍開放'}</p>
       <div class="mb-2"><label class="form-label">回覆原因</label><select id="zs_edit_reason" class="form-select"><option value="">載入中…</option></select></div>
       <div class="mb-2"><label class="form-label">補充說明</label><textarea id="zs_edit_note" class="form-control" rows="3" maxlength="2000" placeholder="${entering ? '如店舖以 email 補交，建議註明日期及提供者' : '選擇須補充的原因時必填'}"></textarea></div>
       <p class="text-secondary small" style="margin:6px 0">${entering
         ? (item.is_open === false
           ? '店舖截單後以 email 補交時使用：儲存後狀態變為「已回覆」，回覆人記錄為「管理員代填（你的帳號）」，並寫入審計日誌。'
-          : '此週次仍開放，店舖可自行回覆；如你代填，店舖仍可再修改一次。')
-        : '管理員修改不受鎖定限制，亦不佔用店舖的修改次數；更改會記錄在審計日誌。'}</p>
+          : '此週次仍開放，店舖可自行回覆；如你代填，店舖仍可再修改一次（系統自動套用的行可再改 2 次）。')
+        : (auto
+          ? '此行由系統自動套用上次回覆；管理員修改不受鎖定限制，亦不佔用店舖的修改次數，更改會記錄在審計日誌。'
+          : '管理員修改不受鎖定限制，亦不佔用店舖的修改次數；更改會記錄在審計日誌。')}</p>
       <div id="zs_edit_reply_error" class="text-danger small"></div>
       <div class="d-flex gap-2 justify-content-end mt-3">
         <button class="btn btn-primary" data-save>儲存</button>

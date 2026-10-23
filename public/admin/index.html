@@ -493,7 +493,7 @@
             </div>
           </div>
           <div class="card-body collapse show" id="zs-collapse">
-            <p class="text-secondary small">上載 Excel（欄位：Site Code、Shop Name、OM、Shop Nature、店內庫存排名、Buyer、Brand、SKU、SKU Desc、Adj. MCH1、MAKE UP 分類、RP Type、Safety Stock (現時)、Item Status、Supply Source、Shop Stock Qty (LM/CM)、Sold Qty (P90D/M-2/M-1/CM-MTD)、Shop On Order PO Qty (CM)、店舖回覆）。每間店SKU可不同，店舖登入後逐條回覆原因，每SKU可修改一次。</p>
+            <p class="text-secondary small">上載 Excel（欄位：Site Code、Shop Name、OM、Shop Nature、店內庫存排名、Buyer、Brand、SKU、SKU Desc、Adj. MCH1、MAKE UP 分類、RP Type、Safety Stock (現時)、Item Status、Supply Source、Shop Stock Qty (LM/CM)、Sold Qty (P90D/M-2/M-1/CM-MTD)、Shop On Order PO Qty (CM)、店舖回覆）。每間店SKU可不同，店舖登入後逐條回覆原因。<b>重複上榜 SKU 會自動套用上次回覆</b>，店舖確認後仍可修改 2 次；其他 SKU 維持初次回覆 + 1 次修改。</p>
             <div class="d-flex gap-2 mb-3 flex-wrap">
               <div><label class="form-label">日期（自動計週，星期一開始）</label><input type="date" id="zs_week_date" class="form-control"></div>
               <div><label class="form-label">週次 (例如 2026-W40)</label><input type="text" id="zs_week" class="form-control" placeholder="2026-W40"><div class="hint" id="zs_week_hint">選擇日期後自動填入 ISO 週次，可再手改</div></div>
@@ -504,6 +504,10 @@
                 <button class="btn btn-primary" id="btn_zs_upload">上載開新批次</button>
               </div>
             </div>
+            <label class="form-check mt-2">
+              <input class="form-check-input" type="checkbox" id="zs_auto_fill_upload" checked>
+              <span class="form-check-label">上載新批次時，重複上榜 SKU 自動套用上次店舖回覆（店舖仍可修改 2 次）</span>
+            </label>
             <div id="zs_upload_result"></div>
             <div class="d-flex align-items-center gap-2 flex-wrap mt-4">
               <h4 class="m-0">統計總覽</h4>
@@ -566,7 +570,7 @@
               </div>
               <div id="zs_repeat_result" class="text-secondary small"></div>
               <div class="table-responsive">
-                <table class="table table-vcenter"><thead><tr><th>Site</th><th>店舖</th><th>SKU</th><th>Brand</th><th>描述</th><th>出現</th><th>週次</th><th>上次回覆</th><th>未 / 已</th></tr></thead><tbody id="zs_repeat_body"><tr><td colspan="9" class="text-center text-secondary">展開後自動載入…</td></tr></tbody></table>
+                <table class="table table-vcenter"><thead><tr><th>Site</th><th>店舖</th><th>By OM</th><th>SKU</th><th>Brand</th><th>描述</th><th>出現</th><th>週次</th><th>上次回覆</th><th>未 / 已</th></tr></thead><tbody id="zs_repeat_body"><tr><td colspan="10" class="text-center text-secondary">展開後自動載入…</td></tr></tbody></table>
               </div>
               <div id="zs_repeat_export_result" class="small"></div>
             </div>
@@ -583,7 +587,11 @@
               </div>
             </div>
             <div id="zs_export_result"></div>
-            <p class="text-secondary small mt-2">批次狀態：<b>開放中</b> = 店舖可回覆；<b>已封存</b> = 只供查閱。上載新批次時，之前開放的批次會自動封存；如需讓店舖補答舊週次，可按「重開」（下次上載時會再次封存）。</p>
+            <p class="text-secondary small mt-2">批次狀態：<b>開放中</b> = 店舖可回覆；<b>已封存</b> = 只供查閱。上載新批次時，之前開放的批次會自動封存；如需讓店舖補答舊週次，可按「重開」（下次上載時會再次封存）。<br>「自動套用重複回覆」只會更新仍<b>未回覆</b>的 SKU，永不覆寫店舖已提交的回覆；建議保留下方勾選，只套用於<b>完全未回覆的店舖</b>（適合已派發中、已有部分店舖回覆的週次，例如 2026-W43）。</p>
+            <label class="form-check mt-2">
+              <input class="form-check-input" type="checkbox" id="zs_autofill_only_unreplied" checked>
+              <span class="form-check-label">自動套用時，只限完全未回覆的店舖（已回覆店舖及所有已回覆 SKU 不受影響）</span>
+            </label>
             <div id="zs_batch_result"></div>
             <div class="table-responsive">
               <table class="table table-vcenter"><thead><tr><th>週次</th><th>行數</th><th>店數</th><th>已回覆</th><th>未回覆</th><th>建立人</th><th>建立時間</th><th>操作</th></tr></thead><tbody id="zs_batches_body"><tr><td colspan="8" class="text-center text-secondary">捲動到此處自動載入…</td></tr></tbody></table>

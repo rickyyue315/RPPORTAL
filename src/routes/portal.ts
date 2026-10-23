@@ -965,6 +965,7 @@ portalRouter.get(
       prev_week_label: it.prev_week_label ?? null,
       prev_status: it.prev_status ?? null,
       prev_reason_label: it.prev_reason_label ?? null,
+      auto_filled_from_week: it.auto_filled ? (it.auto_filled_from_week || null) : null,
     })));
     const stamp = toHKDateString(new Date()).replace(/-/g, '');
     const label = (items[0]?.week_label ?? 'all').replace(/[^\w\-]+/g, '_');

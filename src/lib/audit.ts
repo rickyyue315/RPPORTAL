@@ -42,6 +42,7 @@ export type AuditEventType =
   | 'zero_sales_batch_created'
   | 'zero_sales_batch_closed'
   | 'zero_sales_batch_reopened'
+  | 'zero_sales_auto_filled'
   | 'zero_sales_reason_updated'
   | 'zero_sales_export'
   | 'zero_sales_store_export'

@@ -191,6 +191,8 @@ export interface ZeroSalesExportItem {
   reply_count: number;
   /** 所屬週次是否仍可回覆；false = 已封存（未回覆會標示為已截止，仍會列入匯出紀錄） */
   is_open?: boolean;
+  /** 若回覆由系統自動套用，記錄來源週次；null／undefined = 店舖自行回覆 */
+  auto_filled_from_week?: string | null;
 }
 
 const UNCLASSIFIED_REASON = '（未分類）';
@@ -224,7 +226,9 @@ export async function buildZeroSalesExportBuffer(items: ZeroSalesExportItem[], r
       ...ZERO_SALES_COLUMNS.slice(0, 22).map((c) => it.payload?.[c] ?? (c === 'Site Code' ? it.site_code : c === 'SKU' ? it.sku : '')),
       it.reason_label ?? '',
       it.reason_note ?? '',
-      it.status === 'replied' ? '已回覆' : '未回覆',
+      it.status === 'replied'
+        ? (it.auto_filled_from_week ? `已回覆（自動套用 ${it.auto_filled_from_week}）` : '已回覆')
+        : '未回覆',
       it.reply_count ?? (it.status === 'replied' ? 1 : 0),
       it.replied_at ?? '',
       it.replied_by ?? '',
@@ -295,6 +299,8 @@ export interface ZeroSalesRepeatSkuExportRow {
 export interface ZeroSalesRepeatPairExportRow {
   site_code: string;
   shop: string;
+  /** 店舖所屬 OM */
+  om: string;
   sku: string;
   brand: string;
   sku_desc: string;
@@ -390,7 +396,7 @@ export async function buildZeroSalesRepeatExportBuffer(
   if (input.pairs) {
     const sheet = workbook.addWorksheet('各店明細');
     const headers = [
-      'Site Code', '店舖', 'SKU', 'Brand', 'SKU 描述',
+      'Site Code', '店舖', 'By OM', 'SKU', 'Brand', 'SKU 描述',
       '出現次數', '未回覆', '已回覆', '首次出現', '最後出現', '最後週次',
       '週次（新→舊）', '上次回覆', '上次回覆時間',
     ];
@@ -401,13 +407,13 @@ export async function buildZeroSalesRepeatExportBuffer(
         ? `${r.last_reason_label}${r.last_reason_note ? `（${r.last_reason_note}）` : ''}`
         : (r.last_status === 'replied' ? '已回覆' : '未回覆');
       sheet.addRow([
-        r.site_code, r.shop, r.sku, r.brand, r.sku_desc,
+        r.site_code, r.shop, r.om ?? '', r.sku, r.brand, r.sku_desc,
         r.occurrence_count, r.pending_count, r.replied_count,
         r.first_seen, r.last_seen, r.last_week_label,
         (r.weeks ?? []).join(' → '), lastReply, r.last_replied_at ?? '',
       ]);
     }
-    const widths = [12, 26, 16, 22, 32, 10, 10, 10, 12, 12, 12, 40, 32, 18];
+    const widths = [12, 26, 10, 16, 22, 32, 10, 10, 10, 12, 12, 12, 40, 32, 18];
     widths.forEach((w, i) => { sheet.getColumn(i + 1).width = w; });
     if (input.pairs.length) {
       sheet.autoFilter = { from: { row: 1, column: 1 }, to: { row: input.pairs.length + 1, column: headers.length } };
@@ -474,6 +480,8 @@ export interface ZeroSalesStoreExportItem {
   prev_week_label: string | null;
   prev_status: string | null;
   prev_reason_label: string | null;
+  /** 若回覆由系統自動套用，記錄來源週次；null／undefined = 店舖自行回覆 */
+  auto_filled_from_week?: string | null;
 }
 
 /** 「重複提示」欄：第N次上榜（上次 週次：原因）；首次上榜為空白 */
@@ -503,7 +511,9 @@ export async function buildZeroSalesStoreExportBuffer(items: ZeroSalesStoreExpor
     // 已封存週次：狀態欄同時交代回覆結果與「不可再回覆」，避免匯出表被當成待辦清單
     const statusText = archived
       ? (replied ? '已回覆（已封存）' : '未回覆（已截止）')
-      : (replied ? '已回覆' : '未回覆');
+      : (replied
+        ? (it.auto_filled_from_week ? `已回覆（自動套用 ${it.auto_filled_from_week}）` : '已回覆')
+        : '未回覆');
     sheet.addRow([
       it.week_label ?? '',
       p['Brand'] ?? '',

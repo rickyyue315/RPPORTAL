@@ -3,6 +3,8 @@ import multer from 'multer';
 import helmet from 'helmet';
 import cookieParser from 'cookie-parser';
 import cors from 'cors';
+import { readFileSync } from 'node:fs';
+import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { config } from './config.js';
@@ -30,6 +32,29 @@ import {
 import { SKU_PATTERN, RF_REMARK_REQUIRED_SITES } from './lib/validation.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const PUBLIC_DIR = path.join(__dirname, '..', 'public');
+const APP_VERSION = (JSON.parse(
+  readFileSync(path.join(__dirname, '..', 'package.json'), 'utf8'),
+) as { version: string }).version;
+// Matches local JS/CSS URLs in HTML, with or without an existing ?v= query.
+const LOCAL_ASSET_URL = /(\s(?:src|href)=")(\/(?!\/)[^"?]+\.(?:css|js))(?:\?[^"]*)?"/g;
+
+function markHtmlNoStore(res: Response): void {
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0');
+  res.setHeader('Pragma', 'no-cache');
+  res.setHeader('Expires', '0');
+}
+
+/**
+ * Versioned JS/CSS URLs change on every release, so browsers may keep them on
+ * disk as long as they revalidate first. A matching file returns 304 (headers
+ * only) instead of the full bundle, keeping Railway egress low.
+ */
+function markAssetRevalidate(res: Response): void {
+  res.setHeader('Cache-Control', 'public, no-cache, must-revalidate, max-age=0');
+  res.setHeader('Pragma', 'no-cache');
+  res.setHeader('Expires', '0');
+}
 
 export function createApp() {
   const app = express();
@@ -100,21 +125,39 @@ export function createApp() {
       })};`);
   });
 
+  // Store devices often keep a page open for days, and some mobile browsers /
+  // in-app webviews reuse cached portal bundles after a deploy. HTML is never
+  // stored, while JS/CSS URLs are stamped with the release version and must be
+  // revalidated, so a new deployment always renders the latest store layout
+  // without downloading unchanged bundles again.
+  app.use((req: Request, res: Response, next: NextFunction) => {
+    if (req.method !== 'GET' && req.method !== 'HEAD') return next();
+    if (req.path === '/api' || req.path.startsWith('/api/')) return next();
+    if (!req.path.endsWith('.html') && !req.path.endsWith('/')) return next();
+
+    const relative = req.path.replace(/^\/+/, '');
+    const filePath = path.resolve(
+      PUBLIC_DIR,
+      relative === '' || relative.endsWith('/') ? `${relative}index.html` : relative,
+    );
+    if (!filePath.startsWith(PUBLIC_DIR + path.sep)) return next();
+
+    void readFile(filePath, 'utf8')
+      .then((html) => {
+        markHtmlNoStore(res);
+        res
+          .type('html')
+          .send(html.replace(LOCAL_ASSET_URL, `$1$2?v=${APP_VERSION}"`));
+      })
+      .catch(() => next());
+  });
+
   app.use(
-    express.static(path.join(__dirname, '..', 'public'), {
+    express.static(PUBLIC_DIR, {
       index: 'index.html',
       setHeaders: (res, filePath) => {
-        if (filePath.endsWith('.html')) {
-          res.setHeader('Cache-Control', 'no-store');
-        }
-        // Admin bundles change with backend APIs; a stale cached copy
-        // misaligns the user table and deadens new buttons, so never cache.
-        // admin.css must stay in sync with the JS overlays (a new overlay div
-        // with a stale stylesheet renders as a full-width block at the page
-        // bottom instead of a centred modal).
-        if (filePath.endsWith('/js/admin.js') || filePath.endsWith('/js/admin-zero-sales.js') || filePath.endsWith('/js/admin-ui.js') || filePath.endsWith('/js/admin-pager.js') || filePath.endsWith('/css/admin.css')) {
-          res.setHeader('Cache-Control', 'no-store');
-        }
+        if (/\.html$/i.test(filePath)) markHtmlNoStore(res);
+        else if (/\.(?:js|css)$/i.test(filePath)) markAssetRevalidate(res);
       },
     }),
   );

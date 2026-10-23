@@ -2670,7 +2670,10 @@ adminRouter.get(
       is_open: i.is_open !== false,
     })), reasonLabels);
     const stamp = toHKDateString(new Date()).replace(/-/g, '');
-    const label = (items[0]?.week_label ?? 'all').replace(/[^\w\-]+/g, '_');
+    // 跨批次匯出時不可用最新批次名作檔名，否則會被誤認為只匯出了最新一批
+    const label = batchId
+      ? (items[0]?.week_label ?? 'batch').replace(/[^\w\-]+/g, '_')
+      : 'All_Batches';
     await writeAuditEvent({
       eventType: 'zero_sales_export',
       actorRole: 'admin',

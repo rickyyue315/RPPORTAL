@@ -241,4 +241,29 @@ describe('buildZeroSalesExportBuffer', () => {
     expect(rows.find((r) => r['Site Code'] === 'HB11')!['店舖回覆 (原因)']).toBe('');
     expect(rows.find((r) => r['Site Code'] === 'HA06')).toBeUndefined();
   });
+
+  it('跨批次：主表第一欄為週次，所有批次的行都會匯出（新→舊）', async () => {
+    const buf = await buildZeroSalesExportBuffer([
+      item({ site_code: 'HA02', sku: '1001', batch_label: '2026-W43', is_open: true }),
+      item({ site_code: 'HB11', sku: '2002', batch_label: '2026-W42', is_open: false }),
+    ], REASONS);
+    const rows = await readSheet(buf, 'Zero Sales 回覆');
+    expect(Object.keys(rows[0]!)[0]).toBe('週次');
+    expect(rows.map((r) => r['週次'])).toEqual(['2026-W43', '2026-W42']);
+    expect(rows[0]!['記錄狀態']).toBe('可回覆');
+    expect(rows[1]!['記錄狀態']).toBe('已截止（已封存）');
+  });
+
+  it('未回覆店舖：已封存週次的未回覆行仍會列出，並以批次狀態標示', async () => {
+    const buf = await buildZeroSalesExportBuffer([
+      item({ site_code: 'HA02', sku: 'A1', batch_label: '2026-W43', is_open: true }),
+      item({ site_code: 'HA02', sku: 'A2', batch_label: '2026-W42', is_open: false }),
+    ], REASONS);
+    const rows = await readSheet(buf, '未回覆店舖');
+    const data = rows.filter((r) => !String(r['Site Code']).startsWith('註：'));
+    expect(data.map((r) => [r['Site Code'], r['週次'], r['批次狀態'], r['未回覆 SKU']])).toEqual([
+      ['HA02', '2026-W43', '開放中', 'A1'],
+      ['HA02', '2026-W42', '已封存（已截止）', 'A2'],
+    ]);
+  });
 });

@@ -189,7 +189,7 @@ export interface ZeroSalesExportItem {
   replied_by: string | null;
   batch_label: string;
   reply_count: number;
-  /** 所屬週次是否仍可回覆；false = 已封存（未回覆即逾期，不列入待回覆店舖） */
+  /** 所屬週次是否仍可回覆；false = 已封存（未回覆會標示為已截止，仍會列入匯出紀錄） */
   is_open?: boolean;
 }
 
@@ -211,7 +211,8 @@ function parseQty(text: string | undefined): number | null {
 export async function buildZeroSalesExportBuffer(items: ZeroSalesExportItem[], reasonLabels: string[] = []): Promise<Buffer> {
   const workbook = new ExcelJS.Workbook();
   const sheet = workbook.addWorksheet('Zero Sales 回覆');
-  const headers = [...ZERO_SALES_COLUMNS.slice(0, 22), '店舖回覆 (原因)', '補充說明', '回覆狀態', '修改次數', '回覆時間', '回覆人', '記錄狀態'];
+  // 跨批次匯出時必須有「週次」，否則無法分辨行屬於哪一批（舊批次會排在後面，看似只有最新批次）
+  const headers = ['週次', ...ZERO_SALES_COLUMNS.slice(0, 22), '店舖回覆 (原因)', '補充說明', '回覆狀態', '修改次數', '回覆時間', '回覆人', '記錄狀態'];
   const headerStyle: Partial<ExcelJS.Style> = {
     font: { bold: true }, fill: { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFDAEEF3' } },
   };
@@ -219,6 +220,7 @@ export async function buildZeroSalesExportBuffer(items: ZeroSalesExportItem[], r
   headers.forEach((_, i) => { sheet.getCell(1, i + 1).style = headerStyle; });
   for (const it of items) {
     sheet.addRow([
+      it.batch_label ?? '',
       ...ZERO_SALES_COLUMNS.slice(0, 22).map((c) => it.payload?.[c] ?? (c === 'Site Code' ? it.site_code : c === 'SKU' ? it.sku : '')),
       it.reason_label ?? '',
       it.reason_note ?? '',
@@ -232,17 +234,16 @@ export async function buildZeroSalesExportBuffer(items: ZeroSalesExportItem[], r
   sheet.columns = headers.map(() => ({ width: 18 }));
 
   const pendingSheet = workbook.addWorksheet('未回覆店舖');
-  const pendingHeaders = ['Site Code', 'Shop Name', 'OM', '週次', '總 SKU 數', '已回覆', '未回覆', '未回覆 SKU', '店舖回覆 (原因)', '跟進備註'];
+  const pendingHeaders = ['Site Code', 'Shop Name', 'OM', '週次', '批次狀態', '總 SKU 數', '已回覆', '未回覆', '未回覆 SKU', '店舖回覆 (原因)', '跟進備註'];
   pendingSheet.addRow(pendingHeaders);
   pendingHeaders.forEach((_, i) => { pendingSheet.getCell(1, i + 1).style = headerStyle; });
-  const storeMap = new Map<string, { site_code: string; shop: string; om: string; week: string; total: number; replied: number; skus: string[]; reasons: Map<string, number> }>();
+  const storeMap = new Map<string, { site_code: string; shop: string; om: string; week: string; archived: boolean; total: number; replied: number; skus: string[]; reasons: Map<string, number> }>();
   for (const it of items) {
-    // 已封存週次的未回覆行屬「逾期」，不再列入待跟進店舖（仍保留在主表，記錄狀態欄會標示）
-    if (it.status !== 'replied' && it.is_open === false) continue;
+    // 跨批次匯出時，已封存週次的未回覆行亦要保留（歷史紀錄），以「批次狀態」標示不可再回覆
     const key = `${it.site_code}|${it.batch_label}`;
     let s = storeMap.get(key);
     if (!s) {
-      s = { site_code: it.site_code, shop: it.payload?.['Shop Name'] ?? '', om: it.payload?.['OM'] ?? '', week: it.batch_label, total: 0, replied: 0, skus: [], reasons: new Map() };
+      s = { site_code: it.site_code, shop: it.payload?.['Shop Name'] ?? '', om: it.payload?.['OM'] ?? '', week: it.batch_label, archived: it.is_open === false, total: 0, replied: 0, skus: [], reasons: new Map() };
       storeMap.set(key, s);
     }
     s.total++;
@@ -254,18 +255,19 @@ export async function buildZeroSalesExportBuffer(items: ZeroSalesExportItem[], r
   }
   const pendingStores = [...storeMap.values()]
     .filter((s) => s.skus.length > 0)
-    .sort((a, b) => b.skus.length - a.skus.length || a.site_code.localeCompare(b.site_code));
+    // 開放中的週次先列（跟進用），已封存的排後面；同組內未回覆最多的店舖先行
+    .sort((a, b) => Number(a.archived) - Number(b.archived) || b.skus.length - a.skus.length || a.site_code.localeCompare(b.site_code));
   for (const s of pendingStores) {
     const reasonText = [...s.reasons].map(([label, n]) => `${label} (${n})`).join('；');
-    pendingSheet.addRow([s.site_code, s.shop, s.om, s.week, s.total, s.replied, s.skus.length, s.skus.join(', '), reasonText, '']);
+    pendingSheet.addRow([s.site_code, s.shop, s.om, s.week, s.archived ? '已封存（已截止）' : '開放中', s.total, s.replied, s.skus.length, s.skus.join(', '), reasonText, '']);
   }
   pendingSheet.columns = pendingHeaders.map(() => ({ width: 18 }));
   pendingSheet.getColumn(2).width = 28;
-  pendingSheet.getColumn(8).width = 50;
-  pendingSheet.getColumn(9).width = 40;
+  pendingSheet.getColumn(9).width = 50;
+  pendingSheet.getColumn(10).width = 40;
   // 註解：說明括號內數字的意義（括號內為行數）
   const pendingNote = pendingSheet.getCell(pendingStores.length + 3, 1);
-  pendingNote.value = '註：括號內數字為行數（該店以該原因回覆的行數）。';
+  pendingNote.value = '註：括號內數字為行數（該店以該原因回覆的行數）；「批次狀態」為已封存的週次不可再回覆。';
   pendingNote.font = { italic: true, color: { argb: 'FF808080' } };
 
   buildSkuReasonSheet(workbook, items, reasonLabels, headerStyle);

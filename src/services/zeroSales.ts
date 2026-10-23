@@ -439,7 +439,7 @@ export interface ZeroSalesExportFilter {
   reasonCode?: string;
 }
 
-/** 統一匯出查詢：可跨批次按 Site / 狀態 / 原因篩選（上限 10000 行） */
+/** 統一匯出查詢：可跨批次按 Site / 狀態 / 原因篩選（上限 50000 行，約 2 年每週批次量） */
 export async function listItemsForExport(filter: ZeroSalesExportFilter): Promise<ZeroSalesItemRow[]> {
   const where: string[] = [];
   const params: unknown[] = [];
@@ -464,7 +464,7 @@ export async function listItemsForExport(filter: ZeroSalesExportFilter): Promise
     `SELECT i.*, b.week_label, b.created_at AS batch_created_at, b.closed_at AS batch_closed_at
      FROM zero_sales_items i
      JOIN zero_sales_batches b ON b.id = i.batch_id
-     ${whereSql} ORDER BY b.created_at DESC, i.site_code, i.sku LIMIT 10000`,
+     ${whereSql} ORDER BY b.created_at DESC, i.site_code, i.sku LIMIT 50000`,
     params,
   );
   return r.rows.map((row) => ({

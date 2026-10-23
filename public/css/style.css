@@ -1213,6 +1213,69 @@ dialog#reply_dialog::backdrop { background: rgba(7, 30, 50, 0.5); backdrop-filte
   .zs-toolbar .field, .zs-toolbar .field--search { min-width: 100%; }
   .zs-table-wrap { max-height: none; }
 }
+/* ============ Store portal: mobile layout ============ */
+.store-submissions td:last-child { white-space: nowrap; }
+
+@media (max-width: 640px) {
+  /* Keep the page inside the phone viewport */
+  .portal-main .card { padding: 16px; }
+  .topbar .subtitle { white-space: normal; }
+  .topbar nav a { min-height: 36px; }
+  .file-drop { padding: 20px 12px; }
+
+  /* iOS Safari zooms in when a focused field is smaller than 16px */
+  input[type='text'],
+  input[type='password'],
+  input[type='date'],
+  input[type='number'],
+  input[type='email'],
+  select,
+  textarea {
+    font-size: 16px;
+  }
+
+  /* Stack "我的申請" rows as cards instead of squeezing 6 columns */
+  .store-submissions thead { display: none; }
+  .store-submissions,
+  .store-submissions tbody,
+  .store-submissions tr,
+  .store-submissions td { display: block; width: 100%; }
+  .store-submissions tr {
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 10px 12px;
+    margin-bottom: 10px;
+    background: #fff;
+  }
+  .store-submissions tr:last-child { margin-bottom: 0; }
+  .store-submissions tr:nth-child(even) td { background: transparent; }
+  .store-submissions td {
+    display: grid;
+    grid-template-columns: 6.5em minmax(0, 1fr);
+    gap: 8px;
+    padding: 5px 0;
+    border: 0;
+  }
+  .store-submissions td::before {
+    content: attr(data-label);
+    font-weight: 600;
+    color: var(--muted);
+    font-size: 12.5px;
+    line-height: 1.7;
+  }
+  .store-submissions td.cell-appno {
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+  .store-submissions td .badge { justify-self: start; }
+  .store-submissions td:last-child {
+    display: block;
+    padding: 8px 0 0;
+  }
+  .store-submissions td:last-child::before { content: none; }
+  .store-submissions td:last-child .btn { width: 100%; }
+}
+
 @media (prefers-reduced-motion: reduce) {
   * { animation: none !important; transition: none !important; }
 }

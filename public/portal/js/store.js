@@ -58,17 +58,17 @@
       list.innerHTML = '<div class="hint">暫無申請</div>';
       return;
     }
-    list.innerHTML = '<table><thead><tr><th>申請編號</th><th>SKU</th><th>RP Type</th><th>狀態</th><th>提交時間</th><th></th></tr></thead><tbody>'
+    list.innerHTML = '<div class="table-scroll"><table class="store-submissions"><thead><tr><th>申請編號</th><th>SKU</th><th>RP Type</th><th>狀態</th><th>提交時間</th><th></th></tr></thead><tbody>'
       + data.submissions.map((s) => `
         <tr>
-          <td class="cell-appno">${p.escapeHtml(s.application_no)}</td>
-          <td>${p.escapeHtml(s.sku)}</td>
-          <td>${p.escapeHtml(s.rp_type || '—')}</td>
-          <td>${p.workflowBadge(s.workflow_status)}</td>
-          <td>${p.escapeHtml(s.submitted_at)}</td>
-          <td><button class="btn ghost" data-detail="${s.id}">詳情</button></td>
+          <td class="cell-appno" data-label="申請編號">${p.escapeHtml(s.application_no)}</td>
+          <td data-label="SKU">${p.escapeHtml(s.sku)}</td>
+          <td data-label="RP Type">${p.escapeHtml(s.rp_type || '—')}</td>
+          <td data-label="狀態">${p.workflowBadge(s.workflow_status)}</td>
+          <td data-label="提交時間">${p.escapeHtml(s.submitted_at)}</td>
+          <td data-label=""><button class="btn ghost" data-detail="${s.id}">詳情</button></td>
         </tr>`).join('')
-      + '</tbody></table>';
+      + '</tbody></table></div>';
     list.querySelectorAll('[data-detail]').forEach((btn) => {
       btn.addEventListener('click', () => showDetail(btn.dataset.detail));
     });
@@ -171,11 +171,11 @@
         body: fd,
       });
       let html = `<div class="alert success"><b>${p.escapeHtml(data.message)}</b>（總行數：${data.totalRows}）</div>`;
-      html += '<table><thead><tr><th>Excel 行</th><th>申請編號</th><th>SKU</th><th>已收件時間</th></tr></thead><tbody>';
+      html += '<div class="table-scroll"><table><thead><tr><th>Excel 行</th><th>申請編號</th><th>SKU</th><th>已收件時間</th></tr></thead><tbody>';
       data.rows.forEach((r) => {
         html += `<tr><td>${r.row}</td><td class="cell-appno">${p.escapeHtml(r.application_no)}</td><td>${p.escapeHtml(r.sku)}</td><td>${p.escapeHtml(r.submitted_at)}</td></tr>`;
       });
-      html += '</tbody></table>';
+      html += '</tbody></table></div>';
       html += '<div class="btn-row"><button class="btn ghost" id="btn_dl_record">下載匯入記錄 Excel</button></div>';
       $('import_result').innerHTML = html;
       const batchKey = pendingImportKey;
@@ -192,11 +192,11 @@
     } catch (err) {
       let html = `<div class="alert error"><b>${p.escapeHtml(err.message)}</b></div>`;
       if (err.data?.errors?.length) {
-        html += '<table><thead><tr><th>行</th><th>欄位</th><th>原因</th></tr></thead><tbody>';
+        html += '<div class="table-scroll"><table><thead><tr><th>行</th><th>欄位</th><th>原因</th></tr></thead><tbody>';
         err.data.errors.forEach((e) => {
           html += `<tr><td>${e.row || '—'}</td><td>${p.escapeHtml(e.field)}</td><td>${p.escapeHtml(e.reason)}</td></tr>`;
         });
-        html += '</tbody></table>';
+        html += '</tbody></table></div>';
       }
       $('import_result').innerHTML = html;
     } finally {

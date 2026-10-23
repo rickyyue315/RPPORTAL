@@ -344,13 +344,44 @@ function repeatSkuVerdict(row: ZeroSalesRepeatSkuExportRow): string {
   return '店舖問題';
 }
 
-function repeatExportNote(meta: ZeroSalesRepeatExportMeta): string {
+/** 底部註解文字：重複定義、判斷準則、重複率解讀、建議跟進分工、匯出條件 */
+function repeatNoteLines(meta: ZeroSalesRepeatExportMeta): string[] {
   const parts = [`重複定義：同一店舖同一 SKU 跨週（批次）出現 ≥ ${meta.minCount} 次`];
   if (meta.siteCode) parts.push(`Site Code：${meta.siteCode}`);
   if (meta.q) parts.push(`搜尋：${meta.q}`);
   if (meta.buyer) parts.push(`Buyer：${meta.buyer}`);
   parts.push(`匯出時間：${meta.generatedAt}`);
-  return `註：${parts.join('；')}。`;
+  return [
+    `${parts.join('；')}。`,
+    '「判斷（參考）」是啟發式標籤，不是統計結論：SKU 問題 = 重複店數 ≥ 3 且重複率 ≥ 50%；疑似 SKU = 2 間店重複且重複率 ≥ 50%；店舖問題 = 其餘（通常是單店重複）。',
+    '重複率 = 有重複上榜的店數 ÷ 曾上榜店數。重複率高＝問題橫跨多間店，較可能是 SKU 本身（價錢／陳列／推廣／季節性／生命周期），宜由 Buyer 檢視 SKU；重複率低＝集中在個別店舖，較可能是該店執行問題（陳列位置、補貨、人手），宜由 OM 跟進店舖。',
+    '建議分工：先處理「SKU 問題」清單（交 Buyer 檢視價錢／推廣／陳列指引／停售或退貨），再處理「店舖問題」清單（交 OM 檢查該店陳列及補貨）。',
+  ];
+}
+
+/** 匯出表底部註解區：每行合併整行並自動換行，避免長句被截。
+ *  widthsTotal 為該工作表欄寬總和，用作估算換行後行高（中文約佔 2 個寬度單位）。 */
+function appendNoteBlock(
+  sheet: ExcelJS.Worksheet,
+  startRow: number,
+  lines: string[],
+  lastCol: number,
+  widthsTotal: number,
+): void {
+  const titleCell = sheet.getCell(startRow, 1);
+  titleCell.value = '註解';
+  titleCell.font = { bold: true, size: 10, color: { argb: 'FF595959' } };
+  lines.forEach((line, i) => {
+    const rowNum = startRow + 1 + i;
+    sheet.mergeCells(rowNum, 1, rowNum, lastCol);
+    const cell = sheet.getCell(rowNum, 1);
+    cell.value = line;
+    cell.font = { italic: true, color: { argb: 'FF808080' } };
+    cell.alignment = { vertical: 'top', wrapText: true };
+    const units = [...line].reduce((acc, ch) => acc + (/[\u3000-\u303f\u4e00-\u9fff\uff00-\uffef]/.test(ch) ? 2 : 1), 0);
+    const perLine = Math.max(40, Math.floor(widthsTotal * 0.92));
+    sheet.getRow(rowNum).height = Math.max(15, Math.ceil(units / perLine) * 15 + 2);
+  });
 }
 
 /**
@@ -364,8 +395,7 @@ export async function buildZeroSalesRepeatExportBuffer(
   const headerStyle: Partial<ExcelJS.Style> = {
     font: { bold: true }, fill: { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFDAEEF3' } },
   };
-  const noteStyle: Partial<ExcelJS.Style> = { font: { italic: true, color: { argb: 'FF808080' } } };
-  const note = repeatExportNote(input.meta);
+  const noteLines = repeatNoteLines(input.meta);
 
   if (input.skus) {
     const sheet = workbook.addWorksheet('跨店重複 SKU');
@@ -392,9 +422,7 @@ export async function buildZeroSalesRepeatExportBuffer(
       sheet.autoFilter = { from: { row: 1, column: 1 }, to: { row: input.skus.length + 1, column: headers.length } };
     }
     sheet.views = [{ state: 'frozen', ySplit: 1 }];
-    const noteCell = sheet.getCell(input.skus.length + 3, 1);
-    noteCell.value = note;
-    noteCell.style = noteStyle;
+    appendNoteBlock(sheet, input.skus.length + 3, noteLines, headers.length, 222);
   }
 
   if (input.pairs) {
@@ -423,9 +451,8 @@ export async function buildZeroSalesRepeatExportBuffer(
       sheet.autoFilter = { from: { row: 1, column: 1 }, to: { row: input.pairs.length + 1, column: headers.length } };
     }
     sheet.views = [{ state: 'frozen', ySplit: 1 }];
-    const noteCell = sheet.getCell(input.pairs.length + 3, 1);
-    noteCell.value = note;
-    noteCell.style = noteStyle;
+    // 各店明細只講重複定義及篩選條件（判斷欄只出現在跨店排行）
+    appendNoteBlock(sheet, input.pairs.length + 3, noteLines.slice(0, 1), headers.length, 260);
   }
 
   if (!workbook.worksheets.length) throw new Error('沒有重複上榜資料可以匯出');
@@ -453,7 +480,6 @@ export async function buildZeroSalesBuyerFollowupExportBuffer(
     fill: { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF4472C4' } },
     alignment: { horizontal: 'center', vertical: 'middle', wrapText: true },
   };
-  const noteStyle: Partial<ExcelJS.Style> = { font: { italic: true, color: { argb: 'FF808080' } } };
   const headers = [
     '排名', 'SKU', 'Brand', 'SKU 描述', 'Buyer',
     '重複店數', '曾上榜店數', '重複率', '重複行數', '總行數', '單店最高次數',
@@ -499,10 +525,13 @@ export async function buildZeroSalesBuyerFollowupExportBuffer(
   sheet.views = [{ state: 'frozen', ySplit: 1 }];
   // 打印一頁橫向設定：方便直接列印交 Buyer
   sheet.pageSetup = { orientation: 'landscape', fitToPage: true, fitToWidth: 1, fitToHeight: 0, paperSize: 9 };
-  const note = repeatExportNote(meta);
-  const noteCell = sheet.getCell(rows.length + 3, 1);
-  noteCell.value = `${note} 重複店數 ≥3 淺紅底、≥5 深紅底；「Buyer 跟進備註」欄供 Buyer 填寫行動。`;
-  noteCell.style = noteStyle;
+  const widthsTotal = widths.reduce((acc, w) => acc + w, 0);
+  appendNoteBlock(sheet, rows.length + 3, [
+    ...repeatNoteLines(meta),
+    '標色：重複店數 ≥ 2 黃底、≥ 3 淺紅底、≥ 5 深紅底白字；顏色只反映「幾多間店重複」，不代表金額或迫切性。',
+    '庫存總計 = 重複店舖行的 Shop Stock Qty (CM) 加總（空白或非數字不計）；主要回覆原因只計已回覆行，格式「原因 (行數)」。',
+    '「Buyer 跟進備註」欄供 Buyer 填寫行動、負責人及日期，例如「已改價」「加推廣」「安排退貨」。',
+  ], headers.length, widthsTotal);
   applyDefaultFont(workbook);
   return Buffer.from(await workbook.xlsx.writeBuffer());
 }

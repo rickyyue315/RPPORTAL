@@ -68,6 +68,11 @@
       <h3 id="reply_title">回覆</h3>
       <div id="reply_sku_info" class="hint"></div>
       <div id="reply_history" class="hint"></div>
+      <!-- 快捷帶入上次回覆：只於「重複上榜 + 上次已有回覆」時顯示；點擊只填入欄位，不自動提交 -->
+      <div id="reply_fill_wrap" hidden style="margin-top:8px">
+        <button class="btn ghost btn-sm" id="btn_fill_prev" type="button" style="min-height:32px;border-radius:8px">帶入上次回覆</button>
+        <span class="hint">自動填入上次回覆的原因與補充說明，確認或修改後再儲存</span>
+      </div>
     </div>
     <div class="reply-body">
       <div style="margin:0 0 12px">

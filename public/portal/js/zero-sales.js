@@ -189,7 +189,9 @@
           ? '<div class="hint" style="color:#b42318">上次未回覆，仍未改善</div>'
           : '';
         repeatCell = `<span class="badge-repeat">第${rc}次上榜</span>` +
-          (prev ? `<div class="hint">${p.escapeHtml(prev)}${prevNote}</div>` : '') + notImproved;
+          (prev ? `<div class="hint">${p.escapeHtml(prev)}${prevNote}</div>` : '') + notImproved +
+          // 上次已回覆 → 開啟回覆彈窗時可一鍵帶入上次內容（按鍵在彈窗內）
+          (it.prev_status === 'replied' && !archived && !locked ? '<div class="hint">回覆時可一鍵帶入上次內容</div>' : '');
       }
       const rowClass = archived ? 'zs-archived' : (isRepeat(it) ? 'zs-repeat' : '');
       const weekCell = `${p.escapeHtml(it.week_label || '')}${archived ? '<span class="zs-week-tag">已封存</span>' : ''}`;
@@ -223,6 +225,25 @@
     });
   }
 
+  /**
+   * 快捷「帶入上次回覆」：將上一次上榜（前一筆同店同 SKU 記錄）的回覆內容填入目前欄位。
+   * 只填入、不自動提交 — 店舖確認或修改後按「儲存回覆」才會生效。
+   */
+  function fillFromPrev(it) {
+    const sel = $('reply_reason');
+    const opts = Array.from(sel.options || []);
+    // 上次的原因選項可能已被管理員停用：先以 code 對應，對不上再以顯示標籤對應
+    const match = opts.find((o) => o.value === it.prev_reason_code) ||
+      (it.prev_reason_label ? opts.find((o) => o.textContent === it.prev_reason_label) : null);
+    if (match) sel.value = match.value;
+    $('reply_note').value = it.prev_reason_note || '';
+    const msg = match
+      ? `已帶入上次（${it.prev_week_label}）的回覆內容：${it.prev_reason_label || match.textContent}` +
+        `${it.prev_reason_note ? `／${it.prev_reason_note}` : ''}。請確認或修改後按「儲存回覆」，未儲存前不會生效。`
+      : '上次回覆的原因選項現已停用，已帶入補充說明，請重新選擇最接近的原因。';
+    p.showAlert($('reply_error'), 'info', p.escapeHtml(msg));
+  }
+
   function openReply(id) {
     const it = items.find((x) => x.id === id);
     if (!it) return;
@@ -247,6 +268,17 @@
         histEl.textContent = `此 SKU 第${repeatCount(it)}次上榜。上次（${it.prev_week_label}）：${prevReason}${prevNote}。${warn}`;
       } else {
         histEl.textContent = '此 SKU 首次上榜。';
+      }
+    }
+    // 快捷按鍵顯示時機：重複上榜 且 上次已有回覆記錄（prev_status === 'replied'）
+    const canFillPrev = !!(isRepeat(it) && it.prev_week_label && it.prev_status === 'replied');
+    const fillWrap = $('reply_fill_wrap');
+    if (fillWrap) {
+      fillWrap.hidden = !canFillPrev;
+      if (canFillPrev) {
+        const fillBtn = $('btn_fill_prev');
+        fillBtn.textContent = `帶入上次回覆（${it.prev_week_label}）`;
+        fillBtn.onclick = () => fillFromPrev(it);
       }
     }
     $('reply_reason').value = it.reason_code || (reasons[0] && reasons[0].code) || '';

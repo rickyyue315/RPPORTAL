@@ -154,12 +154,14 @@ describe('zero-sales repeat history (store)', () => {
     expect(repeat.is_repeat).toBe(true);
     expect(repeat.prev_week_label).toBe('2026-W41-repeat');
     expect(repeat.prev_status).toBe('replied');
+    expect(repeat.prev_reason_code).toBe('seasonal');
     expect(repeat.prev_reason_label).toBe('4.季節性/非當季產品');
     expect(repeat.prev_reason_note).toBe('上週話季節性');
     const fresh = items.find((i) => i.sku === 'A1003')!;
     expect(fresh.occurrence_count).toBe(1);
     expect(fresh.is_repeat).toBe(false);
     expect(fresh.prev_week_label).toBeNull();
+    expect(fresh.prev_reason_code).toBeNull();
   });
 
   it('resolves history relative to the viewed batch (older batch has no previous)', async () => {
@@ -177,6 +179,9 @@ describe('zero-sales repeat history (store)', () => {
     expect(third.occurrence_count).toBe(3);
     expect(third.is_repeat).toBe(true);
     expect(third.prev_week_label).toBe('2026-W42-repeat');
+    // 上次（W42）未回覆 → 無原因 code 可帶入（快捷按鍵不應顯示）
+    expect(third.prev_status).toBe('pending');
+    expect(third.prev_reason_code).toBeNull();
 
     // 再對照 W42：截至 W42 只算 2 次
     const w42Items = await listZeroSalesMyItems('HA02', { batchId: w42Id });

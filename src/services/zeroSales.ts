@@ -58,6 +58,8 @@ export interface ZeroSalesItemRow {
   /** 上一次出現的週次 / 回覆（無則為 null） */
   prev_week_label?: string | null;
   prev_status?: string | null;
+  /** 上一次回覆的原因 code（快捷「帶入上次回覆」用，無則為 null） */
+  prev_reason_code?: string | null;
   prev_reason_label?: string | null;
   prev_reason_note?: string;
   prev_replied_at?: string | null;
@@ -558,6 +560,7 @@ interface ZeroSalesHistoryEntry {
   week_label: string;
   batch_created_at: string;
   status: string;
+  reason_code: string | null;
   reason_label: string | null;
   reason_note: string;
   replied_at: string | null;
@@ -583,7 +586,7 @@ async function attachZeroSalesHistory<T extends ZeroSalesItemRow>(items: T[]): P
     if (!skus.length) continue;
     const r = await query<ZeroSalesHistoryEntry>(
       `SELECT h.batch_id, h.site_code, h.sku, hb.week_label, hb.created_at AS batch_created_at,
-              h.status, h.reason_label, COALESCE(h.reason_note, '') AS reason_note, h.replied_at
+              h.status, h.reason_code, h.reason_label, COALESCE(h.reason_note, '') AS reason_note, h.replied_at
          FROM zero_sales_items h
          JOIN zero_sales_batches hb ON hb.id = h.batch_id
         WHERE h.site_code = $1 AND h.sku = ANY($2::text[])
@@ -611,6 +614,7 @@ async function attachZeroSalesHistory<T extends ZeroSalesItemRow>(items: T[]): P
       is_repeat: occurrence_count >= 2,
       prev_week_label: prev?.week_label ?? null,
       prev_status: prev?.status ?? null,
+      prev_reason_code: prev?.reason_code ?? null,
       prev_reason_label: prev?.reason_label ?? null,
       prev_reason_note: prev?.reason_note ?? '',
       prev_replied_at: prev?.replied_at ? toHKString(prev.replied_at) : null,

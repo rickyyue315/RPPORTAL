@@ -130,7 +130,6 @@
     const replied = items.filter((i) => i.status === 'replied').length;
     const rate = items.length ? Math.round((replied / items.length) * 100) : 0;
     const repeatN = all.filter(isRepeat).length;
-    const autoN = items.filter(isAutoFilled).length;
     const shop = data.shop ? ` ${p.escapeHtml(data.shop)}` : '';
     const weekLabel = currentBatch ? currentBatch.week_label : '全部週次';
     const latestOpen = batches.find((b) => b.is_open);
@@ -153,13 +152,13 @@
           ? ` 最新一週為 <b>${p.escapeHtml(latestOpen.week_label)}</b>。 <button type="button" class="btn ghost btn-sm" id="zs_goto_latest">前往最新一週</button>`
           : ' 目前沒有可回覆的週次，請等待 RP Team 派發新一週。') +
         `</div>` +
-        `<div>歷史紀錄：共 ${histTotal} 個指定 SKU（${histReplied} 已回覆）${repeatN ? `｜其中 <b>${repeatN}</b> 個重複上榜（≥2次）` : ''}${onlyRepeat ? '｜現只顯示重複上榜' : ''}</div>` +
-        `<div class="hint">舊週次的狀態是「當時的紀錄」，不會隨新週次改變；請以最新一週為準。如非你店舖，請按右上「登出」再重新輸入自己嘅 Site Code。</div>`;
+        `<div>歷史紀錄：${histTotal} 個指定 SKU（${histReplied} 已回覆）${repeatN ? `｜<b>${repeatN}</b> 個重複上榜（≥2 次）` : ''}${onlyRepeat ? '｜現只顯示重複上榜' : ''}</div>` +
+        `<div class="hint">如非你店舖，請按右上「登出」再輸入 Site Code。</div>`;
     } else {
       $('site_info').innerHTML =
         `<div class="site-banner">${p.escapeHtml(data.site_code)}${shop}</div>` +
-        `<div>${p.escapeHtml(weekLabel || '')}：共 ${items.length} 個指定 SKU（${replied} 已回覆 · ${rate}%）${autoN ? `｜<b>${autoN}</b> 個已自動套用上次回覆` : ''}${repeatN ? `｜其中 <b>${repeatN}</b> 個重複上榜（≥2次）` : ''}${onlyRepeat ? '｜現只顯示重複上榜' : ''}</div>` +
-        `<div class="hint">本週仍可回覆；未回覆 SKU 會排最前，黃色「回覆」按鈕代表仍需處理。新一週派發後，本週會自動封存成紀錄。橙色「修改」代表系統已自動套用上次回覆，請確認或更正（可修改 2 次）。如非你店舖，請按右上「登出」再重新輸入自己嘅 Site Code。</div>`;
+        `<div>${p.escapeHtml(weekLabel || '')}：${items.length} 個指定 SKU｜${replied} 已回覆（${rate}%）${repeatN ? `｜<b>${repeatN}</b> 個重複上榜（≥2 次）` : ''}${onlyRepeat ? '｜現只顯示重複上榜' : ''}</div>` +
+        `<div class="hint">黃色「回覆」＝未回覆（排最前）；橙色「修改」＝已自動套用上次回覆，請確認或更正。如非你店舖，請按右上「登出」再輸入 Site Code。</div>`;
     }
     const goto = document.getElementById('zs_goto_latest');
     if (goto && latestOpen) {

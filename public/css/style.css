@@ -1102,54 +1102,56 @@ a.btn-disabled {
   color: #26313d;
 }
 .zs-intro b { color: var(--brand-dark); font-weight: 700; }
-/* 解決 SKU 上榜的方法 */
+/* 解決 SKU 上榜的方法：低亮粉紫 */
 .zs-solution {
   margin-top: 14px;
-  padding: 14px 18px 16px;
-  border: 1px solid #cfe0ef;
-  border-left: 4px solid var(--brand);
+  padding: 15px 20px 17px;
+  border: 1px solid #d8c7e6;
+  border-left: 5px solid #8a6aa8;
   border-radius: var(--radius);
-  background: linear-gradient(180deg, #f4f9fe, #fff);
+  background: linear-gradient(180deg, #f5eef9, #fdfbfe);
 }
 .zs-solution h3 {
-  margin: 0 0 8px;
-  font-size: 16px;
+  margin: 0 0 10px;
+  font-size: 17px;
   font-weight: 800;
-  color: var(--brand-dark);
+  color: #4a2f63;
 }
-.zs-solution ol {
+.zs-solution ul {
   margin: 0;
   padding: 0;
   list-style: none;
-  counter-reset: zs-solution;
   display: grid;
-  gap: 8px;
+  gap: 9px;
 }
 .zs-solution li {
   position: relative;
-  padding-left: 30px;
+  padding-left: 20px;
   font-size: 15px;
-  line-height: 1.6;
+  line-height: 1.65;
   color: #1d2733;
-  counter-increment: zs-solution;
 }
 .zs-solution li::before {
-  content: counter(zs-solution);
+  content: '';
   position: absolute;
-  left: 0;
-  top: 2px;
-  width: 21px;
-  height: 21px;
+  left: 2px;
+  top: 10px;
+  width: 8px;
+  height: 8px;
   border-radius: 50%;
-  background: var(--brand);
-  color: #fff;
-  font-size: 12.5px;
-  font-weight: 700;
-  display: flex;
-  align-items: center;
-  justify-content: center;
+  background: #8a6aa8;
 }
-.zs-solution li b { color: var(--brand-dark); }
+.zs-solution li b { color: #4a2f63; }
+.zs-solution-note {
+  display: inline-block;
+  margin: 12px 0 0;
+  padding: 4px 12px;
+  border-radius: 999px;
+  background: #ead9f4;
+  color: #4f2f6b;
+  font-size: 13.5px;
+  font-weight: 800;
+}
 .zs-toolbar {
   display: flex; gap: 12px; flex-wrap: wrap; align-items: end;
   background: #f7fafd; border: 1px solid var(--border);

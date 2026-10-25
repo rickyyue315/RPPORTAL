@@ -9,7 +9,7 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const { version } = JSON.parse(readFileSync(path.join(root, 'package.json'), 'utf8')) as { version: string };
 const app = createApp();
 
-const HTML_PAGES = ['/', '/portal/', '/portal/zero-sales.html', '/portal/store.html', '/portal/dashboard.html'];
+const HTML_PAGES = ['/', '/portal/', '/portal/zero-sales.html', '/portal/store.html'];
 const VERSIONED_ASSETS = [
   '/portal/js/zero-sales.js',
   '/portal/js/portal.js',
@@ -57,8 +57,10 @@ describe('static asset freshness', () => {
     expect(res.text).toContain('id="panel_stock"');
     expect(res.text).toContain('/portal/js/portal-tabs.js?v=');
     expect(res.text).toContain('/portal/js/dashboard.js?v=');
-    // 舊的獨立頁不應再出現在導覽
+    // 舊的獨立頁不應再出現在導覽，也不應再存在（單頁入口開放後從未對外通知）
     expect(res.text).not.toContain('href="/portal/dashboard.html"');
+    const gone = await request(app).get('/portal/dashboard.html');
+    expect(gone.status).toBe(404);
   });
 
   it('stamps the root page as well', async () => {    const res = await request(app).get('/');

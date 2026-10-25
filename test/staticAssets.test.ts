@@ -13,6 +13,9 @@ const HTML_PAGES = ['/', '/portal/', '/portal/zero-sales.html', '/portal/store.h
 const VERSIONED_ASSETS = [
   '/portal/js/zero-sales.js',
   '/portal/js/portal.js',
+  '/portal/js/portal-tabs.js',
+  '/portal/js/dashboard.js',
+  '/js/chart-lite.js',
   '/portal/css/portal.css',
   '/css/style.css',
   '/js/api.js',
@@ -47,8 +50,18 @@ describe('static asset freshness', () => {
     expect(res.text).not.toMatch(/(?:src|href)="\/[^"?]+\.(?:css|js)(?!\?v=)/);
   });
 
-  it('stamps the root page as well', async () => {
-    const res = await request(app).get('/');
+  it('keeps the store dashboard on the same page as zero-sales replies', async () => {
+    const res = await request(app).get('/portal/zero-sales.html');
+    expect(res.status).toBe(200);
+    expect(res.text).toContain('id="panel_zs"');
+    expect(res.text).toContain('id="panel_stock"');
+    expect(res.text).toContain('/portal/js/portal-tabs.js?v=');
+    expect(res.text).toContain('/portal/js/dashboard.js?v=');
+    // 舊的獨立頁不應再出現在導覽
+    expect(res.text).not.toContain('href="/portal/dashboard.html"');
+  });
+
+  it('stamps the root page as well', async () => {    const res = await request(app).get('/');
     expect(res.status).toBe(200);
     expect(res.text).toContain(`/css/style.css?v=${version}`);
     expect(res.text).toContain(`/js/version.js?v=${version}`);

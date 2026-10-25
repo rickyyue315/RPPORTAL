@@ -262,8 +262,10 @@ pg_restore --no-owner --no-privileges --clean --if-exists \
 
 ### 店舖端
 
-店舖用原本的 Site Code 登入後，可在「存貨走勢」頁看到**自己店**的每週佔比趨勢、全公司加權平均線（虛線）及最新三個 KPI。
+店舖用原本的 Site Code 登入後，`/portal/zero-sales.html` 有兩個分頁籤：**零銷售回覆**（預設）與 **存貨走勢**。存貨走勢顯示**自己店**的每週佔比趨勢、全公司加權平均線（虛線）及最新三個 KPI。
 
+- 分頁由 `public/portal/js/portal-tabs.js` 控制（`aria-selected` + `hidden` + 網址 hash `#stock`），並廣播 `portal:tab` 事件；`dashboard.js` 收到事件才首次載入，確保面板可見、圖表量得到闊度。
+- 舊網址 `/portal/dashboard.html` 仍可開啟，會即時轉到 `/portal/zero-sales.html#stock`（保留舊書籤與通知連結）。
 - API：`GET /api/portal/stock/summary`（`requirePortalUser` + `requireStoreSite`）。
 - **數據隔離**：`site_code` 一律取自登入 session，**不接受** query／body 傳入；回應只含本店數字與全公司加權比率，不含任何其他店數據。
 - 未有數據時回 `200 { has_data: false }`（不是 404），前端顯示空狀態。

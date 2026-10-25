@@ -137,7 +137,8 @@
   }
 
   function renderSiteInfo(site, lastRow) {
-    const box = $('site_info');
+    // 合併頁用 dash_site_info（避免與零銷售頁的 site_info 撞 id）；獨立頁仍可用 site_info
+    const box = $('dash_site_info') || $('site_info');
     if (!box) return;
     const date = lastRow ? String(lastRow.report_date).slice(0, 10) : '';
     box.innerHTML = `<div class="dash-site-code">店舖 Site Code：<b>${p.escapeHtml(site)}</b></div>`
@@ -304,20 +305,49 @@
 
   /* ---------- 啟動 ---------- */
 
+  const standalone = !$('panel_stock');
   const refreshBtn = $('btn_dash_refresh');
-  if (refreshBtn) refreshBtn.addEventListener('click', () => { load(currentSite); });
+  if (refreshBtn) refreshBtn.addEventListener('click', () => { start(); });
+  // 合併頁的登出由 zero-sales.js 綁定；避免同一下點擊觸發兩次
   const logout = $('logout_link');
-  if (logout) logout.addEventListener('click', (e) => { e.preventDefault(); p.logout(); });
+  if (logout && standalone) logout.addEventListener('click', (e) => { e.preventDefault(); p.logout(); });
 
-  (async () => {
-    let site;
+  let started = false;
+  let starting = null;
+
+  /**
+   * 首次載入（合併頁由 portal-tabs.js 在切到「存貨走勢」時呼叫，確保面板已可見、
+   * 圖表量得到闊度）。重複呼叫不會重複請求。
+   */
+  async function start() {
+    if (started) return;
+    if (starting) return starting;
+    starting = (async () => {
+      let site;
+      try {
+        site = await p.ensureStoreSite();
+      } catch {
+        return; // 由現有 gate / 角色導向處理
+      }
+      currentSite = site;
+      // 合併頁的分頁籤會自己管副標題，避免兩個 script 互相覆蓋
+      if (standalone && $('store_header')) $('store_header').textContent = `存貨走勢 — ${site}`;
+      await load(site);
+      started = true;
+    })();
     try {
-      site = await p.ensureStoreSite();
-    } catch {
-      return; // 由現有 gate / 角色導向處理
+      await starting;
+    } finally {
+      starting = null;
     }
-    currentSite = site;
-    if ($('store_header')) $('store_header').textContent = `存貨走勢 — ${site}`;
-    await load(site);
-  })();
+  }
+
+  document.addEventListener('portal:tab', (e) => {
+    const tab = e && e.detail ? e.detail.tab : '';
+    if (tab === 'stock') start();
+  });
+
+  // 獨立頁（沒有分頁籤）或面板本來就可見時立即載入；否則等分頁籤通知。
+  const panel = $('panel_stock');
+  if (standalone || !panel || !panel.hidden) start();
 })();

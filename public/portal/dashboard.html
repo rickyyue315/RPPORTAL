@@ -4,76 +4,23 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <link rel="icon" type="image/svg+xml" href="/favicon.svg">
-  <title>Store Portal — 存貨走勢</title>
+  <meta http-equiv="refresh" content="0;url=/portal/zero-sales.html#stock">
+  <title>NDRF Store Portal — 存貨走勢</title>
   <link rel="stylesheet" href="/css/style.css">
   <link rel="stylesheet" href="/portal/css/portal.css">
+  <script>
+    // 存貨走勢已整合到「零銷售回覆」頁的第二個分頁；保留此網址給舊書籤／通知連結。
+    try {
+      window.location.replace('/portal/zero-sales.html' + (window.location.search || '') + '#stock');
+    } catch (e) {}
+  </script>
 </head>
-<body class="dash-page">
-  <header class="topbar">
-    <div class="topbar-inner">
-      <div class="topbar-brand">
-        <span class="brand-mark" aria-hidden="true">RP</span>
-        <div>
-          <h1>NDRF Store Portal</h1>
-          <div class="subtitle" id="store_header">存貨走勢</div>
-        </div>
-      </div>
-      <nav aria-label="主要導覽">
-        <a href="/portal/zero-sales.html">零銷售回覆</a>
-        <a href="/portal/dashboard.html" class="active" aria-current="page">存貨走勢</a>
-        <a href="/portal/store.html">一般NDRF · 暫停</a>
-        <a href="/urgent.html">Urgent · 暫停</a>
-        <a href="/sales.html">突發性銷售 · 暫停</a>
-        <a href="/return.html">行貨退貨 · 暫停</a>
-        <a href="/lookup.html">查詢／修改</a>
-        <a href="/help.html">使用說明</a>
-        <a href="#" id="logout_link">登出</a>
-        <a href="/">平台首頁</a>
-      </nav>
-    </div>
-  </header>
-
-  <main class="container portal-main">
-    <div class="card dash-head-card">
-      <h2>存貨走勢</h2>
-      <div id="site_info" class="dash-site-info"><div class="loading">載入中…</div></div>
-      <p class="dash-intro">RP Team 每週從 I14「By Shop」報表整理你店舖的死存貨比率：<b>死存貨值（P90D 0 Sales）÷ 店舖存貨值（CM）</b>。<br>這裡<b>只顯示你店舖自己的數據</b>，以及<b>全公司合計（加權）</b>作對比；不會顯示其他店舖的數字或排名。</p>
-      <div id="dash_error"></div>
-      <button class="btn btn-sm dash-refresh" id="btn_dash_refresh" type="button">重新整理</button>
-    </div>
-
-    <section class="dash-kpi-grid" id="dash_kpi" aria-label="最新一期存貨指標">
-      <div class="dash-kpi"><div class="dash-kpi-value">—</div><div class="dash-kpi-label">載入中…</div></div>
-    </section>
-
-    <div class="card dash-card" id="dash_chart_card">
-      <div class="dash-card-head">
-        <h3>每週死存貨佔比</h3>
-        <span class="hint" id="dash_chart_period"></span>
-      </div>
-      <div class="dash-legend" id="dash_legend">
-        <span class="dash-legend-item"><i class="dash-line dash-line--self" aria-hidden="true"></i>本店佔比</span>
-        <span class="dash-legend-item"><i class="dash-line dash-line--company" aria-hidden="true"></i>全公司合計（加權）</span>
-      </div>
-      <div class="dash-chart" id="dash_chart"></div>
-      <p class="hint dash-chart-note" id="dash_chart_note"></p>
-    </div>
-
-    <div class="card dash-card dash-empty-card" id="dash_empty_card" hidden>
-      <h3 id="dash_empty_title">本週未收到此店數據</h3>
-      <p class="hint" id="dash_empty_text"></p>
-    </div>
-
-    <div class="card dash-card dash-foot-card">
-      <p class="hint">佔比越高，代表越多存貨屬「90 日零銷售」。改善方向可參考「<a href="/portal/zero-sales.html">90日零銷售回覆</a>」每週派發的 SKU 提示（賣出一件，或轉 ND／降低 Safety Stock）。<br>如有疑問，請聯絡 RP Team。</p>
-    </div>
+<body class="portal-login-body">
+  <main class="portal-login-card">
+    <h1>存貨走勢</h1>
+    <p class="hint">已整合到「零銷售回覆」頁的「存貨走勢」分頁，正在跳轉…<br>如未自動跳轉，請按此<a href="/portal/zero-sales.html#stock">直接進入</a>。</p>
   </main>
 
-  <script src="/js/api.js"></script>
   <script src="/portal/js/portal.js"></script>
-  <script src="/js/chart-lite.js"></script>
-  <script src="/portal/js/dashboard.js"></script>
-  <script src="/js/version.js"></script>
-  <footer class="site-footer">Developed by RP Team - Ricky Yue · <span class="app-version" data-app-version></span></footer>
 </body>
 </html>

@@ -212,3 +212,36 @@
     padding: 0 8px;
   }
 }
+
+/* 店舖端分頁籤（零銷售回覆 / 存貨走勢） */
+.portal-tabs {
+  display: flex;
+  gap: 6px;
+  margin: 0 0 14px;
+}
+.portal-tab {
+  flex: 0 1 auto;
+  min-height: 42px;
+  padding: 8px 20px;
+  border: 1px solid #d7dee8;
+  border-radius: 999px;
+  background: #fff;
+  color: #334155;
+  font-size: 14px;
+  font-weight: 500;
+  font-family: inherit;
+  cursor: pointer;
+}
+.portal-tab:hover { border-color: var(--brand, #0f5c9c); color: var(--brand, #0f5c9c); }
+.portal-tab.is-active {
+  background: var(--brand, #0f5c9c);
+  border-color: var(--brand, #0f5c9c);
+  color: #fff;
+}
+.portal-tab:focus-visible {
+  outline: 2px solid var(--brand, #0f5c9c);
+  outline-offset: 2px;
+}
+@media (max-width: 640px) {
+  .portal-tab { flex: 1 1 0; padding: 8px 10px; font-size: 13px; }
+}

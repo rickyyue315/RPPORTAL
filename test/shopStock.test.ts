@@ -657,6 +657,49 @@ describe('shopStock service', () => {
     expect(week!.totals.store_count).toBe(2);
     expect(week!.totals.ratio).toBeCloseTo(0.5, 10);
   });
+
+  it('excludes shops the report itself flags as NEW STORE, even with a single period', async () => {
+    // 只有一期資料時沒有「上一期」可比，但報表 Shop Type 已標明新店 → 仍不參與排名。
+    // 日期刻意早於其他測試，令 previousReportDate 為 null。
+    const fixture = [
+      makeRow({
+        Shop: 'HA02 - 駱克',
+        'Site Code': 'HA02',
+        'Shop Type': 'EXISTING',
+        'Excess Stock Value (P90D 0 Sales)': 100000,
+        'Shop Stock Value (CM)': 1000000,
+      }),
+      makeRow({
+        Shop: 'HBB3 - 帝國中心 2',
+        'Site Code': 'HBB3',
+        'Shop Type': 'NEW STORE',
+        'Excess Stock Value (P90D 0 Sales)': 522900,
+        'Shop Stock Value (CM)': 1000000,
+      }),
+    ];
+    await upload('2026-01-04', fixture);
+
+    const week = await getShopStockWeek('2026-01-04');
+    expect(week!.prev_report_date).toBeNull();
+
+    const existing = week!.rows.find((r) => r.site_code === 'HA02')!;
+    const newStore = week!.rows.find((r) => r.site_code === 'HBB3')!;
+
+    expect(newStore.is_new).toBe(true);
+    expect(newStore.is_new_store).toBe(true);
+    expect(newStore.new_reason).toBe('new_store');
+    expect(newStore.rank).toBeNull();
+
+    expect(existing.is_new).toBe(false);
+    expect(existing.new_reason).toBeNull();
+    expect(existing.rank).toBe(1);
+
+    // 新店排可比較店舖之後
+    expect(week!.rows.map((r) => r.site_code)).toEqual(['HA02', 'HBB3']);
+    // 但仍計入全公司合計
+    expect(week!.totals.store_count).toBe(2);
+    expect(week!.totals.ratio).toBeCloseTo(622900 / 2000000, 10);
+  });
 });
 
 // ---------------------------------------------------------------------------

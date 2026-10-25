@@ -127,6 +127,13 @@
     return s.length > 16 ? `${s.slice(0, 16)}…` : s;
   }
 
+  /** 不參與排名的標記：新店（報表標示）／上期無數據 */
+  function newTag(row) {
+    if (!row || !row.is_new) return '';
+    const label = row.new_reason === 'new_store' ? '新店' : '上期無數據';
+    return `<span class="text-secondary small">（${label}）</span>`;
+  }
+
   function setResult(id, type, message) {
     const el = $(id);
     if (!el) return;
@@ -712,13 +719,13 @@
         const wow = num(row.wow_delta_pt);
         const zero = soh === 0 && ratio === null;
         return `<tr>
-          <td class="stk-site">${esc(row.site_code || '')}${row.is_new ? '<span class="text-secondary small">（新店）</span>' : ''}</td>
+          <td class="stk-site">${esc(row.site_code || '')}${newTag(row)}</td>
           <td>${esc(row.shop || '')}</td>
           <td>${esc(row.om || '')}</td>
           <td class="text-end">${fmtMoney(row.deadstock_value)}</td>
           <td class="text-end">${fmtMoney(row.shop_stock_value)}</td>
           <td class="text-end"><b>${zero ? '—' : fmtRatio(ratio)}</b>${zero ? '<div class="text-secondary small">存貨值 0，除零</div>' : ''}</td>
-          <td class="text-end ${wowClass(wow)}">${row.is_new ? '<span class="text-secondary small">新店</span>' : (wow === null ? '—' : `${wowArrow(wow)}${fmtPt(wow)}`)}</td>
+          <td class="text-end ${wowClass(wow)}">${row.is_new ? `<span class="text-secondary small">${row.new_reason === 'new_store' ? '新店' : '上期無數據'}</span>` : (wow === null ? '—' : `${wowArrow(wow)}${fmtPt(wow)}`)}</td>
         </tr>`;
       }).join('');
     }
@@ -739,9 +746,13 @@
   function renderTop15() {
     const wrap = $('stk_top15');
     if (!wrap) return;
-    const excluded = weekRows.filter((row) => row.is_new).length;
-    const note = excluded
-      ? `<div class="text-secondary small" style="margin-top:6px">已排除 ${excluded} 間上期無數據的新店，不參與排名（仍計入全公司合計）。</div>`
+    const newStoreCount = weekRows.filter((row) => row.new_reason === 'new_store').length;
+    const noPrevCount = weekRows.filter((row) => row.new_reason === 'no_prev_data').length;
+    const notes = [];
+    if (newStoreCount) notes.push(`${newStoreCount} 間新店（報表 Shop Type = NEW STORE）`);
+    if (noPrevCount) notes.push(`${noPrevCount} 間上期無數據`);
+    const note = notes.length
+      ? `<div class="text-secondary small" style="margin-top:6px">已排除 ${notes.join('、')}，不參與排名（仍計入全公司合計）。</div>`
       : '';
     const ranked = weekRows
       .filter((row) => !row.is_new && num(row.ratio) !== null)

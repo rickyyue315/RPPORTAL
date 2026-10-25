@@ -654,11 +654,16 @@ export interface ShopStockWeekRow extends ShopStockSnapshotRow {
   /** 與上一期的百分點差 */
   delta_pt: number | null;
   /**
-   * 上一期已有批次、但這間店不在其中 → 新開店／上期未列入。
-   * 這類店不參與排名（首期存貨通常偏高，會霸佔榜首），但仍計入全公司合計。
-   * 若系統根本沒有上一期（只有一期資料），一律為 false，避免首次上載完全沒有排名。
+   * 不參與排名。來源有兩個：
+   *   1. 報表 `Shop Type` 標示 NEW STORE（權威，只有一期資料時仍有效）
+   *   2. 上一期已有批次、但這間店不在其中（上期未列入）
+   * 首期存貨通常偏高，排上去會令榜首失去比較意義，但仍計入全公司合計與趨勢。
    */
   is_new: boolean;
+  /** 報表 Shop Type 是否標示新店 */
+  is_new_store: boolean;
+  /** 不參與排名的原因；可參與排名時為 null */
+  new_reason: 'new_store' | 'no_prev_data' | null;
   // --- 前端（admin-stock.js）沿用的欄名別名，內容與上表相同 ---
   deadstock_value: number | null;
   shop_stock_value: number | null;
@@ -705,6 +710,14 @@ async function loadWeekSnapshots(reportDate: string): Promise<ShopStockSnapshotR
   return r.rows.map(mapSnapshotRow);
 }
 
+/** 報表 `Shop Type` 標示新店（例：`NEW STORE`、`新店`）→ 不參與排名 */
+export function isNewStoreType(value: unknown): boolean {
+  const t = String(value ?? '').trim().toUpperCase();
+  if (!t) return false;
+  if (t === 'NEW' || t === 'NEW STORE' || t === 'NEW_SHOP' || t === 'NEWSHOP') return true;
+  return t.includes('NEW STORE') || t.includes('新店');
+}
+
 export async function getShopStockWeek(reportDate: string): Promise<ShopStockWeek | null> {
   const batch = await query<{ report_date: string; report_kind: string }>(
     `SELECT report_date::text AS report_date, report_kind FROM shop_stock_batches
@@ -725,14 +738,22 @@ export async function getShopStockWeek(reportDate: string): Promise<ShopStockWee
     .map((row) => {
       const prev = prevBySite.get(row.site_code);
       const delta = deltaPt(row.ratio, prev?.ratio ?? null);
-      // 有上一期但這間店不在其中 → 新店／上期未列入，不參與排名
-      const isNew = prevDate !== null && !prevBySite.has(row.site_code);
+      // 報表自己標明的新店（只有一期資料時仍然生效），或上期有批次但這間店不在其中
+      const newStore = isNewStoreType(row.shop_type);
+      const missingPrev = prevDate !== null && !prevBySite.has(row.site_code);
+      const reason: ShopStockWeekRow['new_reason'] = newStore
+        ? 'new_store'
+        : missingPrev
+          ? 'no_prev_data'
+          : null;
       return {
         ...row,
         rank: null,
         prev_ratio: prev?.ratio ?? null,
         delta_pt: delta,
-        is_new: isNew,
+        is_new: reason !== null,
+        is_new_store: newStore,
+        new_reason: reason,
         deadstock_value: row.excess_value_0sale,
         shop_stock_value: row.shop_stock_value_cm,
         wow_delta_pt: delta,

@@ -239,6 +239,7 @@ pg_restore --no-owner --no-privileges --clean --if-exists \
 3. 匯入清洗順序：①剔除 Column A = `Total` 的全公司合計列 → ②跳過全空白列 → ③跳過頁腳列（`Applied filters: …`）→ ④重複 Site Code 才報錯。`Total` 列的 Site Code 會撞真店（例：HA02），所以必須先整列剔除。
 4. 上載結果會顯示「N 間店 / N 行 / 略過 N 列（Total、空白、頁腳）」；對不到門店主檔的店號會列為 warning，**不阻塞**上載。
 5. 批次管理：可改報表日期／備註（該日期已有批次會回 `409 DATE_CONFLICT`），或整批刪除（hard delete，會寫 audit event 記錄 `report_date`、`deleted_rows`、`deleted_stores`、`content_hash`）。
+6. **新店不參與排名**：若上一期已有批次、但該店不在其中（新開店／上期未列入），明細會標示「新店」、Top-15 會排除、亦不佔名次；但仍計入全公司合計與趨勢。若系統只有一期資料，不會把所有店當成新店（否則首次上載會完全沒有排名）。
 
 對應 API（全部須管理員登入；只有上載用 `excelImportLimiter`，其餘用 `adminActionLimiter`）：
 
@@ -249,7 +250,7 @@ pg_restore --no-owner --no-privileges --clean --if-exists \
 | PUT | `/api/admin/stock/batches/:id` | 改 `report_date` / `note` |
 | DELETE | `/api/admin/stock/batches/:id` | 刪除整批（回 `deleted_rows`、`deleted_stores`） |
 | GET | `/api/admin/stock/summary?from=&to=` | 趨勢序列 + 最新 KPI（加權比率、WoW 百分點） |
-| GET | `/api/admin/stock/weeks/:reportDate` | 某一期每店明細（含與上一期的百分點差） |
+| GET | `/api/admin/stock/weeks/:reportDate` | 某一期每店明細（含與上一期的百分點差、`rank`、`is_new`） |
 
 ### 店舖端
 

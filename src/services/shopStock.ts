@@ -653,6 +653,12 @@ export interface ShopStockWeekRow extends ShopStockSnapshotRow {
   prev_ratio: number | null;
   /** 與上一期的百分點差 */
   delta_pt: number | null;
+  /**
+   * 上一期已有批次、但這間店不在其中 → 新開店／上期未列入。
+   * 這類店不參與排名（首期存貨通常偏高，會霸佔榜首），但仍計入全公司合計。
+   * 若系統根本沒有上一期（只有一期資料），一律為 false，避免首次上載完全沒有排名。
+   */
+  is_new: boolean;
   // --- 前端（admin-stock.js）沿用的欄名別名，內容與上表相同 ---
   deadstock_value: number | null;
   shop_stock_value: number | null;
@@ -719,25 +725,36 @@ export async function getShopStockWeek(reportDate: string): Promise<ShopStockWee
     .map((row) => {
       const prev = prevBySite.get(row.site_code);
       const delta = deltaPt(row.ratio, prev?.ratio ?? null);
+      // 有上一期但這間店不在其中 → 新店／上期未列入，不參與排名
+      const isNew = prevDate !== null && !prevBySite.has(row.site_code);
       return {
         ...row,
         rank: null,
         prev_ratio: prev?.ratio ?? null,
         delta_pt: delta,
+        is_new: isNew,
         deadstock_value: row.excess_value_0sale,
         shop_stock_value: row.shop_stock_value_cm,
         wow_delta_pt: delta,
       };
     })
-    // 排名：比率高（死貨多）排前，無效分母排最後
+    // 排名：比率高（死貨多）排前；新店排可比較店舖之後，不佔名次
     .sort((a, b) => {
+      if (a.is_new !== b.is_new) return a.is_new ? 1 : -1;
       if (a.ratio === null && b.ratio === null) return a.site_code.localeCompare(b.site_code);
       if (a.ratio === null) return 1;
       if (b.ratio === null) return -1;
       if (b.ratio !== a.ratio) return b.ratio - a.ratio;
       return a.site_code.localeCompare(b.site_code);
-    })
-    .map((row, index) => ({ ...row, rank: row.ratio === null ? null : index + 1 }));
+    });
+
+  let rankCounter = 0;
+  for (const row of rows) {
+    if (!row.is_new && row.ratio !== null) {
+      rankCounter += 1;
+      row.rank = rankCounter;
+    }
+  }
 
   const ratioRows = snapshots.filter((row) => row.ratio !== null);
   const totalExcess = ratioRows.reduce((sum, row) => sum + (row.excess_value_0sale ?? 0), 0);

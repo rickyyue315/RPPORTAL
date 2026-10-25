@@ -712,13 +712,13 @@
         const wow = num(row.wow_delta_pt);
         const zero = soh === 0 && ratio === null;
         return `<tr>
-          <td class="stk-site">${esc(row.site_code || '')}</td>
+          <td class="stk-site">${esc(row.site_code || '')}${row.is_new ? '<span class="text-secondary small">（新店）</span>' : ''}</td>
           <td>${esc(row.shop || '')}</td>
           <td>${esc(row.om || '')}</td>
           <td class="text-end">${fmtMoney(row.deadstock_value)}</td>
           <td class="text-end">${fmtMoney(row.shop_stock_value)}</td>
           <td class="text-end"><b>${zero ? '—' : fmtRatio(ratio)}</b>${zero ? '<div class="text-secondary small">存貨值 0，除零</div>' : ''}</td>
-          <td class="text-end ${wowClass(wow)}">${wow === null ? '—' : `${wowArrow(wow)}${fmtPt(wow)}`}</td>
+          <td class="text-end ${wowClass(wow)}">${row.is_new ? '<span class="text-secondary small">新店</span>' : (wow === null ? '—' : `${wowArrow(wow)}${fmtPt(wow)}`)}</td>
         </tr>`;
       }).join('');
     }
@@ -739,12 +739,16 @@
   function renderTop15() {
     const wrap = $('stk_top15');
     if (!wrap) return;
+    const excluded = weekRows.filter((row) => row.is_new).length;
+    const note = excluded
+      ? `<div class="text-secondary small" style="margin-top:6px">已排除 ${excluded} 間上期無數據的新店，不參與排名（仍計入全公司合計）。</div>`
+      : '';
     const ranked = weekRows
-      .filter((row) => num(row.ratio) !== null)
+      .filter((row) => !row.is_new && num(row.ratio) !== null)
       .sort((a, b) => (num(b.ratio) || 0) - (num(a.ratio) || 0))
       .slice(0, 15);
     if (!ranked.length) {
-      wrap.innerHTML = '<div class="text-secondary small">此期沒有可計算佔比的店舖（店舖存貨值為 0 或全部缺值）。</div>';
+      wrap.innerHTML = `<div class="text-secondary small">此期沒有可比較的店舖（全部為新店，或店舖存貨值為 0 或全部缺值）。</div>${note}`;
       return;
     }
     const max = num(ranked[0].ratio) || 1;
@@ -759,7 +763,7 @@
         <span class="stk-bar-value">${fmtRatio(ratio)}</span>
         <span class="stk-bar-wow ${wowClass(wow)}">${wow === null ? '' : `${wowArrow(wow)}${fmtPt(wow)}`}</span>
       </button>`;
-    }).join('');
+    }).join('') + note;
   }
 
   async function loadWeek(date) {

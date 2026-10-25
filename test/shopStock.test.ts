@@ -618,6 +618,45 @@ describe('shopStock service', () => {
     const fallback = await upload('2027-04-18', [ROW_HA02], { kind: 'monthly' });
     expect(fallback.batch.report_kind).toBe('weekly');
   });
+
+  it('keeps new stores out of the ranking when the previous period did not include them', async () => {
+    // 上一期（2027-04-18）只有 HA02；N001 是新店，首期存貨比率 90% 會霸佔榜首
+    const fixture = [
+      makeRow({
+        Shop: 'HA02 - 駱克',
+        'Site Code': 'HA02',
+        'Excess Stock Value (P90D 0 Sales)': 100000,
+        'Shop Stock Value (CM)': 1000000,
+      }),
+      makeRow({
+        Shop: 'N001 - 新店',
+        'Site Code': 'N001',
+        'Excess Stock Value (P90D 0 Sales)': 900000,
+        'Shop Stock Value (CM)': 1000000,
+      }),
+      totalRow(2000000, 1000000),
+      BLANK_ROW,
+      FOOTER_ROW,
+    ];
+    await upload('2027-05-09', fixture);
+
+    const week = await getShopStockWeek('2027-05-09');
+    const ha02 = week!.rows.find((r) => r.site_code === 'HA02')!;
+    const newStore = week!.rows.find((r) => r.site_code === 'N001')!;
+
+    expect(ha02.is_new).toBe(false);
+    expect(newStore.is_new).toBe(true);
+    // 新店不取名次，但比率仍然計出
+    expect(newStore.rank).toBeNull();
+    expect(newStore.ratio).toBeCloseTo(0.9, 8);
+    expect(ha02.rank).toBe(1);
+    // 可比較的店舖排前面，新店排最後
+    expect(week!.rows[0]!.site_code).toBe('HA02');
+    expect(week!.rows[week!.rows.length - 1]!.site_code).toBe('N001');
+    // 但仍計入全公司合計：Σexcess 1,000,000 / ΣSOH 2,000,000
+    expect(week!.totals.store_count).toBe(2);
+    expect(week!.totals.ratio).toBeCloseTo(0.5, 10);
+  });
 });
 
 // ---------------------------------------------------------------------------

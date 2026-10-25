@@ -11,6 +11,8 @@
   const COLOR_REF = '#94a3b8';
   /** 12 個月之前（去年）的線：淺灰藍，和主線、虛線參考線都分得開 */
   const COLOR_BEFORE = '#b9c6d4';
+  const COLOR_RF = '#0f766e';
+  const COLOR_RF_BEFORE = '#99c7c2';
 
   let csrf = null;
   let started = false;
@@ -107,6 +109,14 @@
     const n = num(value);
     if (n === null) return '—';
     return Math.round(n).toLocaleString('en-US');
+  }
+
+  /** SKU 絕對增減用正負號；不套紅綠色，因 RF 增加或減少本身沒有好壞結論。 */
+  function fmtSignedInt(value) {
+    const n = num(value);
+    if (n === null) return '—';
+    const rounded = Math.round(n);
+    return `${rounded > 0 ? '+' : ''}${rounded.toLocaleString('en-US')}`;
   }
 
   function fmtMoney(value) {
@@ -467,16 +477,25 @@
       const series = normalizedSeries(data);
       if (note) note.textContent = series.length ? `${series.length} 期資料` : '未上載任何報表';
       setResult('stk_kpi_error', 'info', '');
+      setResult('stk_rf_error', 'info', '');
       renderKpi(data, series);
       renderChart(data, series);
+      renderRfDashboard(data, series);
       if (!selectedWeek) selectedWeek = series.length ? String(series[series.length - 1].report_date).slice(0, 10) : '';
     } catch (err) {
       summaryCache = null;
       if (note) note.textContent = '載入失敗';
       setResult('stk_kpi_error', 'error', `未能載入存貨摘要：${err.message}`);
       setResult('stk_chart_error', 'error', err.message);
+      setResult('stk_rf_error', 'error', `未能載入 RF SKU 摘要：${err.message}`);
       const kpi = $('stk_kpi');
       if (kpi) kpi.innerHTML = '<div class="stk-kpi stk-kpi--wide"><div class="stk-kpi-value">—</div><div class="stk-kpi-label">未能載入 KPI</div></div>';
+      const rfKpi = $('stk_rf_kpi');
+      if (rfKpi) rfKpi.innerHTML = '<div class="stk-kpi stk-kpi--wide"><div class="stk-kpi-value">—</div><div class="stk-kpi-label">未能載入 RF SKU KPI</div></div>';
+      const rfChart = $('stk_rf_chart');
+      if (rfChart) rfChart.innerHTML = '<div class="ct-empty">未能載入 RF SKU 走勢。</div>';
+      const rfLegend = $('stk_rf_legend');
+      if (rfLegend) rfLegend.innerHTML = '';
     }
   }
 
@@ -628,6 +647,121 @@
     }
   }
 
+  /* ==================== No. of RF SKU Dashboard ==================== */
+
+  function renderRfKpi(data, series) {
+    const wrap = $('stk_rf_kpi');
+    const note = $('stk_rf_note');
+    if (!wrap) return;
+    if (!series.length) {
+      wrap.innerHTML = '<div class="stk-kpi stk-kpi--wide"><div class="stk-kpi-value">—</div><div class="stk-kpi-label">尚未有 RF SKU 資料</div><div class="stk-kpi-sub">上載含 No. of RF SKU 欄的 I14「By Shop」報表後自動顯示。</div></div>';
+      if (note) note.textContent = '走勢期間與上方佔比趨勢同步';
+      return;
+    }
+
+    const last = series[series.length - 1];
+    const prev = series.length > 1 ? series[series.length - 2] : null;
+    const kpi = (data && data.kpi) || {};
+    const total = firstNum([kpi.total_rf_sku, last.total_rf_sku]);
+    const prevTotal = prev ? firstNum([prev.total_rf_sku]) : null;
+    const delta = firstNum([kpi.rf_sku_delta, last.rf_sku_delta])
+      ?? (total !== null && prevTotal !== null ? total - prevTotal : null);
+    const stores = firstNum([kpi.store_count, last.store_count]);
+    const rfStores = firstNum([kpi.rf_store_count, last.rf_store_count]) ?? 0;
+    const missing = stores === null ? 0 : Math.max(0, stores - rfStores);
+    const reportDate = String(kpi.report_date || last.report_date || '').slice(0, 10);
+
+    wrap.innerHTML = [
+      kpiCard('最新 RF SKU 合計', fmtInt(total), total === null ? '沒有有效 RF 資料' : `報表日期 ${esc(reportDate || '—')}`),
+      kpiCard('RF SKU 較上期', delta === null ? '—' : fmtSignedInt(delta),
+        !prev ? '需要至少 2 期資料' : (prevTotal === null ? '上期沒有有效 RF 資料' : `上期合計 ${fmtInt(prevTotal)}`)),
+      kpiCard('RF 資料覆蓋', stores === null ? '—' : `${fmtInt(rfStores)} / ${fmtInt(stores)} 店`,
+        missing > 0 ? `${fmtInt(missing)} 店缺值，未當作 0` : '全部店舖有有效 RF 數字'),
+    ].join('');
+    if (note) note.textContent = `最新 ${reportDate || '—'}｜走勢期間與上方佔比趨勢同步`;
+  }
+
+  function renderRfChart(series) {
+    const el = $('stk_rf_chart');
+    const legend = $('stk_rf_legend');
+    const chartNote = $('stk_rf_chart_note');
+    if (!el) return;
+    if (chartNote) chartNote.textContent = '';
+
+    const allDates = series
+      .map((row) => String(row.report_date || '').slice(0, 10))
+      .filter(Boolean)
+      .sort();
+    const latestDate = allDates.length ? allDates[allDates.length - 1] : '';
+    const cutoff = latestDate ? monthsBefore(latestDate, chartMonths) : '';
+    const visible = cutoff
+      ? series.filter((row) => String(row.report_date || '').slice(0, 10) >= cutoff)
+      : series;
+    const yearCutoff = chartMonths > 12 ? monthsBefore(latestDate, 12) : '';
+    const points = visible.map((row) => ({ date: row.report_date, value: num(row.total_rf_sku) }));
+    const hasYearPart = !!yearCutoff
+      && points.some((row) => String(row.date || '').slice(0, 10) < yearCutoff);
+    const usable = points.filter((point) => point.value !== null);
+    const chartApi = globalThis.ChartLite;
+
+    if (!usable.length) {
+      if (chartApi) chartApi.clear(el); else el.innerHTML = '';
+      if (legend) legend.innerHTML = '';
+      el.innerHTML = '<div class="ct-empty">' + (visible.length
+        ? '所選期間沒有有效 No. of RF SKU 資料；空白或無效值不會當作 0。'
+        : '尚未上載任何存貨報表，RF SKU 走勢會在第一次上載後出現。') + '</div>';
+      return;
+    }
+
+    if (usable.length === 1) {
+      if (chartApi) chartApi.clear(el); else el.innerHTML = '';
+      if (legend) legend.innerHTML = `<span class="stk-legend-item"><i style="background:${COLOR_RF}"></i>RF SKU 合計</span>`;
+      el.innerHTML = `<div class="ct-empty">目前只有 1 期有效 RF 資料（${esc(String(usable[0].date).slice(0, 10))} ${fmtInt(usable[0].value)} SKU），上載下一期後會顯示走勢。</div>`;
+      return;
+    }
+
+    if (legend) {
+      legend.innerHTML = `<span class="stk-legend-item"><i style="background:${COLOR_RF}"></i>${hasYearPart ? '最近 12 個月' : 'RF SKU 合計'}</span>`
+        + (hasYearPart ? `<span class="stk-legend-item"><i style="background:${COLOR_RF_BEFORE}"></i>12 個月前（去年）</span>` : '');
+    }
+    if (!chartApi) {
+      el.innerHTML = '<div class="ct-empty">圖表元件未載入（/js/chart-lite.js），請重新整理頁面。</div>';
+      return;
+    }
+
+    chartApi.renderLine(el, {
+      series: [{
+        key: 'rf_sku',
+        label: 'RF SKU 合計',
+        color: COLOR_RF,
+        splitDate: hasYearPart ? yearCutoff : '',
+        colorBefore: COLOR_RF_BEFORE,
+        points,
+      }],
+      height: 220,
+      emptyText: '暫無 RF SKU 數據',
+      yFormat: (value) => fmtInt(value),
+      tipFormat: (value) => fmtInt(value),
+      ariaLabel: `全公司 RF SKU 合計趨勢，共 ${usable.length} 期，最新 ${fmtInt(usable[usable.length - 1].value)}`,
+    });
+
+    const gaps = points.length - usable.length;
+    const partialPeriods = visible.filter((row) => {
+      const stores = num(row.store_count) ?? 0;
+      const rfStores = num(row.rf_store_count) ?? 0;
+      return stores > rfStores;
+    }).length;
+    const notes = ['點或懸停圖表可看該期的全公司 RF SKU 合計。'];
+    if (gaps) notes.push(`有 ${gaps} 期完全沒有有效 RF 資料，該期缺值斷線，不會當成 0。`);
+    if (partialPeriods) notes.push(`有 ${partialPeriods} 期部分店舖缺少 RF 資料，合計只包括有效值；請同時查看資料覆蓋店數。`);
+    if (chartNote) chartNote.textContent = notes.join(' ');
+  }
+
+  function renderRfDashboard(data, series) {
+    renderRfKpi(data, series);
+    renderRfChart(series);
+  }
+
   /* ==================== 匯出（PPT 用） ==================== */
 
   /** 把趨勢圖目前顯示期間的數字匯出成 Excel（三個工作表：明細 / PPT 圖表用 / 匯出說明） */
@@ -658,7 +792,7 @@
       a.remove();
       URL.revokeObjectURL(url);
       if (box) {
-        box.innerHTML = `<div class="alert alert-success mt-2 mb-0">已匯出最近 ${chartMonths} 個月的佔比趨勢（明細＋PPT 圖表用兩張表）。</div>`;
+        box.innerHTML = `<div class="alert alert-success mt-2 mb-0">已匯出最近 ${chartMonths} 個月的佔比與 RF SKU 趨勢（明細＋PPT 圖表用兩張表）。</div>`;
       }
     } catch (err) {
       if (box) box.innerHTML = `<div class="alert alert-danger mt-2 mb-0">${esc(err.message)}</div>`;
@@ -812,7 +946,9 @@
 
     const pick = sort === 'excess_desc' ? (r) => num(r.deadstock_value)
       : sort === 'wow_desc' ? (r) => num(r.wow_delta_pt)
-        : (r) => num(r.ratio);
+        : sort === 'rf_desc' ? (r) => num(r.rf_sku_count)
+          : sort === 'rf_delta_desc' ? (r) => num(r.rf_sku_delta)
+            : (r) => num(r.ratio);
     rows.sort((a, b) => {
       const av = pick(a);
       const bv = pick(b);
@@ -837,19 +973,24 @@
 
     if (!total) {
       body.innerHTML = weekRows.length
-        ? '<tr><td colspan="8" class="text-center text-secondary">沒有符合篩選條件的店舖</td></tr>'
-        : '<tr><td colspan="8" class="text-center text-secondary">此期沒有店舖數據</td></tr>';
+        ? '<tr><td colspan="10" class="text-center text-secondary">沒有符合篩選條件的店舖</td></tr>'
+        : '<tr><td colspan="10" class="text-center text-secondary">此期沒有店舖數據</td></tr>';
     } else {
       body.innerHTML = pageRows.map((row) => {
         const ratio = num(row.ratio);
         const soh = num(row.shop_stock_value);
         const wow = num(row.wow_delta_pt);
+        const rf = num(row.rf_sku_count);
+        const prevRf = num(row.prev_rf_sku_count);
+        const rfDelta = num(row.rf_sku_delta);
         const zero = soh === 0 && ratio === null;
         return `<tr>
           <td class="stk-site">${esc(row.site_code || '')}${newTag(row)}</td>
           <td>${esc(shopLabel(row))}</td>
           <td>${esc(row.om || '')}</td>
           <td class="stk-nature" title="${escAttr(natureTitle(row.shop_nature))}">${esc(row.shop_nature || '')}</td>
+          <td class="text-end"><b>${fmtInt(rf)}</b></td>
+          <td class="text-end text-secondary" title="${escAttr(prevRf === null ? '上期沒有有效 RF 資料' : `上期 ${fmtInt(prevRf)} SKU`)}">${rfDelta === null ? '—' : fmtSignedInt(rfDelta)}</td>
           <td class="text-end">${fmtMoney(row.deadstock_value)}</td>
           <td class="text-end">${fmtMoney(row.shop_stock_value)}</td>
           <td class="text-end"><b>${zero ? '—' : fmtRatio(ratio)}</b>${zero ? '<div class="text-secondary small">存貨值 0，除零</div>' : ''}</td>
@@ -929,6 +1070,48 @@
     }).join('') + note;
   }
 
+  /** RF 是實際 SKU 數，不像不良存貨比率排名需要排除新店；所有有效數字都參與。 */
+  function renderTop15Rf(week) {
+    const wrap = $('stk_rf_top15');
+    const label = $('stk_rf_top15_label');
+    if (!wrap) return;
+    const weekLabel = String(week ?? selectedWeek ?? '').slice(0, 10);
+    const candidates = weekRows
+      .filter((row) => num(row.rf_sku_count) !== null)
+      .sort((a, b) => (num(b.rf_sku_count) || 0) - (num(a.rf_sku_count) || 0)
+        || String(a.site_code || '').localeCompare(String(b.site_code || '')));
+    if (label) label.textContent = weekLabel
+      ? `${weekLabel} · ${candidates.length} 店有 RF 資料`
+      : '—';
+    if (!candidates.length) {
+      wrap.innerHTML = `<div class="text-secondary small">${weekRows.length
+        ? '此期沒有有效 No. of RF SKU 資料；空白或無效值不會當作 0。'
+        : '上載報表或選擇批次後會顯示 RF SKU 店舖排名。'}</div>`;
+      return;
+    }
+
+    const ranked = candidates.slice(0, 15);
+    const max = Math.max(1, num(ranked[0].rf_sku_count) || 0);
+    wrap.innerHTML = ranked.map((row, index) => {
+      const rf = num(row.rf_sku_count) || 0;
+      const delta = num(row.rf_sku_delta);
+      const width = Math.max(2, Math.min(100, (rf / max) * 100));
+      const om = String(row.om || '').trim();
+      const nature = String(row.shop_nature || '').trim();
+      const meta = [om ? `OM ${om}` : '', nature].filter(Boolean).join(' · ');
+      return `<button type="button" class="stk-bar-row" data-stk-site="${escAttr(row.site_code || '')}" title="按一下只看 ${escAttr(row.site_code || '')} 的明細">
+        <span class="stk-bar-rank">${index + 1}</span>
+        <span class="stk-bar-name">
+          <span class="stk-bar-title"><b>${esc(row.site_code || '')}</b><span class="stk-bar-shop">${esc(shortShop(shopLabel(row)))}</span></span>
+          ${meta ? `<span class="stk-bar-meta" title="${escAttr(natureTitle(nature))}">${esc(meta)}</span>` : ''}
+        </span>
+        <span class="stk-bar-track"><i style="width:${width.toFixed(1)}%;background:${COLOR_RF}"></i></span>
+        <span class="stk-bar-value">${fmtInt(rf)}</span>
+        <span class="stk-bar-wow text-secondary" title="RF SKU 較上期">${delta === null ? '' : fmtSignedInt(delta)}</span>
+      </button>`;
+    }).join('');
+  }
+
   async function loadWeek(date) {
     const body = $('stk_detail_body');
     const label = $('stk_week_label');
@@ -938,13 +1121,14 @@
       weekRows = [];
       weekTotals = null;
       if (label) label.textContent = '—';
-      if (body) body.innerHTML = '<tr><td colspan="8" class="text-center text-secondary">尚未有批次，上載後會顯示每店明細</td></tr>';
+      if (body) body.innerHTML = '<tr><td colspan="10" class="text-center text-secondary">尚未有批次，上載後會顯示每店明細</td></tr>';
       const top = $('stk_top15');
       if (top) top.innerHTML = '<div class="text-secondary small">上載報表後會顯示排名。</div>';
+      renderTop15Rf('');
       renderWeekRows();
       return;
     }
-    if (body) body.innerHTML = '<tr><td colspan="8" class="text-center text-secondary">載入中…</td></tr>';
+    if (body) body.innerHTML = '<tr><td colspan="10" class="text-center text-secondary">載入中…</td></tr>';
     try {
       const data = (await aFetch(`/api/admin/stock/weeks/${encodeURIComponent(target)}`)) || {};
       selectedWeek = String(data.report_date || target).slice(0, 10);
@@ -957,15 +1141,17 @@
         label.textContent = `${selectedWeek} · ${storeCount} 店${ratio === null ? '' : ` · 合計佔比 ${fmtRatio(ratio)}`}`;
       }
       renderTop15();
+      renderTop15Rf(selectedWeek);
       renderWeekRows();
     } catch (err) {
       weekRows = [];
       weekTotals = null;
       if (label) label.textContent = target;
       setResult('stk_week_error', 'error', `未能載入 ${target} 的明細：${err.message}`);
-      if (body) body.innerHTML = `<tr><td colspan="8" class="text-center text-danger">${esc(err.message)}</td></tr>`;
+      if (body) body.innerHTML = `<tr><td colspan="10" class="text-center text-danger">${esc(err.message)}</td></tr>`;
       const top = $('stk_top15');
       if (top) top.innerHTML = '<div class="text-secondary small">未能載入排名。</div>';
+      renderTop15Rf(target);
       renderWeekRows();
     }
   }
@@ -1045,10 +1231,11 @@
       });
     }
 
-    // Top 15：按一下只看該店
-    const top15 = $('stk_top15');
-    if (top15) {
-      top15.addEventListener('click', (e) => {
+    // 兩個 Top 15：按一下只看該店明細
+    ['stk_top15', 'stk_rf_top15'].forEach((id) => {
+      const ranking = $(id);
+      if (!ranking) return;
+      ranking.addEventListener('click', (e) => {
         const target = e.target instanceof Element ? e.target.closest('[data-stk-site]') : null;
         if (!target) return;
         const q = $('stk_q');
@@ -1056,7 +1243,7 @@
         weekPage = 1;
         renderWeekRows();
       });
-    }
+    });
 
     // 匯出目前顯示期間的趨勢數字（Excel；不會改任何資料）
     const exportBtn = $('btn_stk_export');
@@ -1075,7 +1262,10 @@
           b.setAttribute('aria-pressed', String(Number(b.dataset.stkMonths) === months));
         });
         const series = normalizedSeries(summaryCache);
-        if (series.length) renderChart(summaryCache, series);
+        if (series.length) {
+          renderChart(summaryCache, series);
+          renderRfChart(series);
+        }
       });
     }
 

@@ -74,4 +74,18 @@ describe('static asset freshness', () => {
     expect(res.status).toBe(200);
     expect(res.text).toContain(`/portal/js/portal.js?v=${version}`);
   });
+
+  it('keeps the RF SKU dashboard wired into the admin stock page', () => {
+    const html = readFileSync(path.join(root, 'public', 'admin', 'index.html'), 'utf8');
+    const script = readFileSync(path.join(root, 'public', 'js', 'admin-stock.js'), 'utf8');
+    expect(html).toContain('id="panel-stock"');
+    expect(html).toContain('No. of RF SKU Dashboard');
+    expect(html).toContain('id="stk_rf_kpi"');
+    expect(html).toContain('id="stk_rf_chart"');
+    expect(html).toContain('id="stk_rf_top15"');
+    expect(html).toContain('>RF SKU</th>');
+    expect(script).toContain('renderRfDashboard');
+    expect(script).toContain('total_rf_sku');
+    expect(script).toContain('rf_sku_delta');
+  });
 });

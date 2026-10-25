@@ -205,6 +205,7 @@ function totalRow(soh: number, excess: number): CellValue[] {
     OM: 'CANDY',
     'Shop Nature': 'Mix',
     'Shop Type': 'EXISTING',
+    'No. of RF SKU': 999999,
     'No. of Overstock SKU (P90D 0 Sales)': 12,
     'Excess Stock Value (P90D 0 Sales)': excess,
     'Shop Stock Value (CM)': soh,
@@ -224,6 +225,8 @@ const ROW_HA02 = makeRow({
   OM: 'IVY',
   'Shop Nature': 'Local',
   'Shop Type': 'EXISTING',
+  // RF SKU 同樣可能有千分位文字，必須安全轉成整數（Total 列的 999999 已剔除）
+  'No. of RF SKU': '1,234',
   'No. of Overstock SKU (P90D 0 Sales)': 5,
   'No. of Overstock SKU (>2*Monthly Sold Qty & >2pcs)': 8,
   'Excess Stock Qty (P90D 0 Sales)': 40,
@@ -245,6 +248,7 @@ const ROW_HD09 = makeRow({
   OM: 'WINDY',
   'Shop Nature': 'Tourist',
   'Shop Type': 'EXISTING',
+  'No. of RF SKU': 567,
   'No. of Overstock SKU (P90D 0 Sales)': 7,
   'Excess Stock Value (P90D 0 Sales)': 59999.75,
   'Shop Stock Value (CM)': 3000000,
@@ -277,18 +281,22 @@ const FIXTURE_WEEK2 = [
   makeRow({
     Shop: 'HA02 - 駱克',
     'Site Code': 'HA02',
+    'No. of RF SKU': 1200,
     'Excess Stock Value (P90D 0 Sales)': 200000,
     'Shop Stock Value (CM)': 1000000,
   }),
   makeRow({
     Shop: 'HD09 - 新威尼斯人',
     'Site Code': 'HD09',
+    'No. of RF SKU': 600,
     'Excess Stock Value (P90D 0 Sales)': 0,
     'Shop Stock Value (CM)': 1000000,
   }),
   makeRow({
     Shop: 'HC71 - 東涌',
     'Site Code': 'HC71',
+    // 真 0 要保留為 0，不可和缺值混為一談
+    'No. of RF SKU': 0,
     'Excess Stock Value (P90D 0 Sales)': 500,
     'Shop Stock Value (CM)': 0,
   }),
@@ -354,6 +362,8 @@ describe('shopStock xlsx parser', () => {
 
     expect(Object.keys(ha02.payload)).toHaveLength(HEADERS.length);
     expect(ha02.payload['Site Code']).toBe('HA02');
+    // RF 不另設結構化欄位；原文保留在 payload，service 由這裡安全轉換
+    expect(ha02.payload['No. of RF SKU']).toBe('1,234');
   });
 
   it('reports duplicate site codes (only after Total removal) with row numbers', async () => {
@@ -431,6 +441,12 @@ describe('shopStock service', () => {
     expect(point.excluded_store_count).toBe(1);
     expect(point.wow_delta_pt).toBeNull();
     expect(summary.company_avg_ratio).toBeCloseTo(0.04, 10);
+    // Total 列的 999999 已剔除；HC71 缺 RF 值 → 不當 0，覆蓋 2/3 店
+    expect(point.total_rf_sku).toBe(1801);
+    expect(point.rf_store_count).toBe(2);
+    expect(point.rf_sku_delta).toBeNull();
+    expect(summary.kpi!.total_rf_sku).toBe(1801);
+    expect(summary.kpi!.rf_store_count).toBe(2);
   });
 
   it('returns null (not 0) for a store whose stock value is 0', async () => {
@@ -471,6 +487,13 @@ describe('shopStock service', () => {
     expect(week!.rows[0]!.deadstock_value).toBeCloseTo(100000.25, 6);
     expect(week!.rows[0]!.shop_stock_value).toBeCloseTo(1000000, 6);
     expect(week!.rows[0]!.wow_delta_pt).toBeNull();
+    expect(week!.rows[0]!.rf_sku_count).toBe(1234);
+    expect(week!.rows[0]!.prev_rf_sku_count).toBeNull();
+    expect(week!.rows[0]!.rf_sku_delta).toBeNull();
+    expect(week!.rows.find((r) => r.site_code === 'HC71')!.rf_sku_count).toBeNull();
+    expect(week!.totals.total_rf_sku).toBe(1801);
+    expect(week!.totals.rf_store_count).toBe(2);
+    expect(week!.totals.rf_sku_delta).toBeNull();
   });
 
   it('adds a second period and reports WoW in percentage points', async () => {
@@ -484,11 +507,24 @@ describe('shopStock service', () => {
     expect(week2.wow_delta_pt).toBeCloseTo(6, 8);
     expect(summary.kpi!.report_date).toBe('2026-11-01');
     expect(summary.kpi!.prev_report_date).toBe('2026-10-25');
+    expect(week2.total_rf_sku).toBe(1800);
+    expect(week2.rf_store_count).toBe(3);
+    expect(week2.rf_sku_delta).toBe(-1);
+    expect(summary.kpi!.total_rf_sku).toBe(1800);
+    expect(summary.kpi!.rf_sku_delta).toBe(-1);
 
     const week = await getShopStockWeek('2026-11-01');
     const ha02 = week!.rows.find((r) => r.site_code === 'HA02')!;
     expect(ha02.prev_ratio).toBeCloseTo(0.10000025, 8);
     expect(ha02.delta_pt).toBeCloseTo((0.2 - 0.10000025) * 100, 6);
+    expect(ha02.prev_rf_sku_count).toBe(1234);
+    expect(ha02.rf_sku_delta).toBe(-34);
+    const hd09 = week!.rows.find((r) => r.site_code === 'HD09')!;
+    expect(hd09.prev_rf_sku_count).toBe(567);
+    expect(hd09.rf_sku_delta).toBe(33);
+    expect(week!.totals.total_rf_sku).toBe(1800);
+    expect(week!.totals.rf_store_count).toBe(3);
+    expect(week!.totals.rf_sku_delta).toBe(-1);
   });
 
   it('filters the summary by date range', async () => {
@@ -738,6 +774,45 @@ describe('shopStock service', () => {
     expect(atLater.is_new_store).toBe(true);
     expect(atLater.rank).not.toBeNull();
     expect(laterWeek!.new_store_grace_days).toBe(90);
+  });
+
+  it('keeps invalid RF values as null while preserving a real zero', async () => {
+    const fixture = [
+      makeRow({
+        Shop: 'HA02 - 駱克',
+        'Site Code': 'HA02',
+        'No. of RF SKU': 'N/A',
+        'Excess Stock Value (P90D 0 Sales)': 100000,
+        'Shop Stock Value (CM)': 1000000,
+      }),
+      makeRow({
+        Shop: 'HD09 - 新威尼斯人',
+        'Site Code': 'HD09',
+        'No. of RF SKU': -5,
+        'Excess Stock Value (P90D 0 Sales)': 50000,
+        'Shop Stock Value (CM)': 1000000,
+      }),
+      makeRow({
+        Shop: 'HC71 - 東涌',
+        'Site Code': 'HC71',
+        'No. of RF SKU': '0',
+        'Excess Stock Value (P90D 0 Sales)': 500,
+        'Shop Stock Value (CM)': 1000000,
+      }),
+    ];
+    await upload('2025-12-07', fixture);
+
+    const summary = await getShopStockSummary({ from: '2025-12-07', to: '2025-12-07' });
+    expect(summary.series).toHaveLength(1);
+    expect(summary.series[0]!.total_rf_sku).toBe(0);
+    expect(summary.series[0]!.rf_store_count).toBe(1);
+
+    const week = await getShopStockWeek('2025-12-07');
+    expect(week!.rows.find((r) => r.site_code === 'HA02')!.rf_sku_count).toBeNull();
+    expect(week!.rows.find((r) => r.site_code === 'HD09')!.rf_sku_count).toBeNull();
+    expect(week!.rows.find((r) => r.site_code === 'HC71')!.rf_sku_count).toBe(0);
+    expect(week!.totals.total_rf_sku).toBe(0);
+    expect(week!.totals.rf_store_count).toBe(1);
   });
 });
 

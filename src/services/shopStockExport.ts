@@ -11,6 +11,7 @@ import { deriveWeekLabel, type ShopStockKpi, type ShopStockSeriesPoint } from '.
  *
  * 口徑與 Dashboard 完全一致：比率 = Σ不良存貨值 ÷ Σ店舖存貨值（加權），
  * 分母 NULL / <= 0 時比率留空（不寫 0，避免畫出假 0% 線）。
+ * 同一份資料亦帶出 No. of RF SKU（全公司合計、覆蓋店數、較上期增減）。
  */
 
 const KIND_LABELS: Record<string, string> = {
@@ -50,9 +51,12 @@ const DETAIL_HEADERS = [
   '不良存貨值（合計）',
   '佔比（合計）',
   '0 Sale SKU 數',
+  'RF SKU 合計',
+  'RF 資料店數',
+  'RF SKU 較上期',
 ] as const;
 
-const DETAIL_WIDTHS = [12, 12, 10, 8, 12, 18, 22, 14, 16, 20, 14, 20, 14, 14];
+const DETAIL_WIDTHS = [12, 12, 10, 8, 12, 18, 22, 14, 16, 20, 14, 20, 14, 14, 14, 12, 16];
 
 /** 1-based 欄位的數字格式（比率存小數，交由 Excel 顯示成百分比） */
 const DETAIL_FORMATS: Record<number, string> = {
@@ -67,6 +71,9 @@ const DETAIL_FORMATS: Record<number, string> = {
   12: '#,##0',
   13: '0.0%',
   14: '#,##0',
+  15: '#,##0',
+  16: '#,##0',
+  17: '+0;-0;0',
 };
 
 function styleHeaderRow(sheet: ExcelJS.Worksheet, columns: number): void {
@@ -113,6 +120,9 @@ export async function buildShopStockTrendBuffer(input: ShopStockTrendExportInput
       row.total_excess_total,
       row.ratio_total,
       row.sku_count_0sale,
+      row.total_rf_sku,
+      row.rf_store_count,
+      row.rf_sku_delta,
     ]);
   }
 
@@ -160,6 +170,8 @@ export async function buildShopStockTrendBuffer(input: ShopStockTrendExportInput
     ['店舖存貨值合計', kpi?.total_soh ?? null],
     ['不良存貨值（0 Sale）', kpi?.total_excess ?? null],
     ['涉及店數', kpi?.store_count ?? null],
+    ['RF SKU 合計（全公司）', kpi?.total_rf_sku ?? null],
+    ['RF 資料店數', kpi?.rf_store_count ?? null],
     ['產生時間（HK）', input.generatedAt],
   ];
   info.addRow(['項目', '內容']);
@@ -174,6 +186,8 @@ export async function buildShopStockTrendBuffer(input: ShopStockTrendExportInput
   info.getCell(8, 2).numFmt = '+0.00;-0.00;0.00';
   info.getCell(9, 2).numFmt = '#,##0';
   info.getCell(10, 2).numFmt = '#,##0';
+  info.getCell(12, 2).numFmt = '#,##0';
+  info.getCell(13, 2).numFmt = '#,##0';
 
   const buffer = await workbook.xlsx.writeBuffer();
   return Buffer.from(buffer);

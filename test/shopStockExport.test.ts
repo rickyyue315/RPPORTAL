@@ -20,6 +20,9 @@ function point(over: Partial<ShopStockSeriesPoint> & { report_date: string }): S
     total_excess_total: 140,
     total_soh: 1000,
     sku_count_0sale: 7,
+    total_rf_sku: 4800,
+    rf_store_count: 3,
+    rf_sku_delta: null,
     ratio: 0.1,
     ratio_over2: 0.04,
     ratio_total: 0.14,
@@ -59,6 +62,9 @@ describe('buildShopStockTrendBuffer', () => {
         total_excess_total: 140,
         total_soh: 1000,
         sku_count_0sale: 7,
+        total_rf_sku: 4800,
+        rf_store_count: 3,
+        rf_sku_delta: 12,
         ratio: 0.0876,
         ratio_over2: 0.04,
         ratio_total: 0.14,
@@ -79,6 +85,13 @@ describe('buildShopStockTrendBuffer', () => {
     const detail = workbook.getWorksheet('佔比趨勢')!;
     expect(detail.getRow(1).getCell(1).value).toBe('期別');
     expect(detail.getRow(1).getCell(14).value).toBe('0 Sale SKU 數');
+    // 同一份資料亦帶出 RF SKU 數字
+    expect(detail.getRow(1).getCell(15).value).toBe('RF SKU 合計');
+    expect(detail.getRow(1).getCell(16).value).toBe('RF 資料店數');
+    expect(detail.getRow(1).getCell(17).value).toBe('RF SKU 較上期');
+    expect(detail.getRow(2).getCell(15).value).toBe(4800);
+    expect(detail.getRow(2).getCell(16).value).toBe(3);
+    expect(detail.getRow(2).getCell(17).value).toBeNull();
     expect(detail.getRow(2).getCell(1).value).toBe('2026-09-27');
     expect(detail.getRow(2).getCell(2).value).toBe('27Sep2026');
     expect(detail.getRow(2).getCell(3).value).toBe('週更');
@@ -101,6 +114,7 @@ describe('buildShopStockTrendBuffer', () => {
     info.eachRow((row, n) => { if (n > 1) labels.push(String(row.getCell(1).value ?? '')); });
     expect(labels).toContain('口徑');
     expect(labels).toContain('產生時間（HK）');
+    expect(labels).toContain('RF SKU 合計（全公司）');
   });
 
   it('still produces a valid workbook when there is no data at all', async () => {

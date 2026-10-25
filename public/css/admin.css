@@ -557,3 +557,17 @@ body.stk-modal-open { overflow: hidden; }
 @media (max-width: 768px) {
   .stk-range { width: 100%; justify-content: flex-start; }
 }
+
+/* No. of RF SKU Dashboard：青色系與上方不良存貨比率區分，但同屬存貨頁 */
+.stk-rf-kpi-grid { margin-bottom: 16px; }
+#stk_rf_dashboard .stk-kpi {
+  background: #f3fbfa;
+  border-color: #bfe3df;
+}
+#stk_rf_dashboard .stk-kpi-value { color: #0b5f59; }
+#stk_rf_dashboard .stk-chart { margin-top: 4px; }
+#stk_rf_top15 {
+  padding-top: 10px;
+  border-top: 1px solid #e3efed;
+}
+#stk_rf_top15 .stk-bar-track { background: #e7f3f1; }

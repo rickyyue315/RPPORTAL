@@ -91,7 +91,8 @@
   function fmtRatio(value) {
     const n = num(value);
     if (n === null) return '—';
-    return `${n.toFixed(2)}%`;
+    // 後端 ratio 是 0–1 的小數（例如 0.083895），顯示時才乘 100
+    return `${(n * 100).toFixed(2)}%`;
   }
 
   function fmtPt(value) {
@@ -519,7 +520,7 @@
       series: chartSeries,
       height: 220,
       emptyText: '暫無佔比數據',
-      yFormat: (v) => `${Number(v).toFixed(1)}%`,
+      yFormat: (v) => `${(Number(v) * 100).toFixed(1)}%`,
       tipFormat: (v) => fmtRatio(v),
       ariaLabel: `死存貨佔比趨勢，共 ${usable.length} 期，最新 ${fmtRatio(lastRatio)}`,
     });
@@ -754,7 +755,7 @@
       return `<button type="button" class="stk-bar-row" data-stk-site="${escAttr(row.site_code || '')}" title="按一下只看 ${escAttr(row.site_code || '')} 的明細">
         <span class="stk-bar-rank">${index + 1}</span>
         <span class="stk-bar-name"><b>${esc(row.site_code || '')}</b><span class="stk-bar-shop">${esc(shortShop(row.shop))}</span></span>
-        <span class="stk-bar-track"><i style="width:${width.toFixed(1)}%;background:${ratio >= 10 ? '#c0392b' : COLOR_MAIN}"></i></span>
+        <span class="stk-bar-track"><i style="width:${width.toFixed(1)}%;background:${ratio >= 0.1 ? '#c0392b' : COLOR_MAIN}"></i></span>
         <span class="stk-bar-value">${fmtRatio(ratio)}</span>
         <span class="stk-bar-wow ${wowClass(wow)}">${wow === null ? '' : `${wowArrow(wow)}${fmtPt(wow)}`}</span>
       </button>`;

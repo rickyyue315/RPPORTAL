@@ -33,7 +33,8 @@
   function fmtRatio(value) {
     const n = num(value);
     if (n === null) return '—';
-    return `${n.toFixed(2)}%`;
+    // 後端 ratio 是 0–1 的小數（例如 0.083895），顯示時才乘 100
+    return `${(n * 100).toFixed(2)}%`;
   }
 
   function fmtPt(value) {
@@ -221,7 +222,7 @@
       series: chartSeries,
       height: 240,
       emptyText: '暫無佔比數據',
-      yFormat: (v) => `${Number(v).toFixed(1)}%`,
+      yFormat: (v) => `${(Number(v) * 100).toFixed(1)}%`,
       tipFormat: (v) => fmtRatio(v),
       ariaLabel: `本店死存貨佔比趨勢，共 ${usable.length} 期，最新 ${fmtRatio(usable[usable.length - 1].value)}`,
     });

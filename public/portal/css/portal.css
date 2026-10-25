@@ -245,3 +245,35 @@
 @media (max-width: 640px) {
   .portal-tab { flex: 1 1 0; padding: 8px 10px; font-size: 13px; }
 }
+
+/* 存貨走勢分頁籤：高亮 + 脈動，提示店長有新功能。
+   店長第一次打開過之後會停（見 portal-tabs.js），避免長期閃動干擾回覆。 */
+.portal-tab--accent {
+  background: #faeeda;
+  border-color: #ef9f27;
+  color: #854f0b;
+  font-weight: 600;
+}
+.portal-tab--accent:hover {
+  background: #fac775;
+  border-color: #ba7517;
+  color: #633806;
+}
+.portal-tab--accent.is-active {
+  background: var(--brand, #0f5c9c);
+  border-color: var(--brand, #0f5c9c);
+  color: #fff;
+}
+.portal-tab--accent.is-pulsing {
+  animation: portal-tab-pulse 2.2s ease-in-out infinite;
+}
+@keyframes portal-tab-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(239, 159, 39, 0.55); }
+  50% { box-shadow: 0 0 0 7px rgba(239, 159, 39, 0); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .portal-tab--accent.is-pulsing {
+    animation: none;
+    box-shadow: 0 0 0 2px rgba(239, 159, 39, 0.5);
+  }
+}

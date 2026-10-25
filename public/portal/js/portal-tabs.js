@@ -16,6 +16,16 @@
   const tabs = Array.from(document.querySelectorAll('[role="tab"][data-panel]'));
   if (!tabs.length) return;
 
+  /** 存貨走勢的「新功能」提示：未打開過就脈動，打開過一次就停 */
+  const SEEN_KEY = 'portal_stock_tab_seen';
+  const accentTab = document.querySelector('[role="tab"].portal-tab--accent');
+  let seen = true;
+  try {
+    seen = window.localStorage.getItem(SEEN_KEY) === '1';
+  } catch { seen = true; }
+
+  if (accentTab && !seen) accentTab.classList.add('is-pulsing');
+
   let applying = false;
 
   /** 由副標題「標籤 — 店號」取出店號；未有店號時回空字串 */
@@ -55,7 +65,16 @@
       item.classList.toggle('is-active', isTarget);
       const target = panelOf(item);
       if (target) target.hidden = !isTarget;
+      // 選中就不再閃；未選中且未打開過才繼續提示
+      if (item === accentTab) item.classList.toggle('is-pulsing', !seen && !isTarget);
     });
+
+    if (tab === accentTab && !seen) {
+      seen = true;
+      try {
+        window.localStorage.setItem(SEEN_KEY, '1');
+      } catch { /* 私密模式寫不到，忽略 */ }
+    }
 
     applySubtitle();
 

@@ -871,17 +871,35 @@
     }
   }
 
+  /**
+   * 「已排除」提示：預設只佔一行，點開才列出店號與店名，
+   * 免得十幾間店的清單把 Top 15 擠下去。點店號可直接只看該店明細。
+   */
+  function excludedNote(newStoreRows, noPrevRows, notes) {
+    const group = (rows, label) => {
+      if (!rows.length) return '';
+      const items = rows
+        .slice()
+        .sort((a, b) => String(a.site_code || '').localeCompare(String(b.site_code || '')))
+        .map((row) => `<button type="button" class="stk-excluded-item" data-stk-site="${escAttr(row.site_code || '')}" title="按一下只看 ${escAttr(row.site_code || '')} 的明細"><b>${esc(row.site_code || '')}</b>${esc(shortShop(shopLabel(row)))}</button>`)
+        .join('');
+      return `<div class="stk-excluded-group"><span class="stk-excluded-label">${label}</span>${items}</div>`;
+    };
+    return `<details class="stk-excluded" open>
+      <summary>已排除 ${notes.join('、')}，不參與排名（仍計入全公司合計）。<span class="stk-excluded-hint">看名單</span></summary>
+      <div class="stk-excluded-body">${group(newStoreRows, '新店')}${group(noPrevRows, '上期無數據')}</div>
+    </details>`;
+  }
+
   function renderTop15() {
     const wrap = $('stk_top15');
     if (!wrap) return;
-    const newStoreCount = weekRows.filter((row) => row.new_reason === 'new_store').length;
-    const noPrevCount = weekRows.filter((row) => row.new_reason === 'no_prev_data').length;
+    const newStoreRows = weekRows.filter((row) => row.new_reason === 'new_store');
+    const noPrevRows = weekRows.filter((row) => row.new_reason === 'no_prev_data');
     const notes = [];
-    if (newStoreCount) notes.push(`${newStoreCount} 間新店（開業未滿 ${weekGraceDays} 天）`);
-    if (noPrevCount) notes.push(`${noPrevCount} 間上期無數據`);
-    const note = notes.length
-      ? `<div class="text-secondary small" style="margin-top:6px">已排除 ${notes.join('、')}，不參與排名（仍計入全公司合計）。</div>`
-      : '';
+    if (newStoreRows.length) notes.push(`${newStoreRows.length} 間新店（開業未滿 ${weekGraceDays} 天）`);
+    if (noPrevRows.length) notes.push(`${noPrevRows.length} 間上期無數據`);
+    const note = notes.length ? excludedNote(newStoreRows, noPrevRows, notes) : '';
     const ranked = weekRows
       .filter((row) => !row.is_new && num(row.ratio) !== null)
       .sort((a, b) => (num(b.ratio) || 0) - (num(a.ratio) || 0))

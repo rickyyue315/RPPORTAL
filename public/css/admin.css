@@ -452,6 +452,31 @@ body.drawer-open { overflow: hidden; }
 .stk-bar-name b { font-family: Consolas, "Courier New", monospace; }
 .stk-bar-shop { color: #7a8894; font-size: 11.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .stk-bar-meta { font-size: 11px; line-height: 1.35; color: #8a96a3; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* Top 15 下方「已排除」名單（新店／上期無數據），預設收起 */
+.stk-excluded { margin-top: 6px; font-size: 12px; line-height: 1.5; color: #7a8894; }
+.stk-excluded > summary { cursor: pointer; }
+.stk-excluded-hint { margin-left: 6px; color: #0f5c9c; text-decoration: underline; text-underline-offset: 2px; }
+.stk-excluded[open] .stk-excluded-hint { display: none; }
+.stk-excluded-body { display: flex; flex-direction: column; gap: 5px; margin-top: 6px; padding-left: 16px; }
+.stk-excluded-group { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; }
+.stk-excluded-label { margin-right: 2px; font-size: 11px; color: #8a96a3; }
+.stk-excluded-item {
+  display: inline-flex;
+  gap: 4px;
+  align-items: baseline;
+  padding: 2px 8px;
+  border: 1px solid #dde3e9;
+  border-radius: 999px;
+  background: #fff;
+  color: #46525e;
+  font-family: inherit;
+  font-size: 11.5px;
+  cursor: pointer;
+}
+.stk-excluded-item:hover { border-color: #0f5c9c; color: #0f5c9c; }
+.stk-excluded-item:focus-visible { outline: 2px solid #0f5c9c; outline-offset: 1px; }
+.stk-excluded-item b { font-family: Consolas, "Courier New", monospace; font-weight: 600; }
 .stk-bar-track { display: block; height: 10px; border-radius: 999px; background: #eef2f6; overflow: hidden; }
 .stk-bar-track i { display: block; height: 100%; border-radius: 999px; }
 .stk-bar-value { text-align: right; font-weight: 700; font-variant-numeric: tabular-nums; }

@@ -28,26 +28,47 @@
 
   /* ==================== 網絡 ==================== */
 
-  async function getCsrf() {
-    if (!csrf) {
-      const res = await fetch('/api/csrf', { credentials: 'same-origin' });
+  async function getCsrf(force) {
+    if (!csrf || force) {
+      const res = await fetch('/api/csrf', { credentials: 'same-origin', cache: 'no-store' });
       const data = await res.json().catch(() => null);
-      csrf = data && data.token;
+      csrf = (data && data.token) || csrf;
     }
     return csrf;
   }
 
-  /** 帶 CSRF 的請求；失敗時拋出 Error（附 status / data，方便分辨 409 DATE_CONFLICT）。 */
+  /**
+   * 帶 CSRF 的請求；失敗時拋出 Error（附 status / data，方便分辨 409 DATE_CONFLICT）。
+   *
+   * 寫入類請求一律重新取 token：cookie 只有 24 小時，而這個 tab 可能開著過夜，
+   * 記憶體裡的舊 token 與 cookie 一不一致，所有寫入都會 403。
+   * 若仍然收到 CSRF 403（例如另一個分頁剛換了 cookie），換 token 重試一次。
+   */
   async function aFetch(url, opts = {}) {
-    const token = await getCsrf();
-    const headers = { ...(opts.headers || {}) };
-    if (token) headers['x-csrf-token'] = token;
-    if (opts.body && !(opts.body instanceof FormData)) headers['Content-Type'] = 'application/json';
-    const res = await fetch(url, { ...opts, headers, credentials: 'same-origin' });
-    const data = await res.json().catch(() => null);
-    if (!res.ok) {
-      const err = new Error((data && data.error) || `請求失敗 (${res.status})`);
-      err.status = res.status;
+    const method = String(opts.method || 'GET').toUpperCase();
+    const isWrite = method !== 'GET' && method !== 'HEAD';
+    let res = null;
+    let data = null;
+    let csrfFailed = false;
+
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      const token = await getCsrf(attempt > 0 || isWrite);
+      const headers = { ...(opts.headers || {}) };
+      if (token) headers['x-csrf-token'] = token;
+      if (opts.body && !(opts.body instanceof FormData)) headers['Content-Type'] = 'application/json';
+      res = await fetch(url, { ...opts, headers, credentials: 'same-origin' });
+      data = await res.json().catch(() => null);
+      csrfFailed = res.status === 403 && /csrf/i.test(String((data && data.error) || ''));
+      // FormData 可重複送出，所以重試安全
+      if (!csrfFailed || attempt > 0) break;
+    }
+
+    if (!res || !res.ok) {
+      const message = csrfFailed
+        ? '安全憑證已過期，請重新整理頁面（F5）再試'
+        : (data && data.error) || `請求失敗 (${res ? res.status : 0})`;
+      const err = new Error(message);
+      err.status = res ? res.status : 0;
       err.data = data;
       throw err;
     }

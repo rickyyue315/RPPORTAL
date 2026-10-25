@@ -154,6 +154,28 @@
     return s.length > 16 ? `${s.slice(0, 16)}…` : s;
   }
 
+  /**
+   * 報表的 Shop 欄多數寫成「HB41 - 九龍城」，Site 欄已經有店號，
+   * 這裡把開頭的店號與分隔符去掉，避免同一行出現兩次 Site Code。
+   * 去掉後為空（Shop 欄只有店號）就保留原文。
+   */
+  function shopLabel(row) {
+    const code = String((row && row.site_code) || '').trim();
+    const name = String((row && row.shop) || '').trim();
+    if (!code || !name) return name;
+    const escaped = code.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    // 店號後面必須接分隔符或行尾，避免 HC6 誤截 HC63 這類前綴相同的店號
+    const stripped = name.replace(new RegExp(`^${escaped}(?=[\\s\\-–—:：|/]|$)[\\s\\-–—:：|/]*`, 'i'), '').trim();
+    return stripped || name;
+  }
+
+  /** 店舖性質（報表 Shop Nature：Local / Tourist / Mix）＋ 中文提示 */
+  const NATURE_LABELS = { local: '本地客', tourist: '遊客區', mix: '混合' };
+  function natureTitle(value) {
+    const key = String(value || '').trim().toLowerCase();
+    return NATURE_LABELS[key] ? `Shop Nature：${value}（${NATURE_LABELS[key]}）` : 'Shop Nature（報表原值）';
+  }
+
   /** 'YYYY-MM-DD' 往前推 n 個月；月底自動夾到該月最後一日（例：3-31 減 1 月 → 2-28） */
   function monthsBefore(dateStr, n) {
     const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(dateStr || ''));
@@ -783,7 +805,7 @@
 
     let rows = weekRows.slice();
     if (q) {
-      rows = rows.filter((r) => [r.site_code, r.shop, r.om].some((v) => String(v || '').toLowerCase().includes(q)));
+      rows = rows.filter((r) => [r.site_code, r.shop, r.om, r.shop_nature].some((v) => String(v || '').toLowerCase().includes(q)));
     }
     if (only === 'worse') rows = rows.filter((r) => (num(r.wow_delta_pt) || 0) > 0.0001);
     if (only === 'better') rows = rows.filter((r) => (num(r.wow_delta_pt) || 0) < -0.0001);
@@ -815,8 +837,8 @@
 
     if (!total) {
       body.innerHTML = weekRows.length
-        ? '<tr><td colspan="7" class="text-center text-secondary">沒有符合篩選條件的店舖</td></tr>'
-        : '<tr><td colspan="7" class="text-center text-secondary">此期沒有店舖數據</td></tr>';
+        ? '<tr><td colspan="8" class="text-center text-secondary">沒有符合篩選條件的店舖</td></tr>'
+        : '<tr><td colspan="8" class="text-center text-secondary">此期沒有店舖數據</td></tr>';
     } else {
       body.innerHTML = pageRows.map((row) => {
         const ratio = num(row.ratio);
@@ -825,8 +847,9 @@
         const zero = soh === 0 && ratio === null;
         return `<tr>
           <td class="stk-site">${esc(row.site_code || '')}${newTag(row)}</td>
-          <td>${esc(row.shop || '')}</td>
+          <td>${esc(shopLabel(row))}</td>
           <td>${esc(row.om || '')}</td>
+          <td class="stk-nature" title="${escAttr(natureTitle(row.shop_nature))}">${esc(row.shop_nature || '')}</td>
           <td class="text-end">${fmtMoney(row.deadstock_value)}</td>
           <td class="text-end">${fmtMoney(row.shop_stock_value)}</td>
           <td class="text-end"><b>${zero ? '—' : fmtRatio(ratio)}</b>${zero ? '<div class="text-secondary small">存貨值 0，除零</div>' : ''}</td>
@@ -872,9 +895,15 @@
       const ratio = num(row.ratio) || 0;
       const wow = num(row.wow_delta_pt);
       const width = Math.max(2, Math.min(100, (ratio / max) * 100));
+      const om = String(row.om || '').trim();
+      const nature = String(row.shop_nature || '').trim();
+      const meta = [om ? `OM ${om}` : '', nature].filter(Boolean).join(' · ');
       return `<button type="button" class="stk-bar-row" data-stk-site="${escAttr(row.site_code || '')}" title="按一下只看 ${escAttr(row.site_code || '')} 的明細">
         <span class="stk-bar-rank">${index + 1}</span>
-        <span class="stk-bar-name"><b>${esc(row.site_code || '')}</b><span class="stk-bar-shop">${esc(shortShop(row.shop))}</span></span>
+        <span class="stk-bar-name">
+          <span class="stk-bar-title"><b>${esc(row.site_code || '')}</b><span class="stk-bar-shop">${esc(shortShop(shopLabel(row)))}</span></span>
+          ${meta ? `<span class="stk-bar-meta" title="${escAttr(natureTitle(nature))}">${esc(meta)}</span>` : ''}
+        </span>
         <span class="stk-bar-track"><i style="width:${width.toFixed(1)}%;background:${ratio >= 0.1 ? '#c0392b' : COLOR_MAIN}"></i></span>
         <span class="stk-bar-value">${fmtRatio(ratio)}</span>
         <span class="stk-bar-wow ${wowClass(wow)}">${wow === null ? '' : `${wowArrow(wow)}${fmtPt(wow)}`}</span>
@@ -891,13 +920,13 @@
       weekRows = [];
       weekTotals = null;
       if (label) label.textContent = '—';
-      if (body) body.innerHTML = '<tr><td colspan="7" class="text-center text-secondary">尚未有批次，上載後會顯示每店明細</td></tr>';
+      if (body) body.innerHTML = '<tr><td colspan="8" class="text-center text-secondary">尚未有批次，上載後會顯示每店明細</td></tr>';
       const top = $('stk_top15');
       if (top) top.innerHTML = '<div class="text-secondary small">上載報表後會顯示排名。</div>';
       renderWeekRows();
       return;
     }
-    if (body) body.innerHTML = '<tr><td colspan="7" class="text-center text-secondary">載入中…</td></tr>';
+    if (body) body.innerHTML = '<tr><td colspan="8" class="text-center text-secondary">載入中…</td></tr>';
     try {
       const data = (await aFetch(`/api/admin/stock/weeks/${encodeURIComponent(target)}`)) || {};
       selectedWeek = String(data.report_date || target).slice(0, 10);
@@ -916,7 +945,7 @@
       weekTotals = null;
       if (label) label.textContent = target;
       setResult('stk_week_error', 'error', `未能載入 ${target} 的明細：${err.message}`);
-      if (body) body.innerHTML = `<tr><td colspan="7" class="text-center text-danger">${esc(err.message)}</td></tr>`;
+      if (body) body.innerHTML = `<tr><td colspan="8" class="text-center text-danger">${esc(err.message)}</td></tr>`;
       const top = $('stk_top15');
       if (top) top.innerHTML = '<div class="text-secondary small">未能載入排名。</div>';
       renderWeekRows();

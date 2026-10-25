@@ -912,6 +912,11 @@ describe.skipIf(!config.adminPassword)('shopStock admin routes (logged in)', () 
     expect(week.status).toBe(200);
     expect(week.body.report_date).toBe('2027-03-07');
     expect(week.body.totals.store_count).toBe(1);
+    // 每店明細表要靠這三欄顯示「店舖 / OM / Shop Nature」，缺一欄前端就會空白
+    const detailRow = (week.body.rows as Array<Record<string, unknown>>)[0]!;
+    expect(detailRow.shop).toBe('HA02 - 駱克');
+    expect(detailRow.om).toBe('IVY');
+    expect(detailRow.shop_nature).toBe('Local');
 
     const badDate = await request(app)
       .get('/api/admin/stock/weeks/2027-3-7')

@@ -1,6 +1,6 @@
 // System version - single source of truth for the version shown in the page footer.
 // Bump this (and the "version" field in package.json) on every release: Ver x.y.z
-window.NDRF_APP_VERSION = '1.4.2';
+window.NDRF_APP_VERSION = '1.4.3';
 
 (function () {
   function renderVersion() {

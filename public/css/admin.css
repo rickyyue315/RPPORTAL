@@ -447,9 +447,11 @@ body.drawer-open { overflow: hidden; }
   text-align: right;
   font-variant-numeric: tabular-nums;
 }
-.stk-bar-name { display: flex; gap: 6px; align-items: baseline; min-width: 0; }
+.stk-bar-name { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+.stk-bar-title { display: flex; gap: 6px; align-items: baseline; min-width: 0; }
 .stk-bar-name b { font-family: Consolas, "Courier New", monospace; }
 .stk-bar-shop { color: #7a8894; font-size: 11.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.stk-bar-meta { font-size: 11px; line-height: 1.35; color: #8a96a3; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .stk-bar-track { display: block; height: 10px; border-radius: 999px; background: #eef2f6; overflow: hidden; }
 .stk-bar-track i { display: block; height: 100%; border-radius: 999px; }
 .stk-bar-value { text-align: right; font-weight: 700; font-variant-numeric: tabular-nums; }
@@ -468,6 +470,7 @@ body.drawer-open { overflow: hidden; }
 }
 .stk-detail tbody td { font-variant-numeric: tabular-nums; }
 .stk-detail .stk-site { font-family: Consolas, "Courier New", monospace; font-weight: 600; }
+.stk-detail .stk-nature { color: #5a6a78; white-space: nowrap; }
 .stk-batches tbody td { vertical-align: middle; }
 .stk-hash { font-size: 11px; color: #7a8894; }
 

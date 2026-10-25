@@ -747,7 +747,7 @@ describe('shopStock service', () => {
 
 describe('shopStock routes', () => {
   it('rejects anonymous admin requests', async () => {
-    for (const url of ['/api/admin/stock/summary', '/api/admin/stock/batches', '/api/admin/stock/weeks/2026-10-25']) {
+    for (const url of ['/api/admin/stock/summary', '/api/admin/stock/summary/export?months=12', '/api/admin/stock/batches', '/api/admin/stock/weeks/2026-10-25']) {
       const res = await request(app).get(url);
       expect(res.status).toBe(401);
     }
@@ -970,6 +970,61 @@ describe.skipIf(!config.adminPassword)('shopStock admin routes (logged in)', () 
         filename: 'By Shop_test.xlsx',
         contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
       });
+    expect(res.status).toBe(400);
+  });
+
+  it('exports the trend chart as an xlsx with detail / PPT / info sheets', async () => {
+    const res = await request(app)
+      .get('/api/admin/stock/summary/export?months=24')
+      .set('Cookie', session.cookie)
+      .buffer(true)
+      .parse((response, cb) => {
+        const chunks: Buffer[] = [];
+        response.on('data', (chunk: Buffer) => chunks.push(chunk));
+        response.on('end', () => cb(null, Buffer.concat(chunks)));
+      });
+
+    expect(res.status).toBe(200);
+    expect(res.headers['content-type']).toContain('spreadsheetml');
+    expect(String(res.headers['content-disposition'])).toMatch(/filename="Shop_Stock_Ratio_24M_\d{8}\.xlsx"/);
+
+    const workbook = new ExcelJS.Workbook();
+    await workbook.xlsx.load(res.body as never);
+    expect(workbook.worksheets.map((w) => w.name)).toEqual(['佔比趨勢', 'PPT 圖表用', '匯出說明']);
+
+    const detail = workbook.getWorksheet('佔比趨勢')!;
+    const headers: string[] = [];
+    detail.getRow(1).eachCell((cell, col) => { headers[col - 1] = String(cell.value ?? ''); });
+    expect(headers[0]).toBe('期別');
+    expect(headers[7]).toBe('不良存貨佔比');
+
+    // 日期以文字輸出（避免 Excel 依地區設定改寫），比率保留小數 + 百分比格式
+    const firstDataRow = detail.getRow(2);
+    const dates: string[] = [];
+    detail.eachRow((row, rowNumber) => {
+      if (rowNumber > 1) dates.push(String(row.getCell(1).value ?? ''));
+    });
+    expect(dates.length).toBeGreaterThan(0);
+    expect(dates.every((d) => /^\d{4}-\d{2}-\d{2}$/.test(d))).toBe(true);
+    expect(detail.getColumn(8).numFmt).toBe('0.0%');
+    const ratioCell = firstDataRow.getCell(8).value;
+    if (ratioCell !== null && ratioCell !== '') {
+      expect(Number(ratioCell)).toBeGreaterThanOrEqual(0);
+    }
+
+    // PPT 圖表用只有兩欄，數值與明細一致
+    const chartSheet = workbook.getWorksheet('PPT 圖表用')!;
+    expect(chartSheet.getCell(1, 1).value).toBe('期別');
+    expect(chartSheet.getCell(1, 2).value).toBe('不良存貨佔比');
+    expect(chartSheet.getCell(2, 1).value).toBe(firstDataRow.getCell(1).value);
+    expect(chartSheet.getCell(2, 2).value).toBe(firstDataRow.getCell(8).value);
+    expect(chartSheet.getColumn(2).numFmt).toBe('0.0%');
+  });
+
+  it('rejects an invalid export period', async () => {
+    const res = await request(app)
+      .get('/api/admin/stock/summary/export?months=0')
+      .set('Cookie', session.cookie);
     expect(res.status).toBe(400);
   });
 });

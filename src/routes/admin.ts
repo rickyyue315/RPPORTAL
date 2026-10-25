@@ -71,7 +71,7 @@ import {
 } from '../lib/excelImport.js';
 import { getStore, normalizeSiteCode, parseStoresCsv, decodeStoresCsvBuffer, replaceStores, listStores } from '../services/stores.js';
 import { MASTER_RECOVERY_OM, setRecoveryCode, deleteRecoveryCode } from '../lib/recovery.js';
-import { toHKString, toHKDateString, hkTodayForDateColumn } from '../lib/time.js';
+import { toHKString, toHKDateString, hkTodayForDateColumn, monthsBeforeDateOnly } from '../lib/time.js';
 import { generateApplicationNo } from '../lib/applicationNo.js';
 import { ipExpiryIso } from '../lib/ip.js';
 import {
@@ -135,6 +135,7 @@ import {
   ShopStockDateConflictError,
   ShopStockImportError,
 } from '../services/shopStock.js';
+import { buildShopStockTrendBuffer } from '../services/shopStockExport.js';
 
 export const adminRouter = Router();
 
@@ -3396,6 +3397,16 @@ const stockRangeSchema = z.object({
   to: z.string().trim().refine(isValidIsoDate, '結束日期格式應為 YYYY-MM-DD').optional(),
 });
 
+/** 匯出窗口（月）：與圖表上的 3 / 6 / 12 / 24 對齊；上限跟圖表一樣 24 */
+const stockExportSchema = z.object({
+  months: z.coerce
+    .number()
+    .int('顯示期間應為整數月')
+    .min(1, '顯示期間至少 1 個月')
+    .max(24, '顯示期間最多 24 個月')
+    .default(12),
+});
+
 /** GET /api/admin/stock/summary — 全公司趨勢（加權比率）＋ 最新一期 KPI */
 adminRouter.get(
   '/stock/summary',
@@ -3409,6 +3420,49 @@ adminRouter.get(
     }
     const summary = await getShopStockSummary({ from: parsed.data.from, to: parsed.data.to });
     res.json({ ok: true, ...summary });
+  }),
+);
+
+/** GET /api/admin/stock/summary/export — 把佔比趨勢圖的數字匯出成 Excel（PPT 用） */
+adminRouter.get(
+  '/stock/summary/export',
+  requireAdmin,
+  adminActionLimiter,
+  asyncHandler(async (req: Request, res: Response) => {
+    const parsed = stockExportSchema.safeParse(req.query);
+    if (!parsed.success) {
+      res.status(400).json({ error: parsed.error.issues[0]?.message ?? '匯出參數無效' });
+      return;
+    }
+    const months = parsed.data.months;
+    const summary = await getShopStockSummary();
+    const latest = summary.series[summary.series.length - 1];
+    // 與前端圖表同一個窗口：以最新一期回推 N 個月
+    const cutoff = latest ? monthsBeforeDateOnly(latest.report_date, months) : '';
+    const rows = cutoff
+      ? summary.series.filter((point) => point.report_date >= cutoff)
+      : summary.series;
+
+    const buffer = await buildShopStockTrendBuffer({
+      rows,
+      kpi: summary.kpi,
+      companyAvgRatio: summary.company_avg_ratio,
+      months,
+      generatedAt: toHKString(new Date()),
+    });
+
+    const stamp = hkTodayForDateColumn().replace(/-/g, '');
+    const filename = `Shop_Stock_Ratio_${months}M_${stamp}.xlsx`;
+    await writeAuditEvent({
+      eventType: 'shop_stock_trend_export',
+      actorRole: 'admin',
+      actor: req.adminUsername,
+      ip: getClientIp(req),
+      metadata: { filename, months, periods: rows.length, latest: latest?.report_date ?? null },
+    });
+    res.setHeader('Content-Type', EXPORT_CONTENT_TYPE);
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    res.send(buffer);
   }),
 );
 

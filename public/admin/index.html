@@ -677,11 +677,14 @@
         <div class="card mt-3">
           <div class="card-header">
             <h3 class="card-title">佔比趨勢（不良存貨 ÷ 店舖存貨）</h3>
-            <div class="card-actions stk-range" id="stk_range" role="group" aria-label="顯示期間">
-              <button class="btn btn-sm" type="button" data-stk-months="3">3 個月</button>
-              <button class="btn btn-sm" type="button" data-stk-months="6">6 個月</button>
-              <button class="btn btn-sm" type="button" data-stk-months="12" aria-pressed="true">12 個月</button>
-              <button class="btn btn-sm" type="button" data-stk-months="24">24 個月</button>
+            <div class="card-actions d-flex flex-wrap gap-2 align-items-center">
+              <button class="btn btn-sm btn-primary" id="btn_stk_export" type="button" title="匯出目前顯示期間的完整數字（Excel）">匯出 Excel</button>
+              <div class="stk-range" id="stk_range" role="group" aria-label="顯示期間">
+                <button class="btn btn-sm" type="button" data-stk-months="3">3 個月</button>
+                <button class="btn btn-sm" type="button" data-stk-months="6">6 個月</button>
+                <button class="btn btn-sm" type="button" data-stk-months="12" aria-pressed="true">12 個月</button>
+                <button class="btn btn-sm" type="button" data-stk-months="24">24 個月</button>
+              </div>
             </div>
           </div>
           <div class="card-body">
@@ -689,6 +692,7 @@
             <div class="stk-chart" id="stk_chart"></div>
             <div id="stk_chart_error"></div>
             <p class="text-secondary small mt-2 mb-0" id="stk_chart_note"></p>
+            <div id="stk_export_result"></div>
           </div>
         </div>
 

@@ -606,6 +606,45 @@
     }
   }
 
+  /* ==================== 匯出（PPT 用） ==================== */
+
+  /** 把趨勢圖目前顯示期間的數字匯出成 Excel（三個工作表：明細 / PPT 圖表用 / 匯出說明） */
+  async function downloadTrendExport() {
+    const btn = $('btn_stk_export');
+    const box = $('stk_export_result');
+    const label = btn ? btn.textContent : '';
+    if (btn) { btn.disabled = true; btn.textContent = '匯出中…'; }
+    if (box) box.innerHTML = '';
+    try {
+      const res = await fetch(`/api/admin/stock/summary/export?months=${encodeURIComponent(String(chartMonths))}`, {
+        credentials: 'same-origin',
+        cache: 'no-store',
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => null);
+        throw new Error((data && data.error) || `匯出失敗 (${res.status})`);
+      }
+      const blob = await res.blob();
+      const disp = res.headers.get('Content-Disposition') || '';
+      const match = disp.match(/filename="([^"]+)"/);
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = match ? match[1] : 'Shop_Stock_Ratio.xlsx';
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+      if (box) {
+        box.innerHTML = `<div class="alert alert-success mt-2 mb-0">已匯出最近 ${chartMonths} 個月的佔比趨勢（明細＋PPT 圖表用兩張表）。</div>`;
+      }
+    } catch (err) {
+      if (box) box.innerHTML = `<div class="alert alert-danger mt-2 mb-0">${esc(err.message)}</div>`;
+    } finally {
+      if (btn) { btn.disabled = false; btn.textContent = label || '匯出 Excel'; }
+    }
+  }
+
   /* ==================== 批次列表 ==================== */
 
   function currentBatchPageSize() {
@@ -971,6 +1010,10 @@
         renderWeekRows();
       });
     }
+
+    // 匯出目前顯示期間的趨勢數字（Excel；不會改任何資料）
+    const exportBtn = $('btn_stk_export');
+    if (exportBtn) exportBtn.addEventListener('click', downloadTrendExport);
 
     // 趨勢圖顯示期間（3 / 6 / 12 / 24 個月；資料本身永久保留，只影響畫幾多）
     const rangeEl = $('stk_range');

@@ -239,7 +239,12 @@ pg_restore --no-owner --no-privileges --clean --if-exists \
 3. 匯入清洗順序：①剔除 Column A = `Total` 的全公司合計列 → ②跳過全空白列 → ③跳過頁腳列（`Applied filters: …`）→ ④重複 Site Code 才報錯。`Total` 列的 Site Code 會撞真店（例：HA02），所以必須先整列剔除。
 4. 上載結果會顯示「N 間店 / N 行 / 略過 N 列（Total、空白、頁腳）」；對不到門店主檔的店號會列為 warning，**不阻塞**上載。
 5. 批次管理：可改報表日期／備註（該日期已有批次會回 `409 DATE_CONFLICT`），或整批刪除（hard delete，會寫 audit event 記錄 `report_date`、`deleted_rows`、`deleted_stores`、`content_hash`）。
-6. **新店不參與排名**（`is_new = true`，`rank = null`）：來源有兩個 —— ①報表 `Shop Type` 標示 `NEW STORE`（權威，**只有一期資料時仍然生效**）；②上一期已有批次但該店不在其中（`new_reason = 'no_prev_data'`，例如上期漏抽）。首期存貨通常偏高，排上去會令榜首失去比較意義；這類店在明細標示「新店」／「上期無數據」、Top-15 排除，但**仍計入全公司合計與趨勢**。
+6. **新店不參與排名**（`is_new = true`、`rank = null`），判斷只用系統自己儲存的資料，並按以下優先次序：
+   - **上期沒有此店**（`new_reason = 'no_prev_data'`）：系統內有更早一期批次，但該店不在其中。這是最可靠的訊號，補上載舊期後即生效。
+   - **新店觀察期內**（`new_reason = 'new_store'`）：報表 `Shop Type = NEW STORE`，且由**系統首次見到該店**（`first_seen`）起計未滿 **90 天**（`NEW_STORE_GRACE_DAYS`，API 回傳 `new_store_grace_days`）。
+     上游的 `Shop Type` 是人工維護、開業後往往不更新，所以它只在觀察期內有效；一過 90 天就完全由系統歷史決定，不再受旗標影響。旗標本身仍保留在 `is_new_store` 供審計。
+   - 兩者皆不成立 → 正常參與排名。
+   這類店在明細標示「新店」／「上期無數據」、Top-15 排除，但**仍計入全公司合計與趨勢**。
 
 對應 API（全部須管理員登入；只有上載用 `excelImportLimiter`，其餘用 `adminActionLimiter`）：
 

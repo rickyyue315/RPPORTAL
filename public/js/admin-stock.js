@@ -17,6 +17,8 @@
   let selectedWeek = '';
   let weekRows = [];
   let weekTotals = null;
+  /** 新店觀察期（日），由 API 回傳，避免前後端各寫一個數字 */
+  let weekGraceDays = 90;
   let weekPage = 1;
   let autoDate = '';
 
@@ -127,11 +129,15 @@
     return s.length > 16 ? `${s.slice(0, 16)}…` : s;
   }
 
-  /** 不參與排名的標記：新店（報表標示）／上期無數據 */
+  /** 不參與排名的標記：新店（觀察期內）／上期無數據 */
   function newTag(row) {
     if (!row || !row.is_new) return '';
-    const label = row.new_reason === 'new_store' ? '新店' : '上期無數據';
-    return `<span class="text-secondary small">（${label}）</span>`;
+    if (row.new_reason === 'new_store') {
+      const since = row.first_seen ? `，系統首次見到 ${row.first_seen}` : '';
+      const tip = `報表 Shop Type = NEW STORE，仍在 ${weekGraceDays} 天新店觀察期內${since}`;
+      return `<span class="text-secondary small" title="${escAttr(tip)}">（新店）</span>`;
+    }
+    return '<span class="text-secondary small">（上期無數據）</span>';
   }
 
   function setResult(id, type, message) {
@@ -749,7 +755,7 @@
     const newStoreCount = weekRows.filter((row) => row.new_reason === 'new_store').length;
     const noPrevCount = weekRows.filter((row) => row.new_reason === 'no_prev_data').length;
     const notes = [];
-    if (newStoreCount) notes.push(`${newStoreCount} 間新店（報表 Shop Type = NEW STORE）`);
+    if (newStoreCount) notes.push(`${newStoreCount} 間新店（開業未滿 ${weekGraceDays} 天）`);
     if (noPrevCount) notes.push(`${noPrevCount} 間上期無數據`);
     const note = notes.length
       ? `<div class="text-secondary small" style="margin-top:6px">已排除 ${notes.join('、')}，不參與排名（仍計入全公司合計）。</div>`
@@ -798,6 +804,7 @@
       selectedWeek = String(data.report_date || target).slice(0, 10);
       weekRows = Array.isArray(data.rows) ? data.rows : [];
       weekTotals = data.totals || null;
+      weekGraceDays = num(data.new_store_grace_days) ?? weekGraceDays;
       const storeCount = firstNum([weekTotals && weekTotals.store_count]) ?? weekRows.length;
       const ratio = firstNum([weekTotals && weekTotals.ratio]);
       if (label) {

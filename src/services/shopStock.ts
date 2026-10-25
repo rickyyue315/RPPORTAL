@@ -660,10 +660,12 @@ export interface ShopStockWeekRow extends ShopStockSnapshotRow {
    * 首期存貨通常偏高，排上去會令榜首失去比較意義，但仍計入全公司合計與趨勢。
    */
   is_new: boolean;
-  /** 報表 Shop Type 是否標示新店 */
+  /** 報表 Shop Type 是否標示新店（只在新店觀察期內生效） */
   is_new_store: boolean;
   /** 不參與排名的原因；可參與排名時為 null */
   new_reason: 'new_store' | 'no_prev_data' | null;
+  /** 系統第一次見到這間店的報表日期（= 該店最早一期快照）；用來計算新店觀察期 */
+  first_seen: string | null;
   // --- 前端（admin-stock.js）沿用的欄名別名，內容與上表相同 ---
   deadstock_value: number | null;
   shop_stock_value: number | null;
@@ -683,6 +685,8 @@ export interface ShopStockWeek {
   prev_report_date: string | null;
   store_count: number;
   company_ratio: number | null;
+  /** 新店觀察期（日），前端顯示文案用 */
+  new_store_grace_days: number;
   /** 該期加權合計（前端表頭顯示「N 店 · 合計佔比 X%」） */
   totals: ShopStockWeekTotals;
   rows: ShopStockWeekRow[];
@@ -710,12 +714,41 @@ async function loadWeekSnapshots(reportDate: string): Promise<ShopStockSnapshotR
   return r.rows.map(mapSnapshotRow);
 }
 
-/** 報表 `Shop Type` 標示新店（例：`NEW STORE`、`新店`）→ 不參與排名 */
+/** 報表 `Shop Type` 標示新店（例：`NEW STORE`、`新店`）→ 只在新店觀察期內生效 */
 export function isNewStoreType(value: unknown): boolean {
   const t = String(value ?? '').trim().toUpperCase();
   if (!t) return false;
   if (t === 'NEW' || t === 'NEW STORE' || t === 'NEW_SHOP' || t === 'NEWSHOP') return true;
   return t.includes('NEW STORE') || t.includes('新店');
+}
+
+/**
+ * 新店觀察期（日）。
+ * 報表的 `Shop Type = NEW STORE` 由上游人工維護，開業後往往長期不更新，所以旗標只在
+ * 「系統第一次見到這間店」之後的這段時間內有效；超過就由系統自己的歷史資料決定。
+ * 要調整觀察期，改這裡即可。
+ */
+export const NEW_STORE_GRACE_DAYS = 90;
+
+/** 兩個 YYYY-MM-DD 之間的日數（純 UTC 計算，不受時區影響） */
+function daysBetween(from: string, to: string): number | null {
+  const a = Date.parse(`${from}T00:00:00Z`);
+  const b = Date.parse(`${to}T00:00:00Z`);
+  if (Number.isNaN(a) || Number.isNaN(b)) return null;
+  return Math.round((b - a) / 86400000);
+}
+
+/** 每間店在系統內最早出現的報表日期（只用已入庫的存貨快照） */
+async function loadFirstSeen(reportDate: string): Promise<Map<string, string>> {
+  const r = await query<{ site_code: string; first_seen: string }>(
+    `SELECT s.site_code, MIN(b.report_date)::text AS first_seen
+       FROM shop_stock_snapshots s
+       JOIN shop_stock_batches b ON b.id = s.batch_id
+      WHERE b.report_date <= $1::date
+      GROUP BY s.site_code`,
+    [reportDate],
+  );
+  return new Map(r.rows.map((row) => [row.site_code, toDateOnly(row.first_seen)]));
 }
 
 export async function getShopStockWeek(reportDate: string): Promise<ShopStockWeek | null> {
@@ -728,19 +761,26 @@ export async function getShopStockWeek(reportDate: string): Promise<ShopStockWee
   if (!batchRow) return null;
 
   const prevDate = await previousReportDate(reportDate);
-  const [snapshots, prevSnapshots] = await Promise.all([
+  const [snapshots, prevSnapshots, firstSeenBySite] = await Promise.all([
     loadWeekSnapshots(reportDate),
     prevDate ? loadWeekSnapshots(prevDate) : Promise.resolve<ShopStockSnapshotRow[]>([]),
+    loadFirstSeen(reportDate),
   ]);
   const prevBySite = new Map(prevSnapshots.map((row) => [row.site_code, row]));
+  const thisDate = toDateOnly(batchRow.report_date);
 
   const rows: ShopStockWeekRow[] = snapshots
     .map((row) => {
       const prev = prevBySite.get(row.site_code);
       const delta = deltaPt(row.ratio, prev?.ratio ?? null);
-      // 報表自己標明的新店（只有一期資料時仍然生效），或上期有批次但這間店不在其中
-      const newStore = isNewStoreType(row.shop_type);
+      const firstSeen = firstSeenBySite.get(row.site_code) ?? null;
+      // ① 系統自己的資料：上期有批次，但這間店不在其中 → 新店／上期漏抽
       const missingPrev = prevDate !== null && !prevBySite.has(row.site_code);
+      // ② 報表旗標，但只在觀察期內有效（避免上游忘記改 NEW STORE 而永遠被排除）
+      const flagged = isNewStoreType(row.shop_type);
+      const ageDays = firstSeen ? daysBetween(firstSeen, thisDate) : null;
+      const withinGrace = ageDays === null || ageDays < NEW_STORE_GRACE_DAYS;
+      const newStore = flagged && withinGrace;
       const reason: ShopStockWeekRow['new_reason'] = newStore
         ? 'new_store'
         : missingPrev
@@ -752,8 +792,9 @@ export async function getShopStockWeek(reportDate: string): Promise<ShopStockWee
         prev_ratio: prev?.ratio ?? null,
         delta_pt: delta,
         is_new: reason !== null,
-        is_new_store: newStore,
+        is_new_store: flagged,
         new_reason: reason,
+        first_seen: firstSeen,
         deadstock_value: row.excess_value_0sale,
         shop_stock_value: row.shop_stock_value_cm,
         wow_delta_pt: delta,
@@ -788,6 +829,7 @@ export async function getShopStockWeek(reportDate: string): Promise<ShopStockWee
     prev_report_date: prevDate,
     store_count: snapshots.length,
     company_ratio: companyRatio,
+    new_store_grace_days: NEW_STORE_GRACE_DAYS,
     totals: {
       store_count: snapshots.length,
       ratio: companyRatio,

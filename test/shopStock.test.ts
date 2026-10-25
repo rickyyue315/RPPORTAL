@@ -700,6 +700,45 @@ describe('shopStock service', () => {
     expect(week!.totals.store_count).toBe(2);
     expect(week!.totals.ratio).toBeCloseTo(622900 / 2000000, 10);
   });
+
+  it('stops treating a shop as new once it has been in our data longer than the grace period', async () => {
+    // 上游的 Shop Type 長期不改（開了半年仍寫 NEW STORE）。觀察期一過，改由系統自己的歷史決定。
+    const shop = (excess: number) =>
+      makeRow({
+        Shop: 'HBX1 - 觀察期測試店',
+        'Site Code': 'HBX1',
+        'Shop Type': 'NEW STORE',
+        'Excess Stock Value (P90D 0 Sales)': excess,
+        'Shop Stock Value (CM)': 1000000,
+      });
+    const existing = makeRow({
+      Shop: 'HA02 - 駱克',
+      'Site Code': 'HA02',
+      'Shop Type': 'EXISTING',
+      'Excess Stock Value (P90D 0 Sales)': 100000,
+      'Shop Stock Value (CM)': 1000000,
+    });
+
+    await upload('2027-08-01', [existing, shop(522900)]);
+    const firstWeek = await getShopStockWeek('2027-08-01');
+    const atFirst = firstWeek!.rows.find((r) => r.site_code === 'HBX1')!;
+    // 上期沒有它 → 仍視為新店（旗標與觀察期同時成立，優先歸類為 new_store）
+    expect(atFirst.is_new).toBe(true);
+    expect(atFirst.new_reason).toBe('new_store');
+
+    // 92 日後（> 90 天觀察期），旗標仍是 NEW STORE，但系統已認識它
+    await upload('2027-11-01', [existing, shop(400000)]);
+    const laterWeek = await getShopStockWeek('2027-11-01');
+    const atLater = laterWeek!.rows.find((r) => r.site_code === 'HBX1')!;
+
+    expect(atLater.first_seen).toBe('2027-08-01');
+    expect(atLater.is_new).toBe(false);
+    expect(atLater.new_reason).toBeNull();
+    // 旗標本身仍然保留，方便審計（只是不再影響排名）
+    expect(atLater.is_new_store).toBe(true);
+    expect(atLater.rank).not.toBeNull();
+    expect(laterWeek!.new_store_grace_days).toBe(90);
+  });
 });
 
 // ---------------------------------------------------------------------------

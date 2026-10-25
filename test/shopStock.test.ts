@@ -447,6 +447,10 @@ describe('shopStock service', () => {
     expect(point.rf_sku_delta).toBeNull();
     expect(summary.kpi!.total_rf_sku).toBe(1801);
     expect(summary.kpi!.rf_store_count).toBe(2);
+    // 不良存貨 SKU 佔 RF 比率：Σ(5+7+1) ÷ Σ(1234+567) = 13/1801（HC71 缺 RF 不入分母，分子 COALESCE 0）
+    expect(point.ovs_rf_ratio).toBeCloseTo(13 / 1801, 12);
+    expect(summary.kpi!.ovs_rf_ratio).toBeCloseTo(13 / 1801, 12);
+    expect(summary.kpi!.ovs_rf_ratio_wow_delta_pt).toBeNull();
   });
 
   it('returns null (not 0) for a store whose stock value is 0', async () => {
@@ -466,6 +470,10 @@ describe('shopStock service', () => {
     expect(view.kpi!.report_date).toBe('2026-10-25');
     expect(view.kpi!.report_kind).toBe('weekly');
     expect(view.kpi!.ratio).toBeCloseTo(0.10000025, 8);
+    // 不良存貨 SKU ÷ RF SKU：本店 5/1234；全公司同日 13/1801
+    expect(view.kpi!.ovs_rf_ratio).toBeCloseTo(5 / 1234, 12);
+    expect(view.kpi!.company_ovs_rf_ratio).toBeCloseTo(13 / 1801, 12);
+    expect(view.series[0]!.ovs_rf_ratio).toBeCloseTo(5 / 1234, 12);
     expect(view.series[0]!.report_date).toBe('2026-10-25');
   });
 
@@ -490,10 +498,13 @@ describe('shopStock service', () => {
     expect(week!.rows[0]!.rf_sku_count).toBe(1234);
     expect(week!.rows[0]!.prev_rf_sku_count).toBeNull();
     expect(week!.rows[0]!.rf_sku_delta).toBeNull();
+    expect(week!.rows[0]!.ovs_rf_ratio).toBeCloseTo(5 / 1234, 12);
     expect(week!.rows.find((r) => r.site_code === 'HC71')!.rf_sku_count).toBeNull();
+    expect(week!.rows.find((r) => r.site_code === 'HC71')!.ovs_rf_ratio).toBeNull();
     expect(week!.totals.total_rf_sku).toBe(1801);
     expect(week!.totals.rf_store_count).toBe(2);
     expect(week!.totals.rf_sku_delta).toBeNull();
+    expect(week!.totals.ovs_rf_ratio).toBeCloseTo(13 / 1801, 12);
   });
 
   it('adds a second period and reports WoW in percentage points', async () => {
@@ -512,6 +523,10 @@ describe('shopStock service', () => {
     expect(week2.rf_sku_delta).toBe(-1);
     expect(summary.kpi!.total_rf_sku).toBe(1800);
     expect(summary.kpi!.rf_sku_delta).toBe(-1);
+    // 第二期夾具沒有 Overstock SKU 欄 → Σ分子 = 0（COALESCE），Σ分母 = 1800 → 加權比率為真 0
+    expect(week2.ovs_rf_ratio).toBe(0);
+    expect(summary.kpi!.ovs_rf_ratio).toBe(0);
+    expect(summary.kpi!.ovs_rf_ratio_wow_delta_pt).toBeCloseTo((0 - 13 / 1801) * 100, 10);
 
     const week = await getShopStockWeek('2026-11-01');
     const ha02 = week!.rows.find((r) => r.site_code === 'HA02')!;
@@ -813,6 +828,11 @@ describe('shopStock service', () => {
     expect(week!.rows.find((r) => r.site_code === 'HC71')!.rf_sku_count).toBe(0);
     expect(week!.totals.total_rf_sku).toBe(0);
     expect(week!.totals.rf_store_count).toBe(1);
+    // 分母合計 = 0（HC71 真 0）→ 比率回 null，不是 0%；缺 RF 的店比率同樣為 null
+    expect(summary.series[0]!.ovs_rf_ratio).toBeNull();
+    expect(week!.totals.ovs_rf_ratio).toBeNull();
+    expect(week!.rows.find((r) => r.site_code === 'HA02')!.ovs_rf_ratio).toBeNull();
+    expect(week!.rows.find((r) => r.site_code === 'HC71')!.ovs_rf_ratio).toBeNull();
   });
 });
 
@@ -992,6 +1012,10 @@ describe.skipIf(!config.adminPassword)('shopStock admin routes (logged in)', () 
     expect(detailRow.shop).toBe('HA02 - 駱克');
     expect(detailRow.om).toBe('IVY');
     expect(detailRow.shop_nature).toBe('Local');
+    // 明細表 / Top 15 需要「不良存貨 SKU 佔 RF 比率」（HA02: 5 ÷ 1234）
+    expect(detailRow.rf_sku_count).toBe(1234);
+    expect(Number(detailRow.ovs_rf_ratio)).toBeCloseTo(5 / 1234, 12);
+    expect(Number((week.body.totals as Record<string, unknown>).ovs_rf_ratio)).toBeCloseTo(5 / 1234, 12);
 
     const badDate = await request(app)
       .get('/api/admin/stock/weeks/2027-3-7')
@@ -1077,6 +1101,8 @@ describe.skipIf(!config.adminPassword)('shopStock admin routes (logged in)', () 
     detail.getRow(1).eachCell((cell, col) => { headers[col - 1] = String(cell.value ?? ''); });
     expect(headers[0]).toBe('期別');
     expect(headers[7]).toBe('不良存貨佔比');
+    expect(headers[17]).toBe('不良存貨SKU÷RF');
+    expect(detail.getColumn(18).numFmt).toBe('0.0%');
 
     // 日期以文字輸出（避免 Excel 依地區設定改寫），比率保留小數 + 百分比格式
     const firstDataRow = detail.getRow(2);

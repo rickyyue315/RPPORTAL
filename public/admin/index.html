@@ -699,10 +699,16 @@
         <div class="card mt-3" id="stk_rf_dashboard">
           <div class="card-header">
             <h3 class="card-title">No. of RF SKU Dashboard（自動補貨）</h3>
-            <span class="ms-auto text-secondary small" id="stk_rf_note">走勢期間與上方佔比趨勢同步</span>
+            <div class="card-actions d-flex flex-wrap gap-2 align-items-center ms-auto">
+              <div class="stk-range" id="stk_rf_metric" role="group" aria-label="RF 走勢圖口徑">
+                <button class="btn btn-sm" type="button" data-stk-rf-metric="count" aria-pressed="true">RF SKU 數</button>
+                <button class="btn btn-sm" type="button" data-stk-rf-metric="ratio" aria-pressed="false">不良÷RF 比率</button>
+              </div>
+            </div>
+            <span class="text-secondary small" id="stk_rf_note">走勢期間與上方佔比趨勢同步</span>
           </div>
           <div class="card-body">
-            <p class="text-secondary small">RF = 自動補貨；ND = 不自動補貨。將不再需要的 SKU 由 RF 轉為 ND，是減少不良存貨的方法之一。RF SKU 多寡本身不代表好壞，請配合不良存貨佔比及銷售判斷。</p>
+            <p class="text-secondary small">RF = 自動補貨；ND = 不自動補貨。將不再需要的 SKU 由 RF 轉為 ND，是減少不良存貨的方法之一。RF SKU 多寡本身不代表好壞，請配合不良存貨佔比及銷售判斷。<b>「不良存貨 SKU 佔 RF 比率」= No. of Overstock SKU (P90D 0 Sales) ÷ No. of RF SKU</b>（全公司加權），衡量自動補貨名單對應住幾多滯銷貨，比率越高＝該店轉 ND 優先級越高。注意：分子包含 ND 貨（Overstock SKU 不分 RF/ND），所以這是對比指標，不是「RF 內滯銷比例」；RF SKU 極少的店比率可超過 100%，Top 15 排名會排除。</p>
             <div class="stk-kpi-grid stk-rf-kpi-grid" id="stk_rf_kpi">
               <div class="stk-kpi stk-kpi--wide"><div class="stk-kpi-value">—</div><div class="stk-kpi-label">RF SKU 資料載入中…</div></div>
             </div>
@@ -715,6 +721,11 @@
               <span class="text-secondary small" id="stk_rf_top15_label">—</span>
             </div>
             <div class="stk-bars" id="stk_rf_top15"><div class="text-secondary small">載入中…</div></div>
+            <div class="d-flex align-items-baseline gap-2 mt-4 mb-2 flex-wrap">
+              <h5 class="text-secondary mb-0">Top 15 不良存貨 SKU 佔 RF 比率店舖</h5>
+              <span class="text-secondary small" id="stk_ovsrf_top15_label">—</span>
+            </div>
+            <div class="stk-bars" id="stk_ovsrf_top15"><div class="text-secondary small">載入中…</div></div>
           </div>
         </div>
 
@@ -728,15 +739,15 @@
             <div class="stk-bars" id="stk_top15"><div class="text-secondary small">載入中…</div></div>
             <div class="d-flex gap-2 mt-3 mb-2 flex-wrap align-items-end">
               <div style="min-width:180px"><label class="form-label" for="stk_q">搜尋（Site / 店舖 / OM / 性質）</label><input type="text" id="stk_q" class="form-control form-control-sm" placeholder="例如 HC63" autocomplete="off"></div>
-              <div><label class="form-label" for="stk_sort">排序</label><select id="stk_sort" class="form-select form-select-sm"><option value="ratio_desc">佔比 高→低</option><option value="ratio_asc">佔比 低→高</option><option value="rf_desc">RF SKU 高→低</option><option value="rf_delta_desc">RF 較上期增加最多</option><option value="excess_desc">不良存貨值 高→低</option><option value="wow_desc">WoW 惡化最多</option></select></div>
+              <div><label class="form-label" for="stk_sort">排序</label><select id="stk_sort" class="form-select form-select-sm"><option value="ratio_desc">佔比 高→低</option><option value="ratio_asc">佔比 低→高</option><option value="ovsrf_desc">不良÷RF 高→低</option><option value="rf_desc">RF SKU 高→低</option><option value="rf_delta_desc">RF 較上期增加最多</option><option value="excess_desc">不良存貨值 高→低</option><option value="wow_desc">WoW 惡化最多</option></select></div>
               <div><label class="form-label" for="stk_only">只顯示</label><select id="stk_only" class="form-select form-select-sm"><option value="">全部</option><option value="worse">WoW 惡化</option><option value="better">WoW 改善</option></select></div>
               <button class="btn btn-sm" id="btn_stk_clear" type="button">重設</button>
             </div>
             <div id="stk_week_error"></div>
             <div class="admin-table-wrap stk-detail-wrap">
               <table class="table table-vcenter table-hover card-table stk-detail">
-                <thead><tr><th scope="col">Site</th><th scope="col">店舖</th><th scope="col">OM</th><th scope="col">Shop Nature</th><th scope="col" class="text-end">RF SKU</th><th scope="col" class="text-end">RF 較上期</th><th scope="col" class="text-end">不良存貨值</th><th scope="col" class="text-end">店舖存貨值</th><th scope="col" class="text-end">佔比</th><th scope="col" class="text-end">佔比 WoW</th></tr></thead>
-                <tbody id="stk_detail_body"><tr><td colspan="10" class="text-center text-secondary">載入中…</td></tr></tbody>
+                <thead><tr><th scope="col">Site</th><th scope="col">店舖</th><th scope="col">OM</th><th scope="col">Shop Nature</th><th scope="col" class="text-end">RF SKU</th><th scope="col" class="text-end">RF 較上期</th><th scope="col" class="text-end">不良÷RF</th><th scope="col" class="text-end">不良存貨值</th><th scope="col" class="text-end">店舖存貨值</th><th scope="col" class="text-end">佔比</th><th scope="col" class="text-end">佔比 WoW</th></tr></thead>
+                <tbody id="stk_detail_body"><tr><td colspan="11" class="text-center text-secondary">載入中…</td></tr></tbody>
               </table>
             </div>
             <div class="admin-pagination">

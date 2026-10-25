@@ -11,7 +11,9 @@ import { deriveWeekLabel, type ShopStockKpi, type ShopStockSeriesPoint } from '.
  *
  * 口徑與 Dashboard 完全一致：比率 = Σ不良存貨值 ÷ Σ店舖存貨值（加權），
  * 分母 NULL / <= 0 時比率留空（不寫 0，避免畫出假 0% 線）。
- * 同一份資料亦帶出 No. of RF SKU（全公司合計、覆蓋店數、較上期增減）。
+ * 同一份資料亦帶出 No. of RF SKU（全公司合計、覆蓋店數、較上期增減）
+ * 及「不良存貨 SKU 佔 RF 比率」= Σ No. of Overstock SKU (P90D 0 Sales) ÷ Σ RF SKU
+ * （分子包含 ND 貨，個別 RF SKU 極少的店可超過 100%）。
  */
 
 const KIND_LABELS: Record<string, string> = {
@@ -54,9 +56,10 @@ const DETAIL_HEADERS = [
   'RF SKU 合計',
   'RF 資料店數',
   'RF SKU 較上期',
+  '不良存貨SKU÷RF',
 ] as const;
 
-const DETAIL_WIDTHS = [12, 12, 10, 8, 12, 18, 22, 14, 16, 20, 14, 20, 14, 14, 14, 12, 16];
+const DETAIL_WIDTHS = [12, 12, 10, 8, 12, 18, 22, 14, 16, 20, 14, 20, 14, 14, 14, 12, 16, 16];
 
 /** 1-based 欄位的數字格式（比率存小數，交由 Excel 顯示成百分比） */
 const DETAIL_FORMATS: Record<number, string> = {
@@ -74,6 +77,7 @@ const DETAIL_FORMATS: Record<number, string> = {
   15: '#,##0',
   16: '#,##0',
   17: '+0;-0;0',
+  18: '0.0%',
 };
 
 function styleHeaderRow(sheet: ExcelJS.Worksheet, columns: number): void {
@@ -123,6 +127,7 @@ export async function buildShopStockTrendBuffer(input: ShopStockTrendExportInput
       row.total_rf_sku,
       row.rf_store_count,
       row.rf_sku_delta,
+      row.ovs_rf_ratio,
     ]);
   }
 
@@ -161,7 +166,7 @@ export async function buildShopStockTrendBuffer(input: ShopStockTrendExportInput
   const kpi = input.kpi;
   const infoRows: Array<[string, string | number | null]> = [
     ['圖表', '佔比趨勢（不良存貨 ÷ 店舖存貨，全公司加權）'],
-    ['口徑', '比率 = Σ不良存貨值 ÷ Σ店舖存貨值；分母為 0 或空值的期數比率留空（顯示為空白，非 0%）'],
+    ['口徑', '比率 = Σ不良存貨值 ÷ Σ店舖存貨值；分母為 0 或空值的期數比率留空（顯示為空白，非 0%）。「不良存貨SKU÷RF」= Σ No. of Overstock SKU (P90D 0 Sales) ÷ Σ No. of RF SKU（加權）；分子包含 ND 貨，個別 RF SKU 極少的店可超過 100%'],
     ['顯示範圍', `最近 ${input.months} 個月（與後台圖表一致）`],
     ['期數', input.rows.length],
     ['最新一期', kpi ? `${kpi.report_date}（${shopStockKindLabel(kpi.report_kind)}）` : '—'],
@@ -172,6 +177,7 @@ export async function buildShopStockTrendBuffer(input: ShopStockTrendExportInput
     ['涉及店數', kpi?.store_count ?? null],
     ['RF SKU 合計（全公司）', kpi?.total_rf_sku ?? null],
     ['RF 資料店數', kpi?.rf_store_count ?? null],
+    ['不良存貨SKU÷RF（全公司加權）', kpi?.ovs_rf_ratio ?? null],
     ['產生時間（HK）', input.generatedAt],
   ];
   info.addRow(['項目', '內容']);
@@ -188,6 +194,7 @@ export async function buildShopStockTrendBuffer(input: ShopStockTrendExportInput
   info.getCell(10, 2).numFmt = '#,##0';
   info.getCell(12, 2).numFmt = '#,##0';
   info.getCell(13, 2).numFmt = '#,##0';
+  info.getCell(14, 2).numFmt = '0.0%';
 
   const buffer = await workbook.xlsx.writeBuffer();
   return Buffer.from(buffer);

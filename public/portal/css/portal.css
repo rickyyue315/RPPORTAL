@@ -87,10 +87,10 @@
 .dash-site-code { font-size: 15px; color: #0f172a; }
 .dash-site-code b { font-family: Consolas, "Courier New", monospace; font-size: 17px; letter-spacing: 1px; }
 .dash-intro { color: #475569; font-size: 13.5px; line-height: 1.6; margin: 8px 0 12px; }
-/* ---------- KPI 三卡 ---------- */
+/* ---------- KPI 四卡（存貨值 / 不良存貨值 / 佔比 / SKU÷RF） ---------- */
 .dash-kpi-grid {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 14px;
   margin-bottom: 20px;
 }
@@ -192,6 +192,10 @@
 
 .dash-empty-card h3 { margin: 0 0 6px; }
 .dash-foot-card { background: #fbfdff; }
+
+@media (max-width: 1024px) {
+  .dash-kpi-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }  /* KPI 4 卡變 2×2 */
+}
 
 @media (max-width: 640px) {
   .dash-kpi-grid { grid-template-columns: minmax(0, 1fr); }  /* KPI 變單欄 */

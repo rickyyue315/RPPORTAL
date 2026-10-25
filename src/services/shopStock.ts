@@ -17,6 +17,11 @@ import {
  *   每店佔比 = excess_value_0sale / shop_stock_value_cm
  *   全公司佔比 = Σexcess ÷ ΣSOH（加權），**不可**用各店比率取平均（會放大細店權重）
  *   分母 NULL 或 <= 0 → 比率回 null（不寫 0，避免前端畫出一條假的 0% 線）
+ *
+ *   不良存貨 SKU 佔 RF 比率 = sku_count_0sale / rf_sku_count（同一套加權規則）。
+ *   注意分子（No. of Overstock SKU (P90D 0 Sales)）**包含 ND 貨**，不是 RF 的子集，
+ *   所以這是「滯銷 SKU ÷ 自動補貨名單 SKU」的對比指標；RF SKU 極少的店可以超過 100%，
+ *   前端排名要排除小分母店（見 admin-stock.js MIN_RF_SKU_FOR_RANK）。
  */
 
 export const SHOP_STOCK_REPORT_KINDS = ['weekly', 'month_end', 'ad_hoc'] as const;
@@ -164,6 +169,8 @@ export interface ShopStockSnapshotRow {
   net_sales_p90d: number | null;
   /** I14「No. of RF SKU」：自動補貨 SKU 數（不是存貨件數） */
   rf_sku_count: number | null;
+  /** 不良存貨 SKU 佔 RF 比率 = sku_count_0sale ÷ rf_sku_count（小數）；分子缺值或 RF 缺值/0 → null */
+  ovs_rf_ratio: number | null;
   ratio: number | null;
   ratio_over2: number | null;
   ratio_total: number | null;
@@ -192,6 +199,7 @@ interface RawSnapshotRow {
 
 /** 全表共用的 snapshot 行轉換（pg 的 NUMERIC 是 string） */
 export function mapSnapshotRow(row: RawSnapshotRow): ShopStockSnapshotRow {
+  const rfSkuCount = toSkuCount(row.rf_sku_count_text);
   return {
     site_code: row.site_code,
     shop: row.shop ?? '',
@@ -210,7 +218,8 @@ export function mapSnapshotRow(row: RawSnapshotRow): ShopStockSnapshotRow {
     shop_stock_value_cm: toNumber(row.shop_stock_value_cm),
     sold_qty_p90d: toNumber(row.sold_qty_p90d),
     net_sales_p90d: toNumber(row.net_sales_p90d),
-    rf_sku_count: toSkuCount(row.rf_sku_count_text),
+    rf_sku_count: rfSkuCount,
+    ovs_rf_ratio: ratioOf(row.sku_count_0sale, rfSkuCount),
     ratio: ratioOf(row.excess_value_0sale, row.shop_stock_value_cm),
     ratio_over2: ratioOf(row.excess_value_over2, row.shop_stock_value_cm),
     ratio_total: ratioOf(row.excess_value_total, row.shop_stock_value_cm),
@@ -547,6 +556,8 @@ export interface ShopStockSeriesPoint {
   rf_store_count: number;
   /** 全公司 RF SKU 合計與上一期的絕對增減 */
   rf_sku_delta: number | null;
+  /** 加權「不良存貨 SKU 佔 RF 比率」= Σ sku_count_0sale ÷ Σ RF SKU（小數）；RF 合計 0/NULL → null */
+  ovs_rf_ratio: number | null;
   /** 加權佔比（0–1 小數）；分母 0/NULL → null */
   ratio: number | null;
   ratio_over2: number | null;
@@ -567,6 +578,8 @@ export interface ShopStockKpi {
   total_rf_sku: number | null;
   rf_store_count: number;
   rf_sku_delta: number | null;
+  ovs_rf_ratio: number | null;
+  ovs_rf_ratio_wow_delta_pt: number | null;
   ratio: number | null;
   ratio_over2: number | null;
   ratio_total: number | null;
@@ -673,6 +686,7 @@ async function loadCompanySeries(from?: string, to?: string): Promise<ShopStockS
       total_rf_sku: rf.total,
       rf_store_count: rf.storeCount,
       rf_sku_delta: null,
+      ovs_rf_ratio: ratioOf(row.sku_count_0sale, rf.total),
       ratio: ratioOf(excess, soh),
       ratio_over2: ratioOf(row.excess_over2, soh),
       ratio_total: ratioOf(row.excess_total, soh),
@@ -711,6 +725,8 @@ export async function getShopStockSummary(
     total_rf_sku: latest.total_rf_sku,
     rf_store_count: latest.rf_store_count,
     rf_sku_delta: latest.rf_sku_delta,
+    ovs_rf_ratio: latest.ovs_rf_ratio,
+    ovs_rf_ratio_wow_delta_pt: deltaPt(latest.ovs_rf_ratio, previous?.ovs_rf_ratio ?? null),
     ratio: latest.ratio,
     ratio_over2: latest.ratio_over2,
     ratio_total: latest.ratio_total,
@@ -761,6 +777,8 @@ export interface ShopStockWeekTotals {
   total_rf_sku: number | null;
   rf_store_count: number;
   rf_sku_delta: number | null;
+  /** 該期加權「不良存貨 SKU 佔 RF 比率」（小數） */
+  ovs_rf_ratio: number | null;
 }
 
 export interface ShopStockWeek {
@@ -914,6 +932,8 @@ export async function getShopStockWeek(reportDate: string): Promise<ShopStockWee
   const companyRatio = ratioOf(totalExcess, totalSoh);
   const rf = sumRfSku(snapshots);
   const previousRf = sumRfSku(prevSnapshots);
+  // 分子與 loadCompanySeries 同一口徑：Σ sku_count_0sale（缺值當 0）÷ Σ 有效 RF SKU
+  const sku0Total = snapshots.reduce((sum, row) => sum + (row.sku_count_0sale ?? 0), 0);
 
   return {
     report_date: toDateOnly(batchRow.report_date),
@@ -932,6 +952,7 @@ export async function getShopStockWeek(reportDate: string): Promise<ShopStockWee
       rf_sku_delta: rf.total !== null && previousRf.total !== null
         ? rf.total - previousRf.total
         : null,
+      ovs_rf_ratio: ratioOf(sku0Total, rf.total),
     },
     rows,
   };
@@ -948,12 +969,16 @@ export interface ShopStockStoreSeriesPoint {
   wow_delta_pt: number | null;
   excess_value_0sale: number | null;
   shop_stock_value_cm: number | null;
+  /** 本店「不良存貨 SKU 佔 RF 比率」（小數）；缺 RF 數時為 null */
+  ovs_rf_ratio: number | null;
 }
 
 export interface ShopStockCompanySeriesPoint {
   report_date: string;
   ratio: number | null;
   wow_delta_pt: number | null;
+  /** 全公司加權「不良存貨 SKU 佔 RF 比率」（小數） */
+  ovs_rf_ratio: number | null;
 }
 
 export interface ShopStockStoreKpi {
@@ -972,6 +997,10 @@ export interface ShopStockStoreKpi {
   company_ratio: number | null;
   /** 自己 - 全公司，百分點 */
   delta_vs_company_pt: number | null;
+  /** 本店「不良存貨 SKU 佔 RF 比率」（小數）；缺 RF 數時為 null */
+  ovs_rf_ratio: number | null;
+  /** 全公司同日加權「不良存貨 SKU 佔 RF 比率」 */
+  company_ovs_rf_ratio: number | null;
 }
 
 export interface ShopStockStoreView {
@@ -1002,6 +1031,7 @@ export async function getShopStockForStore(siteCode: string): Promise<ShopStockS
       wow_delta_pt: null,
       excess_value_0sale: row.excess_value_0sale,
       shop_stock_value_cm: row.shop_stock_value_cm,
+      ovs_rf_ratio: row.ovs_rf_ratio,
     };
   });
   for (let i = 1; i < series.length; i += 1) {
@@ -1013,8 +1043,10 @@ export async function getShopStockForStore(siteCode: string): Promise<ShopStockS
     report_date: point.report_date,
     ratio: point.ratio,
     wow_delta_pt: point.wow_delta_pt,
+    ovs_rf_ratio: point.ovs_rf_ratio,
   }));
   const companyByDate = new Map(companySeries.map((point) => [point.report_date, point.ratio]));
+  const companyOvsByDate = new Map(companySeries.map((point) => [point.report_date, point.ovs_rf_ratio]));
 
   const latest = r.rows[r.rows.length - 1];
   if (!latest) {
@@ -1023,6 +1055,7 @@ export async function getShopStockForStore(siteCode: string): Promise<ShopStockS
   const latestRow = mapSnapshotRow(latest);
   const latestDate = toDateOnly(latest.report_date);
   const companyRatio = companyByDate.get(latestDate) ?? null;
+  const companyOvsRatio = companyOvsByDate.get(latestDate) ?? null;
   const kpi: ShopStockStoreKpi = {
     report_date: latestDate,
     report_kind: latest.report_kind,
@@ -1037,6 +1070,8 @@ export async function getShopStockForStore(siteCode: string): Promise<ShopStockS
     excess_value_0sale: latestRow.excess_value_0sale,
     company_ratio: companyRatio,
     delta_vs_company_pt: deltaPt(latestRow.ratio, companyRatio),
+    ovs_rf_ratio: latestRow.ovs_rf_ratio,
+    company_ovs_rf_ratio: companyOvsRatio,
   };
 
   return {

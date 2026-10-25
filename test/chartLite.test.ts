@@ -12,6 +12,7 @@ interface ChartLiteApi {
   niceMax: (value: number, tickCount?: number) => number;
   dateTicks: (minT: number, maxT: number, count?: number) => ChartTick[];
   buildPath: (points: ChartPoint[]) => string;
+  splitIndex: (points: { t: number }[], splitT: number) => number;
 }
 
 const ChartLite = (globalThis as unknown as { ChartLite: ChartLiteApi }).ChartLite;
@@ -155,5 +156,25 @@ describe('chart-lite 純函數', () => {
     it('像素值四捨五入到小數兩位，避免超長 d 字串', () => {
       expect(ChartLite.buildPath([{ x: 1.234567, y: 9.876543 }])).toBe('M1.23 9.88');
     });
+  });
+});
+
+describe('ChartLite.splitIndex（把線分成「12 個月前」與「最近 12 個月」兩段）', () => {
+  const pts = [d('2025-01-05'), d('2025-09-05'), d('2026-01-05'), d('2026-10-05')].map((t) => ({ t }));
+
+  it('回傳第一個不早於分界日的索引', () => {
+    expect(ChartLite.splitIndex(pts, d('2025-09-05'))).toBe(1);
+    expect(ChartLite.splitIndex(pts, d('2025-12-01'))).toBe(2);
+  });
+
+  it('分界日早於全部點 → 0；晚於全部點 → -1', () => {
+    expect(ChartLite.splitIndex(pts, d('2024-01-01'))).toBe(0);
+    expect(ChartLite.splitIndex(pts, d('2027-01-01'))).toBe(-1);
+  });
+
+  it('無效輸入安全退化（不拋錯）', () => {
+    expect(ChartLite.splitIndex(pts, Number.NaN)).toBe(-1);
+    expect(ChartLite.splitIndex([], d('2026-01-01'))).toBe(-1);
+    expect(ChartLite.splitIndex(undefined as unknown as { t: number }[], d('2026-01-01'))).toBe(-1);
   });
 });

@@ -9,6 +9,8 @@
   const WEEK_PAGE_KEY = 'ndrf_admin_stock_week_page_size';
   const COLOR_MAIN = '#0f5c9c';
   const COLOR_REF = '#94a3b8';
+  /** 12 個月之前（去年）的線：淺灰藍，和主線、虛線參考線都分得開 */
+  const COLOR_BEFORE = '#b9c6d4';
 
   let csrf = null;
   let started = false;
@@ -19,6 +21,8 @@
   let weekTotals = null;
   /** 新店觀察期（日），由 API 回傳，避免前後端各寫一個數字 */
   let weekGraceDays = 90;
+  /** 趨勢圖顯示期間（月）：3 / 6 / 12 / 24，預設 12；資料永久保留，只影響畫幾多 */
+  let chartMonths = 12;
   let weekPage = 1;
   let autoDate = '';
 
@@ -127,6 +131,21 @@
   function shortShop(name) {
     const s = String(name || '');
     return s.length > 16 ? `${s.slice(0, 16)}…` : s;
+  }
+
+  /** 'YYYY-MM-DD' 往前推 n 個月；月底自動夾到該月最後一日（例：3-31 減 1 月 → 2-28） */
+  function monthsBefore(dateStr, n) {
+    const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(dateStr || ''));
+    if (!m) return '';
+    const year = Number(m[1]);
+    const month = Number(m[2]) - 1 - n;
+    const day = Number(m[3]);
+    const target = new Date(Date.UTC(year, month, 1));
+    const lastDay = new Date(Date.UTC(target.getUTCFullYear(), target.getUTCMonth() + 1, 0)).getUTCDate();
+    target.setUTCDate(Math.min(day, lastDay));
+    const mm = String(target.getUTCMonth() + 1).padStart(2, '0');
+    const dd = String(target.getUTCDate()).padStart(2, '0');
+    return `${target.getUTCFullYear()}-${mm}-${dd}`;
   }
 
   /** 不參與排名的標記：新店（觀察期內）／上期無數據 */
@@ -476,17 +495,33 @@
     setResult('stk_chart_error', 'info', '');
     if (chartNote) chartNote.textContent = '';
 
-    const points = series.map((row) => ({
+    // 只畫最近 chartMonths 個月（資料永久保留，這裡純屬顯示窗口）
+    const allDates = series
+      .map((row) => String(row.report_date || '').slice(0, 10))
+      .filter(Boolean)
+      .sort();
+    const latestDate = allDates.length ? allDates[allDates.length - 1] : '';
+    const cutoff = latestDate ? monthsBefore(latestDate, chartMonths) : '';
+    const visible = cutoff
+      ? series.filter((row) => String(row.report_date || '').slice(0, 10) >= cutoff)
+      : series;
+    // 超過 12 個月時，12 個月之前的那一段（去年）用淺色畫
+    const yearCutoff = chartMonths > 12 ? monthsBefore(latestDate, 12) : '';
+
+    const points = visible.map((row) => ({
       date: row.report_date,
       value: num(row.ratio),
     }));
+    // 只有真的有 12 個月之前的資料時，才需要分段與圖例；否則一條線到底
+    const hasYearPart = !!yearCutoff
+      && points.some((row) => String(row.date || '').slice(0, 10) < yearCutoff);
     const usable = points.filter((p) => p.value !== null);
     const chartApi = globalThis.ChartLite;
 
     if (!usable.length) {
       if (chartApi) chartApi.clear(el); else el.innerHTML = '';
       if (legend) legend.innerHTML = '';
-      el.innerHTML = '<div class="ct-empty">' + (series.length
+      el.innerHTML = '<div class="ct-empty">' + (visible.length
         ? '已有報表，但全部期數的店舖存貨值為 0（除零），暫時畫不出佔比走勢。'
         : '尚未上載任何存貨報表，趨勢圖會在第一次上載後出現。') + '</div>';
       return;
@@ -504,7 +539,9 @@
     const showAvg = avg !== null && Math.abs(avg - lastRatio) > 0.005;
 
     if (legend) {
-      legend.innerHTML = '<span class="stk-legend-item"><i style="background:#0f5c9c"></i>死存貨佔比（加權）</span>'
+      const mainLabel = hasYearPart ? '最近 12 個月' : '死存貨佔比（加權）';
+      legend.innerHTML = `<span class="stk-legend-item"><i style="background:${COLOR_MAIN}"></i>${mainLabel}</span>`
+        + (hasYearPart ? `<span class="stk-legend-item"><i style="background:${COLOR_BEFORE}"></i>12 個月前（去年）</span>` : '')
         + (showAvg ? `<span class="stk-legend-item"><i class="stk-legend-dash" style="border-color:${COLOR_REF}"></i>全公司平均（加權）${fmtRatio(avg)}</span>` : '');
     }
 
@@ -517,6 +554,8 @@
       key: 'ratio',
       label: '死存貨佔比',
       color: COLOR_MAIN,
+      splitDate: hasYearPart ? yearCutoff : '',
+      colorBefore: COLOR_BEFORE,
       points,
     }];
     if (showAvg) {
@@ -912,9 +951,25 @@
       });
     }
 
+    // 趨勢圖顯示期間（3 / 6 / 12 / 24 個月；資料本身永久保留，只影響畫幾多）
+    const rangeEl = $('stk_range');
+    if (rangeEl) {
+      rangeEl.addEventListener('click', (e) => {
+        const btn = e.target instanceof Element ? e.target.closest('[data-stk-months]') : null;
+        if (!btn) return;
+        const months = Number(btn.dataset.stkMonths);
+        if (!Number.isFinite(months) || months === chartMonths) return;
+        chartMonths = months;
+        rangeEl.querySelectorAll('[data-stk-months]').forEach((b) => {
+          b.setAttribute('aria-pressed', String(Number(b.dataset.stkMonths) === months));
+        });
+        const series = normalizedSeries(summaryCache);
+        if (series.length) renderChart(summaryCache, series);
+      });
+    }
+
     const qEl = $('stk_q');
-    if (qEl) qEl.addEventListener('input', () => { weekPage = 1; renderWeekRows(); });
-    ['stk_sort', 'stk_only'].forEach((id) => {
+    if (qEl) qEl.addEventListener('input', () => { weekPage = 1; renderWeekRows(); });    ['stk_sort', 'stk_only'].forEach((id) => {
       const el = $(id);
       if (el) el.addEventListener('change', () => { weekPage = 1; renderWeekRows(); });
     });

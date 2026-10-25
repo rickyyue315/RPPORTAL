@@ -508,3 +508,24 @@ body.stk-modal-open { overflow: hidden; }
 @media (prefers-reduced-motion: reduce) {
   .stk-bar-row { transition: none !important; }
 }
+
+/* 趨勢圖顯示期間切換（3 / 6 / 12 / 24 個月） */
+.stk-range {
+  display: inline-flex;
+  gap: 4px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+.stk-range .btn {
+  padding: 2px 9px;
+  font-size: 12px;
+  line-height: 1.6;
+}
+.stk-range .btn[aria-pressed="true"] {
+  background: #0f5c9c;
+  border-color: #0f5c9c;
+  color: #fff;
+}
+@media (max-width: 768px) {
+  .stk-range { width: 100%; justify-content: flex-start; }
+}

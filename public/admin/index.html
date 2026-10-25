@@ -677,7 +677,12 @@
         <div class="card mt-3">
           <div class="card-header">
             <h3 class="card-title">佔比趨勢（死存貨 ÷ 店舖存貨）</h3>
-            <span class="ms-auto text-secondary small">x 軸按真實日期，月結與週點距離＝實際日數</span>
+            <div class="card-actions stk-range" id="stk_range" role="group" aria-label="顯示期間">
+              <button class="btn btn-sm" type="button" data-stk-months="3">3 個月</button>
+              <button class="btn btn-sm" type="button" data-stk-months="6">6 個月</button>
+              <button class="btn btn-sm" type="button" data-stk-months="12" aria-pressed="true">12 個月</button>
+              <button class="btn btn-sm" type="button" data-stk-months="24">24 個月</button>
+            </div>
           </div>
           <div class="card-body">
             <div class="stk-legend" id="stk_legend"></div>

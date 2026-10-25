@@ -4,9 +4,23 @@
   const p = window.portal;
   const COLOR_SELF = '#0f5c9c';
   const COLOR_COMPANY = '#94a3b8';
+  /** 趨勢圖顯示最近幾個月（店舖端固定 12 個月） */
+  const CHART_MONTHS = 12;
 
   let loading = false;
   let currentSite = '';
+
+  /** 'YYYY-MM-DD' 往前推 n 個月；月底自動夾到該月最後一日 */
+  function monthsBefore(dateStr, n) {
+    const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(dateStr || ''));
+    if (!m) return '';
+    const target = new Date(Date.UTC(Number(m[1]), Number(m[2]) - 1 - n, 1));
+    const lastDay = new Date(Date.UTC(target.getUTCFullYear(), target.getUTCMonth() + 1, 0)).getUTCDate();
+    target.setUTCDate(Math.min(Number(m[3]), lastDay));
+    const mm = String(target.getUTCMonth() + 1).padStart(2, '0');
+    const dd = String(target.getUTCDate()).padStart(2, '0');
+    return `${target.getUTCFullYear()}-${mm}-${dd}`;
+  }
 
   /* ---------- 數值工具（PG numeric 可能以字串回傳） ---------- */
 
@@ -170,6 +184,18 @@
     if (!el) return;
     if (note) note.textContent = '';
     if (period) period.textContent = '';
+
+    // 只畫最近 12 個月：資料永久保留，但店舖端一條幾年的線反而讀不到走勢
+    const latest = [].concat(points, companyPoints)
+      .map((row) => String(row.date || '').slice(0, 10))
+      .filter(Boolean)
+      .sort()
+      .pop() || '';
+    const cutoff = latest ? monthsBefore(latest, CHART_MONTHS) : '';
+    if (cutoff) {
+      points = points.filter((row) => String(row.date || '').slice(0, 10) >= cutoff);
+      companyPoints = companyPoints.filter((row) => String(row.date || '').slice(0, 10) >= cutoff);
+    }
 
     const usable = points.filter((row) => row.value !== null);
     const companyUsable = companyPoints.filter((row) => row.value !== null);

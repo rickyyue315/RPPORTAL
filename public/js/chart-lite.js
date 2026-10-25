@@ -10,10 +10,11 @@
  *  4. tooltip / 點按（pointer 事件），觸控目標由 CSS 保證 ≥20px。
  *
  * 對外 API：
- *   globalThis.ChartLite = { renderLine, dateTicks, niceMax, scaleX, toTime, buildPath, fmtDay }
+ *   globalThis.ChartLite = { renderLine, clear, dateTicks, niceMax, scaleX, toTime, buildPath, splitIndex, fmtDay }
  *
  * renderLine(el, opts) 的 opts：
- *   series: [{ key, label, color, dashed, points: [{ date:'YYYY-MM-DD', value:Number|null }] }]  // 最多 2 條
+ *   series: [{ key, label, color, dashed, splitDate, colorBefore, points: [{ date:'YYYY-MM-DD', value:Number|null }] }]  // 最多 2 條
+ *            splitDate 之前的點改用 colorBefore 畫（同一條線分兩段，用於「去年」等舊資料）
  *   height: Number           容器的 clientHeight 為 0 時使用的像素高（預設 220）
  *   yFormat: (v) => String    y 軸刻度文字
  *   tipFormat: (v) => String  tooltip 數值文字（預設同 yFormat）
@@ -126,6 +127,22 @@
 
   /* ==================== 內部工具 ==================== */
 
+  /**
+   * 找「第一個不早於 splitT 的點」的索引，用於把同一條線分成兩段（例如 12 個月前用淺色）。
+   * points: [{ t }]（可含缺值，只要 t 有效就會計）。回傳 -1 代表全部都在 splitT 之前。
+   * 純函數，不碰 DOM。
+   */
+  function splitIndex(points, splitT) {
+    const t = Number(splitT);
+    if (!Number.isFinite(t)) return -1;
+    const list = Array.isArray(points) ? points : [];
+    for (let i = 0; i < list.length; i += 1) {
+      const p = list[i];
+      if (p && Number.isFinite(p.t) && p.t >= t) return i;
+    }
+    return -1;
+  }
+
   function svgEl(tag, attrs) {
     const node = document.createElementNS(SVG_NS, tag);
     if (attrs) Object.keys(attrs).forEach((k) => {
@@ -151,6 +168,9 @@
       label: spec.label || '',
       color: spec.color || palette[index % palette.length],
       dashed: !!spec.dashed,
+      /** 分界日期（含）之前的點改用 colorBefore 畫，用於「去年」等舊資料 */
+      splitT: toTime(spec.splitDate),
+      colorBefore: spec.colorBefore || '#94a3b8',
       points,
     };
   }
@@ -295,22 +315,33 @@
         t: p.t,
         v: p.v,
       }));
-      const d = buildPath(plotted);
-      if (d) {
+      const hasSplit = Number.isFinite(s.splitT);
+      const k = hasSplit ? splitIndex(plotted, s.splitT) : -1;
+      const drawPath = (pts, color) => {
+        const d = buildPath(pts);
+        if (!d) return;
         svg.appendChild(svgEl('path', {
           d,
           fill: 'none',
-          stroke: s.color,
+          stroke: color,
           'stroke-width': 2,
           'stroke-linejoin': 'round',
           'stroke-linecap': 'round',
           'stroke-dasharray': s.dashed ? '6 4' : null,
         }));
+      };
+      if (hasSplit && k > 0) {
+        // 分界點同時屬於兩段，線才不會在中間斷開
+        drawPath(plotted.slice(0, k + 1), s.colorBefore);
+        drawPath(plotted.slice(k), s.color);
+      } else {
+        drawPath(plotted, hasSplit && k === -1 ? s.colorBefore : s.color);
       }
+      const colorOf = (p) => (hasSplit && p.t < s.splitT ? s.colorBefore : s.color);
       if (plotted.length <= (o.maxPoints || 24)) {
         plotted.forEach((p) => {
           if (!Number.isFinite(p.y)) return;
-          const c = svgEl('circle', { cx: round(p.x, 2), cy: round(p.y, 2), r: 2.6, fill: '#fff', stroke: s.color, 'stroke-width': 1.6 });
+          const c = svgEl('circle', { cx: round(p.x, 2), cy: round(p.y, 2), r: 2.6, fill: '#fff', stroke: colorOf(p), 'stroke-width': 1.6 });
           svg.appendChild(c);
         });
       }
@@ -448,6 +479,7 @@
     scaleX,
     toTime,
     buildPath,
+    splitIndex,
     fmtDay,
   };
 

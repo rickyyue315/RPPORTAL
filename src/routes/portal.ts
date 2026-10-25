@@ -71,6 +71,7 @@ import {
   ZeroSalesBatchClosedError,
   ZeroSalesReplyError,
 } from '../services/zeroSales.js';
+import { getShopStockForStore } from '../services/shopStock.js';
 import { buildZeroSalesStoreExportBuffer } from '../lib/zeroSales.js';
 
 export const portalRouter = Router();
@@ -1036,5 +1037,25 @@ portalRouter.put(
       }
       throw err;
     }
+  }),
+);
+
+// ---------------------------------------------------------------------------
+// 存貨走勢（店舖端，唯讀）
+//
+// 數據隔離：site_code 一律取自 portal session（requireStoreSite 寫入
+// req.storeSiteCode），**絕不接受** query / body 傳入的 site_code；
+// 回傳只有「本店數據 + 全公司加權平均比率」，不含任何其他店的數字。
+// 冇數據時回 200 { has_data: false }，不用 404（前端要畫空狀態而非錯誤）。
+// ---------------------------------------------------------------------------
+portalRouter.get(
+  '/stock/summary',
+  requirePortalUser,
+  requireStoreSite,
+  adminActionLimiter,
+  asyncHandler(async (req: Request, res: Response) => {
+    const siteCode = req.storeSiteCode!;
+    const view = await getShopStockForStore(siteCode);
+    res.json({ ok: true, ...view });
   }),
 );

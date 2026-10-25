@@ -9,7 +9,7 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const { version } = JSON.parse(readFileSync(path.join(root, 'package.json'), 'utf8')) as { version: string };
 const app = createApp();
 
-const HTML_PAGES = ['/', '/portal/', '/portal/zero-sales.html', '/portal/store.html'];
+const HTML_PAGES = ['/', '/portal/', '/portal/zero-sales.html', '/portal/store.html', '/portal/dashboard.html'];
 const VERSIONED_ASSETS = [
   '/portal/js/zero-sales.js',
   '/portal/js/portal.js',

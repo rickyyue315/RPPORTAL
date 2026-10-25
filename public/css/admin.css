@@ -316,3 +316,195 @@ body.drawer-open { overflow: hidden; }
 }
 
 .footer .app-version { opacity: 0.8; white-space: nowrap; }
+
+/* ==========================================================================
+   存貨 Dashboard（tab=stock）— 只影響 .stk-* / .ct-*，不改動任何既有頁面樣式
+   ========================================================================== */
+
+/* ---------- KPI 卡 ---------- */
+.stk-kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 12px;
+}
+.stk-kpi {
+  background: #f7fbff;
+  border: 1px solid #cfe0f2;
+  border-radius: 10px;
+  padding: 14px 16px;
+  min-width: 0;
+}
+.stk-kpi--wide { grid-column: 1 / -1; }
+.stk-kpi-value {
+  font-size: 24px;
+  font-weight: 800;
+  line-height: 1.25;
+  color: #0a3d69;
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+.stk-kpi-label {
+  margin-top: 2px;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: #5a6a78;
+}
+.stk-kpi-sub {
+  margin-top: 2px;
+  font-size: 11.5px;
+  color: #7a8894;
+}
+
+/* ---------- 趨勢圖容器 ---------- */
+.stk-chart {
+  position: relative;
+  height: 220px;
+  width: 100%;
+  min-width: 0;
+}
+.stk-chart svg { display: block; }
+.stk-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+  margin-bottom: 6px;
+  font-size: 12.5px;
+  color: #3a4653;
+}
+.stk-legend:empty { display: none; }
+.stk-legend-item { display: inline-flex; align-items: center; gap: 6px; }
+.stk-legend-item i {
+  display: inline-block;
+  width: 14px;
+  height: 0;
+  border-top: 3px solid #0f5c9c;
+  border-radius: 2px;
+}
+.stk-legend-item i.stk-legend-dash { border-top-style: dashed; }
+
+/* ---------- 圖表本身（chart-lite.js） ---------- */
+.ct-svg { max-width: 100%; }
+.ct-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  min-height: 120px;
+  padding: 16px;
+  text-align: center;
+  font-size: 13.5px;
+  color: #66727f;
+  background: #fafbfc;
+  border: 1px dashed #d7dee7;
+  border-radius: 8px;
+  box-sizing: border-box;
+}
+.ct-tip {
+  position: absolute;
+  z-index: 3;
+  min-width: 108px;
+  max-width: 200px;
+  padding: 8px 10px;
+  background: rgba(15, 23, 42, 0.92);
+  color: #fff;
+  border-radius: 8px;
+  font-size: 12px;
+  line-height: 1.45;
+  pointer-events: none;
+  box-shadow: 0 6px 18px rgba(15, 23, 42, 0.25);
+}
+.ct-tip[hidden] { display: none; }
+.ct-tip-date { font-weight: 700; margin-bottom: 2px; }
+.ct-tip-row { display: flex; align-items: center; gap: 6px; white-space: nowrap; }
+.ct-tip-dot { width: 8px; height: 8px; border-radius: 50%; flex: 0 0 auto; }
+.ct-tip-label { color: #cbd5e1; }
+.ct-tip-row b { margin-left: auto; font-variant-numeric: tabular-nums; }
+
+/* ---------- Top 15 排名條（純 CSS，無 canvas） ---------- */
+.stk-bars { display: flex; flex-direction: column; gap: 4px; }
+.stk-bar-row {
+  display: grid;
+  grid-template-columns: 24px minmax(120px, 1.1fr) minmax(60px, 2fr) 68px 62px;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 5px 6px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+  text-align: left;
+  font-size: 13px;
+  color: #3a4653;
+  cursor: pointer;
+  min-height: 30px;
+}
+.stk-bar-row:hover { background: #f2f7fd; border-color: #cfe0f2; }
+.stk-bar-row:focus-visible { outline: 2px solid #0f5c9c; outline-offset: 1px; }
+.stk-bar-rank {
+  font-size: 11.5px;
+  font-weight: 700;
+  color: #7a8894;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.stk-bar-name { display: flex; gap: 6px; align-items: baseline; min-width: 0; }
+.stk-bar-name b { font-family: Consolas, "Courier New", monospace; }
+.stk-bar-shop { color: #7a8894; font-size: 11.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.stk-bar-track { display: block; height: 10px; border-radius: 999px; background: #eef2f6; overflow: hidden; }
+.stk-bar-track i { display: block; height: 100%; border-radius: 999px; }
+.stk-bar-value { text-align: right; font-weight: 700; font-variant-numeric: tabular-nums; }
+.stk-bar-wow { text-align: right; font-size: 11.5px; font-variant-numeric: tabular-nums; }
+
+/* ---------- 每店明細表（sticky 表頭） ---------- */
+.stk-detail-wrap { max-height: 68vh; }
+.stk-detail thead th {
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  background: #eef2f6;
+  box-shadow: 0 1px 0 #d9dee3;
+  white-space: nowrap;
+  font-size: 12.5px;
+}
+.stk-detail tbody td { font-variant-numeric: tabular-nums; }
+.stk-detail .stk-site { font-family: Consolas, "Courier New", monospace; font-weight: 600; }
+.stk-batches tbody td { vertical-align: middle; }
+.stk-hash { font-size: 11px; color: #7a8894; }
+
+/* ---------- 存貨專用彈窗（刪除／改日期） ---------- */
+.stk-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1056;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  background: rgba(0, 0, 0, 0.45);
+}
+.stk-overlay .modal-box {
+  width: 100%;
+  max-width: 460px;
+  max-height: calc(100vh - 48px);
+  overflow-y: auto;
+  padding: 26px;
+  background: #fff;
+  border-radius: 12px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.25);
+  box-sizing: border-box;
+}
+.stk-overlay .modal-box h3 { margin: 0 0 8px; }
+.stk-dialog-body { margin-top: 6px; }
+body.stk-modal-open { overflow: hidden; }
+
+@media (max-width: 768px) {
+  .stk-chart { height: 180px; }
+  .stk-kpi-value { font-size: 20px; }
+  .stk-bar-row {
+    grid-template-columns: 20px minmax(90px, 1fr) minmax(40px, 1fr) 58px;
+  }
+  .stk-bar-wow { display: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .stk-bar-row { transition: none !important; }
+}

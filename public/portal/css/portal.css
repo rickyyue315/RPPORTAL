@@ -78,3 +78,137 @@
   color: #0f172a;
   margin: 4px 0 8px;
 }
+
+/* ==========================================================================
+   存貨走勢頁（dashboard.html）— 只影響 .dash-* / .ct-*，不改動現有頁面
+   ========================================================================== */
+
+.dash-site-info { margin: 4px 0 10px; }
+.dash-site-code { font-size: 15px; color: #0f172a; }
+.dash-site-code b { font-family: Consolas, "Courier New", monospace; font-size: 17px; letter-spacing: 1px; }
+.dash-intro { color: #475569; font-size: 13.5px; line-height: 1.6; margin: 8px 0 12px; }
+.dash-refresh {
+  min-height: 40px;
+  padding: 9px 20px;
+  border-radius: 999px;
+  font-size: 14px;
+}
+
+/* ---------- KPI 三卡 ---------- */
+.dash-kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+  margin-bottom: 20px;
+}
+.dash-kpi {
+  background: #f7fbff;
+  border: 1px solid #cfe0f2;
+  border-radius: 12px;
+  padding: 16px 18px;
+  min-width: 0;
+}
+.dash-kpi-value {
+  font-size: 26px;
+  font-weight: 800;
+  line-height: 1.2;
+  color: #0a3d69;
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+.dash-kpi-label { margin-top: 4px; font-size: 13px; font-weight: 600; color: #5a6a78; }
+.dash-kpi-sub { margin-top: 2px; font-size: 12px; color: #7a8894; }
+.dash-worse { color: #c0392b; }
+.dash-better { color: #1e8449; }
+
+/* ---------- 趨勢圖 ---------- */
+.dash-card { margin-bottom: 20px; }
+.dash-card-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+.dash-card-head h3 { margin: 0; font-size: 16px; }
+.dash-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  margin-bottom: 8px;
+  font-size: 12.5px;
+  color: #3a4653;
+}
+.dash-legend-item { display: inline-flex; align-items: center; gap: 7px; }
+.dash-line { display: inline-block; width: 16px; height: 0; border-top: 3px solid #0f5c9c; border-radius: 2px; }
+.dash-line--company { border-top-style: dashed; border-top-color: #94a3b8; }
+
+/* 圖表容器用 aspect-ratio：高度跟寬度自動，觸控區不會被壓扁 */
+.dash-chart {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  min-height: 180px;
+  max-height: 320px;
+}
+.dash-chart svg { display: block; width: 100%; height: 100%; max-width: 100%; }
+.dash-chart-note { margin: 8px 0 0; }
+
+/* ---------- 圖表本身（chart-lite.js） ---------- */
+.ct-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  min-height: 130px;
+  padding: 16px;
+  text-align: center;
+  font-size: 13.5px;
+  color: #66727f;
+  background: #fafbfc;
+  border: 1px dashed #d7dee7;
+  border-radius: 10px;
+  box-sizing: border-box;
+}
+.ct-tip {
+  position: absolute;
+  z-index: 3;
+  min-width: 108px;
+  max-width: 200px;
+  padding: 8px 10px;
+  background: rgba(15, 23, 42, 0.92);
+  color: #fff;
+  border-radius: 8px;
+  font-size: 12px;
+  line-height: 1.45;
+  pointer-events: none;
+  box-shadow: 0 6px 18px rgba(15, 23, 42, 0.25);
+}
+.ct-tip[hidden] { display: none; }
+.ct-tip-date { font-weight: 700; margin-bottom: 2px; }
+.ct-tip-row { display: flex; align-items: center; gap: 6px; white-space: nowrap; }
+.ct-tip-dot { width: 8px; height: 8px; border-radius: 50%; flex: 0 0 auto; }
+.ct-tip-label { color: #cbd5e1; }
+.ct-tip-row b { margin-left: auto; font-variant-numeric: tabular-nums; }
+
+/* 觸控：所有可點元素最少 20px 高／寬 */
+.dash-page .dash-refresh,
+.dash-page .dash-chart svg,
+.dash-page .topbar nav a { min-height: 20px; }
+.dash-page .dash-chart svg { touch-action: pan-y; }
+
+.dash-empty-card h3 { margin: 0 0 6px; }
+.dash-foot-card { background: #fbfdff; }
+
+@media (max-width: 640px) {
+  .dash-kpi-grid { grid-template-columns: minmax(0, 1fr); }  /* KPI 變單欄 */
+  .dash-kpi-value { font-size: 23px; }
+  .dash-chart { aspect-ratio: 4 / 3; max-height: none; }
+  .dash-page .topbar nav a {
+    display: inline-block;
+    min-height: 32px;
+    line-height: 32px;
+    padding: 0 8px;
+  }
+}

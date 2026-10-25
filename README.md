@@ -224,3 +224,44 @@ pg_restore --no-owner --no-privileges --clean --if-exists \
 - 管理員匯入無 Idempotency-Key 需求（與公開匯入不同），但相同內容的檔案（`content_hash`）重複上載會被拒絕（409），避免誤按或網路重試造成重複寫入；修改過內容的檔案不受影響。
 - 錯誤訊息不包含資料庫或內部設定資訊。
 - 一般日誌不記錄申報內容、密碼或完整 IP。
+
+## 每週店舖死存貨 Dashboard（I14「By Shop」）
+
+用現有 Express + PostgreSQL，把每週 I14「By Shop」報表變成可追蹤的死存貨趨勢，**不改動 zero-sales 流程**。
+
+- **口徑**：每店佔比 = `Excess Stock Value (P90D 0 Sales)` ÷ `Shop Stock Value (CM)`；全公司佔比 = Σ死存貨值 ÷ Σ店舖存貨值（**加權**，不是各店比率平均）。分母為 0／缺值時比率顯示 `—`，不會當成 0%。
+- **身份鍵**：`report_date`（每日只可有一批）。`report_kind`（`weekly`／`month_end`／`ad_hoc`）只作顯示。
+
+### 管理後台（第 9 個 tab「存貨 Dashboard」）
+
+1. 選報表日期（可從檔名 `25Oct2026` 類格式自動填入）、報表類型、備註，再選 `.xlsx` 上載。
+2. **同一日期重上 = 整批取代**：同一 transaction 內先 `DELETE FROM shop_stock_batches WHERE report_date = $1`（FK CASCADE 清走明細），再建立新批次（**新批次有新 id**，不會出現「同一 id 先後代表兩份檔案」）；audit 會記下舊 batch id、行數與 `content_hash`。內容完全相同（`content_hash` 一致）則視為重複上載，不做任何寫入。
+3. 匯入清洗順序：①剔除 Column A = `Total` 的全公司合計列 → ②跳過全空白列 → ③跳過頁腳列（`Applied filters: …`）→ ④重複 Site Code 才報錯。`Total` 列的 Site Code 會撞真店（例：HA02），所以必須先整列剔除。
+4. 上載結果會顯示「N 間店 / N 行 / 略過 N 列（Total、空白、頁腳）」；對不到門店主檔的店號會列為 warning，**不阻塞**上載。
+5. 批次管理：可改報表日期／備註（該日期已有批次會回 `409 DATE_CONFLICT`），或整批刪除（hard delete，會寫 audit event 記錄 `report_date`、`deleted_rows`、`deleted_stores`、`content_hash`）。
+
+對應 API（全部須管理員登入；只有上載用 `excelImportLimiter`，其餘用 `adminActionLimiter`）：
+
+| 方法 | 路徑 | 說明 |
+|---|---|---|
+| POST | `/api/admin/stock/batches` | multipart：`file`、`report_date`、`report_kind`、`note` |
+| GET | `/api/admin/stock/batches?page=&size=` | 批次列表（按 `report_date` 新到舊） |
+| PUT | `/api/admin/stock/batches/:id` | 改 `report_date` / `note` |
+| DELETE | `/api/admin/stock/batches/:id` | 刪除整批（回 `deleted_rows`、`deleted_stores`） |
+| GET | `/api/admin/stock/summary?from=&to=` | 趨勢序列 + 最新 KPI（加權比率、WoW 百分點） |
+| GET | `/api/admin/stock/weeks/:reportDate` | 某一期每店明細（含與上一期的百分點差） |
+
+### 店舖端
+
+店舖用原本的 Site Code 登入後，可在「存貨走勢」頁看到**自己店**的每週佔比趨勢、全公司加權平均線（虛線）及最新三個 KPI。
+
+- API：`GET /api/portal/stock/summary`（`requirePortalUser` + `requireStoreSite`）。
+- **數據隔離**：`site_code` 一律取自登入 session，**不接受** query／body 傳入；回應只含本店數字與全公司加權比率，不含任何其他店數據。
+- 未有數據時回 `200 { has_data: false }`（不是 404），前端顯示空狀態。
+
+### 相關檔案
+
+- `src/lib/shopStockXlsx.ts`：解析器。上游檔的 XML 帶 `x:` 命名空間前綴、`row`/`cell` 無 `r` 座標，ExcelJS 直接讀會失敗；會先試直接讀，失敗才用 `jszip` 正規化（去前綴、補座標、重新打包）再交 ExcelJS。解壓總量上限 20MB。
+- `src/services/shopStock.ts`：上載／取代／刪除批次、加權比率、WoW、每店明細、店舖端視圖。
+- `src/db/migrations/026_shop_stock_snapshots.sql`：`shop_stock_batches`、`shop_stock_snapshots`、view `v_shop_weekly_deadstock`（純 CREATE，不影響既有表）。
+- `test/shopStock.test.ts`：解析（Total／空白／頁腳／重複）、同日取代、`content_hash` 冪等、加權比率數學、除零 → null、admin／portal 未登入 401、跨店隔離。

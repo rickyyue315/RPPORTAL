@@ -124,6 +124,17 @@ import {
   reopenZeroSalesBatch,
   ZeroSalesReplyError,
 } from '../services/zeroSales.js';
+import {
+  deleteShopStockBatch,
+  getShopStockSummary,
+  getShopStockWeek,
+  listShopStockBatches,
+  updateShopStockBatch,
+  upsertShopStockBatch,
+  SHOP_STOCK_REPORT_KINDS,
+  ShopStockDateConflictError,
+  ShopStockImportError,
+} from '../services/shopStock.js';
 
 export const adminRouter = Router();
 
@@ -3156,5 +3167,267 @@ adminRouter.put(
     );
     await writeAuditEvent({ eventType: 'zero_sales_reason_updated', actorRole: 'admin', actor: req.adminUsername, ip: getClientIp(req), metadata: { code: parsed.data.code } });
     res.json({ ok: true });
+  }),
+);
+
+// ---------------------------------------------------------------------------
+// 存貨 Dashboard：每週店舖死存貨（By Shop 報表）
+//
+// 限流刻意分開：只有 POST 上載走 excelImportLimiter（30/小時），其餘
+// GET / PUT / DELETE 一律 adminActionLimiter，否則 admin 開 tab、切口徑、
+// 翻頁就會自己撞 429。
+// ---------------------------------------------------------------------------
+
+const stockUploadSchema = z.object({
+  report_date: z.string().trim().refine(isValidIsoDate, '報表日期格式應為 YYYY-MM-DD'),
+  // 只接受 migration 026 CHECK 的三個值（weekly / month_end / ad_hoc），不接受別名
+  report_kind: z.enum(SHOP_STOCK_REPORT_KINDS).optional().default('weekly'),
+  note: z.string().max(1000).optional().default(''),
+});
+
+/** POST /api/admin/stock/batches — 上載 By Shop 報表；同一 report_date = 直接取代該批 */
+adminRouter.post(
+  '/stock/batches',
+  requireAdmin,
+  excelImportLimiter,
+  upload.single('file'),
+  asyncHandler(async (req: Request, res: Response) => {
+    const file = getUploadedFile(req);
+    const uploadError = validateUploadedXlsx(file, config.maxUploadBytes, EXCEL_UPLOAD_EXTENSION_ERROR);
+    if (uploadError) {
+      res.status(uploadError.status).json({ error: uploadError.message });
+      return;
+    }
+    const meta = stockUploadSchema.safeParse(req.body);
+    if (!meta.success) {
+      res.status(400).json({ error: meta.error.issues[0]?.message ?? '上載資料無效' });
+      return;
+    }
+    try {
+      const result = await upsertShopStockBatch({
+        buffer: file!.buffer,
+        reportDate: meta.data.report_date,
+        reportKind: meta.data.report_kind ?? 'weekly',
+        note: meta.data.note ?? '',
+        uploadedBy: req.adminUsername ?? '',
+        maxRows: config.maxImportRows,
+      });
+      if (!result.noop) {
+        await writeAuditEvent({
+          eventType: 'shop_stock_batch_created',
+          actorRole: 'admin',
+          actor: req.adminUsername,
+          ip: getClientIp(req),
+          metadata: {
+            filename: file!.originalname,
+            batch_id: result.batch.id,
+            report_date: result.batch.report_date,
+            report_kind: result.batch.report_kind,
+            replaced: result.replaced,
+            // 同日重上會刪掉舊批次，舊 id / 行數 / hash 是唯一可回溯的痕跡
+            replaced_batch_id: result.replacedBatch?.id ?? null,
+            replaced_row_count: result.replacedBatch?.rowCount ?? null,
+            replaced_content_hash: result.replacedBatch?.contentHash ?? null,
+            row_count: result.batch.row_count,
+            store_count: result.batch.store_count,
+            skipped: result.skipped,
+            unknown_sites: result.unknownSites,
+            content_hash: result.contentHash,
+          },
+        });
+      }
+      res.status(result.replaced || result.noop ? 200 : 201).json({
+        ok: true,
+        batch: result.batch,
+        replaced: result.replaced,
+        replaced_batch_id: result.replacedBatch?.id ?? null,
+        noop: result.noop,
+        skipped: result.skipped,
+        warnings: result.warnings,
+        unknown_sites: result.unknownSites,
+      });
+    } catch (err) {
+      if (err instanceof ShopStockImportError) {
+        await writeAuditEvent({
+          eventType: 'shop_stock_import_error',
+          actorRole: 'admin',
+          actor: req.adminUsername,
+          ip: getClientIp(req),
+          metadata: {
+            filename: file!.originalname,
+            report_date: meta.data.report_date,
+            errors: err.parsed.errors ?? [],
+            skipped: err.parsed.skipped,
+          },
+        });
+        res.status(400).json({
+          error: '匯入失敗',
+          totalRows: err.parsed.totalRows,
+          sourceRows: err.parsed.sourceRows,
+          skipped: err.parsed.skipped,
+          warnings: err.parsed.warnings,
+          errors: err.parsed.errors ?? [],
+        });
+        return;
+      }
+      throw err;
+    }
+  }),
+);
+
+const stockPageSchema = z.object({
+  page: z.coerce.number().int().min(1).optional(),
+  size: z.coerce.number().int().min(1).max(100).optional(),
+});
+
+/** GET /api/admin/stock/batches — 批次列表（新到舊，按 report_date） */
+adminRouter.get(
+  '/stock/batches',
+  requireAdmin,
+  adminActionLimiter,
+  asyncHandler(async (req: Request, res: Response) => {
+    const parsed = stockPageSchema.safeParse(req.query);
+    if (!parsed.success) {
+      res.status(400).json({ error: '分頁參數無效' });
+      return;
+    }
+    const result = await listShopStockBatches({
+      page: parsed.data.page ?? 1,
+      pageSize: parsed.data.size ?? 20,
+    });
+    res.json({
+      ok: true,
+      batches: result.batches,
+      // 前端（admin-stock.js）沿用 rows 命名
+      rows: result.batches,
+      total: result.total,
+      page: result.page,
+      page_size: result.pageSize,
+    });
+  }),
+);
+
+const stockUpdateSchema = z
+  .object({
+    report_date: z.string().trim().refine(isValidIsoDate, '報表日期格式應為 YYYY-MM-DD').optional(),
+    note: z.string().max(1000).optional(),
+  })
+  .refine((data) => data.report_date !== undefined || data.note !== undefined, {
+    message: '沒有需要更新的欄位',
+  });
+
+/** PUT /api/admin/stock/batches/:id — 改報表日期／備註（日期揀錯時用，毋須刪除重上） */
+adminRouter.put(
+  '/stock/batches/:id',
+  requireUuidParam('id'),
+  requireAdmin,
+  adminActionLimiter,
+  asyncHandler(async (req: Request, res: Response) => {
+    const parsed = stockUpdateSchema.safeParse(req.body ?? {});
+    if (!parsed.success) {
+      res.status(400).json({ error: parsed.error.issues[0]?.message ?? '更新資料無效' });
+      return;
+    }
+    try {
+      const batch = await updateShopStockBatch(req.params.id as string, {
+        reportDate: parsed.data.report_date,
+        note: parsed.data.note,
+      });
+      if (!batch) {
+        res.status(404).json({ error: '找不到此批次' });
+        return;
+      }
+      await writeAuditEvent({
+        eventType: 'shop_stock_batch_updated',
+        actorRole: 'admin',
+        actor: req.adminUsername,
+        ip: getClientIp(req),
+        metadata: {
+          batch_id: batch.id,
+          report_date: batch.report_date,
+          note: batch.note,
+          changed: { report_date: parsed.data.report_date ?? null, note: parsed.data.note ?? null },
+        },
+      });
+      res.json({ ok: true, batch });
+    } catch (err) {
+      if (err instanceof ShopStockDateConflictError) {
+        res.status(409).json({ error: err.message, code: 'DATE_CONFLICT' });
+        return;
+      }
+      throw err;
+    }
+  }),
+);
+
+/** DELETE /api/admin/stock/batches/:id — 刪除整批（hard delete；audit 保留唯一痕跡） */
+adminRouter.delete(
+  '/stock/batches/:id',
+  requireUuidParam('id'),
+  requireAdmin,
+  adminActionLimiter,
+  asyncHandler(async (req: Request, res: Response) => {
+    const batchId = req.params.id as string;
+    const result = await deleteShopStockBatch(batchId);
+    if (!result) {
+      res.status(404).json({ error: '找不到此批次' });
+      return;
+    }
+    await writeAuditEvent({
+      eventType: 'shop_stock_batch_deleted',
+      actorRole: 'admin',
+      actor: req.adminUsername,
+      ip: getClientIp(req),
+      metadata: {
+        batch_id: batchId,
+        report_date: result.reportDate,
+        week_label: result.weekLabel,
+        deleted_rows: result.deletedRows,
+        deleted_stores: result.deletedStores,
+        content_hash: result.contentHash,
+      },
+    });
+    res.json({ ok: true, deleted_rows: result.deletedRows, deleted_stores: result.deletedStores });
+  }),
+);
+
+const stockRangeSchema = z.object({
+  from: z.string().trim().refine(isValidIsoDate, '起始日期格式應為 YYYY-MM-DD').optional(),
+  to: z.string().trim().refine(isValidIsoDate, '結束日期格式應為 YYYY-MM-DD').optional(),
+});
+
+/** GET /api/admin/stock/summary — 全公司趨勢（加權比率）＋ 最新一期 KPI */
+adminRouter.get(
+  '/stock/summary',
+  requireAdmin,
+  adminActionLimiter,
+  asyncHandler(async (req: Request, res: Response) => {
+    const parsed = stockRangeSchema.safeParse(req.query);
+    if (!parsed.success) {
+      res.status(400).json({ error: parsed.error.issues[0]?.message ?? '日期範圍無效' });
+      return;
+    }
+    const summary = await getShopStockSummary({ from: parsed.data.from, to: parsed.data.to });
+    res.json({ ok: true, ...summary });
+  }),
+);
+
+/** GET /api/admin/stock/weeks/:reportDate — 某一期每店明細（含與上一期的百分點差） */
+adminRouter.get(
+  '/stock/weeks/:reportDate',
+  requireAdmin,
+  adminActionLimiter,
+  asyncHandler(async (req: Request, res: Response) => {
+    const reportDate = req.params.reportDate as string;
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(reportDate) || !isValidIsoDate(reportDate)) {
+      res.status(400).json({ error: '報表日期格式應為 YYYY-MM-DD' });
+      return;
+    }
+    const week = await getShopStockWeek(reportDate);
+    if (!week) {
+      res.status(404).json({ error: '找不到此報表日期的批次' });
+      return;
+    }
+    res.json({ ok: true, ...week });
   }),
 );

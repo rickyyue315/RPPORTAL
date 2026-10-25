@@ -52,7 +52,11 @@ export type AuditEventType =
   | 'zero_sales_replied'
   | 'zero_sales_reply_edited'
   | 'zero_sales_reply_entered'
-  | 'zero_sales_deleted';
+  | 'zero_sales_deleted'
+  | 'shop_stock_batch_created'
+  | 'shop_stock_batch_updated'
+  | 'shop_stock_batch_deleted'
+  | 'shop_stock_import_error';
 
 interface AuditInput {
   eventType: AuditEventType;

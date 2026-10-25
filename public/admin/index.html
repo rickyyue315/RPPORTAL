@@ -33,6 +33,7 @@
         <a href="?tab=accounts" role="tab" id="tab-accounts" data-tab="accounts" aria-controls="panel-accounts" aria-selected="false" tabindex="-1">帳戶 / 主檔</a>
         <a href="?tab=review" role="tab" id="tab-review" data-tab="review" aria-controls="panel-review" aria-selected="false" tabindex="-1">審批設定</a>
         <a href="?tab=zero-sales" role="tab" id="tab-zero-sales" data-tab="zero-sales" aria-controls="panel-zero-sales" aria-selected="false" tabindex="-1">零銷售</a>
+        <a href="?tab=stock" role="tab" id="tab-stock" data-tab="stock" aria-controls="panel-stock" aria-selected="false" tabindex="-1">存貨 Dashboard</a>
         <a href="?tab=system" role="tab" id="tab-system" data-tab="system" aria-controls="panel-system" aria-selected="false" tabindex="-1">系統</a>
       </div>
       <span class="nav-refresh"><span class="pulse-dot" title="每分鐘自動更新"></span><span id="nav_refresh_note">每分鐘自動更新</span><button class="btn btn-sm btn-outline-primary" id="btn_manual_refresh" type="button">立即更新</button></span>
@@ -633,6 +634,110 @@
 
         </section>
 
+        <!-- ============ 存貨 Dashboard ============ -->
+        <section class="admin-tab-panel" id="panel-stock" data-tab-panel="stock" role="tabpanel" aria-labelledby="tab-stock" hidden>
+        <div class="admin-section-title admin-section" id="sec-stock">存貨 Dashboard <span class="count-badge" id="stk_summary_note">捲動到此處自動載入…</span></div>
+
+        <div class="card" id="stk_root">
+          <div class="card-header">
+            <h3 class="card-title">上載 I14「By Shop」報表</h3>
+            <div class="card-actions">
+              <a href="#" class="btn-action" data-bs-toggle="collapse" data-bs-target="#stk-upload-collapse" aria-expanded="true" aria-label="摺疊上載">
+                <svg xmlns="http://www.w3.org/2000/svg" class="icon" width="24" height="24" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none" stroke-linecap="round" stroke-linejoin="round"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><polyline points="6 9 12 15 18 9" /></svg>
+              </a>
+            </div>
+          </div>
+          <div class="card-body collapse show" id="stk-upload-collapse">
+            <p class="text-secondary small">每店佔比 = Excess Stock Value (P90D 0 Sales) ÷ Shop Stock Value (CM)。<b>同一報表日期再上載 = 直接取代舊批次</b>（毋須先刪）；第 1 欄為 <b>Total</b> 的全公司合計列會由伺服器自動剔除，不會計入任何 KPI、排名或趨勢。補錄舊月結時逐檔上載，每檔填實際日期。</p>
+            <div class="d-flex gap-2 mb-2 flex-wrap align-items-end">
+              <div><label class="form-label" for="stk_date">報表日期</label><input type="date" id="stk_date" class="form-control"></div>
+              <div><label class="form-label" for="stk_kind">類型</label><select id="stk_kind" class="form-select"><option value="weekly">週更</option><option value="month_end">月結</option><option value="ad_hoc">臨時</option></select></div>
+              <div class="flex-grow-1" style="min-width:200px"><label class="form-label" for="stk_note">備註</label><input type="text" id="stk_note" class="form-control" maxlength="200" placeholder="例如 月結補錄 / 重上修正"></div>
+              <div style="min-width:220px"><label class="form-label" for="stk_file">Excel (.xlsx)</label><input type="file" id="stk_file" accept=".xlsx" class="form-control"></div>
+              <div class="align-self-end"><button class="btn btn-primary" id="btn_stk_upload" type="button">上載並取代同日批次</button></div>
+            </div>
+            <div class="hint" id="stk_date_hint">檔名含 <code>23Oct2026</code> 這類日期會自動填入報表日期（可再手改）</div>
+            <div id="stk_upload_result"></div>
+          </div>
+        </div>
+
+        <div class="card mt-3">
+          <div class="card-header">
+            <h3 class="card-title">最新一期 KPI</h3>
+            <span class="ms-auto text-secondary small" id="stk_kpi_note">—</span>
+          </div>
+          <div class="card-body">
+            <div class="stk-kpi-grid" id="stk_kpi">
+              <div class="stk-kpi"><div class="stk-kpi-value">—</div><div class="stk-kpi-label">載入中…</div></div>
+            </div>
+            <div id="stk_kpi_error"></div>
+          </div>
+        </div>
+
+        <div class="card mt-3">
+          <div class="card-header">
+            <h3 class="card-title">佔比趨勢（死存貨 ÷ 店舖存貨）</h3>
+            <span class="ms-auto text-secondary small">x 軸按真實日期，月結與週點距離＝實際日數</span>
+          </div>
+          <div class="card-body">
+            <div class="stk-legend" id="stk_legend"></div>
+            <div class="stk-chart" id="stk_chart"></div>
+            <div id="stk_chart_error"></div>
+            <p class="text-secondary small mt-2 mb-0" id="stk_chart_note"></p>
+          </div>
+        </div>
+
+        <div class="card mt-3">
+          <div class="card-header">
+            <h3 class="card-title">每店明細 <span class="text-secondary small" id="stk_week_label">—</span></h3>
+            <div class="card-actions"><button class="btn btn-sm" id="btn_stk_week_refresh" type="button">重新整理</button></div>
+          </div>
+          <div class="card-body">
+            <h5 class="text-secondary">Top 15 佔比最高店舖</h5>
+            <div class="stk-bars" id="stk_top15"><div class="text-secondary small">載入中…</div></div>
+            <div class="d-flex gap-2 mt-3 mb-2 flex-wrap align-items-end">
+              <div style="min-width:180px"><label class="form-label" for="stk_q">搜尋（Site / 店舖 / OM）</label><input type="text" id="stk_q" class="form-control form-control-sm" placeholder="例如 HC63" autocomplete="off"></div>
+              <div><label class="form-label" for="stk_sort">排序</label><select id="stk_sort" class="form-select form-select-sm"><option value="ratio_desc">佔比 高→低</option><option value="ratio_asc">佔比 低→高</option><option value="excess_desc">死存貨值 高→低</option><option value="wow_desc">WoW 惡化最多</option></select></div>
+              <div><label class="form-label" for="stk_only">只顯示</label><select id="stk_only" class="form-select form-select-sm"><option value="">全部</option><option value="worse">WoW 惡化</option><option value="better">WoW 改善</option></select></div>
+              <button class="btn btn-sm" id="btn_stk_clear" type="button">重設</button>
+            </div>
+            <div id="stk_week_error"></div>
+            <div class="admin-table-wrap stk-detail-wrap">
+              <table class="table table-vcenter table-hover card-table stk-detail">
+                <thead><tr><th scope="col">Site</th><th scope="col">店舖</th><th scope="col">OM</th><th scope="col" class="text-end">死存貨值</th><th scope="col" class="text-end">店舖存貨值</th><th scope="col" class="text-end">佔比</th><th scope="col" class="text-end">WoW</th></tr></thead>
+                <tbody id="stk_detail_body"><tr><td colspan="7" class="text-center text-secondary">載入中…</td></tr></tbody>
+              </table>
+            </div>
+            <div class="admin-pagination">
+              <span id="stk_page_range" class="page-range text-secondary small"></span>
+              <nav id="stk_page_numbers" class="page-numbers" aria-label="存貨明細分頁"></nav>
+              <label class="page-size">每頁 <select id="stk_page_size" class="form-select form-select-sm"><option value="20">20</option><option value="50">50</option><option value="100">100</option></select></label>
+            </div>
+          </div>
+        </div>
+
+        <div class="card mt-3">
+          <div class="card-header">
+            <h3 class="card-title">上載批次</h3>
+            <span class="ms-auto text-secondary small">刪除為永久操作，會寫入審計日誌</span>
+          </div>
+          <div class="card-body">
+            <div id="stk_batch_error"></div>
+            <div class="table-responsive">
+              <table class="table table-vcenter stk-batches">
+                <thead><tr><th scope="col">報表日期</th><th scope="col">類型</th><th scope="col" class="text-end">店數</th><th scope="col" class="text-end">行數</th><th scope="col">備註</th><th scope="col">上載者</th><th scope="col">上載時間</th><th scope="col">校驗</th><th scope="col">操作</th></tr></thead>
+                <tbody id="stk_batches_body"><tr><td colspan="9" class="text-center text-secondary">載入中…</td></tr></tbody>
+              </table>
+            </div>
+            <div class="admin-pagination">
+              <span id="stk_batch_page_range" class="page-range text-secondary small"></span>
+              <nav id="stk_batch_page_numbers" class="page-numbers" aria-label="存貨批次分頁"></nav>
+              <label class="page-size">每頁 <select id="stk_batch_page_size" class="form-select form-select-sm"><option value="20">20</option><option value="50">50</option><option value="100">100</option></select></label>
+            </div>
+          </div>
+        </div>
+        </section>
+
         <!-- ============ 系統 ============ -->
         <section class="admin-tab-panel" id="panel-system" data-tab-panel="system" role="tabpanel" aria-labelledby="tab-system" hidden>
         <div class="admin-section-title admin-section" id="sec-system">系統</div>
@@ -772,6 +877,8 @@
 <script src="/js/admin-pager.js"></script>
 <script src="/js/admin.js"></script>
 <script src="/js/admin-zero-sales.js"></script>
+<script src="/js/chart-lite.js"></script>
+<script src="/js/admin-stock.js"></script>
 <script src="/js/admin-ui.js"></script>
 <script src="/js/version.js"></script>
 </body>

@@ -227,6 +227,8 @@ const ROW_HA02 = makeRow({
   'Shop Type': 'EXISTING',
   // RF SKU 同樣可能有千分位文字，必須安全轉成整數（Total 列的 999999 已剔除）
   'No. of RF SKU': '1,234',
+  // SKU Carry = RF + ND with Stock（真實報表已核實）；比率分母用佢，唔用 RF
+  'No. of SKU Carry': 2000,
   'No. of Overstock SKU (P90D 0 Sales)': 5,
   'No. of Overstock SKU (>2*Monthly Sold Qty & >2pcs)': 8,
   'Excess Stock Qty (P90D 0 Sales)': 40,
@@ -249,6 +251,7 @@ const ROW_HD09 = makeRow({
   'Shop Nature': 'Tourist',
   'Shop Type': 'EXISTING',
   'No. of RF SKU': 567,
+  'No. of SKU Carry': 800,
   'No. of Overstock SKU (P90D 0 Sales)': 7,
   'Excess Stock Value (P90D 0 Sales)': 59999.75,
   'Shop Stock Value (CM)': 3000000,
@@ -256,7 +259,7 @@ const ROW_HD09 = makeRow({
   'Net Sales (P90D)': 9000000,
 });
 
-/** SOH = 0 → 比率必須回 null，且不可拉低全公司加權比率 */
+/** SOH = 0 → 金額比率必須回 null，且不可拉低全公司加權比率 */
 const ROW_HC71 = makeRow({
   Shop: 'HC71 - 東涌',
   'Site Code': 'HC71',
@@ -264,6 +267,7 @@ const ROW_HC71 = makeRow({
   OM: 'IVY',
   'Shop Nature': 'Local',
   'Shop Type': 'NEW STORE',
+  'No. of SKU Carry': 50,
   'No. of Overstock SKU (P90D 0 Sales)': 1,
   'Excess Stock Value (P90D 0 Sales)': 500,
   'Shop Stock Value (CM)': 0,
@@ -282,6 +286,7 @@ const FIXTURE_WEEK2 = [
     Shop: 'HA02 - 駱克',
     'Site Code': 'HA02',
     'No. of RF SKU': 1200,
+    'No. of SKU Carry': 2000,
     'Excess Stock Value (P90D 0 Sales)': 200000,
     'Shop Stock Value (CM)': 1000000,
   }),
@@ -289,6 +294,7 @@ const FIXTURE_WEEK2 = [
     Shop: 'HD09 - 新威尼斯人',
     'Site Code': 'HD09',
     'No. of RF SKU': 600,
+    'No. of SKU Carry': 800,
     'Excess Stock Value (P90D 0 Sales)': 0,
     'Shop Stock Value (CM)': 1000000,
   }),
@@ -297,6 +303,7 @@ const FIXTURE_WEEK2 = [
     'Site Code': 'HC71',
     // 真 0 要保留為 0，不可和缺值混為一談
     'No. of RF SKU': 0,
+    'No. of SKU Carry': 50,
     'Excess Stock Value (P90D 0 Sales)': 500,
     'Shop Stock Value (CM)': 0,
   }),
@@ -447,10 +454,11 @@ describe('shopStock service', () => {
     expect(point.rf_sku_delta).toBeNull();
     expect(summary.kpi!.total_rf_sku).toBe(1801);
     expect(summary.kpi!.rf_store_count).toBe(2);
-    // 不良存貨 SKU 佔 RF 比率：Σ(5+7+1) ÷ Σ(1234+567) = 13/1801（HC71 缺 RF 不入分母，分子 COALESCE 0）
-    expect(point.ovs_rf_ratio).toBeCloseTo(13 / 1801, 12);
-    expect(summary.kpi!.ovs_rf_ratio).toBeCloseTo(13 / 1801, 12);
-    expect(summary.kpi!.ovs_rf_ratio_wow_delta_pt).toBeNull();
+    // 不良存貨 SKU 佔店內貨品比率：Σ(5+7+1) ÷ Σ(2000+800+50) = 13/2850
+    expect(point.total_sku_carry).toBe(2850);
+    expect(point.ovs_carry_ratio).toBeCloseTo(13 / 2850, 12);
+    expect(summary.kpi!.ovs_carry_ratio).toBeCloseTo(13 / 2850, 12);
+    expect(summary.kpi!.ovs_carry_ratio_wow_delta_pt).toBeNull();
   });
 
   it('returns null (not 0) for a store whose stock value is 0', async () => {
@@ -470,10 +478,10 @@ describe('shopStock service', () => {
     expect(view.kpi!.report_date).toBe('2026-10-25');
     expect(view.kpi!.report_kind).toBe('weekly');
     expect(view.kpi!.ratio).toBeCloseTo(0.10000025, 8);
-    // 不良存貨 SKU ÷ RF SKU：本店 5/1234；全公司同日 13/1801
-    expect(view.kpi!.ovs_rf_ratio).toBeCloseTo(5 / 1234, 12);
-    expect(view.kpi!.company_ovs_rf_ratio).toBeCloseTo(13 / 1801, 12);
-    expect(view.series[0]!.ovs_rf_ratio).toBeCloseTo(5 / 1234, 12);
+    // 不良存貨 SKU ÷ 店內貨品 SKU：本店 5/2000；全公司同日 13/2850
+    expect(view.kpi!.ovs_carry_ratio).toBeCloseTo(5 / 2000, 12);
+    expect(view.kpi!.company_ovs_carry_ratio).toBeCloseTo(13 / 2850, 12);
+    expect(view.series[0]!.ovs_carry_ratio).toBeCloseTo(5 / 2000, 12);
     expect(view.series[0]!.report_date).toBe('2026-10-25');
   });
 
@@ -498,13 +506,15 @@ describe('shopStock service', () => {
     expect(week!.rows[0]!.rf_sku_count).toBe(1234);
     expect(week!.rows[0]!.prev_rf_sku_count).toBeNull();
     expect(week!.rows[0]!.rf_sku_delta).toBeNull();
-    expect(week!.rows[0]!.ovs_rf_ratio).toBeCloseTo(5 / 1234, 12);
+    expect(week!.rows[0]!.ovs_carry_ratio).toBeCloseTo(5 / 2000, 12);
     expect(week!.rows.find((r) => r.site_code === 'HC71')!.rf_sku_count).toBeNull();
-    expect(week!.rows.find((r) => r.site_code === 'HC71')!.ovs_rf_ratio).toBeNull();
+    // HC71 無 RF 數，但有 SKU Carry（50）→ 1/50，唔再因為缺 RF 而係 null
+    expect(week!.rows.find((r) => r.site_code === 'HC71')!.ovs_carry_ratio).toBeCloseTo(1 / 50, 12);
     expect(week!.totals.total_rf_sku).toBe(1801);
     expect(week!.totals.rf_store_count).toBe(2);
     expect(week!.totals.rf_sku_delta).toBeNull();
-    expect(week!.totals.ovs_rf_ratio).toBeCloseTo(13 / 1801, 12);
+    expect(week!.totals.total_sku_carry).toBe(2850);
+    expect(week!.totals.ovs_carry_ratio).toBeCloseTo(13 / 2850, 12);
   });
 
   it('adds a second period and reports WoW in percentage points', async () => {
@@ -523,10 +533,10 @@ describe('shopStock service', () => {
     expect(week2.rf_sku_delta).toBe(-1);
     expect(summary.kpi!.total_rf_sku).toBe(1800);
     expect(summary.kpi!.rf_sku_delta).toBe(-1);
-    // 第二期夾具沒有 Overstock SKU 欄 → Σ分子 = 0（COALESCE），Σ分母 = 1800 → 加權比率為真 0
-    expect(week2.ovs_rf_ratio).toBe(0);
-    expect(summary.kpi!.ovs_rf_ratio).toBe(0);
-    expect(summary.kpi!.ovs_rf_ratio_wow_delta_pt).toBeCloseTo((0 - 13 / 1801) * 100, 10);
+    // 第二期夾具沒有 Overstock SKU 欄 → Σ分子 = 0（COALESCE），ΣCarry = 2850 → 加權比率為真 0
+    expect(week2.ovs_carry_ratio).toBe(0);
+    expect(summary.kpi!.ovs_carry_ratio).toBe(0);
+    expect(summary.kpi!.ovs_carry_ratio_wow_delta_pt).toBeCloseTo((0 - 13 / 2850) * 100, 10);
 
     const week = await getShopStockWeek('2026-11-01');
     const ha02 = week!.rows.find((r) => r.site_code === 'HA02')!;
@@ -828,11 +838,12 @@ describe('shopStock service', () => {
     expect(week!.rows.find((r) => r.site_code === 'HC71')!.rf_sku_count).toBe(0);
     expect(week!.totals.total_rf_sku).toBe(0);
     expect(week!.totals.rf_store_count).toBe(1);
-    // 分母合計 = 0（HC71 真 0）→ 比率回 null，不是 0%；缺 RF 的店比率同樣為 null
-    expect(summary.series[0]!.ovs_rf_ratio).toBeNull();
-    expect(week!.totals.ovs_rf_ratio).toBeNull();
-    expect(week!.rows.find((r) => r.site_code === 'HA02')!.ovs_rf_ratio).toBeNull();
-    expect(week!.rows.find((r) => r.site_code === 'HC71')!.ovs_rf_ratio).toBeNull();
+    // 這個夾具整批沒有 No. of SKU Carry 欄 → ΣCarry = 0 間店 → 合計 null → 比率回 null，不是 0%
+    expect(summary.series[0]!.total_sku_carry).toBeNull();
+    expect(summary.series[0]!.ovs_carry_ratio).toBeNull();
+    expect(week!.totals.ovs_carry_ratio).toBeNull();
+    expect(week!.rows.find((r) => r.site_code === 'HA02')!.ovs_carry_ratio).toBeNull();
+    expect(week!.rows.find((r) => r.site_code === 'HC71')!.ovs_carry_ratio).toBeNull();
   });
 });
 
@@ -1012,10 +1023,10 @@ describe.skipIf(!config.adminPassword)('shopStock admin routes (logged in)', () 
     expect(detailRow.shop).toBe('HA02 - 駱克');
     expect(detailRow.om).toBe('IVY');
     expect(detailRow.shop_nature).toBe('Local');
-    // 明細表 / Top 15 需要「不良存貨 SKU 佔 RF 比率」（HA02: 5 ÷ 1234）
+    // 明細表 / Top 15 需要「不良存貨 SKU 佔店內貨品比率」（HA02: 5 ÷ 2000）
     expect(detailRow.rf_sku_count).toBe(1234);
-    expect(Number(detailRow.ovs_rf_ratio)).toBeCloseTo(5 / 1234, 12);
-    expect(Number((week.body.totals as Record<string, unknown>).ovs_rf_ratio)).toBeCloseTo(5 / 1234, 12);
+    expect(Number(detailRow.ovs_carry_ratio)).toBeCloseTo(5 / 2000, 12);
+    expect(Number((week.body.totals as Record<string, unknown>).ovs_carry_ratio)).toBeCloseTo(5 / 2000, 12);
 
     const badDate = await request(app)
       .get('/api/admin/stock/weeks/2027-3-7')
@@ -1101,7 +1112,7 @@ describe.skipIf(!config.adminPassword)('shopStock admin routes (logged in)', () 
     detail.getRow(1).eachCell((cell, col) => { headers[col - 1] = String(cell.value ?? ''); });
     expect(headers[0]).toBe('期別');
     expect(headers[7]).toBe('不良存貨佔比');
-    expect(headers[17]).toBe('不良存貨SKU÷RF');
+    expect(headers[17]).toBe('不良存貨SKU÷SKU Carry');
     expect(detail.getColumn(18).numFmt).toBe('0.0%');
 
     // 日期以文字輸出（避免 Excel 依地區設定改寫），比率保留小數 + 百分比格式

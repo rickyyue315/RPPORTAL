@@ -13,15 +13,8 @@
   const COLOR_BEFORE = '#b9c6d4';
   const COLOR_RF = '#0f766e';
   const COLOR_RF_BEFORE = '#99c7c2';
-  /** 不良÷RF Top 15 的紅色門檻（全公司加權約 12–13%，≥20% 視為明顯偏高） */
-  const OVS_RF_RATIO_ALERT = 0.2;
-  /**
-   * 「不良存貨 SKU 佔 RF 比率」Top 15 的最低分母：RF SKU 少於此數的店不參與排名。
-   * 分子（Overstock SKU）包含 ND 貨，不是 RF 的子集——RF 只有 2 個 SKU 的店
-   * 比率可以爆到幾千 %（實測 HA43：RF=2、Overstock=99），會拉爛整條比例尺。
-   * 這些店仍會出現在每店明細（數據如實顯示），並列在「已排除」名單。
-   */
-  const MIN_RF_SKU_FOR_RANK = 100;
+  /** 不良÷SKU Carry Top 15 的紅色門檻（全公司加權約 11–12%，≥20% 視為明顯偏高） */
+  const OVS_CARRY_RATIO_ALERT = 0.2;
 
   let csrf = null;
   let started = false;
@@ -34,7 +27,7 @@
   let weekGraceDays = 90;
   /** 趨勢圖顯示期間（月）：3 / 6 / 12 / 24，預設 12；資料永久保留，只影響畫幾多 */
   let chartMonths = 12;
-  /** RF 走勢圖口徑：count = RF SKU 數；ratio = 不良存貨 SKU 佔 RF 比率 */
+  /** RF 走勢圖口徑：count = RF SKU 數；ratio = 不良存貨 SKU 佔店內貨品比率 */
   let rfMetric = 'count';
   let weekPage = 1;
   let autoDate = '';
@@ -682,10 +675,10 @@
     const missing = stores === null ? 0 : Math.max(0, stores - rfStores);
     const reportDate = String(kpi.report_date || last.report_date || '').slice(0, 10);
 
-    // 不良存貨 SKU 佔 RF 比率（加權小數）；分母是「自動補貨名單」，分子含 ND 貨
-    const ovsRatio = firstNum([kpi.ovs_rf_ratio, last.ovs_rf_ratio]);
-    const prevOvsRatio = prev ? firstNum([prev.ovs_rf_ratio]) : null;
-    const ovsWow = firstNum([kpi.ovs_rf_ratio_wow_delta_pt])
+    // 不良存貨 SKU 佔店內貨品比率（加權小數）；分母 No. of SKU Carry = RF + ND with Stock
+    const ovsRatio = firstNum([kpi.ovs_carry_ratio, last.ovs_carry_ratio]);
+    const prevOvsRatio = prev ? firstNum([prev.ovs_carry_ratio]) : null;
+    const ovsWow = firstNum([kpi.ovs_carry_ratio_wow_delta_pt])
       ?? (ovsRatio !== null && prevOvsRatio !== null ? (ovsRatio - prevOvsRatio) * 100 : null);
 
     wrap.innerHTML = [
@@ -694,9 +687,9 @@
         !prev ? '需要至少 2 期資料' : (prevTotal === null ? '上期沒有有效 RF 資料' : `上期合計 ${fmtInt(prevTotal)}`)),
       kpiCard('RF 資料覆蓋', stores === null ? '—' : `${fmtInt(rfStores)} / ${fmtInt(stores)} 店`,
         missing > 0 ? `${fmtInt(missing)} 店缺值，未當作 0` : '全部店舖有有效 RF 數字'),
-      kpiCard('不良存貨 SKU 佔 RF 比率', fmtRatio(ovsRatio),
+      kpiCard('不良存貨 SKU 佔店內貨品比率', fmtRatio(ovsRatio),
         ovsRatio === null
-          ? '沒有有效 RF 或不良存貨 SKU 數據'
+          ? '沒有有效 SKU Carry 或不良存貨 SKU 數據'
           : (ovsWow === null
             ? (prev ? '上期沒有有效數據' : '只有 1 期資料')
             : `${wowArrow(ovsWow)}${fmtPt(ovsWow)}　較上一期${prevOvsRatio === null ? '' : `（上期 ${fmtRatio(prevOvsRatio)}）`}`),
@@ -708,7 +701,7 @@
   /**
    * RF 走勢圖有兩個口徑（rfMetric）：
    *   count = 全公司 RF SKU 合計（絕對數，答「規模幾大」）
-   *   ratio = 不良存貨 SKU 佔 RF 比率（加權，答「補得好唔好」）
+   *   ratio = 不良存貨 SKU 佔店內貨品比率（加權，答「滯銷佔幾多」；只有實際清貨先會改善）
    */
   function renderRfChart(series) {
     const el = $('stk_rf_chart');
@@ -718,8 +711,8 @@
     if (chartNote) chartNote.textContent = '';
 
     const isRatio = rfMetric === 'ratio';
-    const pick = (row) => (isRatio ? num(row.ovs_rf_ratio) : num(row.total_rf_sku));
-    const emptyLabel = isRatio ? '不良存貨 SKU 佔 RF 比率' : 'RF SKU 合計';
+    const pick = (row) => (isRatio ? num(row.ovs_carry_ratio) : num(row.total_rf_sku));
+    const emptyLabel = isRatio ? '不良存貨 SKU 佔店內貨品比率' : 'RF SKU 合計';
     const formatValue = isRatio ? fmtRatio : fmtInt;
 
     const allDates = series
@@ -743,7 +736,7 @@
       if (legend) legend.innerHTML = '';
       el.innerHTML = '<div class="ct-empty">' + (visible.length
         ? (isRatio
-          ? '所選期間沒有有效比率數據（需要同時有不良存貨 SKU 數與有效 RF SKU 數）；空白或無效值不會當作 0。'
+          ? '所選期間沒有有效比率數據（需要同時有不良存貨 SKU 數與有效 No. of SKU Carry）；空白或無效值不會當作 0。'
           : '所選期間沒有有效 No. of RF SKU 資料；空白或無效值不會當作 0。')
         : '尚未上載任何存貨報表，RF SKU 走勢會在第一次上載後出現。') + '</div>';
       return;
@@ -767,7 +760,7 @@
 
     chartApi.renderLine(el, {
       series: [{
-        key: isRatio ? 'ovs_rf_ratio' : 'rf_sku',
+        key: isRatio ? 'ovs_carry_ratio' : 'rf_sku',
         label: emptyLabel,
         color: COLOR_RF,
         splitDate: hasYearPart ? yearCutoff : '',
@@ -779,13 +772,13 @@
       yFormat: (value) => (isRatio ? `${(Number(value) * 100).toFixed(1)}%` : fmtInt(value)),
       tipFormat: (value) => formatValue(value),
       ariaLabel: isRatio
-        ? `全公司不良存貨 SKU 佔 RF 比率趨勢，共 ${usable.length} 期，最新 ${fmtRatio(usable[usable.length - 1].value)}`
+        ? `全公司不良存貨 SKU 佔店內貨品比率趨勢，共 ${usable.length} 期，最新 ${fmtRatio(usable[usable.length - 1].value)}`
         : `全公司 RF SKU 合計趨勢，共 ${usable.length} 期，最新 ${fmtInt(usable[usable.length - 1].value)}`,
     });
 
     const gaps = points.length - usable.length;
     const notes = [isRatio
-      ? '點或懸停圖表可看該期比率；分子 = No. of Overstock SKU (P90D 0 Sales) 合計（含 ND 貨），分母 = 有效 RF SKU 合計。'
+      ? '點或懸停圖表可看該期比率；分子 = No. of Overstock SKU (P90D 0 Sales) 合計（含 ND 貨），分母 = No. of SKU Carry 合計（= RF SKU + ND with Stock）。RF 轉 ND 而貨未清走時比率不變。'
       : '點或懸停圖表可看該期的全公司 RF SKU 合計。'];
     if (gaps) notes.push(`有 ${gaps} 期完全沒有有效數據，該期缺值斷線，不會當成 0。`);
     if (!isRatio) {
@@ -990,7 +983,7 @@
       : sort === 'wow_desc' ? (r) => num(r.wow_delta_pt)
         : sort === 'rf_desc' ? (r) => num(r.rf_sku_count)
           : sort === 'rf_delta_desc' ? (r) => num(r.rf_sku_delta)
-            : sort === 'ovsrf_desc' ? (r) => num(r.ovs_rf_ratio)
+            : sort === 'ovscarry_desc' ? (r) => num(r.ovs_carry_ratio)
               : (r) => num(r.ratio);
     rows.sort((a, b) => {
       const av = pick(a);
@@ -1026,7 +1019,7 @@
         const rf = num(row.rf_sku_count);
         const prevRf = num(row.prev_rf_sku_count);
         const rfDelta = num(row.rf_sku_delta);
-        const ovsRatio = num(row.ovs_rf_ratio);
+        const ovsRatio = num(row.ovs_carry_ratio);
         const zero = soh === 0 && ratio === null;
         return `<tr>
           <td class="stk-site">${esc(row.site_code || '')}${newTag(row)}</td>
@@ -1035,7 +1028,7 @@
           <td class="stk-nature" title="${escAttr(natureTitle(row.shop_nature))}">${esc(row.shop_nature || '')}</td>
           <td class="text-end"><b>${fmtInt(rf)}</b></td>
           <td class="text-end text-secondary" title="${escAttr(prevRf === null ? '上期沒有有效 RF 資料' : `上期 ${fmtInt(prevRf)} SKU`)}">${rfDelta === null ? '—' : fmtSignedInt(rfDelta)}</td>
-          <td class="text-end" title="不良存貨 SKU 佔 RF 比率＝No. of Overstock SKU (P90D 0 Sales) ÷ No. of RF SKU（分子含 ND 貨）">${ovsRatio === null ? '—' : fmtRatio(ovsRatio)}</td>
+          <td class="text-end" title="不良存貨 SKU 佔店內貨品比率＝No. of Overstock SKU (P90D 0 Sales) ÷ No. of SKU Carry（SKU Carry = RF + ND with Stock）">${ovsRatio === null ? '—' : fmtRatio(ovsRatio)}</td>
           <td class="text-end">${fmtMoney(row.deadstock_value)}</td>
           <td class="text-end">${fmtMoney(row.shop_stock_value)}</td>
           <td class="text-end"><b>${zero ? '—' : fmtRatio(ratio)}</b>${zero ? '<div class="text-secondary small">存貨值 0，除零</div>' : ''}</td>
@@ -1164,56 +1157,47 @@
   }
 
   /**
-   * 「不良存貨 SKU 佔 RF 比率」Top 15（＝ No. of Overstock SKU (P90D 0 Sales) ÷ No. of RF SKU）。
-   * 排除規則：
-   *   1. 新店（與價值比率 Top 15 同一套 is_new 規則：報表旗標＋觀察期／上期無數據）
-   *   2. RF SKU 少於 MIN_RF_SKU_FOR_RANK 或缺值（分母太小，比率會爆超過 100%）
-   * 比率 ≥ OVS_RF_RATIO_ALERT 以紅色顯示；右側欄顯示分子÷分母原數，方便核對。
+   * 「不良存貨 SKU 佔店內貨品比率」Top 15（＝ No. of Overstock SKU (P90D 0 Sales) ÷ No. of SKU Carry）。
+   * 排除規則與價值比率 Top 15 同一套新店規則（報表旗標＋觀察期／上期無數據）。
+   * 分子必為分母子集（Carry = RF + ND with Stock 覆蓋店內全部有貨 SKU），比率不超過 100%，
+   * 所以不需要最低分母門檻——HA43 這類 RF 極少的店在新分母下是正常數字。
+   * 比率 ≥ OVS_CARRY_RATIO_ALERT 以紅色顯示；右側欄顯示分子÷分母原數，方便核對。
    */
-  function renderTop15OvsRf(week) {
-    const wrap = $('stk_ovsrf_top15');
-    const label = $('stk_ovsrf_top15_label');
+  function renderTop15OvsCarry(week) {
+    const wrap = $('stk_ovscarry_top15');
+    const label = $('stk_ovscarry_top15_label');
     if (!wrap) return;
     const newStoreRows = weekRows.filter((row) => row.new_reason === 'new_store');
     const noPrevRows = weekRows.filter((row) => row.new_reason === 'no_prev_data');
-    const smallRfRows = weekRows.filter((row) => {
-      if (row.is_new) return false;
-      const rf = num(row.rf_sku_count);
-      return rf === null || rf < MIN_RF_SKU_FOR_RANK;
-    });
     const notes = [];
     if (newStoreRows.length) notes.push(`${newStoreRows.length} 間新店（開業未滿 ${weekGraceDays} 天）`);
     if (noPrevRows.length) notes.push(`${noPrevRows.length} 間上期無數據`);
-    if (smallRfRows.length) notes.push(`${smallRfRows.length} 間 RF SKU 少於 ${MIN_RF_SKU_FOR_RANK} 或缺值`);
     const note = notes.length
       ? excludedNote([
         { rows: newStoreRows, label: '新店' },
         { rows: noPrevRows, label: '上期無數據' },
-        { rows: smallRfRows, label: `RF SKU < ${MIN_RF_SKU_FOR_RANK}` },
       ], notes)
       : '';
     const ranked = weekRows
-      .filter((row) => !row.is_new
-        && num(row.ovs_rf_ratio) !== null
-        && (num(row.rf_sku_count) ?? 0) >= MIN_RF_SKU_FOR_RANK)
-      .sort((a, b) => (num(b.ovs_rf_ratio) || 0) - (num(a.ovs_rf_ratio) || 0)
+      .filter((row) => !row.is_new && num(row.ovs_carry_ratio) !== null)
+      .sort((a, b) => (num(b.ovs_carry_ratio) || 0) - (num(a.ovs_carry_ratio) || 0)
         || String(a.site_code || '').localeCompare(String(b.site_code || '')))
       .slice(0, 15);
     if (label) {
       label.textContent = ranked.length
-        ? `${String(week ?? selectedWeek ?? '').slice(0, 10)} · ${ranked.length} 店入榜（門檻 RF ≥ ${MIN_RF_SKU_FOR_RANK}）`
+        ? `${String(week ?? selectedWeek ?? '').slice(0, 10)} · ${ranked.length} 店入榜`
         : '—';
     }
     if (!ranked.length) {
       wrap.innerHTML = `<div class="text-secondary small">${weekRows.length
-        ? `此期沒有可比較的店舖（全部為新店、RF SKU 少於 ${MIN_RF_SKU_FOR_RANK} 或缺值）。`
+        ? '此期沒有可比較的店舖（全部為新店，或缺 SKU Carry／不良存貨 SKU 數據）。'
         : '上載報表或選擇批次後會顯示排名。'}</div>${note}`;
       return;
     }
-    const max = num(ranked[0].ovs_rf_ratio) || 1;
+    const max = num(ranked[0].ovs_carry_ratio) || 1;
     wrap.innerHTML = ranked.map((row, index) => {
-      const ratio = num(row.ovs_rf_ratio) || 0;
-      const rf = num(row.rf_sku_count) ?? 0;
+      const ratio = num(row.ovs_carry_ratio) || 0;
+      const carry = num(row.sku_carry_count) ?? 0;
       const ovs = num(row.sku_count_0sale) ?? 0;
       const width = Math.max(2, Math.min(100, (ratio / max) * 100));
       const om = String(row.om || '').trim();
@@ -1225,9 +1209,9 @@
           <span class="stk-bar-title"><b>${esc(row.site_code || '')}</b><span class="stk-bar-shop">${esc(shortShop(shopLabel(row)))}</span></span>
           ${meta ? `<span class="stk-bar-meta" title="${escAttr(natureTitle(nature))}">${esc(meta)}</span>` : ''}
         </span>
-        <span class="stk-bar-track"><i style="width:${width.toFixed(1)}%;background:${ratio >= OVS_RF_RATIO_ALERT ? '#c0392b' : COLOR_MAIN}"></i></span>
+        <span class="stk-bar-track"><i style="width:${width.toFixed(1)}%;background:${ratio >= OVS_CARRY_RATIO_ALERT ? '#c0392b' : COLOR_MAIN}"></i></span>
         <span class="stk-bar-value">${fmtRatio(ratio)}</span>
-        <span class="stk-bar-wow text-secondary" title="不良存貨 SKU ÷ RF SKU（分子含 ND 貨）">${fmtInt(ovs)} / ${fmtInt(rf)}</span>
+        <span class="stk-bar-wow text-secondary" title="不良存貨 SKU ÷ SKU Carry（分母 = RF + ND with Stock）">${fmtInt(ovs)} / ${fmtInt(carry)}</span>
       </button>`;
     }).join('') + note;
   }
@@ -1245,7 +1229,7 @@
       const top = $('stk_top15');
       if (top) top.innerHTML = '<div class="text-secondary small">上載報表後會顯示排名。</div>';
       renderTop15Rf('');
-      renderTop15OvsRf('');
+      renderTop15OvsCarry('');
       renderWeekRows();
       return;
     }
@@ -1263,7 +1247,7 @@
       }
       renderTop15();
       renderTop15Rf(selectedWeek);
-      renderTop15OvsRf(selectedWeek);
+      renderTop15OvsCarry(selectedWeek);
       renderWeekRows();
     } catch (err) {
       weekRows = [];
@@ -1274,7 +1258,7 @@
       const top = $('stk_top15');
       if (top) top.innerHTML = '<div class="text-secondary small">未能載入排名。</div>';
       renderTop15Rf(target);
-      renderTop15OvsRf(target);
+      renderTop15OvsCarry(target);
       renderWeekRows();
     }
   }
@@ -1355,7 +1339,7 @@
     }
 
     // 三個 Top 15：按一下只看該店明細
-    ['stk_top15', 'stk_rf_top15', 'stk_ovsrf_top15'].forEach((id) => {
+    ['stk_top15', 'stk_rf_top15', 'stk_ovscarry_top15'].forEach((id) => {
       const ranking = $(id);
       if (!ranking) return;
       ranking.addEventListener('click', (e) => {
@@ -1392,7 +1376,7 @@
       });
     }
 
-    // RF 走勢圖口徑：RF SKU 數 / 不良存貨 SKU 佔 RF 比率
+    // RF 走勢圖口徑：RF SKU 數 / 不良存貨 SKU 佔店內貨品比率
     const rfMetricEl = $('stk_rf_metric');
     if (rfMetricEl) {
       rfMetricEl.addEventListener('click', (e) => {

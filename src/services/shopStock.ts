@@ -18,10 +18,11 @@ import {
  *   全公司佔比 = Σexcess ÷ ΣSOH（加權），**不可**用各店比率取平均（會放大細店權重）
  *   分母 NULL 或 <= 0 → 比率回 null（不寫 0，避免前端畫出一條假的 0% 線）
  *
- *   不良存貨 SKU 佔 RF 比率 = sku_count_0sale / rf_sku_count（同一套加權規則）。
- *   注意分子（No. of Overstock SKU (P90D 0 Sales)）**包含 ND 貨**，不是 RF 的子集，
- *   所以這是「滯銷 SKU ÷ 自動補貨名單 SKU」的對比指標；RF SKU 極少的店可以超過 100%，
- *   前端排名要排除小分母店（見 admin-stock.js MIN_RF_SKU_FOR_RANK）。
+ *   不良存貨 SKU 佔店內貨品比率 = sku_count_0sale / sku_carry_count（同一套加權規則）。
+ *   分母 `No. of SKU Carry` = RF SKU + ND with Stock（真實報表 93 店逐店核實），即店內
+ *   有貨嘅全部 SKU。分子（No. of Overstock SKU (P90D 0 Sales)，含 ND 貨）必為分母子集，
+ *   **比率結構上不超過 100%**；店舖將 RF 轉 ND 而貨未清走時比率不變，只有實際賣出／
+ *   轉走先會改善——唔會懲罰正確行為（分母若用 RF SKU 會爆升，2026-10-25 已棄用）。
  */
 
 export const SHOP_STOCK_REPORT_KINDS = ['weekly', 'month_end', 'ad_hoc'] as const;
@@ -169,8 +170,10 @@ export interface ShopStockSnapshotRow {
   net_sales_p90d: number | null;
   /** I14「No. of RF SKU」：自動補貨 SKU 數（不是存貨件數） */
   rf_sku_count: number | null;
-  /** 不良存貨 SKU 佔 RF 比率 = sku_count_0sale ÷ rf_sku_count（小數）；分子缺值或 RF 缺值/0 → null */
-  ovs_rf_ratio: number | null;
+  /** I14「No. of SKU Carry」：店內貨品 SKU 總數（= RF SKU + ND with Stock，已核實） */
+  sku_carry_count: number | null;
+  /** 不良存貨 SKU 佔店內貨品比率 = sku_count_0sale ÷ sku_carry_count（小數）；分子缺值或 Carry 缺值/0 → null */
+  ovs_carry_ratio: number | null;
   ratio: number | null;
   ratio_over2: number | null;
   ratio_total: number | null;
@@ -195,11 +198,13 @@ interface RawSnapshotRow {
   sold_qty_p90d: unknown;
   net_sales_p90d: unknown;
   rf_sku_count_text: unknown;
+  sku_carry_count_text: unknown;
 }
 
 /** 全表共用的 snapshot 行轉換（pg 的 NUMERIC 是 string） */
 export function mapSnapshotRow(row: RawSnapshotRow): ShopStockSnapshotRow {
   const rfSkuCount = toSkuCount(row.rf_sku_count_text);
+  const skuCarryCount = toSkuCount(row.sku_carry_count_text);
   return {
     site_code: row.site_code,
     shop: row.shop ?? '',
@@ -219,7 +224,8 @@ export function mapSnapshotRow(row: RawSnapshotRow): ShopStockSnapshotRow {
     sold_qty_p90d: toNumber(row.sold_qty_p90d),
     net_sales_p90d: toNumber(row.net_sales_p90d),
     rf_sku_count: rfSkuCount,
-    ovs_rf_ratio: ratioOf(row.sku_count_0sale, rfSkuCount),
+    sku_carry_count: skuCarryCount,
+    ovs_carry_ratio: ratioOf(row.sku_count_0sale, skuCarryCount),
     ratio: ratioOf(row.excess_value_0sale, row.shop_stock_value_cm),
     ratio_over2: ratioOf(row.excess_value_over2, row.shop_stock_value_cm),
     ratio_total: ratioOf(row.excess_value_total, row.shop_stock_value_cm),
@@ -230,7 +236,8 @@ const SNAPSHOT_SELECT = `SELECT s.site_code, s.shop, s.om, s.shop_nature, s.shop
   s.sku_count_0sale, s.excess_qty_0sale, s.excess_value_0sale,
   s.sku_count_over2, s.excess_qty_over2, s.excess_value_over2, s.excess_value_total,
   s.shop_stock_qty_cm, s.shop_stock_value_cm, s.sold_qty_p90d, s.net_sales_p90d,
-  s.payload->>'No. of RF SKU' AS rf_sku_count_text`;
+  s.payload->>'No. of RF SKU' AS rf_sku_count_text,
+  s.payload->>'No. of SKU Carry' AS sku_carry_count_text`;
 
 // ---------------------------------------------------------------------------
 // 上載 / 取代
@@ -556,8 +563,10 @@ export interface ShopStockSeriesPoint {
   rf_store_count: number;
   /** 全公司 RF SKU 合計與上一期的絕對增減 */
   rf_sku_delta: number | null;
-  /** 加權「不良存貨 SKU 佔 RF 比率」= Σ sku_count_0sale ÷ Σ RF SKU（小數）；RF 合計 0/NULL → null */
-  ovs_rf_ratio: number | null;
+  /** 各店 No. of SKU Carry 合計；全部店缺值時為 null */
+  total_sku_carry: number | null;
+  /** 加權「不良存貨 SKU 佔店內貨品比率」= Σ sku_count_0sale ÷ Σ SKU Carry（小數）；Carry 合計 0/NULL → null */
+  ovs_carry_ratio: number | null;
   /** 加權佔比（0–1 小數）；分母 0/NULL → null */
   ratio: number | null;
   ratio_over2: number | null;
@@ -578,8 +587,9 @@ export interface ShopStockKpi {
   total_rf_sku: number | null;
   rf_store_count: number;
   rf_sku_delta: number | null;
-  ovs_rf_ratio: number | null;
-  ovs_rf_ratio_wow_delta_pt: number | null;
+  total_sku_carry: number | null;
+  ovs_carry_ratio: number | null;
+  ovs_carry_ratio_wow_delta_pt: number | null;
   ratio: number | null;
   ratio_over2: number | null;
   ratio_total: number | null;
@@ -608,17 +618,19 @@ interface RawCompanyAgg {
   sku_count_0sale: unknown;
 }
 
-interface RawRfSkuRow {
+interface RawSkuCountRow {
   report_date: string;
   rf_sku_count_text: unknown;
+  sku_carry_count_text: unknown;
 }
 
-function sumRfSku(rows: Array<{ rf_sku_count: number | null }>): { total: number | null; storeCount: number } {
+/** 把一組（可含 null 的）SKU 數合計：全部缺值 → total null，絕不當 0 */
+function sumSkuCount(values: Array<number | null>): { total: number | null; storeCount: number } {
   let total = 0;
   let storeCount = 0;
-  for (const row of rows) {
-    if (row.rf_sku_count === null) continue;
-    total += row.rf_sku_count;
+  for (const value of values) {
+    if (value === null) continue;
+    total += value;
     storeCount += 1;
   }
   return { total: storeCount > 0 ? total : null, storeCount };
@@ -628,9 +640,9 @@ async function loadCompanySeries(from?: string, to?: string): Promise<ShopStockS
   const params = [from ?? null, to ?? null];
   const dateFilter = `($1::date IS NULL OR b.report_date >= $1::date)
         AND ($2::date IS NULL OR b.report_date <= $2::date)`;
-  // RF 原始值可能是數字或含千分位的文字。先在 TS 安全解析再合計，
+  // RF / SKU Carry 原始值可能是數字或含千分位的文字。先在 TS 安全解析再合計，
   // 避免對缺欄／非法文字做 SQL numeric cast 而令整個 summary API 失敗。
-  const [r, rfRows] = await Promise.all([
+  const [r, skuRows] = await Promise.all([
     query<RawCompanyAgg>(
       `SELECT b.report_date::text AS report_date,
               b.report_kind,
@@ -648,9 +660,10 @@ async function loadCompanySeries(from?: string, to?: string): Promise<ShopStockS
         ORDER BY b.report_date`,
       params,
     ),
-    query<RawRfSkuRow>(
+    query<RawSkuCountRow>(
       `SELECT b.report_date::text AS report_date,
-              s.payload->>'No. of RF SKU' AS rf_sku_count_text
+              s.payload->>'No. of RF SKU' AS rf_sku_count_text,
+              s.payload->>'No. of SKU Carry' AS sku_carry_count_text
          FROM shop_stock_batches b
          JOIN shop_stock_snapshots s ON s.batch_id = b.id
         WHERE ${dateFilter}
@@ -659,19 +672,24 @@ async function loadCompanySeries(from?: string, to?: string): Promise<ShopStockS
     ),
   ]);
 
-  const rfByDate = new Map<string, Array<{ rf_sku_count: number | null }>>();
-  for (const row of rfRows.rows) {
+  const skuByDate = new Map<string, Array<{ rf: number | null; carry: number | null }>>();
+  for (const row of skuRows.rows) {
     const date = toDateOnly(row.report_date);
-    const list = rfByDate.get(date) ?? [];
-    list.push({ rf_sku_count: toSkuCount(row.rf_sku_count_text) });
-    rfByDate.set(date, list);
+    const list = skuByDate.get(date) ?? [];
+    list.push({
+      rf: toSkuCount(row.rf_sku_count_text),
+      carry: toSkuCount(row.sku_carry_count_text),
+    });
+    skuByDate.set(date, list);
   }
 
   const points: ShopStockSeriesPoint[] = r.rows.map((row) => {
     const soh = toNumber(row.soh);
     const excess = toNumber(row.excess_0sale);
     const reportDate = toDateOnly(row.report_date);
-    const rf = sumRfSku(rfByDate.get(reportDate) ?? []);
+    const dayRows = skuByDate.get(reportDate) ?? [];
+    const rf = sumSkuCount(dayRows.map((x) => x.rf));
+    const carry = sumSkuCount(dayRows.map((x) => x.carry));
     return {
       report_date: reportDate,
       report_kind: row.report_kind,
@@ -686,7 +704,8 @@ async function loadCompanySeries(from?: string, to?: string): Promise<ShopStockS
       total_rf_sku: rf.total,
       rf_store_count: rf.storeCount,
       rf_sku_delta: null,
-      ovs_rf_ratio: ratioOf(row.sku_count_0sale, rf.total),
+      total_sku_carry: carry.total,
+      ovs_carry_ratio: ratioOf(row.sku_count_0sale, carry.total),
       ratio: ratioOf(excess, soh),
       ratio_over2: ratioOf(row.excess_over2, soh),
       ratio_total: ratioOf(row.excess_total, soh),
@@ -725,8 +744,9 @@ export async function getShopStockSummary(
     total_rf_sku: latest.total_rf_sku,
     rf_store_count: latest.rf_store_count,
     rf_sku_delta: latest.rf_sku_delta,
-    ovs_rf_ratio: latest.ovs_rf_ratio,
-    ovs_rf_ratio_wow_delta_pt: deltaPt(latest.ovs_rf_ratio, previous?.ovs_rf_ratio ?? null),
+    total_sku_carry: latest.total_sku_carry,
+    ovs_carry_ratio: latest.ovs_carry_ratio,
+    ovs_carry_ratio_wow_delta_pt: deltaPt(latest.ovs_carry_ratio, previous?.ovs_carry_ratio ?? null),
     ratio: latest.ratio,
     ratio_over2: latest.ratio_over2,
     ratio_total: latest.ratio_total,
@@ -777,8 +797,9 @@ export interface ShopStockWeekTotals {
   total_rf_sku: number | null;
   rf_store_count: number;
   rf_sku_delta: number | null;
-  /** 該期加權「不良存貨 SKU 佔 RF 比率」（小數） */
-  ovs_rf_ratio: number | null;
+  total_sku_carry: number | null;
+  /** 該期加權「不良存貨 SKU 佔店內貨品比率」（小數） */
+  ovs_carry_ratio: number | null;
 }
 
 export interface ShopStockWeek {
@@ -930,9 +951,10 @@ export async function getShopStockWeek(reportDate: string): Promise<ShopStockWee
   const totalExcess = ratioRows.reduce((sum, row) => sum + (row.excess_value_0sale ?? 0), 0);
   const totalSoh = ratioRows.reduce((sum, row) => sum + (row.shop_stock_value_cm ?? 0), 0);
   const companyRatio = ratioOf(totalExcess, totalSoh);
-  const rf = sumRfSku(snapshots);
-  const previousRf = sumRfSku(prevSnapshots);
-  // 分子與 loadCompanySeries 同一口徑：Σ sku_count_0sale（缺值當 0）÷ Σ 有效 RF SKU
+  const rf = sumSkuCount(snapshots.map((row) => row.rf_sku_count));
+  const previousRf = sumSkuCount(prevSnapshots.map((row) => row.rf_sku_count));
+  const carry = sumSkuCount(snapshots.map((row) => row.sku_carry_count));
+  // 分子與 loadCompanySeries 同一口徑：Σ sku_count_0sale（缺值當 0）÷ Σ 有效 SKU Carry
   const sku0Total = snapshots.reduce((sum, row) => sum + (row.sku_count_0sale ?? 0), 0);
 
   return {
@@ -952,7 +974,8 @@ export async function getShopStockWeek(reportDate: string): Promise<ShopStockWee
       rf_sku_delta: rf.total !== null && previousRf.total !== null
         ? rf.total - previousRf.total
         : null,
-      ovs_rf_ratio: ratioOf(sku0Total, rf.total),
+      total_sku_carry: carry.total,
+      ovs_carry_ratio: ratioOf(sku0Total, carry.total),
     },
     rows,
   };
@@ -969,16 +992,16 @@ export interface ShopStockStoreSeriesPoint {
   wow_delta_pt: number | null;
   excess_value_0sale: number | null;
   shop_stock_value_cm: number | null;
-  /** 本店「不良存貨 SKU 佔 RF 比率」（小數）；缺 RF 數時為 null */
-  ovs_rf_ratio: number | null;
+  /** 本店不良存貨 SKU 佔店內貨品比率（小數）；缺 SKU Carry 時為 null */
+  ovs_carry_ratio: number | null;
 }
 
 export interface ShopStockCompanySeriesPoint {
   report_date: string;
   ratio: number | null;
   wow_delta_pt: number | null;
-  /** 全公司加權「不良存貨 SKU 佔 RF 比率」（小數） */
-  ovs_rf_ratio: number | null;
+  /** 全公司加權「不良存貨 SKU 佔店內貨品比率」（小數） */
+  ovs_carry_ratio: number | null;
 }
 
 export interface ShopStockStoreKpi {
@@ -997,10 +1020,10 @@ export interface ShopStockStoreKpi {
   company_ratio: number | null;
   /** 自己 - 全公司，百分點 */
   delta_vs_company_pt: number | null;
-  /** 本店「不良存貨 SKU 佔 RF 比率」（小數）；缺 RF 數時為 null */
-  ovs_rf_ratio: number | null;
-  /** 全公司同日加權「不良存貨 SKU 佔 RF 比率」 */
-  company_ovs_rf_ratio: number | null;
+  /** 本店不良存貨 SKU 佔店內貨品比率（小數）；缺 SKU Carry 時為 null */
+  ovs_carry_ratio: number | null;
+  /** 全公司同日加權「不良存貨 SKU 佔店內貨品比率」 */
+  company_ovs_carry_ratio: number | null;
 }
 
 export interface ShopStockStoreView {
@@ -1031,7 +1054,7 @@ export async function getShopStockForStore(siteCode: string): Promise<ShopStockS
       wow_delta_pt: null,
       excess_value_0sale: row.excess_value_0sale,
       shop_stock_value_cm: row.shop_stock_value_cm,
-      ovs_rf_ratio: row.ovs_rf_ratio,
+      ovs_carry_ratio: row.ovs_carry_ratio,
     };
   });
   for (let i = 1; i < series.length; i += 1) {
@@ -1043,10 +1066,10 @@ export async function getShopStockForStore(siteCode: string): Promise<ShopStockS
     report_date: point.report_date,
     ratio: point.ratio,
     wow_delta_pt: point.wow_delta_pt,
-    ovs_rf_ratio: point.ovs_rf_ratio,
+    ovs_carry_ratio: point.ovs_carry_ratio,
   }));
   const companyByDate = new Map(companySeries.map((point) => [point.report_date, point.ratio]));
-  const companyOvsByDate = new Map(companySeries.map((point) => [point.report_date, point.ovs_rf_ratio]));
+  const companyOvsByDate = new Map(companySeries.map((point) => [point.report_date, point.ovs_carry_ratio]));
 
   const latest = r.rows[r.rows.length - 1];
   if (!latest) {
@@ -1070,8 +1093,8 @@ export async function getShopStockForStore(siteCode: string): Promise<ShopStockS
     excess_value_0sale: latestRow.excess_value_0sale,
     company_ratio: companyRatio,
     delta_vs_company_pt: deltaPt(latestRow.ratio, companyRatio),
-    ovs_rf_ratio: latestRow.ovs_rf_ratio,
-    company_ovs_rf_ratio: companyOvsRatio,
+    ovs_carry_ratio: latestRow.ovs_carry_ratio,
+    company_ovs_carry_ratio: companyOvsRatio,
   };
 
   return {

@@ -165,9 +165,9 @@
     const prevRatio = prev ? num(prev.ratio) : null;
     const wow = firstNum([kpi.wow_delta_pt, kpi.wow, last && last.wow_delta_pt])
       ?? (ratio !== null && prevRatio !== null ? ratio - prevRatio : null);
-    // 不良存貨 SKU ÷ RF SKU（小數）；分子含 ND 貨，是與全公司的對比指標
-    const ovsRatio = firstNum([kpi.ovs_rf_ratio, last && last.ovs_rf_ratio]);
-    const companyOvs = firstNum([kpi.company_ovs_rf_ratio]);
+    // 不良存貨 SKU ÷ 店內貨品 SKU（小數）；分母 No. of SKU Carry = RF + ND with Stock
+    const ovsRatio = firstNum([kpi.ovs_carry_ratio, last && last.ovs_carry_ratio]);
+    const companyOvs = firstNum([kpi.company_ovs_carry_ratio]);
     const vsCompany = ovsRatio !== null && companyOvs !== null ? (ovsRatio - companyOvs) * 100 : null;
     const dateLabel = last ? `${dashDate(last.report_date)} 期` : '';
     const zeroDivide = ratio === null && soh !== null && Math.abs(soh) < 0.005;
@@ -179,9 +179,9 @@
         zeroDivide ? '店舖存貨值為 0，佔比不適用'
           : (wow === null ? '需要至少 2 期資料才有 WoW' : `${wowArrow(wow)}${fmtPt(wow)}　較上一期`),
         wowClass(wow)),
-      kpiCard('不良存貨 SKU ÷ RF SKU', fmtRatio(ovsRatio),
+      kpiCard('不良存貨 SKU ÷ 店內貨品 SKU', fmtRatio(ovsRatio),
         ovsRatio === null
-          ? '需要有效 RF SKU 數據'
+          ? '需要有效 SKU Carry 數據'
           : (companyOvs === null ? '全公司暫無對比數據' : `全公司 ${fmtRatio(companyOvs)}｜${wowArrow(vsCompany)}${fmtPt(vsCompany)}　較全公司`),
         wowClass(vsCompany)),
     ].join('');

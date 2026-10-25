@@ -253,15 +253,16 @@ pg_restore --no-owner --no-privileges --clean --if-exists \
    `PPT 圖表用`（只有「期別 / 不良存貨佔比」兩欄，插入折線圖即用）、`匯出說明`（口徑、範圍、產生時間）。
    比率以小數儲存 + `0.0%` 格式，可直接在 Excel 改顯示位數；**分母 0 的期數留空**（不寫 0，避免畫出假 0% 線）。匯出為唯讀，會寫 audit event `shop_stock_trend_export`。
 
-### No. of RF SKU Dashboard（自動補貨）與「不良存貨 SKU 佔 RF 比率」
+### No. of RF SKU Dashboard（自動補貨）與「不良存貨 SKU 佔店內貨品比率」
 
-同一份 I14 資料、同一個 tab 內另有 RF 區塊（**無需重上載**：`No. of RF SKU` 直接取自每期快照 payload；空白／非法值 → null，絕不當 0）：
+同一份 I14 資料、同一個 tab 內另有 RF 區塊（**無需重上載**：`No. of RF SKU`／`No. of SKU Carry` 直接取自每期快照 payload；空白／非法值 → null，絕不當 0）：
 
-- **口徑**：`不良存貨 SKU 佔 RF 比率 = No. of Overstock SKU (P90D 0 Sales) ÷ No. of RF SKU`，全公司用加權合計（Σ分子 ÷ Σ分母，不是各店平均）。分子**包含 ND 貨**（Overstock SKU 不分 RF/ND），所以這是「滯銷 SKU ÷ 自動補貨名單 SKU」的對比指標，不是「RF 內滯銷比例」；RF SKU 極少的店比率可以超過 100%。
-- **KPI 卡**：最新 RF SKU 合計、RF SKU 較上期、資料覆蓋店數、不良存貨 SKU 佔 RF 比率（含 WoW 百分點，上升＝轉差）。
-- **走勢圖**：可切換「RF SKU 數」／「不良÷RF 比率」兩個口徑，顯示期間與佔比趨勢圖同步（3/6/12/24 個月，缺值斷線）。
-- **Top 15**：「RF SKU 數量」排名**不排除新店**（絕對數有效）；「不良÷RF 比率」排名**與價值比率 Top 15 同一套新店排除規則**（`is_new`），另排除 **RF SKU < 100 或缺值**的店——分母太小會令比率失真（實測例：RF=2、Overstock=99 → 4,950%）。被排除的店列在「已排除」名單，仍計入全公司合計與每店明細。
-- **比率 ≥ 20% 紅色顯示**（全公司加權約 12–13%，≥20% 視為明顯偏高）；RF 增減本身**不套紅綠好壞色**。
+- **口徑**：`不良存貨 SKU 佔店內貨品比率 = No. of Overstock SKU (P90D 0 Sales) ÷ No. of SKU Carry`，全公司用加權合計（Σ分子 ÷ Σ分母，不是各店平均）。分母 `No. of SKU Carry` = 店內貨品 SKU 總數（報表定義 = RF SKU + ND with Stock，**已對真實報表 93 店逐店核實**）。分子**包含 ND 貨**，但必為分母子集，**比率結構上不超過 100%**，不需要最低分母門檻（RF=2 的 HA43 在新分母下是正常數字）。
+- **為何分母不用 RF SKU**：分母用 RF 時，店舖照建議把 RF 轉 ND 而貨未清走，分子不變、分母縮小，比率反而爆升（模擬實測：60.6% → 62.7%）——等於懲罰正確行為。改用 SKU Carry 後，轉 ND 本身不影響比率，**只有實際賣出或轉走滯銷貨才會改善**，誘因與「降低 90 日 0 銷售」一致。
+- **KPI 卡**：最新 RF SKU 合計、RF SKU 較上期、資料覆蓋店數、不良存貨 SKU 佔店內貨品比率（含 WoW 百分點，上升＝轉差）。
+- **走勢圖**：可切換「RF SKU 數」／「不良÷SKU Carry」兩個口徑，顯示期間與佔比趨勢圖同步（3/6/12/24 個月，缺值斷線）。
+- **Top 15**：「RF SKU 數量」排名**不排除新店**（絕對數有效）；「不良÷SKU Carry」排名**與價值比率 Top 15 同一套新店排除規則**（`is_new`），無其他排除。
+- **比率 ≥ 20% 紅色顯示**（全公司加權約 11–12%，≥20% 視為明顯偏高）；RF 增減本身**不套紅綠好壞色**。
 
 對應 API（全部須管理員登入；只有上載用 `excelImportLimiter`，其餘用 `adminActionLimiter`）：
 
@@ -277,7 +278,7 @@ pg_restore --no-owner --no-privileges --clean --if-exists \
 
 ### 店舖端
 
-店舖用原本的 Site Code 登入後，`/portal/zero-sales.html` 有兩個分頁籤：**零銷售回覆**（預設）與 **存貨走勢**。存貨走勢顯示**自己店**的每週佔比趨勢、全公司加權平均線（虛線）及最新四個 KPI（店舖存貨值、不良存貨值、不良存貨佔比、不良存貨 SKU ÷ RF SKU——最後一張卡附全公司同日加權對比）。
+店舖用原本的 Site Code 登入後，`/portal/zero-sales.html` 有兩個分頁籤：**零銷售回覆**（預設）與 **存貨走勢**。存貨走勢顯示**自己店**的每週佔比趨勢、全公司加權平均線（虛線）及最新四個 KPI（店舖存貨值、不良存貨值、不良存貨佔比、不良存貨 SKU ÷ 店內貨品 SKU——最後一張卡附全公司同日加權對比；RF 轉 ND 而貨未清走時這個數字不變，實際清貨才會下降）。
 
 - 分頁由 `public/portal/js/portal-tabs.js` 控制（`aria-selected` + `hidden` + 網址 hash `#stock`），並廣播 `portal:tab` 事件；`dashboard.js` 收到事件才首次載入，確保面板可見、圖表量得到闊度。
 - 舊網址 `/portal/dashboard.html` **已移除**（該頁只在分頁整合當日短暫存在，從未對外通知，故不留跳轉頁）。入口一律是 `/portal/zero-sales.html`，需要直接開存貨分頁時用 `/portal/zero-sales.html#stock`。

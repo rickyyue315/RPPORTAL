@@ -86,9 +86,8 @@
       <div class="card dash-head-card">
         <h2>存貨走勢</h2>
         <div id="dash_site_info" class="dash-site-info"><div class="loading">載入中…</div></div>
-        <p class="dash-intro">RP Team 每週從 I14「By Shop」報表整理你店舖的死存貨比率：<b>死存貨值（P90D 0 Sales）÷ 店舖存貨值（CM）</b>。<br>這裡<b>只顯示你店舖自己的數據</b>，以及<b>全公司合計（加權）</b>作對比；不會顯示其他店舖的數字或排名。</p>
+        <p class="dash-intro">RP Team 每週從 I14「By Shop」報表整理你店舖的不良存貨比率：<b>不良存貨值（P90D 0 Sales）÷ 店舖存貨值（CM）</b>。<br>這裡<b>只顯示你店舖自己的數據</b>，以及<b>全公司合計（加權）</b>作對比；不會顯示其他店舖的數字或排名。</p>
         <div id="dash_error"></div>
-        <button class="btn btn-sm dash-refresh" id="btn_dash_refresh" type="button">重新整理</button>
       </div>
 
       <section class="dash-kpi-grid" id="dash_kpi" aria-label="最新一期存貨指標">
@@ -97,7 +96,7 @@
 
       <div class="card dash-card" id="dash_chart_card">
         <div class="dash-card-head">
-          <h3>每週死存貨佔比</h3>
+          <h3>每週不良存貨佔比</h3>
           <span class="hint" id="dash_chart_period"></span>
         </div>
         <div class="dash-legend" id="dash_legend">

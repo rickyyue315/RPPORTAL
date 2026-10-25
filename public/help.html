@@ -28,24 +28,25 @@
   <main class="container">
     <section class="help-hero" aria-labelledby="help-title">
       <h2 id="help-title">跟著圖示，一步一步完成回覆</h2>
-      <p>店舖首頁為「90日零銷售回覆」。店舖以 Site Code 及密碼登入一次，所有頁面（90日零銷售、一般 NDRF、Urgent、突發性銷售、行貨退貨）即共同登入並自動認店；Urgent、突發性銷售及行貨退貨已全部顯示，暫停收單中仍可進入查看。先選擇你要看的說明章節，圖片為介面示意圖，實際畫面可能因手機或電腦螢幕大小略有不同。</p>
+      <p>店舖首頁為「90日零銷售回覆」，頁面上方有兩個分頁：<b>零銷售回覆</b>（預設）與<b>存貨走勢</b>。店舖以 Site Code 及密碼登入一次，所有頁面（90日零銷售、一般 NDRF、Urgent、突發性銷售、行貨退貨）即共同登入並自動認店；Urgent、突發性銷售及行貨退貨已全部顯示，暫停收單中仍可進入查看。先選擇你要看的說明章節，圖片為介面示意圖，實際畫面可能因手機或電腦螢幕大小略有不同。</p>
     </section>
 
     <nav class="help-toc" aria-label="說明章節">
       <a href="#zero-sales">1. 90日零銷售回覆<small>免登入，每週指定SKU</small></a>
-      <a href="#normal">2. 一般申報<small>進入 Store Portal，ND／RF 申報（暫停）</small></a>
-      <a href="#excel">3. Excel 批量<small>進入後一次上載多筆（暫停）</small></a>
-      <a href="#portal-status">4. 申請進度<small>查看審批狀態及結果</small></a>
-      <a href="#urgent">5. Urgent Order<small>緊急補貨申報（暫停）</small></a>
-      <a href="#sales">6. 突發性銷售申報<small>只填 Site Code 及 SKU（暫停）</small></a>
-      <a href="#return">7. 行貨退貨報數<small>申請退行貨及 Excel 批量（暫停）</small></a>
-      <a href="#lookup">8. 查詢／修改<small>Urgent／銷售／退貨</small></a>
-      <a href="#reviewer">9. Buyer／SCT 審批<small>審批工作檯操作</small></a>
+      <a href="#stock-trend">2. 存貨走勢<small>自己店舖的不良存貨比率與趨勢</small></a>
+      <a href="#normal">3. 一般申報<small>進入 Store Portal，ND／RF 申報（暫停）</small></a>
+      <a href="#excel">4. Excel 批量<small>進入後一次上載多筆（暫停）</small></a>
+      <a href="#portal-status">5. 申請進度<small>查看審批狀態及結果</small></a>
+      <a href="#urgent">6. Urgent Order<small>緊急補貨申報（暫停）</small></a>
+      <a href="#sales">7. 突發性銷售申報<small>只填 Site Code 及 SKU（暫停）</small></a>
+      <a href="#return">8. 行貨退貨報數<small>申請退行貨及 Excel 批量（暫停）</small></a>
+      <a href="#lookup">9. 查詢／修改<small>Urgent／銷售／退貨</small></a>
+      <a href="#reviewer">10. Buyer／SCT 審批<small>審批工作檯操作</small></a>
     </nav>
 
     <section class="card help-section" id="zero-sales" aria-labelledby="zero-sales-title">
       <h2 id="zero-sales-title">1. 90日零銷售回覆（店舖）</h2>
-      <p class="help-section-intro">RP Team 每週會從每間店舖本身的存貨中，選出過去 90 日零銷售、庫存量最高的 Top 10 SKU 派發。店舖進入後只見自己店的清單，請逐條選擇原因；選擇「6.其他」時必須填寫補充說明。每 SKU 可修改一次（初次回覆 + 1次修改）；<b>重複上榜</b>的 SKU 會自動套用上次回覆，店舖只需確認，並可再修改 <b>2 次</b>（按鈕以橙色標示）。用完後會鎖定，如需再改請聯絡 RP Team。<b>只有最新一週可以回覆</b>：新一週派發後，上一週會自動封存成紀錄，只供查閱。</p>
+      <p class="help-section-intro">RP Team 每週會從每間店舖本身的存貨中，選出過去 90 日零銷售、庫存量最高的 Top 10 SKU 派發。店舖進入後只見自己店的清單，請逐條選擇原因；選擇「6.其他」時必須填寫補充說明。每 SKU 可修改一次（初次回覆 + 1次修改）；<b>重複上榜</b>的 SKU 會自動套用上次回覆，店舖只需確認，並可再修改 <b>2 次</b>（按鈕以橙色標示）。用完後會鎖定，如需再改請聯絡 RP Team。<b>只有最新一週可以回覆</b>：新一週派發後，上一週會自動封存成紀錄，只供查閱。<br>同一頁上方的「<b>存貨走勢</b>」分頁會顯示你店舖的不良存貨比率與走勢，詳見第 2 章。</p>
 
       <figure class="help-figure">
         <div class="help-figure-scroll">
@@ -180,8 +181,97 @@
       </div>
     </section>
 
-    <section class="card help-section" id="normal" aria-labelledby="normal-title">
-      <h2 id="normal-title">2. 一般申報（ND／RF）（暫停）</h2>
+    <section class="card help-section" id="stock-trend" aria-labelledby="stock-trend-title">
+      <h2 id="stock-trend-title">2. 存貨走勢（店舖）</h2>
+      <p class="help-section-intro">存貨走勢與「90日零銷售回覆」<b>在同一頁</b>，按頁面上方的「<b>存貨走勢</b>」分頁即可（按鈕以<b>橙色高亮</b>提示）。RP Team 每週從 I14「By Shop」報表整理你店舖的存貨狀況：<b>不良存貨比率 = 不良存貨值（P90D 0 Sales）÷ 店舖存貨值（CM）</b>。比率越高，代表越多存貨屬 90 日零銷售。</p>
+
+      <div class="help-step">
+        <div class="help-placeholder">
+          <strong>同一頁兩個分頁</strong>
+          <span>零銷售回覆 ｜ 存貨走勢</span>
+        </div>
+        <div>
+          <h3><span class="help-step-number">1</span>切換到存貨走勢</h3>
+          <p>登入後在頁面上方按「<b>存貨走勢</b>」分頁。這裡只會顯示<b>你店舖自己</b>的數字；圖中的虛線是<b>全公司合計（加權）</b>，用作對比，<b>不會顯示其他店舖的數據或排名</b>。</p>
+          <div class="help-note"><b>不需要手動更新：</b>每次切換到這個分頁都會重新讀取最新一期，數值會隨 RP Team 上載新報表而自動更新。</div>
+        </div>
+      </div>
+
+      <figure class="help-figure">
+        <div class="help-figure-scroll">
+          <svg viewBox="0 0 680 250" width="100%" role="img" xmlns="http://www.w3.org/2000/svg">
+            <title>存貨走勢示意圖</title>
+            <desc>藍色實線是本店不良存貨比率，灰色虛線是全公司合計（加權），比率越低越好。</desc>
+            <line x1="70" y1="180" x2="646" y2="180" stroke="#D7DEE7" stroke-width="1"/>
+            <line x1="70" y1="120" x2="646" y2="120" stroke="#E8EDF3" stroke-width="1"/>
+            <line x1="70" y1="60" x2="646" y2="60" stroke="#E8EDF3" stroke-width="1"/>
+            <text class="ts" x="62" y="184" text-anchor="end" fill="#888780">0%</text>
+            <text class="ts" x="62" y="124" text-anchor="end" fill="#888780">5%</text>
+            <text class="ts" x="62" y="64" text-anchor="end" fill="#888780">10%</text>
+
+            <line x1="70" y1="138" x2="646" y2="132" stroke="#94A3B8" stroke-width="2" stroke-dasharray="6 4"/>
+            <text class="ts" x="646" y="120" text-anchor="end" fill="#5F5E5A">全公司合計（加權）</text>
+
+            <polyline points="90,150 200,138 310,126 420,118 530,104 620,96" fill="none" stroke="#378ADD" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/>
+            <circle cx="90" cy="150" r="3.5" fill="#fff" stroke="#378ADD" stroke-width="1.6"/>
+            <circle cx="200" cy="138" r="3.5" fill="#fff" stroke="#378ADD" stroke-width="1.6"/>
+            <circle cx="310" cy="126" r="3.5" fill="#fff" stroke="#378ADD" stroke-width="1.6"/>
+            <circle cx="420" cy="118" r="3.5" fill="#fff" stroke="#378ADD" stroke-width="1.6"/>
+            <circle cx="530" cy="104" r="3.5" fill="#fff" stroke="#378ADD" stroke-width="1.6"/>
+            <circle cx="620" cy="96" r="4.5" fill="#378ADD" stroke="#fff" stroke-width="1.5"/>
+
+            <text class="ts" x="90" y="202" text-anchor="middle" fill="#888780">08-01</text>
+            <text class="ts" x="310" y="202" text-anchor="middle" fill="#888780">10-01</text>
+            <text class="ts" x="530" y="202" text-anchor="middle" fill="#888780">12-01</text>
+
+            <line x1="70" y1="18" x2="94" y2="18" stroke="#378ADD" stroke-width="2.5"/>
+            <text class="ts" x="102" y="22" fill="#185FA5">本店佔比</text>
+            <line x1="176" y1="18" x2="200" y2="18" stroke="#94A3B8" stroke-width="2" stroke-dasharray="6 4"/>
+            <text class="ts" x="208" y="22" fill="#5F5E5A">全公司合計（加權）</text>
+
+            <rect x="70" y="218" width="576" height="24" rx="6" fill="#E6F1FB" stroke="#B5D4F4" stroke-width="0.5"/>
+            <text class="ts" x="86" y="235" fill="#0C447C">線往下＝比率下降＝存貨狀況改善；最右邊的一點永遠是最新一期。</text>
+          </svg>
+        </div>
+        <figcaption>存貨走勢示意圖：藍色實線是你店舖的比率，灰色虛線是全公司合計。兩線都是「金額比率」，不是件數或 SKU 比例。</figcaption>
+      </figure>
+
+      <div class="help-step">
+        <div class="help-placeholder">
+          <strong>三個數字</strong>
+          <span>店舖存貨值 ｜ 不良存貨值 ｜ 不良存貨比率</span>
+        </div>
+        <div>
+          <h3><span class="help-step-number">2</span>怎樣看上面的數字</h3>
+          <p>圖上方有三張卡：<b>店舖存貨值（CM）</b>、<b>不良存貨值（P90D 0 Sales）</b>、<b>不良存貨比率</b>。比率旁邊會顯示<b>與上一期比較</b>（紅色▲代表上升、綠色▼代表下降，上升即轉差）。</p>
+          <div class="help-note"><b>口徑要清楚：</b>比率是<b>以金額計</b>，不是「不良 SKU 的百分比」。例如 8.39% 是指「每 100 元存貨之中，有 8.39 元屬 90 日零銷售」，不代表要清走 8% 的貨品。</div>
+        </div>
+      </div>
+
+      <div class="help-step">
+        <div class="help-placeholder">
+          <strong>資料只有一期時</strong>
+          <span>只顯示數字，不畫線</span>
+        </div>
+        <div>
+          <h3><span class="help-step-number">3</span>只有一期或未收到數據</h3>
+          <p>如果系統只有一期資料，<b>不會畫線</b>，只顯示該期數字與「下週上載後會顯示走勢」。若某期店舖存貨值為 0（除零），該期會<b>斷線</b>而不是當成 0%。若最新一期報表見不到你店舖，會顯示提示，圖表保留之前期數。</p>
+        </div>
+      </div>
+
+      <div class="help-step">
+        <div class="help-placeholder">
+          <strong>可以怎樣做</strong>
+          <span>對應零銷售回覆清單</span>
+        </div>
+        <div>
+          <h3><span class="help-step-number">4</span>比率偏高時怎樣跟進</h3>
+          <p>切換回「零銷售回覆」分頁，按每週派發的 SKU 清單處理：<b>賣出一件</b>，或<b>轉 ND／降低 Safety Stock</b> 並把存貨降至 Top 10 以外。比率會在往後幾期反映。</p>
+        </div>
+      </div>
+    </section>
+
+    <section class="card help-section" id="normal" aria-labelledby="normal-title">      <h2 id="normal-title">3. 一般申報（ND／RF）（暫停）</h2>
       <p class="help-section-intro">一般 NDRF 申報直接喺網上填寫。進入 Store Portal 後輸入你店舖嘅 Site Code 即可使用；不需密碼、不需登入。</p>
 
       <div class="help-step">
@@ -219,7 +309,7 @@
     </section>
 
     <section class="card help-section" id="excel" aria-labelledby="excel-title">
-      <h2 id="excel-title">3. Excel 批量上載（暫停）</h2>
+      <h2 id="excel-title">4. Excel 批量上載（暫停）</h2>
       <p class="help-section-intro">進入 Store Portal 後，可在「Excel 批量上載」一次提交多筆申報。請不要更改工作表名稱及第一行欄名。</p>
       <div class="help-step">
         <img src="/images/help/excel.svg" alt="下載 Excel 模板、填寫資料並上載的示意圖" width="640" height="360" loading="lazy" decoding="async">
@@ -239,7 +329,7 @@
     </section>
 
     <section class="card help-section" id="portal-status" aria-labelledby="portal-status-title">
-      <h2 id="portal-status-title">4. 申請進度及審批狀態</h2>
+      <h2 id="portal-status-title">5. 申請進度及審批狀態</h2>
       <p class="help-section-intro">一般 NDRF 提交後不再使用公開查詢，請進入 Store Portal 於「我的申請」查看審批狀態及結果。</p>
       <div class="help-step">
         <img src="/images/help/lookup.svg" alt="在我的申請查看申請狀態的示意圖" width="640" height="360" loading="lazy" decoding="async">
@@ -267,7 +357,7 @@
     </section>
 
     <section class="card help-section" id="urgent" aria-labelledby="urgent-title">
-      <h2 id="urgent-title">5. Urgent Order（暫停收單，仍可進入查看）</h2>
+      <h2 id="urgent-title">6. Urgent Order（暫停收單，仍可進入查看）</h2>
       <p class="help-section-intro">Urgent Order 暫停收單中，仍可進入頁面查看。與零銷售回覆同一模式：以 Site Code 及密碼登入一次後自動認店。</p>
       <div class="help-step">
         <img src="/images/help/urgent.svg" alt="填寫 Urgent Order 的 Site Code、SKU、QTY 及原因的示意圖" width="640" height="360" loading="lazy" decoding="async">
@@ -287,7 +377,7 @@
     </section>
 
     <section class="card help-section" id="sales" aria-labelledby="sales-title">
-      <h2 id="sales-title">6. 突發性銷售申報（暫停收單，仍可進入查看）</h2>
+      <h2 id="sales-title">7. 突發性銷售申報（暫停收單，仍可進入查看）</h2>
       <p class="help-section-intro">突發性銷售申報暫停收單中，仍可進入頁面查看。與零銷售回覆同一模式：以 Site Code 及密碼登入一次後自動認店。</p>
       <div class="help-step">
         <img src="/images/help/sales-site.svg" alt="填寫突發性銷售申報的 Site Code 及 SKU 的示意圖" width="640" height="360" loading="lazy" decoding="async">
@@ -307,7 +397,7 @@
     </section>
 
     <section class="card help-section" id="return" aria-labelledby="return-title">
-      <h2 id="return-title">7. 行貨退貨報數（暫停收單，仍可進入查看）</h2>
+      <h2 id="return-title">8. 行貨退貨報數（暫停收單，仍可進入查看）</h2>
       <p class="help-section-intro">行貨退貨報數暫停收單中，仍可進入頁面查看時間表。與零銷售回覆同一模式：輸入一次自己店舖嘅 Site Code 後自動認店。</p>
       <div class="help-step">
         <img src="/images/help/return-window.svg" alt="查看行貨退貨申請窗口及庫存分析報表的示意圖" width="640" height="360">
@@ -359,7 +449,7 @@
     </section>
 
     <section class="card help-section" id="lookup" aria-labelledby="lookup-title">
-      <h2 id="lookup-title">8. 查詢／修改（Urgent／銷售／退貨）</h2>
+      <h2 id="lookup-title">9. 查詢／修改（Urgent／銷售／退貨）</h2>
       <p class="help-section-intro">公開「查詢／修改」頁只適用於 <b>URGENT-</b>、<b>SALES-</b> 及 <b>RETURN-</b> 開頭的申請。一般 NDRF 請進入 Store Portal 於「我的申請」查看，不會在公開查詢顯示。</p>
       <div class="help-step">
         <img src="/images/help/lookup.svg" alt="使用申請編號及 Site Code 查詢資料的示意圖" width="640" height="360" loading="lazy" decoding="async">
@@ -385,7 +475,7 @@
     </section>
 
     <section class="card help-section" id="reviewer" aria-labelledby="reviewer-title">
-      <h2 id="reviewer-title">9. Buyer／SCT 審批工作檯</h2>
+      <h2 id="reviewer-title">10. Buyer／SCT 審批工作檯</h2>
       <p class="help-section-intro">Buyer 負責 ND 申請審批；SCT 負責指定店舖 RF（包括改 Safety）審批。使用 RP Team 派發的帳戶進入後即可審批。</p>
       <div class="help-step">
         <div class="help-placeholder">

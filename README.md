@@ -225,11 +225,11 @@ pg_restore --no-owner --no-privileges --clean --if-exists \
 - 錯誤訊息不包含資料庫或內部設定資訊。
 - 一般日誌不記錄申報內容、密碼或完整 IP。
 
-## 每週店舖死存貨 Dashboard（I14「By Shop」）
+## 每週店舖不良存貨 Dashboard（I14「By Shop」）
 
-用現有 Express + PostgreSQL，把每週 I14「By Shop」報表變成可追蹤的死存貨趨勢，**不改動 zero-sales 流程**。
+用現有 Express + PostgreSQL，把每週 I14「By Shop」報表變成可追蹤的不良存貨趨勢，**不改動 zero-sales 流程**。
 
-- **口徑**：每店佔比 = `Excess Stock Value (P90D 0 Sales)` ÷ `Shop Stock Value (CM)`；全公司佔比 = Σ死存貨值 ÷ Σ店舖存貨值（**加權**，不是各店比率平均）。分母為 0／缺值時比率顯示 `—`，不會當成 0%。
+- **口徑**：每店佔比 = `Excess Stock Value (P90D 0 Sales)` ÷ `Shop Stock Value (CM)`；全公司佔比 = Σ不良存貨值 ÷ Σ店舖存貨值（**加權**，不是各店比率平均）。分母為 0／缺值時比率顯示 `—`，不會當成 0%。
 - **身份鍵**：`report_date`（每日只可有一批）。`report_kind`（`weekly`／`month_end`／`ad_hoc`）只作顯示。
 
 ### 管理後台（第 9 個 tab「存貨 Dashboard」）

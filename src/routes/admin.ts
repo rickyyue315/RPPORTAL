@@ -3171,7 +3171,7 @@ adminRouter.put(
 );
 
 // ---------------------------------------------------------------------------
-// 存貨 Dashboard：每週店舖死存貨（By Shop 報表）
+// 存貨 Dashboard：每週店舖不良存貨（By Shop 報表）
 //
 // 限流刻意分開：只有 POST 上載走 excelImportLimiter（30/小時），其餘
 // GET / PUT / DELETE 一律 adminActionLimiter，否則 admin 開 tab、切口徑、

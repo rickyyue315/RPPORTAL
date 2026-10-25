@@ -87,13 +87,6 @@
 .dash-site-code { font-size: 15px; color: #0f172a; }
 .dash-site-code b { font-family: Consolas, "Courier New", monospace; font-size: 17px; letter-spacing: 1px; }
 .dash-intro { color: #475569; font-size: 13.5px; line-height: 1.6; margin: 8px 0 12px; }
-.dash-refresh {
-  min-height: 40px;
-  padding: 9px 20px;
-  border-radius: 999px;
-  font-size: 14px;
-}
-
 /* ---------- KPI 三卡 ---------- */
 .dash-kpi-grid {
   display: grid;
@@ -193,7 +186,6 @@
 .ct-tip-row b { margin-left: auto; font-variant-numeric: tabular-nums; }
 
 /* 觸控：所有可點元素最少 20px 高／寬 */
-.dash-page .dash-refresh,
 .dash-page .dash-chart svg,
 .dash-page .topbar nav a { min-height: 20px; }
 .dash-page .dash-chart svg { touch-action: pan-y; }

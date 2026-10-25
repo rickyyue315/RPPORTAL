@@ -8,7 +8,7 @@ import {
 } from '../lib/shopStockXlsx.js';
 
 /**
- * 每週店舖死存貨 Dashboard 的 service 層。
+ * 每週店舖不良存貨 Dashboard 的 service 層。
  *
  * 身份鍵 = `report_date`（DATE UNIQUE）。`report_kind` 只作顯示，不影響唯一性。
  * 同一日期重複上載 = 取代整批（DELETE 舊 snapshots 再 insert，保留同一 batch id）。
@@ -800,7 +800,7 @@ export async function getShopStockWeek(reportDate: string): Promise<ShopStockWee
         wow_delta_pt: delta,
       };
     })
-    // 排名：比率高（死貨多）排前；新店排可比較店舖之後，不佔名次
+    // 排名：比率高（不良貨品多）排前；新店排可比較店舖之後，不佔名次
     .sort((a, b) => {
       if (a.is_new !== b.is_new) return a.is_new ? 1 : -1;
       if (a.ratio === null && b.ratio === null) return a.site_code.localeCompare(b.site_code);
@@ -866,7 +866,7 @@ export interface ShopStockStoreKpi {
   wow_delta_pt: number | null;
   /** 本店最新一期店舖存貨值（前端 KPI 卡固定讀 total_soh） */
   total_soh: number | null;
-  /** 本店最新一期死存貨值（前端 KPI 卡固定讀 total_excess） */
+  /** 本店最新一期不良存貨值（前端 KPI 卡固定讀 total_excess） */
   total_excess: number | null;
   sku_count_0sale: number | null;
   /** 與 total_soh / total_excess 同值的舊欄名，保留給已上線的前端 bundle */

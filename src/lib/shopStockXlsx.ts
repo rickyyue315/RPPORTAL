@@ -289,7 +289,7 @@ interface LocatedHeader {
   headers: string[];
 }
 
-/** 找表頭列：任一工作表前 10 列中同時有 Site Code + Shop Stock Value (CM) + 0 Sales 死存貨值 */
+/** 找表頭列：任一工作表前 10 列中同時有 Site Code + Shop Stock Value (CM) + 0 Sales 不良存貨值 */
 function locateHeader(workbook: ExcelJS.Workbook): LocatedHeader | null {
   const needed = [
     headerKey(TEXT_FIELDS.siteCode),

@@ -170,8 +170,8 @@
 
     wrap.innerHTML = [
       kpiCard('店舖存貨值（CM）', fmtMoney(soh), dateLabel),
-      kpiCard('死存貨值（P90D 0 Sales）', fmtMoney(excess), dateLabel),
-      kpiCard('死存貨佔比', zeroDivide ? '—' : fmtRatio(ratio),
+      kpiCard('不良存貨值（P90D 0 Sales）', fmtMoney(excess), dateLabel),
+      kpiCard('不良存貨佔比', zeroDivide ? '—' : fmtRatio(ratio),
         zeroDivide ? '店舖存貨值為 0，佔比不適用'
           : (wow === null ? '需要至少 2 期資料才有 WoW' : `${wowArrow(wow)}${fmtPt(wow)}　較上一期`),
         wowClass(wow)),
@@ -251,7 +251,7 @@
       emptyText: '暫無佔比數據',
       yFormat: (v) => `${(Number(v) * 100).toFixed(1)}%`,
       tipFormat: (v) => fmtRatio(v),
-      ariaLabel: `本店死存貨佔比趨勢，共 ${usable.length} 期，最新 ${fmtRatio(usable[usable.length - 1].value)}`,
+      ariaLabel: `本店不良存貨佔比趨勢，共 ${usable.length} 期，最新 ${fmtRatio(usable[usable.length - 1].value)}`,
     });
 
     const gaps = points.length - usable.length;
@@ -266,8 +266,6 @@
   async function load(site) {
     if (loading) return;
     loading = true;
-    const btn = $('btn_dash_refresh');
-    if (btn) btn.disabled = true;
     clearError();
     try {
       const data = (await p.api('/api/portal/stock/summary')) || {};
@@ -294,20 +292,17 @@
       if (err && err.status === 401) return; // portalApi 已導向登入
       showError(err && err.message ? err.message : '載入失敗');
       const kpi = $('dash_kpi');
-      if (kpi) kpi.innerHTML = '<div class="dash-kpi"><div class="dash-kpi-value">—</div><div class="dash-kpi-label">未能載入數據</div><div class="dash-kpi-sub">請按「重新整理」再試</div></div>';
+      if (kpi) kpi.innerHTML = '<div class="dash-kpi"><div class="dash-kpi-value">—</div><div class="dash-kpi-label">未能載入數據</div><div class="dash-kpi-sub">可切換分頁或重新載入頁面再試</div></div>';
       const chart = $('dash_chart');
-      if (chart) chart.innerHTML = '<div class="ct-empty">未能載入走勢圖，請重新整理。</div>';
+      if (chart) chart.innerHTML = '<div class="ct-empty">未能載入走勢圖，請重新載入頁面。</div>';
     } finally {
       loading = false;
-      if (btn) btn.disabled = false;
     }
   }
 
   /* ---------- 啟動 ---------- */
 
   const standalone = !$('panel_stock');
-  const refreshBtn = $('btn_dash_refresh');
-  if (refreshBtn) refreshBtn.addEventListener('click', () => { start(); });
   // 合併頁的登出由 zero-sales.js 綁定；避免同一下點擊觸發兩次
   const logout = $('logout_link');
   if (logout && standalone) logout.addEventListener('click', (e) => { e.preventDefault(); p.logout(); });
@@ -344,7 +339,10 @@
 
   document.addEventListener('portal:tab', (e) => {
     const tab = e && e.detail ? e.detail.tab : '';
-    if (tab === 'stock') start();
+    if (tab !== 'stock') return;
+    // 首次 → 完整載入；之後每次切回來都重新抓一次，確保看到最新一期（無需手動按鈕）
+    if (started) load(currentSite);
+    else start();
   });
 
   // 獨立頁（沒有分頁籤）或面板本來就可見時立即載入；否則等分頁籤通知。

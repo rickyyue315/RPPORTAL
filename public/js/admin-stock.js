@@ -472,8 +472,8 @@
     wrap.innerHTML = [
       kpiCard('最新報表日期', esc(reportDate || '—'), esc(reportKind)),
       kpiCard('店舖存貨值合計', fmtMoney(soh), '') ,
-      kpiCard('死存貨值（P90D 0 Sales）', fmtMoney(excess), ''),
-      kpiCard('死存貨佔比', ratioZero ? '—' : fmtRatio(ratio),
+      kpiCard('不良存貨值（P90D 0 Sales）', fmtMoney(excess), ''),
+      kpiCard('不良存貨佔比', ratioZero ? '—' : fmtRatio(ratio),
         ratioZero ? '店舖存貨值為 0（除零），佔比不適用' : (prev ? `上期 ${fmtRatio(prevRatio)}` : '只有 1 期資料')),
       kpiCard('WoW 變化', `${wowArrow(wow)}${fmtPt(wow)}`, wow === null ? '需要至少 2 期資料' : '較上一期（百分點）', wowClass(wow)),
       kpiCard('涉及店數', stores === null ? '—' : fmtInt(stores), '')
@@ -529,7 +529,7 @@
 
     if (usable.length === 1) {
       if (chartApi) chartApi.clear(el); else el.innerHTML = '';
-      if (legend) legend.innerHTML = '<span class="stk-legend-item"><i style="background:#0f5c9c"></i>死存貨佔比</span>';
+      if (legend) legend.innerHTML = '<span class="stk-legend-item"><i style="background:#0f5c9c"></i>不良存貨佔比</span>';
       el.innerHTML = `<div class="ct-empty">目前只有 1 期資料（${esc(String(usable[0].date).slice(0, 10))} ${fmtRatio(usable[0].value)}），上載下一期後會顯示走勢。</div>`;
       return;
     }
@@ -539,7 +539,7 @@
     const showAvg = avg !== null && Math.abs(avg - lastRatio) > 0.005;
 
     if (legend) {
-      const mainLabel = hasYearPart ? '最近 12 個月' : '死存貨佔比（加權）';
+      const mainLabel = hasYearPart ? '最近 12 個月' : '不良存貨佔比（加權）';
       legend.innerHTML = `<span class="stk-legend-item"><i style="background:${COLOR_MAIN}"></i>${mainLabel}</span>`
         + (hasYearPart ? `<span class="stk-legend-item"><i style="background:${COLOR_BEFORE}"></i>12 個月前（去年）</span>` : '')
         + (showAvg ? `<span class="stk-legend-item"><i class="stk-legend-dash" style="border-color:${COLOR_REF}"></i>全公司平均（加權）${fmtRatio(avg)}</span>` : '');
@@ -552,7 +552,7 @@
 
     const chartSeries = [{
       key: 'ratio',
-      label: '死存貨佔比',
+      label: '不良存貨佔比',
       color: COLOR_MAIN,
       splitDate: hasYearPart ? yearCutoff : '',
       colorBefore: COLOR_BEFORE,
@@ -574,7 +574,7 @@
       emptyText: '暫無佔比數據',
       yFormat: (v) => `${(Number(v) * 100).toFixed(1)}%`,
       tipFormat: (v) => fmtRatio(v),
-      ariaLabel: `死存貨佔比趨勢，共 ${usable.length} 期，最新 ${fmtRatio(lastRatio)}`,
+      ariaLabel: `不良存貨佔比趨勢，共 ${usable.length} 期，最新 ${fmtRatio(lastRatio)}`,
     });
 
     const gaps = points.length - usable.length;

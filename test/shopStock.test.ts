@@ -26,7 +26,7 @@ import {
 import { createPortalSession } from '../src/services/portalAuth.js';
 
 /**
- * 「By Shop」死存貨 Dashboard 測試。
+ * 「By Shop」不良存貨 Dashboard 測試。
  *
  * ⚠ 測試夾具**不包含真實報表**（真實檔含店舖金額）。所有 xlsx 都在執行時用
  *   jszip 動態產生，並刻意模擬上游匯出工具的非標準格式：`x:` 命名空間前綴、

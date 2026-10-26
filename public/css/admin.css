@@ -577,3 +577,109 @@ body.stk-modal-open { overflow: hidden; }
   border-top: 1px solid #e3efed;
 }
 #stk_rf_top15 .stk-bar-track { background: #e7f3f1; }
+
+/* ---------------------------------------------------------------------------
+   指定 SKU 回覆
+   任務編號要一眼睇得出（會貼落 WhatsApp / email），所以用等寬字；
+   年期明細用 chips，避免長表格被「0827 × 1」拉散。
+--------------------------------------------------------------------------- */
+.dsku-code {
+  font-family: Consolas, 'Courier New', monospace;
+  font-size: 12.5px;
+  letter-spacing: .2px;
+  white-space: nowrap;
+}
+.dsku-desc { max-width: 260px; }
+.dsku-line-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin: 0 2px 2px 0;
+  padding: 1px 8px;
+  border: 1px solid #cfe0f3;
+  border-radius: 999px;
+  background: #eef4fb;
+  font-size: 12px;
+  white-space: nowrap;
+}
+.dsku-line-chip b { font-family: Consolas, 'Courier New', monospace; }
+.dsku-note {
+  padding: 8px 12px;
+  border-left: 3px solid #cbd5e1;
+  border-radius: 0 6px 6px 0;
+  background: #f8fafc;
+  font-size: 13px;
+  white-space: pre-wrap;
+}
+.dsku-note--internal {
+  border-left-color: #f0c36d;
+  background: #fffbf0;
+}
+
+/* 指定 SKU 回覆：管理員代填／修改回覆彈窗 */
+#dsku_edit_reply_overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1056;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  background: rgba(0, 0, 0, .45);
+}
+#dsku_edit_reply_overlay .modal-box {
+  width: 100%;
+  max-width: 520px;
+  max-height: calc(100vh - 48px);
+  overflow-y: auto;
+  padding: 26px;
+  border-radius: 12px;
+  background: #fff;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, .25);
+}
+#dsku_edit_reply_overlay h3 { margin: 0 0 8px; }
+.dsku-lines-head {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 40px;
+  gap: 8px;
+  margin-bottom: 4px;
+  font-size: 12px;
+  font-weight: 700;
+  color: #64748b;
+}
+.dsku-line {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 40px;
+  gap: 8px;
+  align-items: center;
+  margin-bottom: 8px;
+}
+.dsku-line .dsku-year {
+  font-family: Consolas, 'Courier New', monospace;
+  letter-spacing: 1px;
+  text-align: center;
+}
+.dsku-line .dsku-qty { text-align: center; }
+.dsku-remove {
+  width: 40px;
+  height: 38px;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  background: #fff;
+  color: #94a3b8;
+}
+.dsku-remove:hover {
+  border-color: #f5c6c2;
+  background: #fdecea;
+  color: #b42318;
+}
+.dsku-add-line { margin: 0 0 10px; }
+.dsku-total {
+  padding: 8px 12px;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  background: #f8fafc;
+  font-size: 13px;
+}
+.dsku-total b { color: #0a3d69; }
+.dsku-total--over { border-color: #f5c6c2; background: #fdecea; }

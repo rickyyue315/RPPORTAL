@@ -1730,6 +1730,8 @@
       loadRecoveryCodes();
     } else if (tab === 'zero-sales') {
       try { globalThis.__zsRefresh?.(); } catch {}
+    } else if (tab === 'designated-sku') {
+      try { globalThis.__dskuRefresh?.(); } catch {}
     }
   }
 

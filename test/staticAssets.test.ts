@@ -9,12 +9,14 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const { version } = JSON.parse(readFileSync(path.join(root, 'package.json'), 'utf8')) as { version: string };
 const app = createApp();
 
-const HTML_PAGES = ['/', '/portal/', '/portal/zero-sales.html', '/portal/store.html'];
+const HTML_PAGES = ['/', '/portal/', '/portal/zero-sales.html', '/portal/store.html', '/portal/designated-sku.html'];
 const VERSIONED_ASSETS = [
   '/portal/js/zero-sales.js',
+  '/portal/js/designated-sku.js',
   '/portal/js/portal.js',
   '/portal/js/portal-tabs.js',
   '/portal/js/dashboard.js',
+  '/js/admin-designated-sku.js',
   '/js/chart-lite.js',
   '/portal/css/portal.css',
   '/css/style.css',
@@ -87,5 +89,55 @@ describe('static asset freshness', () => {
     expect(script).toContain('renderRfDashboard');
     expect(script).toContain('total_rf_sku');
     expect(script).toContain('rf_sku_delta');
+  });
+
+  it('wires the designated SKU reply page, admin tab and direct link', () => {
+    const page = readFileSync(path.join(root, 'public', 'portal', 'designated-sku.html'), 'utf8');
+    const storeScript = readFileSync(path.join(root, 'public', 'portal', 'js', 'designated-sku.js'), 'utf8');
+    const adminHtml = readFileSync(path.join(root, 'public', 'admin', 'index.html'), 'utf8');
+    const adminScript = readFileSync(path.join(root, 'public', 'js', 'admin-designated-sku.js'), 'utf8');
+
+    // 店舖端：多個年期編輯器 + 直 link
+    expect(page).toContain('id="ds_reply_dialog"');
+    expect(page).toContain('id="ds_lines"');
+    expect(page).toContain('/portal/js/designated-sku.js');
+    expect(storeScript).toContain("get('task')");
+    expect(storeScript).toContain('/api/portal/designated-sku/tasks/');
+
+    // 後台：新分頁 + 上載欄位（預留欄位可空白）
+    expect(adminHtml).toContain('data-tab="designated-sku"');
+    expect(adminHtml).toContain('id="panel-designated-sku"');
+    expect(adminHtml).toContain('id="dsku_subject"');
+    expect(adminHtml).toContain('id="dsku_due_date"');
+    expect(adminScript).toContain('__dskuRefresh');
+    expect(adminScript).toContain('designated-sku/export');
+    // 管理員代店舖回覆：明細行有「代回覆 / 編輯回覆」，彈窗可改年期
+    expect(adminScript).toContain('dsku_edit_reply_overlay');
+    expect(adminScript).toContain('代回覆');
+  });
+
+  it('keeps the store navigation identical on every store page', () => {
+    const pages = [
+      'portal/zero-sales.html',
+      'portal/designated-sku.html',
+      'portal/store.html',
+      'urgent.html',
+      'sales.html',
+      'return.html',
+      'lookup.html',
+      'help.html',
+    ];
+    const navOf = (page: string): string[] => {
+      const html = readFileSync(path.join(root, 'public', page), 'utf8');
+      const block = /<nav aria-label="主要導覽">([\s\S]*?)<\/nav>/.exec(html)?.[1] ?? '';
+      return [...block.matchAll(/<a href="([^"]*)"[^>]*>([\s\S]*?)<\/a>/g)]
+        .map(([, href, inner]) => `${href} :: ${inner.replace(/<[^>]+>/g, '').trim()}`);
+    };
+    const base = navOf('portal/zero-sales.html');
+    expect(base).toContain('/portal/designated-sku.html :: 指定SKU回覆');
+    for (const page of pages.slice(1)) {
+      // 站內所有店舖頁共用同一組導覽，只換 active；新增功能時要一次過改齊
+      expect(navOf(page), page).toEqual(base);
+    }
   });
 });

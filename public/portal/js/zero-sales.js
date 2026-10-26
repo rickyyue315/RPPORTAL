@@ -10,6 +10,44 @@
   /** 目前檢視的批次（null = 未載入）；is_open=false 代表已封存、只供查閱 */
   let currentBatch = null;
 
+  /**
+   * 指定 SKU 回覆的直 link 可能經 /portal/ 登入頁回到這一頁（?task=CODE）。
+   * 認得就直接轉去任務頁，唔會丟失任務編號。
+   */
+  const deepTask = (() => {
+    try {
+      return (new URLSearchParams(window.location.search).get('task') || '').trim();
+    } catch {
+      return '';
+    }
+  })();
+  if (deepTask) {
+    window.location.replace(`/portal/designated-sku.html?task=${encodeURIComponent(deepTask)}`);
+    return;
+  }
+
+  /** 導覽列「指定SKU回覆」待回覆任務數（後端只計仍開放的批次） */
+  async function refreshDesignatedBadge() {
+    try {
+      const data = await p.api('/api/portal/designated-sku/pending-count');
+      const n = Number(data.pending_count) || 0;
+      const badge = document.getElementById('nav_dsku_badge');
+      if (badge) {
+        badge.hidden = n <= 0;
+        badge.textContent = n > 9 ? '9+' : String(n);
+      }
+      const banner = document.getElementById('ds_pending_banner');
+      if (banner) {
+        banner.hidden = n <= 0;
+        banner.innerHTML = n > 0
+          ? `<div class="ds-pending-banner"><span>你有 <b>${n}</b> 個指定 SKU 任務需要回覆。</span><a href="/portal/designated-sku.html">立即前往填寫 →</a></div>`
+          : '';
+      }
+    } catch {
+      /* 徽章只屬提示，失敗不影響零銷售頁 */
+    }
+  }
+
   const COLS = [
     { key: 'Brand', label: 'Brand' },
     { key: 'SKU', label: 'SKU' },
@@ -417,6 +455,7 @@
       site = await p.ensureStoreSite();
     } catch { return; }
     $('store_header').textContent = `90日零銷售回覆 — ${site}`;
+    refreshDesignatedBadge();
     await loadReasons();
     await loadBatches();
     await loadList();

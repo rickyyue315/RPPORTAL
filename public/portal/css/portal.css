@@ -296,3 +296,191 @@
     box-shadow: 0 0 0 3px rgba(255, 199, 0, 0.55), 0 2px 10px rgba(230, 167, 11, 0.35);
   }
 }
+
+/* ==========================================================================
+   指定 SKU 回覆（store/designated-sku.html）
+   任務以卡片呈現：手機上毋須橫向捲動，年期明細用 chips。
+   ========================================================================== */
+.ds-head-card h2 { margin: 0 0 4px; }
+.ds-intro { color: #475569; font-size: 13.5px; line-height: 1.65; margin: 8px 0 14px; }
+.ds-code { font-family: Consolas, 'Courier New', monospace; letter-spacing: .2px; }
+.ds-pending-count { color: #b42318; }
+
+.ds-task {
+  border: 1px solid #dbe4ee;
+  border-left: 4px solid #d99a06;
+  border-radius: 10px;
+  background: #fff;
+  padding: 14px 16px;
+  margin: 0 0 12px;
+}
+.ds-task--replied { border-left-color: #1e8449; }
+.ds-task--closed { border-left-color: #94a3b8; background: #f8fafc; }
+.ds-task-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+.ds-task-head-left { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.ds-task-code {
+  font-family: Consolas, 'Courier New', monospace;
+  font-size: 12.5px;
+  font-weight: 700;
+  color: #334155;
+  background: #f1f5f9;
+  border: 1px solid #e2e8f0;
+  border-radius: 6px;
+  padding: 1px 7px;
+}
+.ds-task-title { margin: 8px 0 4px; font-size: 16px; color: #0f172a; }
+.ds-task-sku { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; font-size: 13.5px; color: #334155; }
+.ds-task-sku b { font-size: 14.5px; color: #0a3d69; }
+.ds-task-facts { margin-top: 6px; font-size: 12.8px; color: #64748b; }
+.ds-task-facts b { color: #334155; }
+.ds-sep { margin: 0 6px; color: #cbd5e1; }
+.ds-instructions {
+  margin-top: 10px;
+  padding: 8px 12px;
+  border-left: 3px solid #cfe0f2;
+  border-radius: 0 6px 6px 0;
+  background: #f7fbff;
+  font-size: 13px;
+  color: #334155;
+  line-height: 1.6;
+}
+.ds-reply-summary { margin-top: 10px; padding-top: 10px; border-top: 1px dashed #e2e8f0; font-size: 13px; }
+.ds-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin: 0 4px 3px 0;
+  padding: 2px 9px;
+  border: 1px solid #cfe0f2;
+  border-radius: 999px;
+  background: #eef6ff;
+  font-size: 12.5px;
+  white-space: nowrap;
+}
+.ds-chip b { font-family: Consolas, 'Courier New', monospace; }
+.ds-total-inline { margin-left: 8px; color: #475569; }
+.ds-open { flex: 0 0 auto; }
+
+/* ---------- 回覆對話框 ---------- */
+dialog#ds_reply_dialog {
+  border: none;
+  border-radius: var(--radius-lg, 12px);
+  padding: 0;
+  max-width: 560px;
+  width: 92vw;
+  /* 最多 20 個年期：內容過高時在彈窗內捲動，唔會被 viewport 切走底部按鈕 */
+  max-height: 90vh;
+  max-height: 90dvh;
+  overflow-y: auto;
+  box-shadow: var(--shadow-lg, 0 12px 40px rgba(15, 23, 42, .3));
+}
+dialog#ds_reply_dialog::backdrop { background: rgba(7, 30, 50, 0.5); backdrop-filter: blur(2px); }
+#ds_reply_dialog .reply-head .hint { color: rgba(255, 255, 255, .88); }
+#ds_reply_dialog .reply-body label { font-size: 12.5px; font-weight: 700; color: var(--brand-dark, #0a3d69); }
+#ds_reply_dialog textarea { width: 100%; box-sizing: border-box; }
+
+.ds-notice {
+  margin: 0 0 12px;
+  padding: 8px 12px;
+  border: 1px solid #cfe0f2;
+  border-radius: 8px;
+  background: #f7fbff;
+  font-size: 13px;
+  color: #334155;
+  line-height: 1.6;
+}
+.ds-notice--closed { border-color: #e2e8f0; background: #f8fafc; color: #64748b; }
+
+.ds-lines-head {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 36px;
+  gap: 8px;
+  padding: 0 0 4px;
+  font-size: 12px;
+  font-weight: 700;
+  color: #64748b;
+}
+.ds-line {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 36px;
+  gap: 8px;
+  align-items: center;
+  margin-bottom: 8px;
+}
+.ds-line input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 9px 10px;
+  border: 1px solid #cfd9e4;
+  border-radius: 8px;
+  font-size: 15px;
+  font-family: inherit;
+}
+.ds-line .ds-year { font-family: Consolas, 'Courier New', monospace; letter-spacing: 1px; text-align: center; }
+.ds-line .ds-qty { text-align: center; }
+.ds-line input:focus { outline: 2px solid rgba(15, 92, 156, .35); border-color: var(--brand, #0f5c9c); }
+.ds-line input:disabled { background: #f1f5f9; color: #64748b; }
+.ds-remove {
+  width: 36px;
+  height: 36px;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  background: #fff;
+  color: #94a3b8;
+  font-size: 14px;
+  cursor: pointer;
+}
+.ds-remove:hover { border-color: #f5c6c2; color: #b42318; background: #fdecea; }
+.ds-add-line { margin: 2px 0 10px; min-height: 32px; border-radius: 8px; }
+.ds-total {
+  padding: 8px 12px;
+  border-radius: 8px;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  font-size: 13px;
+  color: #334155;
+}
+.ds-total b { color: #0a3d69; }
+.ds-total--over { border-color: #f5c6c2; background: #fdecea; }
+.ds-over { color: #b42318; font-weight: 700; }
+
+@media (max-width: 640px) {
+  .ds-task { padding: 12px 12px; }
+  .ds-task-head { align-items: flex-start; }
+  .ds-task-code { font-size: 11.5px; }
+  .ds-lines-head { display: none; }
+  .ds-line { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 34px; }
+}
+
+/* 導覽列待回覆任務徽章（零銷售頁 → 指定 SKU 回覆） */
+.nav-badge {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: #b42318;
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 17px;
+  vertical-align: middle;
+}
+.nav-badge[hidden] { display: none; }
+
+/* 零銷售頁頂部：有待回覆指定 SKU 任務時的提示 */
+.ds-pending-banner {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin: 0 0 14px;
+  padding: 10px 14px;
+  border: 1px solid #ecd88a;
+  border-radius: 10px;
+  background: #fef6dd;
+  color: #6b4a06;
+  font-size: 13.5px;
+  line-height: 1.55;
+}
+.ds-pending-banner b { color: #7a3e00; }
+.ds-pending-banner a { color: #0a3d69; font-weight: 700; }

@@ -15,6 +15,7 @@ SASA RP Team 非正常補貨（NDRF）申報平台。申請端以「Site Code／
 - 同一 Site Code + SKU 於同一日（香港日期）只可申報一次；一般 NDRF、Urgent 與突發性銷售分開計算。被拒時可用查詢／修改更正，翌日可重新申報；管理後台操作不受此限
 - 管理後台：清單篩選（含申報類型；日期預設今日）、詳情編輯、版本歷史、模板下載、批量匯入、SAP 9 欄匯出、獨立 Urgent 匯出、獨立突發性銷售匯出、完整審計報表、門店主檔管理；概覽及清單每分鐘自動刷新
 - 管理後台另提供行貨退貨報數清單、詳情編輯及 Buyer 8 欄 Excel 預覽／匯出鎖定；系統不記錄 Buyer 審批結果或退貨 NO.
+- 指定 SKU 回覆：後台上載指定 SKU Excel（每店一行）建立任務，系統按 Site Code 只向該店派發；店舖就每個貨品年期 (MMYY) 回覆可調撥件數（同一 SKU 多個年期可分多行），每個任務有獨立任務編號、批次編號及直 link（只限涉及店舖，後端強制核對）。管理員可代店舖補錄或更正回覆（不受封存限制、不佔店舖修改次數，會寫入審計日誌）
 - SAP 匯出只包含一般 NDRF，Urgent Order 使用獨立 6 欄匯出（Application No. | Site Code | SKU | QTY | Urgent Reason | Other Reason）；突發性銷售使用獨立 4 欄匯出（Application Date | Requested by | Shop Code | SKU）；匯出成功後鎖定該批申報，申請人不能再修改；匯出失敗不鎖定。管理員於 14:30 後開始匯出處理，期間 Urgent Order 申請人不可修改（查詢不受限）
 - Submission、version history 及 audit event 的 IP 按 `IP_RETENTION_DAYS` 自動匿名化；login attempts、import/export batches、expired sessions 及 rate-limit counters 按各自 retention 設定清理
 - 公開單筆及 Excel 提交使用 Idempotency-Key；網絡中斷或回應遺失時，店舖重試會取回原申請編號／原匯入批次，不會重複寫入；Urgent 網頁 1 至 5 SKU 批次使用同一 request key，重試會一次取回全部申請編號。匯入記錄由伺服器按 batch ID 重新產生，不再信任瀏覽器回傳整批資料
@@ -311,3 +312,62 @@ pg_restore --no-owner --no-privileges --clean --if-exists \
 - `src/services/shopStockExport.ts`：Excel 匯出產生器（佔比趨勢、每店明細、RF SKU Dashboard、店舖端本店走勢）＋每店明細的篩選／排序規則 `filterAndSortWeekRows()`。
 - `src/db/migrations/026_shop_stock_snapshots.sql`：`shop_stock_batches`、`shop_stock_snapshots`、view `v_shop_weekly_deadstock`（純 CREATE，不影響既有表）。
 - `test/shopStock.test.ts`：解析（Total／空白／頁腳／重複）、同日取代、`content_hash` 冪等、加權比率數學、除零 → null、admin／portal 未登入 401、跨店隔離。
+
+## 指定 SKU 回覆（每個任務一個 batch code）
+
+RP Team 指定個別 SKU 要求店舖回報「每個貨品年期可調撥幾件」。沿用現有 Express + PostgreSQL，**不改動 zero-sales / 存貨 Dashboard 流程**。
+
+### 資料模型與編號
+
+- 上載一次 = 一個**批次**，自動取得 `batch_code`：`DSKU-YYMMDD-NNNN`（例 `DSKU-261026-0001`；`NNNN` 來自 PostgreSQL sequence，同日併發上載不會撞號）。
+- 每個任務（`batch + site_code + sku` 一行）另有**任務編號**：`<batch_code>-NN`（例 `DSKU-261026-0001-03`，`NN` 為該批次內序號）。店舖、管理員日後都用這個編號查閱。
+- 回覆明細存於 `designated_sku_reply_lines`：一個**貨品年期 (MMYY)** 一行 + 可調撥件數。同一 SKU 存貨 2 件以上而有多個年期時，店舖可分多行填寫（例 `0827 × 1`、`0927 × 1`、`0628 × 2`）。
+- 驗證規則：年期必須 4 位 `MMYY`（月份 01–12；亦接受 `8/27`、`827`）；同一任務不可重複年期；件數為 1–9999 整數；**合計不可多於存貨**（存貨留空／非數字時不設上限，但不會當 0）。允許少於存貨（部分可調撥），畫面會提示「其餘 N 件未填」。
+- 存貨欄 `stock_qty` 可為 `NULL`（缺值／非數字），**不代表 0**；匯入時會產生 warning，任務照樣建立。
+
+### 管理後台（tab「指定SKU回覆」）
+
+1. 填**任務主題**（必填）、任務類型、可選的**截止日期**、**參考編號**、**任務說明**、**內部備註**，再上載 Excel。後三者與截止日期屬**預留欄位：空白時店舖端／明細自動隱藏**，將來新增任務類型毋須改 schema（另有 `settings JSONB`）。
+2. Excel 欄位對應（可容忍欄名大小寫／空白差異）：`Site`（或 Site Code）＋ `Article`（或 SKU）必填，另有 `Product Hierarchy`、`Article Long Text (60 Chars)`、`SaSa Net Stock`；最後兩欄「店舖回覆可調撥件數 / 貨品年期 (MMYY)」由店舖填寫，上載時可留空。原始整列會存 `payload`，方便日後追溯。
+3. `Total`／頁腳列會靜靜剔除；Site 不存在的行、檔案內重複（Site + SKU）會擋下整批（回傳逐行錯誤）。同一檔案再上載會回 `409 DUPLICATE_FILE`，需勾選「仍要重新上載」才可重新派發。
+4. 批次列表顯示任務數 / 店數 / 已回覆 / 未回覆 / 狀態，可**封存**（店舖只可查閱，提交回 `409 TASK_CLOSED`）、**重開**（讓店舖補答）、**刪除**（連回覆紀錄）。
+5. 批次明細可按 Site／狀態篩選，逐個任務**複製直 link**，或一次複製全部未回覆任務的直 link（Site / 任務編號 / 網址，方便貼 WhatsApp 或 email）。
+6. **管理員代店舖回覆**：未回覆的任務按「代回覆」補錄（常見：店舖截單後 email 補交），已回覆的按「編輯回覆」更正年期／件數。管理員操作**不受封存限制**（已截止的批次仍可更正）、**不佔用店舖修改次數**；代填會將回覆人記為「管理員代填（帳號）」、`reply_count = 1`，編輯既有回覆則保留店舖原本的回覆人、時間及次數。每次修改另記錄 `admin_edited_at` / `admin_edited_by`（畫面顯示「管理員 X 於 Y 修改」），並寫入審計日誌 `designated_sku_reply_admin_edited`；店舖之後再自行提交時會清空該標記（現行內容已非管理員版本）。
+7. 匯出 Excel 三張工作表：`任務回覆`（任務編號、批次、主題、Site、SKU、存貨、狀態、回覆合計、年期明細、備註、回覆人、時間、提交次數）、`年期明細`（每個年期一行）、`未回覆店舖`。
+
+### 店舖端
+
+- 入口：`/portal/designated-sku.html`；零銷售頁導覽列有「指定SKU回覆」連結及待回覆任務數字，頁頂亦有提示橫幅。
+- **只會顯示屬於登入 Site Code 的任務**；`site_code` 一律取自 portal session，不接受 query／body 傳入。
+- **直 link**：`/portal/designated-sku.html?task=<任務編號>`。未登入會先過 Site Code + 密碼閘；登入後自動開啟該任務。若任務不屬於該店舖，API 回 `403 TASK_FORBIDDEN`；不存在回 `404`。
+- 回覆後仍可在任務截止前修改；每次儲存會遞增 `reply_count` 並寫入 audit event `designated_sku_replied`。
+- 任務已封存時彈窗變唯讀（顯示「已截止」，不可再提交）。
+
+### API
+
+| 方法 | 路徑 | 說明 |
+|---|---|---|
+| GET | `/api/admin/designated-sku/template` | 下載上載模板（含填寫說明） |
+| POST | `/api/admin/designated-sku/batches` | multipart：`file`、`subject`（必填）、`task_type`、`due_date`、`reference`、`instructions`、`note`、`force` |
+| GET | `/api/admin/designated-sku/batches?page=&page_size=` | 批次列表（含回覆進度及下拉選項） |
+| GET | `/api/admin/designated-sku/summary` | KPI 總覽（批次／任務／已回覆／未回覆／店數） |
+| GET | `/api/admin/designated-sku/batches/:id/items?site_code=&status=` | 批次內任務明細（含年期明細） |
+| GET | `/api/admin/designated-sku/export?batch_id=&site_code=&status=` | 匯出三張工作表 xlsx |
+| PUT | `/api/admin/designated-sku/batches/:id/close` / `reopen` | 封存／重開 |
+| DELETE | `/api/admin/designated-sku/batches/:id` | 刪除整個批次（含回覆） |
+| DELETE | `/api/admin/designated-sku/batches/:id/items/:itemId` | 刪除單一任務 |
+| PUT | `/api/admin/designated-sku/batches/:id/items/:itemId/reply` | 管理員代填／更正回覆（不受封存限制，不佔店舖次數）：`{ lines, note }` |
+| GET | `/api/portal/designated-sku/pending-count` | 待回覆任務數（導覽列徽章用） |
+| GET | `/api/portal/designated-sku/tasks?status=` | 本店任務（pending 排先）＋待回覆數 |
+| GET | `/api/portal/designated-sku/tasks/:code` | 單一任務（直 link；只限涉及店舖） |
+| PUT | `/api/portal/designated-sku/tasks/:code/reply` | 提交／更新回覆：`{ lines: [{ year_code, qty }], note }` |
+
+### 相關檔案
+
+- `src/db/migrations/027_designated_sku_tasks.sql`：`designated_sku_batches`、`designated_sku_items`、`designated_sku_reply_lines`、批次編號 sequence（純新增）。
+- `src/db/migrations/028_designated_sku_admin_edit.sql`：`admin_edited_at` / `admin_edited_by`（管理員代填／修改紀錄；純新增欄位）。
+- `src/lib/designatedSku.ts`：Excel 解析（表頭自動偵測、Total 列剔除、存貨缺值 → `null`）、模板、匯出；`normalizeYearCode()` 亦在此。
+- `src/services/designatedSku.ts`：建立批次／任務、店舖端查詢與店舖隔離、回覆 validation + transaction、封存／重開／刪除、KPI。
+- `public/portal/designated-sku.html`、`public/portal/js/designated-sku.js`：店舖任務卡、多個年期編輯器、直 link。
+- `public/js/admin-designated-sku.js`、`public/admin/index.html`（`panel-designated-sku`）：後台上載、批次、明細、直 link、匯出。
+- `test/designatedSku.test.ts`：年期正規化、解析（Total 列／缺值／重複／未知 Site）、上載／重複檔案、跨店隔離（列表及直 link 403）、多個年期回覆、年期／存貨驗證、封存後 409、admin 匯出三張工作表、刪除單一任務同步行數。

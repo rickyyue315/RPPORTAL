@@ -74,6 +74,16 @@ import {
 import { getShopStockForStore } from '../services/shopStock.js';
 import { buildShopStockStoreBuffer } from '../services/shopStockExport.js';
 import { buildZeroSalesStoreExportBuffer } from '../lib/zeroSales.js';
+import {
+  countPendingTasks as countDesignatedSkuPending,
+  DesignatedSkuClosedError,
+  DesignatedSkuError,
+  DesignatedSkuForbiddenError,
+  DesignatedSkuNotFoundError,
+  getMyTask as getDesignatedSkuTask,
+  listMyTasks as listDesignatedSkuTasks,
+  submitReply as submitDesignatedSkuReply,
+} from '../services/designatedSku.js';
 
 export const portalRouter = Router();
 
@@ -1098,5 +1108,166 @@ portalRouter.get(
     res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
     res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
     res.send(buffer);
+  }),
+);
+
+// ---------------------------------------------------------------------------
+// 指定 SKU 回覆（店舖端）
+//
+// 店舖隔離：site_code 一律取自 portal session（requireStoreSite），
+// 絕不接受 query / body 傳入；直 link 只帶任務編號，伺服器仍會核對
+// 任務是否屬於登入店舖，不屬於則 403，不能讀取亦不能回覆。
+// ---------------------------------------------------------------------------
+
+const designatedSkuTaskCodePattern = /^[A-Za-z0-9][A-Za-z0-9._-]{0,59}$/;
+
+/**
+ * 店舖端只需要顯示及回覆欄位：原文 payload 與批次 settings（預留內部設定）
+ * 一律不回傳，避免日後新增內部欄位時意外外洩。
+ */
+function serializeStoreTask(task: Awaited<ReturnType<typeof getDesignatedSkuTask>>) {
+  const { payload: _payload, settings: _settings, ...rest } = task;
+  return rest;
+}
+
+/** GET /api/portal/designated-sku/pending-count — 導覽列徽章用（只回數字，不下載任務） */
+portalRouter.get(
+  '/designated-sku/pending-count',
+  requirePortalUser,
+  requireStoreSite,
+  adminActionLimiter,
+  asyncHandler(async (req: Request, res: Response) => {
+    res.json({ pending_count: await countDesignatedSkuPending(req.storeSiteCode!) });
+  }),
+);
+
+/** GET /api/portal/designated-sku/tasks — 本店任務（預設未回覆排先） */
+portalRouter.get(
+  '/designated-sku/tasks',
+  requirePortalUser,
+  requireStoreSite,
+  adminActionLimiter,
+  asyncHandler(async (req: Request, res: Response) => {
+    const { status } = req.query as Record<string, string | undefined>;
+    const siteCode = req.storeSiteCode!;
+    const [tasks, store, pending] = await Promise.all([
+      listDesignatedSkuTasks(siteCode, {
+        status: status === 'pending' || status === 'replied' ? status : undefined,
+      }),
+      getStore(siteCode),
+      countDesignatedSkuPending(siteCode),
+    ]);
+    res.json({
+      site_code: siteCode,
+      shop: store?.shop ?? '',
+      pending_count: pending,
+      tasks: tasks.map(serializeStoreTask),
+    });
+  }),
+);
+
+/** GET /api/portal/designated-sku/tasks/:code — 單一任務（直 link 用，只限涉及店舖） */
+portalRouter.get(
+  '/designated-sku/tasks/:code',
+  requirePortalUser,
+  requireStoreSite,
+  adminActionLimiter,
+  asyncHandler(async (req: Request, res: Response) => {
+    const code = String(req.params.code ?? '').trim();
+    if (!designatedSkuTaskCodePattern.test(code)) {
+      res.status(400).json({ error: '任務編號格式無效' });
+      return;
+    }
+    try {
+      const task = await getDesignatedSkuTask(req.storeSiteCode!, code);
+      res.json({ task: serializeStoreTask(task) });
+    } catch (err) {
+      if (err instanceof DesignatedSkuForbiddenError) {
+        res.status(403).json({ error: err.message, code: 'TASK_FORBIDDEN' });
+        return;
+      }
+      if (err instanceof DesignatedSkuNotFoundError) {
+        res.status(404).json({ error: err.message, code: 'TASK_NOT_FOUND' });
+        return;
+      }
+      throw err;
+    }
+  }),
+);
+
+const designatedSkuReplySchema = z.object({
+  lines: z
+    .array(
+      z.object({
+        year_code: z.union([z.string(), z.number()]),
+        qty: z.union([z.string(), z.number()]),
+      }),
+    )
+    .min(1, '請至少填寫一個貨品年期及可調撥件數')
+    .max(20),
+  note: z.string().max(2000).optional().default(''),
+});
+
+/** PUT /api/portal/designated-sku/tasks/:code/reply — 店舖提交／更新回覆 */
+portalRouter.put(
+  '/designated-sku/tasks/:code/reply',
+  requirePortalUser,
+  requireStoreSite,
+  adminActionLimiter,
+  asyncHandler(async (req: Request, res: Response) => {
+    const code = String(req.params.code ?? '').trim();
+    if (!designatedSkuTaskCodePattern.test(code)) {
+      res.status(400).json({ error: '任務編號格式無效' });
+      return;
+    }
+    const parsed = designatedSkuReplySchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ error: parsed.error.issues[0]?.message ?? '回覆資料無效' });
+      return;
+    }
+    try {
+      const task = await submitDesignatedSkuReply({
+        siteCode: req.storeSiteCode!,
+        taskCode: code,
+        lines: parsed.data.lines,
+        note: parsed.data.note ?? '',
+        repliedBy: req.portalUser!.username,
+        repliedByUserId: req.portalUser!.id,
+      });
+      await writeAuditEvent({
+        eventType: 'designated_sku_replied',
+        actorRole: 'store',
+        actor: req.portalUser!.username,
+        ip: getClientIp(req),
+        metadata: {
+          task_code: task.task_code,
+          batch_code: task.batch_code,
+          site_code: task.site_code,
+          sku: task.sku,
+          total: task.reply_total,
+          lines: task.lines,
+          reply_count: task.reply_count,
+        },
+      });
+      res.json({ ok: true, task: serializeStoreTask(task) });
+    } catch (err) {
+      if (err instanceof DesignatedSkuForbiddenError) {
+        res.status(403).json({ error: err.message, code: 'TASK_FORBIDDEN' });
+        return;
+      }
+      if (err instanceof DesignatedSkuNotFoundError) {
+        res.status(404).json({ error: err.message, code: 'TASK_NOT_FOUND' });
+        return;
+      }
+      if (err instanceof DesignatedSkuClosedError) {
+        res.status(409).json({ error: err.message, code: 'TASK_CLOSED' });
+        return;
+      }
+      if (err instanceof DesignatedSkuError) {
+        res.status(400).json({ error: err.message });
+        return;
+      }
+      throw err;
+    }
   }),
 );

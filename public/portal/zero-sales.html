@@ -20,6 +20,7 @@
       </div>
       <nav aria-label="主要導覽">
         <a href="/portal/zero-sales.html" class="active" aria-current="page">零銷售回覆</a>
+        <a href="/portal/designated-sku.html" id="nav_dsku">指定SKU回覆<b class="nav-badge" id="nav_dsku_badge" hidden></b></a>
         <a href="/portal/store.html">一般NDRF · 暫停</a>
         <a href="/urgent.html">Urgent · 暫停</a>
         <a href="/sales.html">突發性銷售 · 暫停</a>
@@ -33,6 +34,8 @@
   </header>
 
   <main class="container portal-main">
+    <div id="ds_pending_banner" hidden></div>
+
     <div class="portal-tabs" role="tablist" aria-label="店舖專區">
       <button class="portal-tab is-active" type="button" role="tab" id="tab_zs"
               aria-controls="panel_zs" aria-selected="true"

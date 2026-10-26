@@ -28,6 +28,7 @@
       'sec-accounts': 'accounts',
       'sec-review': 'review',
       'sec-zero-sales': 'zero-sales',
+      'sec-designated-sku': 'designated-sku',
       'sec-system': 'system',
     };
     function fromLocation() {

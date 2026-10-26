@@ -143,6 +143,29 @@ import {
   filterAndSortWeekRows,
   normalizeWeekExportFilters,
 } from '../services/shopStockExport.js';
+import {
+  buildDesignatedSkuExportBuffer,
+  generateDesignatedSkuTemplateWorkbook,
+  parseDesignatedSkuWorkbook,
+} from '../lib/designatedSku.js';
+import {
+  adminSubmitReply as adminSubmitDesignatedSkuReply,
+  closeBatch as closeDesignatedSkuBatch,
+  createBatch as createDesignatedSkuBatch,
+  deleteBatch as deleteDesignatedSkuBatch,
+  deleteItem as deleteDesignatedSkuItem,
+  DesignatedSkuError,
+  DesignatedSkuNotFoundError,
+  findBatchByContentHash as findDesignatedSkuBatchByHash,
+  getBatch as getDesignatedSkuBatch,
+  getSummary as getDesignatedSkuSummary,
+  listBatchesForSelect as listDesignatedSkuBatchOptions,
+  listBatchesPage as listDesignatedSkuBatchesPage,
+  listBatchItems as listDesignatedSkuBatchItems,
+  listItemsForExport as listDesignatedSkuForExport,
+  reopenBatch as reopenDesignatedSkuBatch,
+  type DesignatedSkuItemRow,
+} from '../services/designatedSku.js';
 
 export const adminRouter = Router();
 
@@ -3602,5 +3625,419 @@ adminRouter.get(
     res.setHeader('Content-Type', EXPORT_CONTENT_TYPE);
     res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
     res.send(buffer);
+  }),
+);
+
+// ---------------------------------------------------------------------------
+// 指定 SKU 回覆（Designated SKU Reply）
+//
+// 上載一份「每店一 SKU」Excel，建立帶批次編號的任務；店舖登入後只看到
+// 屬於自己 Site Code 的任務，就每個貨品年期回覆可調撥件數。
+// ---------------------------------------------------------------------------
+
+const designatedSkuUploadSchema = z.object({
+  subject: z.string().trim().min(1, '任務主題為必填').max(200),
+  task_type: z.string().trim().max(60).optional().default('stock_year_breakdown'),
+  instructions: z.string().max(4000).optional().default(''),
+  due_date: z.string().trim().optional().default(''),
+  reference: z.string().max(100).optional().default(''),
+  note: z.string().max(1000).optional().default(''),
+});
+
+function designatedSkuExportRows(items: DesignatedSkuItemRow[]) {
+  return items.map((it) => ({
+    task_code: it.task_code,
+    batch_code: it.batch_code,
+    subject: it.subject,
+    task_type: it.task_type,
+    site_code: it.site_code,
+    shop: it.shop ?? '',
+    sku: it.sku,
+    description: it.description,
+    stock_qty: it.stock_qty,
+    status: it.status,
+    reply_total: it.reply_total,
+    reply_note: it.reply_note,
+    replied_by: it.replied_by,
+    replied_at: it.replied_at,
+    reply_count: it.reply_count,
+    admin_edited_by: it.admin_edited_by,
+    admin_edited_at: it.admin_edited_at,
+    is_open: it.is_open,
+    created_at: it.batch_created_at,
+    lines: it.lines,
+  }));
+}
+
+/** GET /api/admin/designated-sku/template — 下載上載模板 */
+adminRouter.get(
+  '/designated-sku/template',
+  requireAdmin,
+  excelExportLimiter,
+  asyncHandler(async (_req: Request, res: Response) => {
+    const buffer = await generateDesignatedSkuTemplateWorkbook();
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition', 'attachment; filename="Designated_SKU_Template.xlsx"');
+    res.send(buffer);
+  }),
+);
+
+/** POST /api/admin/designated-sku/batches — 上載 Excel 建立一批任務 */
+adminRouter.post(
+  '/designated-sku/batches',
+  requireAdmin,
+  excelImportLimiter,
+  upload.single('file'),
+  asyncHandler(async (req: Request, res: Response) => {
+    const file = getUploadedFile(req)!;
+    const uploadError = validateUploadedXlsx(file, config.maxUploadBytes, EXCEL_UPLOAD_EXTENSION_ERROR);
+    if (uploadError) {
+      res.status(uploadError.status).json({ error: uploadError.message });
+      return;
+    }
+    const meta = designatedSkuUploadSchema.safeParse(req.body);
+    if (!meta.success) {
+      res.status(400).json({ error: meta.error.issues[0]?.message ?? '上載資料無效' });
+      return;
+    }
+    const dueDate = meta.data.due_date;
+    if (dueDate && !isValidIsoDate(dueDate)) {
+      res.status(400).json({ error: '截止日期格式無效（應為 YYYY-MM-DD）' });
+      return;
+    }
+
+    const stores = await query<{ site_code: string }>('SELECT site_code FROM stores');
+    const storeCodes = new Set(stores.rows.map((s) => s.site_code));
+    const parsed = await parseDesignatedSkuWorkbook(file.buffer, storeCodes, config.maxImportRows);
+    if (!parsed.ok || !parsed.rows) {
+      await writeAuditEvent({
+        eventType: 'designated_sku_import_error',
+        actorRole: 'admin',
+        actor: req.adminUsername,
+        ip: getClientIp(req),
+        metadata: { filename: file.originalname, errors: parsed.errors ?? [] },
+      });
+      res.status(400).json({
+        error: '匯入失敗',
+        totalRows: parsed.totalRows,
+        errors: parsed.errors ?? [],
+        warnings: parsed.warnings ?? [],
+      });
+      return;
+    }
+
+    // 同一檔案重複上載：直接提示既有批次，避免重複派發（可用 force=1 強制）
+    const force = String(req.body.force ?? '') === '1';
+    if (!force) {
+      const existing = await findDesignatedSkuBatchByHash(parsed.contentHash ?? '');
+      if (existing) {
+        res.status(409).json({
+          error: `此檔案已於 ${existing.created_at} 上載（批次 ${existing.batch_code}），如要重新派發請勾選「仍要重新上載」`,
+          code: 'DUPLICATE_FILE',
+          existing,
+        });
+        return;
+      }
+    }
+
+    const { batchId, batchCode, taskCodes } = await createDesignatedSkuBatch({
+      subject: meta.data.subject,
+      taskType: meta.data.task_type,
+      instructions: meta.data.instructions ?? '',
+      dueDate: dueDate || null,
+      reference: meta.data.reference ?? '',
+      note: meta.data.note ?? '',
+      sourceFilename: file.originalname,
+      rows: parsed.rows.map((r) => ({
+        siteCode: r.siteCode,
+        sku: r.sku,
+        hierarchy: r.hierarchy,
+        description: r.description,
+        stockQty: r.stockQty,
+        data: r.data,
+      })),
+      skippedRows: parsed.skippedRows,
+      warnCount: (parsed.warnings ?? []).length,
+      contentHash: parsed.contentHash ?? '',
+      createdBy: req.adminUsername!,
+    });
+
+    await writeAuditEvent({
+      eventType: 'designated_sku_batch_created',
+      actorRole: 'admin',
+      actor: req.adminUsername,
+      ip: getClientIp(req),
+      metadata: {
+        filename: file.originalname,
+        batch_code: batchCode,
+        batch_id: batchId,
+        subject: meta.data.subject,
+        task_count: parsed.rows.length,
+        store_count: new Set(parsed.rows.map((r) => r.siteCode)).size,
+        skipped_rows: parsed.skippedRows,
+        warn_count: (parsed.warnings ?? []).length,
+        forced: force,
+      },
+    });
+
+    res.status(201).json({
+      ok: true,
+      batchId,
+      batchCode,
+      taskCount: taskCodes.length,
+      storeCount: new Set(parsed.rows.map((r) => r.siteCode)).size,
+      totalRows: parsed.totalRows,
+      skippedRows: parsed.skippedRows,
+      warnings: parsed.warnings ?? [],
+      taskCodes: taskCodes.slice(0, 5),
+    });
+  }),
+);
+
+/** GET /api/admin/designated-sku/batches — 批次列表（含回覆進度） */
+adminRouter.get(
+  '/designated-sku/batches',
+  requireAdmin,
+  adminActionLimiter,
+  asyncHandler(async (req: Request, res: Response) => {
+    const page = Number(req.query.page ?? 1);
+    const pageSize = Number(req.query.page_size ?? 20);
+    const [result, options] = await Promise.all([
+      listDesignatedSkuBatchesPage({ page, pageSize }),
+      listDesignatedSkuBatchOptions(),
+    ]);
+    res.json({
+      ...result,
+      total_pages: result.totalPages,
+      batch_options: options,
+    });
+  }),
+);
+
+/** GET /api/admin/designated-sku/summary — KPI 總覽 */
+adminRouter.get(
+  '/designated-sku/summary',
+  requireAdmin,
+  adminActionLimiter,
+  asyncHandler(async (_req: Request, res: Response) => {
+    res.json(await getDesignatedSkuSummary());
+  }),
+);
+
+/** GET /api/admin/designated-sku/batches/:id/items — 批次內任務明細 */
+adminRouter.get(
+  '/designated-sku/batches/:id/items',
+  requireUuidParam('id'),
+  requireAdmin,
+  adminActionLimiter,
+  asyncHandler(async (req: Request, res: Response) => {
+    const { site_code, status } = req.query as Record<string, string | undefined>;
+    const batch = await getDesignatedSkuBatch(req.params.id as string);
+    if (!batch) {
+      res.status(404).json({ error: '找不到批次' });
+      return;
+    }
+    const items = await listDesignatedSkuBatchItems(req.params.id as string, {
+      siteCode: site_code?.trim() ? normalizeSiteCode(site_code) : undefined,
+      status: status === 'pending' || status === 'replied' ? status : undefined,
+    });
+    res.json({ batch, items });
+  }),
+);
+
+/** GET /api/admin/designated-sku/export — 匯出（可按批次 / Site / 狀態篩選） */
+adminRouter.get(
+  '/designated-sku/export',
+  requireAdmin,
+  excelExportLimiter,
+  asyncHandler(async (req: Request, res: Response) => {
+    const { batch_id, site_code, status } = req.query as Record<string, string | undefined>;
+    const batchId = batch_id?.trim() || undefined;
+    if (batchId && !/^[0-9a-fA-F-]{36}$/.test(batchId)) {
+      res.status(400).json({ error: '批次編號無效' });
+      return;
+    }
+    if (status && status !== 'pending' && status !== 'replied') {
+      res.status(400).json({ error: '狀態篩選無效' });
+      return;
+    }
+    const items = await listDesignatedSkuForExport({
+      batchId,
+      siteCode: site_code?.trim() ? normalizeSiteCode(site_code) : undefined,
+      status: status === 'pending' || status === 'replied' ? status : undefined,
+    });
+    if (!items.length) {
+      res.status(404).json({ error: '沒有符合條件的任務可以匯出' });
+      return;
+    }
+    const buffer = await buildDesignatedSkuExportBuffer(designatedSkuExportRows(items));
+    const label = items[0]?.batch_code ?? 'All';
+    const stamp = hkTodayForDateColumn().replace(/-/g, '');
+    const filename = `Designated_SKU_${label}_${stamp}.xlsx`;
+    await writeAuditEvent({
+      eventType: 'designated_sku_export',
+      actorRole: 'admin',
+      actor: req.adminUsername,
+      ip: getClientIp(req),
+      metadata: { filename, batch_id: batchId ?? null, site_code: site_code ?? null, status: status ?? null, count: items.length },
+    });
+    res.setHeader('Content-Type', EXPORT_CONTENT_TYPE);
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    res.send(buffer);
+  }),
+);
+
+/** PUT /api/admin/designated-sku/batches/:id/close — 封存（店舖只可查閱） */
+adminRouter.put(
+  '/designated-sku/batches/:id/close',
+  requireUuidParam('id'),
+  requireAdmin,
+  asyncHandler(async (req: Request, res: Response) => {
+    const result = await closeDesignatedSkuBatch(req.params.id as string, req.adminUsername!);
+    if (!result) {
+      res.status(404).json({ error: '找不到批次' });
+      return;
+    }
+    await writeAuditEvent({
+      eventType: 'designated_sku_batch_closed',
+      actorRole: 'admin',
+      actor: req.adminUsername,
+      ip: getClientIp(req),
+      metadata: { batch_code: result.batchCode },
+    });
+    res.json({ ok: true, ...result });
+  }),
+);
+
+/** PUT /api/admin/designated-sku/batches/:id/reopen — 重開（讓店舖補答） */
+adminRouter.put(
+  '/designated-sku/batches/:id/reopen',
+  requireUuidParam('id'),
+  requireAdmin,
+  asyncHandler(async (req: Request, res: Response) => {
+    const result = await reopenDesignatedSkuBatch(req.params.id as string, req.adminUsername!);
+    if (!result) {
+      res.status(404).json({ error: '找不到批次' });
+      return;
+    }
+    await writeAuditEvent({
+      eventType: 'designated_sku_batch_reopened',
+      actorRole: 'admin',
+      actor: req.adminUsername,
+      ip: getClientIp(req),
+      metadata: { batch_code: result.batchCode },
+    });
+    res.json({ ok: true, ...result });
+  }),
+);
+
+/** DELETE /api/admin/designated-sku/batches/:id — 刪除整個批次（含回覆紀錄） */
+adminRouter.delete(
+  '/designated-sku/batches/:id',
+  requireUuidParam('id'),
+  requireAdmin,
+  asyncHandler(async (req: Request, res: Response) => {
+    const result = await deleteDesignatedSkuBatch(req.params.id as string);
+    if (!result) {
+      res.status(404).json({ error: '找不到批次' });
+      return;
+    }
+    await writeAuditEvent({
+      eventType: 'designated_sku_batch_deleted',
+      actorRole: 'admin',
+      actor: req.adminUsername,
+      ip: getClientIp(req),
+      metadata: { batch_code: result.batchCode, row_count: result.rowCount },
+    });
+    res.json({ ok: true, ...result });
+  }),
+);
+
+/** DELETE /api/admin/designated-sku/batches/:id/items/:itemId — 刪除單一任務 */
+adminRouter.delete(
+  '/designated-sku/batches/:id/items/:itemId',
+  requireUuidParam('id', 'itemId'),
+  requireAdmin,
+  asyncHandler(async (req: Request, res: Response) => {
+    const result = await deleteDesignatedSkuItem(req.params.id as string, req.params.itemId as string);
+    if (!result) {
+      res.status(404).json({ error: '找不到任務' });
+      return;
+    }
+    await writeAuditEvent({
+      eventType: 'designated_sku_item_deleted',
+      actorRole: 'admin',
+      actor: req.adminUsername,
+      ip: getClientIp(req),
+      metadata: { task_code: result.taskCode, site_code: result.siteCode },
+    });
+    res.json({ ok: true, ...result });
+  }),
+);
+
+const designatedSkuAdminReplySchema = z.object({
+  lines: z
+    .array(
+      z.object({
+        year_code: z.union([z.string(), z.number()]),
+        qty: z.union([z.string(), z.number()]),
+      }),
+    )
+    .min(1, '請至少填寫一個貨品年期及可調撥件數')
+    .max(20),
+  note: z.string().max(2000).optional().default(''),
+});
+
+/**
+ * PUT /api/admin/designated-sku/batches/:id/items/:itemId/reply
+ * 管理員代店舖輸入／修改回覆（不受封存限制、不佔用店舖修改次數）。
+ */
+adminRouter.put(
+  '/designated-sku/batches/:id/items/:itemId/reply',
+  requireUuidParam('id', 'itemId'),
+  requireAdmin,
+  asyncHandler(async (req: Request, res: Response) => {
+    const parsed = designatedSkuAdminReplySchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ error: parsed.error.issues[0]?.message ?? '回覆資料無效' });
+      return;
+    }
+    try {
+      const { item, entered } = await adminSubmitDesignatedSkuReply({
+        batchId: req.params.id as string,
+        itemId: req.params.itemId as string,
+        lines: parsed.data.lines,
+        note: parsed.data.note ?? '',
+        actor: req.adminUsername!,
+      });
+      await writeAuditEvent({
+        eventType: 'designated_sku_reply_admin_edited',
+        actorRole: 'admin',
+        actor: req.adminUsername,
+        ip: getClientIp(req),
+        metadata: {
+          task_code: item.task_code,
+          batch_code: item.batch_code,
+          site_code: item.site_code,
+          sku: item.sku,
+          entered,
+          total: item.reply_total,
+          lines: item.lines,
+          replied_by: item.replied_by,
+          reply_count: item.reply_count,
+        },
+      });
+      res.json({ ok: true, item, entered });
+    } catch (err) {
+      if (err instanceof DesignatedSkuNotFoundError) {
+        res.status(404).json({ error: err.message });
+        return;
+      }
+      if (err instanceof DesignatedSkuError) {
+        res.status(400).json({ error: err.message });
+        return;
+      }
+      throw err;
+    }
   }),
 );

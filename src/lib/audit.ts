@@ -60,7 +60,16 @@ export type AuditEventType =
   | 'shop_stock_detail_export'
   | 'shop_stock_rf_export'
   | 'shop_stock_store_export'
-  | 'shop_stock_import_error';
+  | 'shop_stock_import_error'
+  | 'designated_sku_import_error'
+  | 'designated_sku_batch_created'
+  | 'designated_sku_batch_closed'
+  | 'designated_sku_batch_reopened'
+  | 'designated_sku_batch_deleted'
+  | 'designated_sku_item_deleted'
+  | 'designated_sku_export'
+  | 'designated_sku_replied'
+  | 'designated_sku_reply_admin_edited';
 
 interface AuditInput {
   eventType: AuditEventType;

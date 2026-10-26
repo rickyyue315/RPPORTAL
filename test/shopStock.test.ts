@@ -955,6 +955,26 @@ describe('shopStock routes', () => {
     const raw = JSON.stringify(workbook.model).replace(/\\"/g, '"');
     expect(raw).not.toContain('HD09');
     expect(raw).not.toContain('59999.75');
+
+    // ⚠️ 金額唔可以外流：自己店嘅店舖存貨值 / 不良存貨值都唔應該出現喺檔案內
+    const forbidden = new Set([1000000, 100000.25, 3000000, 59999.75]);
+    const leaked: number[] = [];
+    for (const ws of workbook.worksheets) {
+      ws.eachRow((row) => {
+        row.eachCell((cell) => {
+          if (typeof cell.value === 'number' && forbidden.has(cell.value)) leaked.push(cell.value);
+        });
+      });
+    }
+    expect(leaked).toEqual([]);
+
+    // 表頭亦唔可以有金額欄
+    const headers: string[] = [];
+    workbook.getWorksheet('本店走勢')!.getRow(1).eachCell((cell) => {
+      headers.push(String(cell.value ?? ''));
+    });
+    expect(headers.join('|')).not.toContain('店舖存貨值');
+    expect(headers.join('|')).not.toContain('不良存貨值');
   });
 
   it('returns 404 for the store export when the store has no stock data', async () => {

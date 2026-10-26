@@ -370,7 +370,7 @@
       a.click();
       a.remove();
       URL.revokeObjectURL(url);
-      if (box) box.textContent = '已匯出本店嘅不良存貨走勢（只含本店數字同全公司加權平均）。';
+      if (box) box.textContent = '已匯出本店嘅不良存貨走勢（只含比率同全公司加權平均，唔含金額數字）。';
     } catch (err) {
       if (box) box.textContent = err && err.message ? err.message : '匯出失敗';
     } finally {

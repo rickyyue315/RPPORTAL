@@ -300,6 +300,7 @@ pg_restore --no-owner --no-privileges --clean --if-exists \
 - 舊網址 `/portal/dashboard.html` **已移除**（該頁只在分頁整合當日短暫存在，從未對外通知，故不留跳轉頁）。入口一律是 `/portal/zero-sales.html`，需要直接開存貨分頁時用 `/portal/zero-sales.html#stock`。
 - API：`GET /api/portal/stock/summary`（`requirePortalUser` + `requireStoreSite`）。
 - **店舖端亦可以匯出 Excel**：走勢卡右上角「匯出 Excel」→ `GET /api/portal/stock/summary/export`（`excelExportLimiter`），工作表「本店走勢」＋「匯出說明」，只含**本店**每期數字同全公司加權平均線；冇數據時回 404。audit event `shop_stock_store_export`。
+- **店舖端匯出刻意唔含金額（資安）**：Excel 好容易轉發（業主、供應商、跨部門），所以「本店走勢」**不包含**「店舖存貨值（CM）」同「不良存貨值（P90D 0 Sales）」兩欄，只提供比率（不良存貨佔比、較上期 pp、不良存貨 SKU ÷ 店內貨品、全公司加權佔比、差距 pp）；「匯出說明」頁會寫明口徑同刻意不包含嘅項目。⚠️ 後台（admin）嘅匯出**照舊**保留金額，因為管理員本身就有權看。
 - **數據隔離**：`site_code` 一律取自登入 session，**不接受** query／body 傳入；回應只含本店數字與全公司加權比率，不含任何其他店數據。
 - 未有數據時回 `200 { has_data: false }`（不是 404），前端顯示空狀態。
 

@@ -603,11 +603,17 @@ export async function buildShopStockRfBuffer(input: ShopStockRfExportInput): Pro
 // 店舖端：自己店舖的存貨走勢（只含本店 + 全公司加權平均）
 // ===========================================================================
 
+/**
+ * 店舖端匯出的欄位：只提供「比率」，唔含任何金額。
+ *
+ * ⚠️ 資安考量：Excel 檔案好容易轉發（業主、供應商、跨部門），但頁面只係登入者
+ * 自己見到。所以本店匯出**唔包含**「店舖存貨值（CM）」同「不良存貨值
+ * （P90D 0 Sales）」兩個金額欄位，避免金額數據外流。
+ * 口徑本身（不良存貨值 ÷ 店舖存貨值）寫喺匯出說明，讀者仍然知道比率點計。
+ */
 const STORE_TREND_HEADERS = [
   '期別',
   '週次',
-  '店舖存貨值（CM）',
-  '不良存貨值（P90D 0 Sales）',
   '不良存貨佔比',
   '較上期（pp）',
   '不良存貨 SKU ÷ 店內貨品',
@@ -616,14 +622,14 @@ const STORE_TREND_HEADERS = [
 ] as const;
 
 const STORE_TREND_FORMATS: Record<number, string> = {
-  3: '#,##0',
-  4: '#,##0',
+  3: '0.0%',
+  4: '+0.00;-0.00;0.00',
   5: '0.0%',
-  6: '+0.00;-0.00;0.00',
-  7: '0.0%',
-  8: '0.0%',
-  9: '+0.00;-0.00;0.00',
+  6: '0.0%',
+  7: '+0.00;-0.00;0.00',
 };
+
+const STORE_TREND_WIDTHS = [14, 12, 14, 14, 22, 18, 18];
 
 export interface ShopStockStoreExportInput {
   view: ShopStockStoreView;
@@ -644,11 +650,10 @@ export async function buildShopStockStoreBuffer(input: ShopStockStoreExportInput
   for (const row of input.view.series) {
     const companyRatio = companyByDate.get(row.report_date) ?? null;
     const gap = row.ratio !== null && companyRatio !== null ? (row.ratio - companyRatio) * 100 : null;
+    // ⚠️ 故意唔寫入 shop_stock_value_cm / excess_value_0sale：金額唔可以外流
     sheet.addRow([
       row.report_date,
       deriveWeekLabel(row.report_date),
-      row.shop_stock_value_cm,
-      row.excess_value_0sale,
       row.ratio,
       row.wow_delta_pt,
       row.ovs_carry_ratio,
@@ -656,7 +661,7 @@ export async function buildShopStockStoreBuffer(input: ShopStockStoreExportInput
       gap,
     ]);
   }
-  [14, 12, 20, 24, 14, 14, 22, 18, 18].forEach((width, index) => {
+  STORE_TREND_WIDTHS.forEach((width, index) => {
     sheet.getColumn(index + 1).width = width;
   });
   sheet.getColumn(1).numFmt = '@';
@@ -680,6 +685,7 @@ export async function buildShopStockStoreBuffer(input: ShopStockStoreExportInput
     ['全公司加權佔比', input.view.company_avg_ratio ?? null],
     ['本店與全公司差距（pp）', kpi?.delta_vs_company_pt ?? null],
     ['口徑', '不良存貨值 = Excess Stock Value (P90D 0 Sales)；不良存貨佔比 = 不良存貨值 ÷ 店舖存貨值 (CM)。全公司佔比為加權（Σ不良存貨值 ÷ Σ店舖存貨值），只作對比，不含其他店舖明細'],
+    ['不包含的資料', '本匯出只有比率，刻意唔包含「店舖存貨值（CM）」同「不良存貨值（P90D 0 Sales）」的金額數字，以免金額資料外流'],
     ['空白值', '分母為 0 或缺值的期數比率留空（不是 0%）；圖表同樣斷線'],
     ['產生時間（HK）', input.generatedAt],
   ];
@@ -687,10 +693,12 @@ export async function buildShopStockStoreBuffer(input: ShopStockStoreExportInput
   info.getColumn(1).width = 22;
   info.getColumn(2).width = 90;
   info.getColumn(2).alignment = { wrapText: true, vertical: 'top' };
-  info.getCell(5, 2).numFmt = '0.0%';
-  info.getCell(6, 2).numFmt = '+0.00;-0.00;0.00';
-  info.getCell(7, 2).numFmt = '0.0%';
-  info.getCell(8, 2).numFmt = '+0.00;-0.00;0.00';
+  // 依「項目」名稱定位格式，避免手寫行號錯位（之前 5/6/7/8 全部上移了一行）
+  const rowOf = (label: string): number => infoRows.findIndex(([key]) => key === label) + 2;
+  info.getCell(rowOf('本店不良存貨佔比'), 2).numFmt = '0.0%';
+  info.getCell(rowOf('本店較上期（pp）'), 2).numFmt = '+0.00;-0.00;0.00';
+  info.getCell(rowOf('全公司加權佔比'), 2).numFmt = '0.0%';
+  info.getCell(rowOf('本店與全公司差距（pp）'), 2).numFmt = '+0.00;-0.00;0.00';
 
   const buffer = await workbook.xlsx.writeBuffer();
   return Buffer.from(buffer);

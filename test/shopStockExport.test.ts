@@ -417,15 +417,15 @@ describe('buildShopStockStoreBuffer', () => {
     expect(workbook.worksheets.map((w) => w.name)).toEqual(['本店走勢', '匯出說明']);
 
     const sheet = workbook.getWorksheet('本店走勢')!;
-    expect(sheet.getCell(1, 5).value).toBe('不良存貨佔比');
-    expect(sheet.getCell(1, 8).value).toBe('全公司加權佔比');
+    expect(sheet.getCell(1, 3).value).toBe('不良存貨佔比');
+    expect(sheet.getCell(1, 6).value).toBe('全公司加權佔比');
     expect(sheet.actualRowCount).toBe(3); // 表頭 + 兩期
     expect(sheet.getCell(2, 1).value).toBe('2026-10-18');
-    expect(sheet.getCell(2, 5).value).toBeCloseTo(0.099, 10);
+    expect(sheet.getCell(2, 3).value).toBeCloseTo(0.099, 10);
     expect(sheet.getCell(3, 1).value).toBe('2026-10-25');
     // 與全公司差距（pp）：0.0839 - 0.0839 = 0
-    expect(sheet.getCell(3, 9).value).toBeCloseTo(0, 6);
-    expect(sheet.getColumn(5).numFmt).toBe('0.0%');
+    expect(sheet.getCell(3, 7).value).toBeCloseTo(0, 6);
+    expect(sheet.getColumn(3).numFmt).toBe('0.0%');
 
     // 匯出說明要寫明店舖代號，同埋只含本店
     const info = workbook.getWorksheet('匯出說明')!;
@@ -436,5 +436,69 @@ describe('buildShopStockStoreBuffer', () => {
     // 「店舖」一列的內容 = 自己的 site code（唔會出現其他店）
     const siteValue = info.getCell(labels.indexOf('店舖') + 2, 2).value;
     expect(siteValue).toBe('HA02');
+  });
+
+  it('never writes the store stock value or the excess value into the workbook', async () => {
+    const view: ShopStockStoreView = {
+      has_data: true,
+      site_code: 'HA02',
+      series: [
+        { report_date: '2026-10-18', report_kind: 'weekly', ratio: 0.099, wow_delta_pt: null, excess_value_0sale: 360000, shop_stock_value_cm: 3636000, ovs_carry_ratio: 0.19 },
+        { report_date: '2026-10-25', report_kind: 'weekly', ratio: 0.0839, wow_delta_pt: -1.51, excess_value_0sale: 364000, shop_stock_value_cm: 4339000, ovs_carry_ratio: 0.198 },
+      ],
+      company_series: [
+        { report_date: '2026-10-18', ratio: 0.0847, wow_delta_pt: null, ovs_carry_ratio: 0.1147 },
+        { report_date: '2026-10-25', ratio: 0.0839, wow_delta_pt: -0.08, ovs_carry_ratio: 0.1151 },
+      ],
+      kpi: {
+        report_date: '2026-10-25',
+        report_kind: 'weekly',
+        ratio: 0.0839,
+        wow_delta_pt: -1.51,
+        total_soh: 4339000,
+        total_excess: 364000,
+        sku_count_0sale: 500,
+        shop_stock_value_cm: 4339000,
+        excess_value_0sale: 364000,
+        company_ratio: 0.0839,
+        delta_vs_company_pt: 0,
+        ovs_carry_ratio: 0.198,
+        company_ovs_carry_ratio: 0.1151,
+      },
+      company_avg_ratio: 0.0839,
+    };
+    const buffer = await buildShopStockStoreBuffer({ view, generatedAt: '2026-10-25 20:30:00' });
+
+    const workbook = new ExcelJS.Workbook();
+    await workbook.xlsx.load(buffer as never);
+
+    // 表頭唔可以有金額欄
+    const sheet = workbook.getWorksheet('本店走勢')!;
+    const headers: string[] = [];
+    sheet.getRow(1).eachCell((cell) => { headers.push(String(cell.value ?? '')); });
+    expect(headers).not.toContain('店舖存貨值（CM）');
+    expect(headers).not.toContain('不良存貨值（P90D 0 Sales）');
+    expect(headers).toEqual([
+      '期別', '週次', '不良存貨佔比', '較上期（pp）',
+      '不良存貨 SKU ÷ 店內貨品', '全公司加權佔比', '與全公司差距（pp）',
+    ]);
+
+    // 全份 workbook（含說明頁）任何一個數值格都唔可以係金額
+    const forbidden = new Set([360000, 3636000, 364000, 4339000, 500]);
+    const hits: number[] = [];
+    for (const ws of workbook.worksheets) {
+      ws.eachRow((row) => {
+        row.eachCell((cell) => {
+          if (typeof cell.value === 'number' && forbidden.has(cell.value)) hits.push(cell.value);
+        });
+      });
+    }
+    expect(hits).toEqual([]);
+
+    // 說明頁要講明刻意唔包含金額
+    const info = workbook.getWorksheet('匯出說明')!;
+    const labels: string[] = [];
+    info.eachRow((row, n) => { if (n > 1) labels.push(String(row.getCell(1).value ?? '')); });
+    expect(labels).toContain('不包含的資料');
   });
 });

@@ -696,6 +696,36 @@
           </div>
         </div>
 
+        <div class="card mt-3" id="stk_detail_card">
+          <div class="card-header">
+            <h3 class="card-title">每店明細（不良存貨） <span class="text-secondary small" id="stk_week_label">—</span></h3>
+            <div class="card-actions"><button class="btn btn-sm" id="btn_stk_week_refresh" type="button">重新整理</button></div>
+          </div>
+          <div class="card-body">
+            <p class="text-secondary small">本表以<b>不良存貨</b>為主軸：<b>不良存貨值</b> = Excess Stock Value (P90D 0 Sales)；<b>不良存貨佔比</b> = 不良存貨值 ÷ 店舖存貨值 (CM)；WoW = 與上一期的百分點差。<b>RF SKU</b> 兩欄屬參考資料（RF = 自動補貨），本身不代表好壞，詳見下方「No. of RF SKU Dashboard」。</p>
+            <h5 class="text-secondary">Top 15 不良存貨佔比最高店舖</h5>
+            <div class="stk-bars" id="stk_top15"><div class="text-secondary small">載入中…</div></div>
+            <div class="d-flex gap-2 mt-3 mb-2 flex-wrap align-items-end">
+              <div style="min-width:180px"><label class="form-label" for="stk_q">搜尋（Site / 店舖 / OM / 性質）</label><input type="text" id="stk_q" class="form-control form-control-sm" placeholder="例如 HC63" autocomplete="off"></div>
+              <div><label class="form-label" for="stk_sort">排序</label><select id="stk_sort" class="form-select form-select-sm"><option value="ratio_desc">不良存貨佔比 高→低</option><option value="ratio_asc">不良存貨佔比 低→高</option><option value="ovscarry_desc">不良存貨 SKU÷店內貨品 高→低</option><option value="rf_desc">RF SKU 高→低</option><option value="rf_delta_desc">RF 較上期增加最多</option><option value="excess_desc">不良存貨值 高→低</option><option value="wow_desc">WoW 惡化最多</option></select></div>
+              <div><label class="form-label" for="stk_only">只顯示</label><select id="stk_only" class="form-select form-select-sm"><option value="">全部</option><option value="worse">WoW 惡化</option><option value="better">WoW 改善</option></select></div>
+              <button class="btn btn-sm" id="btn_stk_clear" type="button">重設</button>
+            </div>
+            <div id="stk_week_error"></div>
+            <div class="admin-table-wrap stk-detail-wrap">
+              <table class="table table-vcenter table-hover card-table stk-detail">
+                <thead><tr><th scope="col">Site</th><th scope="col">店舖</th><th scope="col">OM</th><th scope="col">Shop Nature</th><th scope="col" class="text-end" title="RF = 自動補貨的 SKU 數（參考值，本身不代表好壞）">RF SKU</th><th scope="col" class="text-end" title="與上一期 RF SKU 數的差額">RF 較上期</th><th scope="col" class="text-end" title="不良存貨 SKU 佔店內貨品比率 = No. of Overstock SKU (P90D 0 Sales) ÷ No. of SKU Carry">不良存貨 SKU ÷ 店內貨品</th><th scope="col" class="text-end" title="Excess Stock Value (P90D 0 Sales)">不良存貨值</th><th scope="col" class="text-end" title="Shop Stock Value (CM)">店舖存貨值</th><th scope="col" class="text-end" title="不良存貨值 ÷ 店舖存貨值">不良存貨佔比</th><th scope="col" class="text-end" title="不良存貨佔比與上一期的百分點差">不良存貨佔比 WoW</th></tr></thead>
+                <tbody id="stk_detail_body"><tr><td colspan="11" class="text-center text-secondary">載入中…</td></tr></tbody>
+              </table>
+            </div>
+            <div class="admin-pagination">
+              <span id="stk_page_range" class="page-range text-secondary small"></span>
+              <nav id="stk_page_numbers" class="page-numbers" aria-label="存貨明細分頁"></nav>
+              <label class="page-size">每頁 <select id="stk_page_size" class="form-select form-select-sm"><option value="20">20</option><option value="50">50</option><option value="100">100</option></select></label>
+            </div>
+          </div>
+        </div>
+
         <div class="card mt-3" id="stk_rf_dashboard">
           <div class="card-header">
             <h3 class="card-title">No. of RF SKU Dashboard（自動補貨）</h3>
@@ -726,35 +756,6 @@
               <span class="text-secondary small" id="stk_ovscarry_top15_label">—</span>
             </div>
             <div class="stk-bars" id="stk_ovscarry_top15"><div class="text-secondary small">載入中…</div></div>
-          </div>
-        </div>
-
-        <div class="card mt-3">
-          <div class="card-header">
-            <h3 class="card-title">每店明細 <span class="text-secondary small" id="stk_week_label">—</span></h3>
-            <div class="card-actions"><button class="btn btn-sm" id="btn_stk_week_refresh" type="button">重新整理</button></div>
-          </div>
-          <div class="card-body">
-            <h5 class="text-secondary">Top 15 佔比最高店舖</h5>
-            <div class="stk-bars" id="stk_top15"><div class="text-secondary small">載入中…</div></div>
-            <div class="d-flex gap-2 mt-3 mb-2 flex-wrap align-items-end">
-              <div style="min-width:180px"><label class="form-label" for="stk_q">搜尋（Site / 店舖 / OM / 性質）</label><input type="text" id="stk_q" class="form-control form-control-sm" placeholder="例如 HC63" autocomplete="off"></div>
-              <div><label class="form-label" for="stk_sort">排序</label><select id="stk_sort" class="form-select form-select-sm"><option value="ratio_desc">佔比 高→低</option><option value="ratio_asc">佔比 低→高</option><option value="ovscarry_desc">不良÷Carry 高→低</option><option value="rf_desc">RF SKU 高→低</option><option value="rf_delta_desc">RF 較上期增加最多</option><option value="excess_desc">不良存貨值 高→低</option><option value="wow_desc">WoW 惡化最多</option></select></div>
-              <div><label class="form-label" for="stk_only">只顯示</label><select id="stk_only" class="form-select form-select-sm"><option value="">全部</option><option value="worse">WoW 惡化</option><option value="better">WoW 改善</option></select></div>
-              <button class="btn btn-sm" id="btn_stk_clear" type="button">重設</button>
-            </div>
-            <div id="stk_week_error"></div>
-            <div class="admin-table-wrap stk-detail-wrap">
-              <table class="table table-vcenter table-hover card-table stk-detail">
-                <thead><tr><th scope="col">Site</th><th scope="col">店舖</th><th scope="col">OM</th><th scope="col">Shop Nature</th><th scope="col" class="text-end">RF SKU</th><th scope="col" class="text-end">RF 較上期</th><th scope="col" class="text-end">不良÷Carry</th><th scope="col" class="text-end">不良存貨值</th><th scope="col" class="text-end">店舖存貨值</th><th scope="col" class="text-end">佔比</th><th scope="col" class="text-end">佔比 WoW</th></tr></thead>
-                <tbody id="stk_detail_body"><tr><td colspan="11" class="text-center text-secondary">載入中…</td></tr></tbody>
-              </table>
-            </div>
-            <div class="admin-pagination">
-              <span id="stk_page_range" class="page-range text-secondary small"></span>
-              <nav id="stk_page_numbers" class="page-numbers" aria-label="存貨明細分頁"></nav>
-              <label class="page-size">每頁 <select id="stk_page_size" class="form-select form-select-sm"><option value="20">20</option><option value="50">50</option><option value="100">100</option></select></label>
-            </div>
           </div>
         </div>
 

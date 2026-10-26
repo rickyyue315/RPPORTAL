@@ -234,6 +234,8 @@ pg_restore --no-owner --no-privileges --clean --if-exists \
 
 ### 管理後台（第 9 個 tab「存貨 Dashboard」）
 
+**頁面版面（由上至下）**：上載 I14 報表 → 最新一期 KPI → **佔比趨勢（不良存貨 ÷ 店舖存貨）** → **每店明細（不良存貨）** → **No. of RF SKU Dashboard（自動補貨）** → 上載批次。佔比趨勢與每店明細放在前面，RF SKU 區塊放最後；每店明細的標題與欄位已註明**不良存貨**口徑（不良存貨值 / 不良存貨佔比 / 不良存貨 SKU ÷ 店內貨品），RF SKU 兩欄僅屬參考，明確標示不代表好壞。
+
 1. 選報表日期（可從檔名 `25Oct2026` 類格式自動填入）、報表類型、備註，再選 `.xlsx` 上載。
 2. **同一日期重上 = 整批取代**：同一 transaction 內先 `DELETE FROM shop_stock_batches WHERE report_date = $1`（FK CASCADE 清走明細），再建立新批次（**新批次有新 id**，不會出現「同一 id 先後代表兩份檔案」）；audit 會記下舊 batch id、行數與 `content_hash`。內容完全相同（`content_hash` 一致）則視為重複上載，不做任何寫入。
 3. 匯入清洗順序：①剔除 Column A = `Total` 的全公司合計列 → ②跳過全空白列 → ③跳過頁腳列（`Applied filters: …`）→ ④重複 Site Code 才報錯。`Total` 列的 Site Code 會撞真店（例：HA02），所以必須先整列剔除。
@@ -252,6 +254,7 @@ pg_restore --no-owner --no-privileges --clean --if-exists \
    `佔比趨勢`（一期一列：期別、週次、報表類型、店數、計入比率店數、Σ店舖存貨值、Σ不良存貨值、佔比、較上期 pp、>2 期與合計口徑、0 Sale SKU 數、RF SKU 合計／資料店數／較上期、不良存貨SKU÷RF）、
    `PPT 圖表用`（只有「期別 / 不良存貨佔比」兩欄，插入折線圖即用）、`匯出說明`（口徑、範圍、產生時間）。
    比率以小數儲存 + `0.0%` 格式，可直接在 Excel 改顯示位數；**分母 0 的期數留空**（不寫 0，避免畫出假 0% 線）。匯出為唯讀，會寫 audit event `shop_stock_trend_export`。
+9. **圖表 tooltip**：滑鼠懸停／點按可看該期數值。tooltip 會自動避開左右邊界（唔會黐出圖表），長系列名（例如「不良存貨 SKU 佔店內貨品比率」）會自動換行，文字**完整顯示**、唔會被深色底框截斷。
 
 ### No. of RF SKU Dashboard（自動補貨）與「不良存貨 SKU 佔店內貨品比率」
 

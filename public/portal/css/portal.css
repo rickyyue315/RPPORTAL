@@ -168,7 +168,7 @@
   position: absolute;
   z-index: 3;
   min-width: 108px;
-  max-width: 200px;
+  max-width: min(340px, calc(100% - 8px));
   padding: 8px 10px;
   background: rgba(15, 23, 42, 0.92);
   color: #fff;
@@ -177,13 +177,15 @@
   line-height: 1.45;
   pointer-events: none;
   box-shadow: 0 6px 18px rgba(15, 23, 42, 0.25);
+  /* 內容不可溢出深色底：長標題要換行，否則溢出部分是白字、落在白背景上就看不見 */
+  overflow-wrap: anywhere;
 }
 .ct-tip[hidden] { display: none; }
-.ct-tip-date { font-weight: 700; margin-bottom: 2px; }
-.ct-tip-row { display: flex; align-items: center; gap: 6px; white-space: nowrap; }
-.ct-tip-dot { width: 8px; height: 8px; border-radius: 50%; flex: 0 0 auto; }
-.ct-tip-label { color: #cbd5e1; }
-.ct-tip-row b { margin-left: auto; font-variant-numeric: tabular-nums; }
+.ct-tip-date { font-weight: 700; margin-bottom: 2px; white-space: nowrap; }
+.ct-tip-row { display: flex; align-items: baseline; gap: 6px; flex-wrap: wrap; row-gap: 2px; }
+.ct-tip-dot { width: 8px; height: 8px; border-radius: 50%; flex: 0 0 auto; align-self: center; }
+.ct-tip-label { color: #cbd5e1; min-width: 0; }
+.ct-tip-row b { margin-left: auto; flex: 0 0 auto; font-variant-numeric: tabular-nums; }
 
 /* 觸控：所有可點元素最少 20px 高／寬 */
 .dash-page .dash-chart svg,

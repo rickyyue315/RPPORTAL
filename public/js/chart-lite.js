@@ -426,7 +426,9 @@
       const localX = (x / W) * boxRect.width;
       const tipW = tip.offsetWidth || 132;
       const fitsRight = localX + 12 + tipW <= boxRect.width - 4;
-      const left = fitsRight ? localX + 12 : Math.max(4, localX - tipW - 12);
+      // 再夾一次右邊界：tooltip 變寬後仍要留在容器內，唔可以黐出圖表
+      const maxLeft = Math.max(4, boxRect.width - tipW - 4);
+      const left = Math.min(maxLeft, fitsRight ? localX + 12 : Math.max(4, localX - tipW - 12));
       tip.style.left = `${Math.round(left)}px`;
       tip.style.top = '8px';
     };

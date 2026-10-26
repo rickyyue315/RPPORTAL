@@ -562,6 +562,10 @@ body.stk-modal-open { overflow: hidden; }
 
 /* No. of RF SKU Dashboard：青色系與上方不良存貨區塊（佔比趨勢、每店明細）區分，但同屬存貨頁 */
 .stk-rf-kpi-grid { margin-bottom: 16px; }
+/* 卡頭淨係得標題同口徑切換（說明文字已搬落卡身，貼住佢描述嘅圖表）。
+   Tabler 嘅 .card-actions 有 margin-right:-.5rem，若卡頭再放兄弟節點就會疊字；
+   窄螢幕時容許切換組落到下一行，唔會壓住標題 */
+#stk_rf_dashboard .card-header { flex-wrap: wrap; row-gap: 6px; }
 #stk_rf_dashboard .stk-kpi {
   background: #f3fbfa;
   border-color: #bfe3df;

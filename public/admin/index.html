@@ -735,13 +735,13 @@
                 <button class="btn btn-sm" type="button" data-stk-rf-metric="ratio" aria-pressed="false">不良÷SKU Carry</button>
               </div>
             </div>
-            <span class="text-secondary small" id="stk_rf_note">走勢期間與上方佔比趨勢同步</span>
           </div>
           <div class="card-body">
             <p class="text-secondary small">RF = 自動補貨；ND = 不自動補貨。將不再需要的 SKU 由 RF 轉為 ND，是減少不良存貨的方法之一。RF SKU 多寡本身不代表好壞，請配合不良存貨佔比及銷售判斷。<b>「不良存貨 SKU 佔店內貨品比率」= No. of Overstock SKU (P90D 0 Sales) ÷ No. of SKU Carry</b>（全公司加權）。SKU Carry = 店內貨品 SKU 總數（報表定義 = RF SKU + ND with Stock，已對真實報表逐店核實），分子包含 ND 貨但必為分母子集，<b>比率不會超過 100%</b>。將 RF 轉 ND 而貨未清走時比率<b>不變</b>——只有實際賣出或轉走才會改善，與「降低 90 日 0 銷售」的目標一致（分母用 RF SKU 會懲罰轉 ND 的店，已棄用）。</p>
             <div class="stk-kpi-grid stk-rf-kpi-grid" id="stk_rf_kpi">
               <div class="stk-kpi stk-kpi--wide"><div class="stk-kpi-value">—</div><div class="stk-kpi-label">RF SKU 資料載入中…</div></div>
             </div>
+            <p class="text-secondary small text-end mb-1" id="stk_rf_note">走勢期間與上方佔比趨勢同步</p>
             <div class="stk-legend" id="stk_rf_legend"></div>
             <div class="stk-chart" id="stk_rf_chart"></div>
             <p class="text-secondary small mt-2 mb-0" id="stk_rf_chart_note"></p>

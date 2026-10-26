@@ -74,6 +74,25 @@
   border: 1px solid #a9c7e8; border-radius: 999px; padding: 1px 10px;
 }
 
+/* ---------- 合併版面的頁內分組（匯出 / 系統） ---------- */
+.panel-subnav { display: flex; flex-wrap: wrap; gap: 6px; margin: 4px 0 18px; }
+.panel-subnav a {
+  font-size: 12.5px; font-weight: 600; color: #0a3d69;
+  background: #f4f8fc; border: 1px solid #c4d9ef; border-radius: 999px;
+  padding: 4px 12px; text-decoration: none; white-space: nowrap;
+}
+.panel-subnav a:hover { background: #e2eefb; color: #0f5c9c; text-decoration: none; }
+.panel-subnav a.active { background: #0f5c9c; border-color: #0f5c9c; color: #fff; }
+.admin-group-title {
+  display: flex; align-items: center; gap: 8px;
+  font-size: 13.5px; font-weight: 700; color: #3a4653;
+  margin: 30px 0 6px; padding-left: 2px;
+}
+.admin-group-title::before { content: ""; width: 3px; height: 14px; border-radius: 2px; background: #79a9d6; }
+.panel-subnav + .admin-group-title { margin-top: 0; }
+.subnav-hint { font-size: 12.5px; color: #66727f; margin: 0 0 14px 5px; }
+.admin-anchor { scroll-margin-top: calc(var(--admin-nav-h) + 12px); }
+
 /* ---------- 可摺疊卡片 ---------- */
 .card-collapsible > .card-header { cursor: default; }
 .card-collapse-btn {

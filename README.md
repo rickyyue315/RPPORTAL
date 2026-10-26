@@ -15,6 +15,7 @@ SASA RP Team 非正常補貨（NDRF）申報平台。申請端以「Site Code／
 - 同一 Site Code + SKU 於同一日（香港日期）只可申報一次；一般 NDRF、Urgent 與突發性銷售分開計算。被拒時可用查詢／修改更正，翌日可重新申報；管理後台操作不受此限
 - 管理後台：清單篩選（含申報類型；日期預設今日）、詳情編輯、版本歷史、模板下載、批量匯入、SAP 9 欄匯出、獨立 Urgent 匯出、獨立突發性銷售匯出、完整審計報表、門店主檔管理；概覽及清單每分鐘自動刷新
 - 管理後台另提供行貨退貨報數清單、詳情編輯及 Buyer 8 欄 Excel 預覽／匯出鎖定；系統不記錄 Buyer 審批結果或退貨 NO.
+- 後台導航收斂為 7 個分頁：總覽／申報清單／**匯出**（含匯出批次及重新下載）／零銷售／存貨 Dashboard／指定SKU回覆／**系統**（含帳戶與主檔、審批設定、系統工具）。合併頁面頂部有頁內分組導覽；舊連結 `?tab=batches|accounts|review` 及 `#sec-batches|sec-accounts|sec-review` 書籤會自動跳到對應分頁的分組，不會失效
 - 指定 SKU 回覆：後台上載指定 SKU Excel，系統按 Site Code 建立**事項**（同一店舖的多個 SKU 歸入同一事項）；店舖為每個 SKU 的各個貨品年期 (MMYY) 回覆可調撥件數，或標示「無可調撥」，一次過提交整份事項。每個事項有獨立事項編號、批次編號及直 link（只限涉及店舖，後端強制核對）。管理員可代店舖補錄或更正回覆（不受封存限制、不佔店舖修改次數，會寫入審計日誌）
 - SAP 匯出只包含一般 NDRF，Urgent Order 使用獨立 6 欄匯出（Application No. | Site Code | SKU | QTY | Urgent Reason | Other Reason）；突發性銷售使用獨立 4 欄匯出（Application Date | Requested by | Shop Code | SKU）；匯出成功後鎖定該批申報，申請人不能再修改；匯出失敗不鎖定。管理員於 14:30 後開始匯出處理，期間 Urgent Order 申請人不可修改（查詢不受限）
 - Submission、version history 及 audit event 的 IP 按 `IP_RETENTION_DAYS` 自動匿名化；login attempts、import/export batches、expired sessions 及 rate-limit counters 按各自 retention 設定清理
@@ -233,7 +234,7 @@ pg_restore --no-owner --no-privileges --clean --if-exists \
 - **口徑**：每店佔比 = `Excess Stock Value (P90D 0 Sales)` ÷ `Shop Stock Value (CM)`；全公司佔比 = Σ不良存貨值 ÷ Σ店舖存貨值（**加權**，不是各店比率平均）。分母為 0／缺值時比率顯示 `—`，不會當成 0%。
 - **身份鍵**：`report_date`（每日只可有一批）。`report_kind`（`weekly`／`month_end`／`ad_hoc`）只作顯示。
 
-### 管理後台（第 9 個 tab「存貨 Dashboard」）
+### 管理後台（第 5 個 tab「存貨 Dashboard」）
 
 **頁面版面（由上至下）**：上載 I14 報表 → 最新一期 KPI → **佔比趨勢（不良存貨 ÷ 店舖存貨）** → **每店明細（不良存貨）** → **No. of RF SKU Dashboard（自動補貨）** → 上載批次。佔比趨勢與每店明細放在前面，RF SKU 區塊放最後；每店明細的標題與欄位已註明**不良存貨**口徑（不良存貨值 / 不良存貨佔比 / 不良存貨 SKU ÷ 店內貨品），RF SKU 兩欄僅屬參考，明確標示不代表好壞。
 

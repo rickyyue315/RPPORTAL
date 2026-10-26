@@ -1705,29 +1705,19 @@
     });
   }
 
-  const TAB_LAZY = {
-    accounts: ['portal-users', 'sku-master'],
-    review: ['store-routes', 'rejection-reasons'],
-    system: ['stores', 'recovery-codes'],
-  };
-
+  // 「系統」分頁已合併帳戶／主檔及審批設定；分組卡片仍由 IntersectionObserver 逐個載入，
+  // 切換到分頁時不會一次過打 6 個 API，只有「立即更新」才會全部重拉。
   function refreshActiveTab(manual = false) {
     const tab = globalThis.__adminActiveTab || 'overview';
     if (tab === 'overview') loadSummary();
     else if (tab === 'list') loadList();
-    else if (tab === 'batches') loadExportBatches();
-    else if (tab === 'review') {
+    else if (tab === 'export') loadExportBatches();
+    else if (tab === 'system') {
       loadReviewPending();
       if (manual) {
-        loadStoreRoutes();
-        loadRejectionReasons();
+        ['portal-users', 'sku-master', 'stores', 'store-routes', 'rejection-reasons', 'recovery-codes']
+          .forEach(loadLazySection);
       }
-    } else if (tab === 'accounts' && manual) {
-      loadPortalUsers();
-      loadSkuMaster();
-    } else if (tab === 'system' && manual) {
-      loadStoreCount();
-      loadRecoveryCodes();
     } else if (tab === 'zero-sales') {
       try { globalThis.__zsRefresh?.(); } catch {}
     } else if (tab === 'designated-sku') {
@@ -1735,9 +1725,7 @@
     }
   }
 
-  document.addEventListener('admin:tab-activated', (event) => {
-    const tab = event.detail?.tab;
-    (TAB_LAZY[tab] || []).forEach(loadLazySection);
+  document.addEventListener('admin:tab-activated', () => {
     refreshActiveTab();
   });
 

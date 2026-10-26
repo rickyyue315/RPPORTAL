@@ -29,9 +29,6 @@
         <a href="?tab=overview" role="tab" id="tab-overview" data-tab="overview" aria-controls="panel-overview" aria-selected="true">總覽</a>
         <a href="?tab=list" role="tab" id="tab-list" data-tab="list" aria-controls="panel-list" aria-selected="false" tabindex="-1">申報清單</a>
         <a href="?tab=export" role="tab" id="tab-export" data-tab="export" aria-controls="panel-export" aria-selected="false" tabindex="-1">匯出</a>
-        <a href="?tab=batches" role="tab" id="tab-batches" data-tab="batches" aria-controls="panel-batches" aria-selected="false" tabindex="-1">匯出批次</a>
-        <a href="?tab=accounts" role="tab" id="tab-accounts" data-tab="accounts" aria-controls="panel-accounts" aria-selected="false" tabindex="-1">帳戶 / 主檔</a>
-        <a href="?tab=review" role="tab" id="tab-review" data-tab="review" aria-controls="panel-review" aria-selected="false" tabindex="-1">審批設定</a>
         <a href="?tab=zero-sales" role="tab" id="tab-zero-sales" data-tab="zero-sales" aria-controls="panel-zero-sales" aria-selected="false" tabindex="-1">零銷售</a>
         <a href="?tab=stock" role="tab" id="tab-stock" data-tab="stock" aria-controls="panel-stock" aria-selected="false" tabindex="-1">存貨 Dashboard</a>
         <a href="?tab=designated-sku" role="tab" id="tab-designated-sku" data-tab="designated-sku" aria-controls="panel-designated-sku" aria-selected="false" tabindex="-1">指定SKU回覆</a>
@@ -230,9 +227,13 @@
 
         </section>
 
-        <!-- ============ 匯出 ============ -->
+        <!-- ============ 匯出（含匯出批次） ============ -->
         <section class="admin-tab-panel" id="panel-export" data-tab-panel="export" role="tabpanel" aria-labelledby="tab-export" hidden>
         <div class="admin-section-title admin-section" id="sec-export">Excel 匯出</div>
+        <nav class="panel-subnav" aria-label="匯出頁內分組">
+          <a href="#sec-export" data-subnav-target="sec-export" class="active">匯出中心</a>
+          <a href="#sec-batches" data-subnav-target="sec-batches">匯出批次及重新下載</a>
+        </nav>
         <div class="card">
           <div class="card-header">
             <h3 class="card-title">匯出中心</h3>
@@ -296,12 +297,7 @@
           </div>
         </div>
 
-        </section>
-
-        <!-- ============ 匯出批次 ============ -->
-        <section class="admin-tab-panel" id="panel-batches" data-tab-panel="batches" role="tabpanel" aria-labelledby="tab-batches" hidden>
-        <div class="admin-section-title admin-section" id="sec-batches">匯出批次</div>
-        <div class="card">
+        <div class="card admin-anchor" id="sec-batches">
           <div class="card-header">
             <h3 class="card-title">正式匯出批次及重新下載</h3>
             <div class="card-actions">
@@ -321,161 +317,6 @@
               <span id="batch_page_range" class="page-range text-secondary small"></span>
               <nav id="batch_page_numbers" class="page-numbers" aria-label="匯出批次分頁"></nav>
               <label class="page-size">每頁 <select id="batch_page_size" class="form-select form-select-sm"><option value="20">20</option><option value="50">50</option><option value="100">100</option></select></label>
-            </div>
-          </div>
-        </div>
-
-        </section>
-
-        <!-- ============ 帳戶 / 主檔 ============ -->
-        <section class="admin-tab-panel" id="panel-accounts" data-tab-panel="accounts" role="tabpanel" aria-labelledby="tab-accounts" hidden>
-        <div class="admin-section-title admin-section" id="sec-accounts">帳戶 / 主檔</div>
-        <div class="card" data-lazy-section="portal-users">
-          <div class="card-header">
-            <h3 class="card-title">Portal 帳戶管理（一般 NDRF）</h3>
-            <div class="card-actions">
-              <a href="#" class="btn-action" data-bs-toggle="collapse" data-bs-target="#portal-users-collapse" aria-expanded="true" aria-label="摺疊帳戶">
-                <svg xmlns="http://www.w3.org/2000/svg" class="icon" width="24" height="24" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none" stroke-linecap="round" stroke-linejoin="round"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><polyline points="6 9 12 15 18 9" /></svg>
-              </a>
-            </div>
-          </div>
-          <div class="card-body collapse show" id="portal-users-collapse">
-            <p class="text-secondary small">Portal 帳戶（Store／Buyer／SCT）以「使用者名稱（Site Code）＋密碼」登入；登入連結會自動帶出使用者名稱。Store 可單間建立（選店舖）或按門店主檔同步；Buyer／SCT 帳戶在此建立。管理員可啟用／停用／刪除帳戶或批量操作（先勾選再按鈕，表頭可全選）。尚有 SKU 分派的 Buyer 或有待審批的 SCT 不可停用或刪除。</p>
-            <div class="d-flex gap-2 mb-3 flex-wrap">
-              <div class="flex-grow-1" id="pu_username_wrap" style="min-width:200px">
-                <label class="form-label">使用者名稱（Buyer／SCT）</label>
-                <input type="text" id="pu_username" class="form-control" placeholder="例如 BUYER3">
-              </div>
-              <div class="flex-grow-1" id="pu_site_wrap" style="min-width:200px;display:none">
-                <label class="form-label">店舖（Store）</label>
-                <select id="pu_site" class="form-select"><option value="">請選擇店舖…</option></select>
-              </div>
-              <div class="flex-grow-1" id="pu_display_wrap" style="min-width:200px">
-                <label class="form-label">顯示名稱</label>
-                <input type="text" id="pu_display" class="form-control">
-              </div>
-              <div>
-                <label class="form-label">角色</label>
-                <select id="pu_role" class="form-select"><option value="buyer">Buyer</option><option value="sct">SCT</option><option value="store">Store</option></select>
-              </div>
-              <div class="align-self-end">
-                <button class="btn btn-primary" id="btn_pu_create">建立帳戶</button>
-              </div>
-            </div>
-            <div class="d-flex gap-2 mb-3 flex-wrap">
-              <button class="btn btn-outline-primary" id="btn_store_sync">按門店主檔同步 Store 帳戶</button>
-              <button class="btn btn-outline-primary" id="btn_pu_export_links">匯出登入連結 (CSV)</button>
-            </div>
-            <div id="portal_users_result"></div>
-            <div class="d-flex gap-2 mb-3 flex-wrap align-items-center">
-              <span class="text-secondary small">已勾選帳戶可批量操作（只限本頁）：</span>
-              <button class="btn btn-sm btn-outline-primary" id="btn_pu_bulk_activate">批量啟用</button>
-              <button class="btn btn-sm" id="btn_pu_bulk_deactivate">批量停用</button>
-              <button class="btn btn-sm btn-outline-danger" id="btn_pu_bulk_delete">批量刪除</button>
-            </div>
-            <div class="table-responsive">
-              <table class="table table-vcenter"><thead><tr><th><input type="checkbox" id="pu_select_all" title="全選本頁"></th><th>使用者名稱</th><th>顯示名稱</th><th>角色</th><th>Site Code</th><th>狀態</th><th>登入連結</th><th>操作</th></tr></thead><tbody id="portal_users_body"><tr><td colspan="8" class="text-center text-secondary">捲動到此處自動載入…</td></tr></tbody></table>
-            </div>
-            <div class="admin-pagination">
-              <span id="pu_page_range" class="page-range text-secondary small"></span>
-              <nav id="pu_page_numbers" class="page-numbers" aria-label="Portal 帳戶分頁"></nav>
-              <label class="page-size">每頁 <select id="pu_page_size" class="form-select form-select-sm"><option value="20">20</option><option value="50">50</option><option value="100">100</option></select></label>
-            </div>
-          </div>
-        </div>
-
-        <div class="card" data-lazy-section="sku-master">
-          <div class="card-header">
-            <h3 class="card-title">SKU Master（ND 的 Buyer 分工）</h3>
-            <div class="card-actions">
-              <a href="#" class="btn-action" data-bs-toggle="collapse" data-bs-target="#sku-collapse" aria-expanded="true" aria-label="摺疊SKU">
-                <svg xmlns="http://www.w3.org/2000/svg" class="icon" width="24" height="24" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none" stroke-linecap="round" stroke-linejoin="round"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><polyline points="6 9 12 15 18 9" /></svg>
-              </a>
-            </div>
-          </div>
-          <div class="card-body collapse show" id="sku-collapse">
-            <p class="text-secondary small">每個 SKU 對應一位 Buyer。整批上載前會先檢查現有待審 ND 是否都有負責 Buyer；若新檔會令任何待審 ND 失去負責人，整批會被拒絕。</p>
-            <div class="d-flex gap-2 mb-3 flex-wrap">
-              <input type="file" id="sku_input" accept=".csv" class="form-control" style="max-width:360px">
-              <button class="btn btn-primary" id="btn_sku_upload">上載並整批取代</button>
-            </div>
-            <div class="hint">CSV 欄名：SKU, Buyer Username</div>
-            <div id="sku_result"></div>
-            <div class="table-responsive">
-              <table class="table table-vcenter"><thead><tr><th>SKU</th><th>Buyer</th><th>Buyer 狀態</th><th>更新時間</th></tr></thead><tbody id="sku_master_body"><tr><td colspan="4" class="text-center text-secondary">捲動到此處自動載入…</td></tr></tbody></table>
-            </div>
-          </div>
-        </div>
-
-        </section>
-
-        <!-- ============ 審批設定 ============ -->
-        <section class="admin-tab-panel" id="panel-review" data-tab-panel="review" role="tabpanel" aria-labelledby="tab-review" hidden>
-        <div class="admin-section-title admin-section" id="sec-review">審批設定</div>
-        <div class="card">
-          <div class="card-header">
-            <h3 class="card-title">Buyer 待審批提醒</h3>
-            <div class="card-actions">
-              <a href="#" class="btn-action" data-bs-toggle="collapse" data-bs-target="#review-pending-collapse" aria-expanded="true" aria-label="摺疊提醒">
-                <svg xmlns="http://www.w3.org/2000/svg" class="icon" width="24" height="24" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none" stroke-linecap="round" stroke-linejoin="round"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><polyline points="6 9 12 15 18 9" /></svg>
-              </a>
-            </div>
-          </div>
-          <div class="card-body collapse show" id="review-pending-collapse">
-            <p class="text-secondary small">列出目前有待審 ND 的 Buyer、未審批筆數及未審 SKU 列表，方便提醒跟進。</p>
-            <div class="d-flex gap-2 mb-3 flex-wrap">
-              <button class="btn btn-primary" id="btn_review_pending_export">下載提醒 Excel</button>
-              <button class="btn" id="btn_review_pending_refresh">重新整理</button>
-            </div>
-            <div id="review_pending_result"></div>
-            <div class="table-responsive">
-              <table class="table table-vcenter"><thead><tr><th>Buyer</th><th>顯示名稱</th><th>狀態</th><th>待審筆數</th><th>待審 SKU 數</th><th>SKU 列表</th></tr></thead><tbody id="review_pending_body"><tr><td colspan="6" class="text-center text-secondary">捲動到此處自動載入…</td></tr></tbody></table>
-            </div>
-          </div>
-        </div>
-
-        <div class="card" data-lazy-section="store-routes">
-          <div class="card-header">
-            <h3 class="card-title">指定店路由設定</h3>
-            <div class="card-actions">
-              <a href="#" class="btn-action" data-bs-toggle="collapse" data-bs-target="#routes-collapse" aria-expanded="true" aria-label="摺疊路由">
-                <svg xmlns="http://www.w3.org/2000/svg" class="icon" width="24" height="24" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none" stroke-linecap="round" stroke-linejoin="round"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><polyline points="6 9 12 15 18 9" /></svg>
-              </a>
-            </div>
-          </div>
-          <div class="card-body collapse show" id="routes-collapse">
-            <p class="text-secondary small">指定店的 RF（包括改 Safety）會送 SCT 審批，並要求 Remark 必填。路由在申請建立時 snapshot，改動只影響新申請。可在此直接<b>新增或移除</b>指定店。</p>
-            <div class="d-flex gap-2 mb-3 flex-wrap">
-              <div style="min-width:180px"><label class="form-label">新增指定店 Site Code</label><input type="text" id="route_site_new" class="form-control" placeholder="例如 HC99"></div>
-              <div class="align-self-end"><button class="btn btn-primary" id="btn_route_add">新增指定店</button></div>
-            </div>
-            <div id="store_routes_result"></div>
-            <div class="table-responsive">
-              <table class="table table-vcenter"><thead><tr><th>Site Code</th><th>店舖</th><th>SCT 審批</th><th>Remark 必填</th><th>更新時間</th><th>操作</th></tr></thead><tbody id="store_routes_body"><tr><td colspan="6" class="text-center text-secondary">捲動到此處自動載入…</td></tr></tbody></table>
-            </div>
-          </div>
-        </div>
-
-        <div class="card" data-lazy-section="rejection-reasons">
-          <div class="card-header">
-            <h3 class="card-title">Reject 原因類別</h3>
-            <div class="card-actions">
-              <a href="#" class="btn-action" data-bs-toggle="collapse" data-bs-target="#rejection-collapse" aria-expanded="true" aria-label="摺疊原因">
-                <svg xmlns="http://www.w3.org/2000/svg" class="icon" width="24" height="24" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none" stroke-linecap="round" stroke-linejoin="round"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><polyline points="6 9 12 15 18 9" /></svg>
-              </a>
-            </div>
-          </div>
-          <div class="card-body collapse show" id="rejection-collapse">
-            <p class="text-secondary small">Reviewer Reject 時必須選擇原因類別並填寫補充說明；原因 label 會 snapshot 到審批歷史，改名或停用不會影響舊紀錄。</p>
-            <div class="d-flex gap-2 mb-3 flex-wrap">
-              <div style="min-width:140px"><label class="form-label">Code</label><input type="text" id="rr_code" class="form-control" placeholder="例如 duplicate"></div>
-              <div class="flex-grow-1" style="min-width:220px"><label class="form-label">顯示名稱</label><input type="text" id="rr_label" class="form-control" placeholder="例如 重複申請"></div>
-              <div style="min-width:120px"><label class="form-label">排序</label><input type="number" id="rr_sort" class="form-control" value="0"></div>
-              <div class="align-self-end"><button class="btn btn-primary" id="btn_rr_upsert">新增／更新</button></div>
-            </div>
-            <div id="rejection_result"></div>
-            <div class="table-responsive">
-              <table class="table table-vcenter"><thead><tr><th>Code</th><th>顯示名稱</th><th>排序</th><th>啟用</th><th>更新人</th><th>操作</th></tr></thead><tbody id="rejection_body"><tr><td colspan="6" class="text-center text-secondary">捲動到此處自動載入…</td></tr></tbody></table>
             </div>
           </div>
         </div>
@@ -909,9 +750,94 @@
         </div>
         </section>
 
-        <!-- ============ 系統 ============ -->
+        <!-- ============ 系統（含帳戶／主檔、審批設定） ============ -->
         <section class="admin-tab-panel" id="panel-system" data-tab-panel="system" role="tabpanel" aria-labelledby="tab-system" hidden>
         <div class="admin-section-title admin-section" id="sec-system">系統</div>
+        <nav class="panel-subnav" aria-label="系統頁內分組">
+          <a href="#sec-accounts" data-subnav-target="sec-accounts" class="active">帳戶與主檔</a>
+          <a href="#sec-review" data-subnav-target="sec-review">審批設定</a>
+          <a href="#sec-tools" data-subnav-target="sec-tools">系統工具</a>
+        </nav>
+
+        <div class="admin-group-title admin-section" id="sec-accounts">帳戶與主檔</div>
+        <p class="subnav-hint">Portal 登入帳戶、SKU 對 Buyer 的分工，以及門店主檔（Store 帳戶同步來源）。</p>
+        <div class="card" data-lazy-section="portal-users">
+          <div class="card-header">
+            <h3 class="card-title">Portal 帳戶管理（一般 NDRF）</h3>
+            <div class="card-actions">
+              <a href="#" class="btn-action" data-bs-toggle="collapse" data-bs-target="#portal-users-collapse" aria-expanded="true" aria-label="摺疊帳戶">
+                <svg xmlns="http://www.w3.org/2000/svg" class="icon" width="24" height="24" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none" stroke-linecap="round" stroke-linejoin="round"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><polyline points="6 9 12 15 18 9" /></svg>
+              </a>
+            </div>
+          </div>
+          <div class="card-body collapse show" id="portal-users-collapse">
+            <p class="text-secondary small">Portal 帳戶（Store／Buyer／SCT）以「使用者名稱（Site Code）＋密碼」登入；登入連結會自動帶出使用者名稱。Store 可單間建立（選店舖）或按門店主檔同步；Buyer／SCT 帳戶在此建立。管理員可啟用／停用／刪除帳戶或批量操作（先勾選再按鈕，表頭可全選）。尚有 SKU 分派的 Buyer 或有待審批的 SCT 不可停用或刪除。</p>
+            <div class="d-flex gap-2 mb-3 flex-wrap">
+              <div class="flex-grow-1" id="pu_username_wrap" style="min-width:200px">
+                <label class="form-label">使用者名稱（Buyer／SCT）</label>
+                <input type="text" id="pu_username" class="form-control" placeholder="例如 BUYER3">
+              </div>
+              <div class="flex-grow-1" id="pu_site_wrap" style="min-width:200px;display:none">
+                <label class="form-label">店舖（Store）</label>
+                <select id="pu_site" class="form-select"><option value="">請選擇店舖…</option></select>
+              </div>
+              <div class="flex-grow-1" id="pu_display_wrap" style="min-width:200px">
+                <label class="form-label">顯示名稱</label>
+                <input type="text" id="pu_display" class="form-control">
+              </div>
+              <div>
+                <label class="form-label">角色</label>
+                <select id="pu_role" class="form-select"><option value="buyer">Buyer</option><option value="sct">SCT</option><option value="store">Store</option></select>
+              </div>
+              <div class="align-self-end">
+                <button class="btn btn-primary" id="btn_pu_create">建立帳戶</button>
+              </div>
+            </div>
+            <div class="d-flex gap-2 mb-3 flex-wrap">
+              <button class="btn btn-outline-primary" id="btn_store_sync">按門店主檔同步 Store 帳戶</button>
+              <button class="btn btn-outline-primary" id="btn_pu_export_links">匯出登入連結 (CSV)</button>
+            </div>
+            <div id="portal_users_result"></div>
+            <div class="d-flex gap-2 mb-3 flex-wrap align-items-center">
+              <span class="text-secondary small">已勾選帳戶可批量操作（只限本頁）：</span>
+              <button class="btn btn-sm btn-outline-primary" id="btn_pu_bulk_activate">批量啟用</button>
+              <button class="btn btn-sm" id="btn_pu_bulk_deactivate">批量停用</button>
+              <button class="btn btn-sm btn-outline-danger" id="btn_pu_bulk_delete">批量刪除</button>
+            </div>
+            <div class="table-responsive">
+              <table class="table table-vcenter"><thead><tr><th><input type="checkbox" id="pu_select_all" title="全選本頁"></th><th>使用者名稱</th><th>顯示名稱</th><th>角色</th><th>Site Code</th><th>狀態</th><th>登入連結</th><th>操作</th></tr></thead><tbody id="portal_users_body"><tr><td colspan="8" class="text-center text-secondary">捲動到此處自動載入…</td></tr></tbody></table>
+            </div>
+            <div class="admin-pagination">
+              <span id="pu_page_range" class="page-range text-secondary small"></span>
+              <nav id="pu_page_numbers" class="page-numbers" aria-label="Portal 帳戶分頁"></nav>
+              <label class="page-size">每頁 <select id="pu_page_size" class="form-select form-select-sm"><option value="20">20</option><option value="50">50</option><option value="100">100</option></select></label>
+            </div>
+          </div>
+        </div>
+
+        <div class="card" data-lazy-section="sku-master">
+          <div class="card-header">
+            <h3 class="card-title">SKU Master（ND 的 Buyer 分工）</h3>
+            <div class="card-actions">
+              <a href="#" class="btn-action" data-bs-toggle="collapse" data-bs-target="#sku-collapse" aria-expanded="true" aria-label="摺疊SKU">
+                <svg xmlns="http://www.w3.org/2000/svg" class="icon" width="24" height="24" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none" stroke-linecap="round" stroke-linejoin="round"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><polyline points="6 9 12 15 18 9" /></svg>
+              </a>
+            </div>
+          </div>
+          <div class="card-body collapse show" id="sku-collapse">
+            <p class="text-secondary small">每個 SKU 對應一位 Buyer。整批上載前會先檢查現有待審 ND 是否都有負責 Buyer；若新檔會令任何待審 ND 失去負責人，整批會被拒絕。</p>
+            <div class="d-flex gap-2 mb-3 flex-wrap">
+              <input type="file" id="sku_input" accept=".csv" class="form-control" style="max-width:360px">
+              <button class="btn btn-primary" id="btn_sku_upload">上載並整批取代</button>
+            </div>
+            <div class="hint">CSV 欄名：SKU, Buyer Username</div>
+            <div id="sku_result"></div>
+            <div class="table-responsive">
+              <table class="table table-vcenter"><thead><tr><th>SKU</th><th>Buyer</th><th>Buyer 狀態</th><th>更新時間</th></tr></thead><tbody id="sku_master_body"><tr><td colspan="4" class="text-center text-secondary">捲動到此處自動載入…</td></tr></tbody></table>
+            </div>
+          </div>
+        </div>
+
         <div class="card" data-lazy-section="stores">
           <div class="card-header">
             <h3 class="card-title">門店主檔</h3>
@@ -931,6 +857,78 @@
           </div>
         </div>
 
+        <div class="admin-group-title admin-section" id="sec-review">審批設定</div>
+        <p class="subnav-hint">待審批提醒、指定店路由（RF／改 Safety 送 SCT 審批）、Reject 原因類別。</p>
+        <div class="card">
+          <div class="card-header">
+            <h3 class="card-title">Buyer 待審批提醒</h3>
+            <div class="card-actions">
+              <a href="#" class="btn-action" data-bs-toggle="collapse" data-bs-target="#review-pending-collapse" aria-expanded="true" aria-label="摺疊提醒">
+                <svg xmlns="http://www.w3.org/2000/svg" class="icon" width="24" height="24" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none" stroke-linecap="round" stroke-linejoin="round"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><polyline points="6 9 12 15 18 9" /></svg>
+              </a>
+            </div>
+          </div>
+          <div class="card-body collapse show" id="review-pending-collapse">
+            <p class="text-secondary small">列出目前有待審 ND 的 Buyer、未審批筆數及未審 SKU 列表，方便提醒跟進。</p>
+            <div class="d-flex gap-2 mb-3 flex-wrap">
+              <button class="btn btn-primary" id="btn_review_pending_export">下載提醒 Excel</button>
+              <button class="btn" id="btn_review_pending_refresh">重新整理</button>
+            </div>
+            <div id="review_pending_result"></div>
+            <div class="table-responsive">
+              <table class="table table-vcenter"><thead><tr><th>Buyer</th><th>顯示名稱</th><th>狀態</th><th>待審筆數</th><th>待審 SKU 數</th><th>SKU 列表</th></tr></thead><tbody id="review_pending_body"><tr><td colspan="6" class="text-center text-secondary">捲動到此處自動載入…</td></tr></tbody></table>
+            </div>
+          </div>
+        </div>
+
+        <div class="card" data-lazy-section="store-routes">
+          <div class="card-header">
+            <h3 class="card-title">指定店路由設定</h3>
+            <div class="card-actions">
+              <a href="#" class="btn-action" data-bs-toggle="collapse" data-bs-target="#routes-collapse" aria-expanded="true" aria-label="摺疊路由">
+                <svg xmlns="http://www.w3.org/2000/svg" class="icon" width="24" height="24" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none" stroke-linecap="round" stroke-linejoin="round"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><polyline points="6 9 12 15 18 9" /></svg>
+              </a>
+            </div>
+          </div>
+          <div class="card-body collapse show" id="routes-collapse">
+            <p class="text-secondary small">指定店的 RF（包括改 Safety）會送 SCT 審批，並要求 Remark 必填。路由在申請建立時 snapshot，改動只影響新申請。可在此直接<b>新增或移除</b>指定店。</p>
+            <div class="d-flex gap-2 mb-3 flex-wrap">
+              <div style="min-width:180px"><label class="form-label">新增指定店 Site Code</label><input type="text" id="route_site_new" class="form-control" placeholder="例如 HC99"></div>
+              <div class="align-self-end"><button class="btn btn-primary" id="btn_route_add">新增指定店</button></div>
+            </div>
+            <div id="store_routes_result"></div>
+            <div class="table-responsive">
+              <table class="table table-vcenter"><thead><tr><th>Site Code</th><th>店舖</th><th>SCT 審批</th><th>Remark 必填</th><th>更新時間</th><th>操作</th></tr></thead><tbody id="store_routes_body"><tr><td colspan="6" class="text-center text-secondary">捲動到此處自動載入…</td></tr></tbody></table>
+            </div>
+          </div>
+        </div>
+
+        <div class="card" data-lazy-section="rejection-reasons">
+          <div class="card-header">
+            <h3 class="card-title">Reject 原因類別</h3>
+            <div class="card-actions">
+              <a href="#" class="btn-action" data-bs-toggle="collapse" data-bs-target="#rejection-collapse" aria-expanded="true" aria-label="摺疊原因">
+                <svg xmlns="http://www.w3.org/2000/svg" class="icon" width="24" height="24" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none" stroke-linecap="round" stroke-linejoin="round"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><polyline points="6 9 12 15 18 9" /></svg>
+              </a>
+            </div>
+          </div>
+          <div class="card-body collapse show" id="rejection-collapse">
+            <p class="text-secondary small">Reviewer Reject 時必須選擇原因類別並填寫補充說明；原因 label 會 snapshot 到審批歷史，改名或停用不會影響舊紀錄。</p>
+            <div class="d-flex gap-2 mb-3 flex-wrap">
+              <div style="min-width:140px"><label class="form-label">Code</label><input type="text" id="rr_code" class="form-control" placeholder="例如 duplicate"></div>
+              <div class="flex-grow-1" style="min-width:220px"><label class="form-label">顯示名稱</label><input type="text" id="rr_label" class="form-control" placeholder="例如 重複申請"></div>
+              <div style="min-width:120px"><label class="form-label">排序</label><input type="number" id="rr_sort" class="form-control" value="0"></div>
+              <div class="align-self-end"><button class="btn btn-primary" id="btn_rr_upsert">新增／更新</button></div>
+            </div>
+            <div id="rejection_result"></div>
+            <div class="table-responsive">
+              <table class="table table-vcenter"><thead><tr><th>Code</th><th>顯示名稱</th><th>排序</th><th>啟用</th><th>更新人</th><th>操作</th></tr></thead><tbody id="rejection_body"><tr><td colspan="6" class="text-center text-secondary">捲動到此處自動載入…</td></tr></tbody></table>
+            </div>
+          </div>
+        </div>
+
+        <div class="admin-group-title admin-section" id="sec-tools">系統工具</div>
+        <p class="subnav-hint">Recovery Code（公開頁「搵返申請編號」驗證用）。</p>
         <div class="card" data-lazy-section="recovery-codes">
           <div class="card-header">
             <h3 class="card-title">Recovery Code 管理</h3>

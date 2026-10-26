@@ -119,6 +119,44 @@ describe('static asset freshness', () => {
     expect(adminScript).toContain('代回覆');
   });
 
+  it('keeps the admin tabs consolidated (匯出批次 → 匯出, 帳戶／審批 → 系統)', () => {
+    const html = readFileSync(path.join(root, 'public', 'admin', 'index.html'), 'utf8');
+    const ui = readFileSync(path.join(root, 'public', 'js', 'admin-ui.js'), 'utf8');
+    const script = readFileSync(path.join(root, 'public', 'js', 'admin.js'), 'utf8');
+
+    const nav = html.slice(html.indexOf('id="admin_nav_links"'), html.indexOf('id="nav_refresh_note"'));
+    const tabs = [...nav.matchAll(/data-tab="([^"]+)"/g)].map((m) => m[1]);
+    expect(tabs).toEqual(['overview', 'list', 'export', 'zero-sales', 'stock', 'designated-sku', 'system']);
+
+    // 舊的分頁殼不應再存在，但舊連結要靠 alias 仍然可用
+    expect(html).not.toContain('id="panel-batches"');
+    expect(html).not.toContain('id="panel-accounts"');
+    expect(html).not.toContain('id="panel-review"');
+
+    // 合併後的內容仍在，並有頁內分組導覽
+    for (const anchor of ['sec-batches', 'sec-accounts', 'sec-review', 'sec-tools']) {
+      expect(html).toContain(`id="${anchor}"`);
+      expect(html).toContain(`data-subnav-target="${anchor}"`);
+    }
+
+    // 每個分頁只保留一個 panel，且與導航一一對應
+    const panels = [...html.matchAll(/data-tab-panel="([^"]+)"/g)].map((m) => m[1]);
+    expect(panels.sort()).toEqual([...tabs].sort());
+
+    expect(ui).toContain('TAB_ALIAS');
+    expect(ui).toContain("batches: { tab: 'export', anchor: 'sec-batches' }");
+    expect(ui).toContain("accounts: { tab: 'system', anchor: 'sec-accounts' }");
+    expect(ui).toContain("review: { tab: 'system', anchor: 'sec-review' }");
+
+    // 系統分頁的懶載入區塊照舊逐個載入（切分頁不會一次過打 6 個 API）
+    expect(html).toContain('data-lazy-section="portal-users"');
+    expect(html).toContain('data-lazy-section="sku-master"');
+    expect(html).toContain('data-lazy-section="stores"');
+    expect(html).toContain('data-lazy-section="recovery-codes"');
+    expect(script).toContain("tab === 'export'");
+    expect(script).not.toContain("tab === 'batches'");
+  });
+
   it('keeps the store navigation identical on every store page', () => {
     const pages = [
       'portal/zero-sales.html',

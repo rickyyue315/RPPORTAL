@@ -15,29 +15,51 @@
   }
 
   /* ---------- 分區 Tabs（?tab= 深層連結） ---------- */
+  // 已合併的舊分頁：舊 ?tab= 連結或書籤會自動跳去新分頁，並捲到對應分組
+  const TAB_ALIAS = {
+    batches: { tab: 'export', anchor: 'sec-batches' },
+    accounts: { tab: 'system', anchor: 'sec-accounts' },
+    review: { tab: 'system', anchor: 'sec-review' },
+  };
+
   function initTabs() {
     const tabs = [...document.querySelectorAll('#admin_nav_links [data-tab]')];
     const panels = [...document.querySelectorAll('[data-tab-panel]')];
     if (!tabs.length || !panels.length) return;
     const valid = new Set(tabs.map((t) => t.dataset.tab));
-    const legacyHash = {
-      'sec-overview': 'overview',
-      'sec-list': 'list',
-      'sec-export': 'export',
-      'sec-batches': 'batches',
-      'sec-accounts': 'accounts',
-      'sec-review': 'review',
-      'sec-zero-sales': 'zero-sales',
-      'sec-designated-sku': 'designated-sku',
-      'sec-system': 'system',
-    };
+
+    // 接受分頁名、舊分頁名或頁內錨點 id，一律解析成 { tab, anchor }
+    function resolveTarget(raw) {
+      if (!raw) return null;
+      if (TAB_ALIAS[raw]) return TAB_ALIAS[raw];
+      if (valid.has(raw)) return { tab: raw, anchor: '' };
+      const el = document.getElementById(raw);
+      const panel = el && el.closest('[data-tab-panel]');
+      if (panel && valid.has(panel.dataset.tabPanel)) return { tab: panel.dataset.tabPanel, anchor: raw };
+      return null;
+    }
+
     function fromLocation() {
       const q = new URLSearchParams(location.search).get('tab');
-      if (q && valid.has(q)) return q;
       const hash = location.hash.replace(/^#/, '');
-      if (legacyHash[hash] && valid.has(legacyHash[hash])) return legacyHash[hash];
-      return 'overview';
+      return resolveTarget(q) || resolveTarget(hash) || { tab: 'overview', anchor: '' };
     }
+
+    function setPillActive(a, on) {
+      a.classList.toggle('active', on);
+      if (on) a.setAttribute('aria-current', 'true');
+      else a.removeAttribute('aria-current');
+    }
+
+    function highlightSubnav(name, anchor) {
+      const nav = panels.find((p) => p.dataset.tabPanel === name)?.querySelector('.panel-subnav');
+      if (!nav) return;
+      const links = [...nav.querySelectorAll('[data-subnav-target]')];
+      if (!links.length) return;
+      const target = anchor || links[0].dataset.subnavTarget;
+      links.forEach((a) => setPillActive(a, a.dataset.subnavTarget === target));
+    }
+
     function activate(name, opts = {}) {
       if (!valid.has(name)) name = 'overview';
       const changed = globalThis.__adminActiveTab !== name;
@@ -49,16 +71,22 @@
         t.tabIndex = on ? 0 : -1;
       });
       globalThis.__adminActiveTab = name;
+      highlightSubnav(name, opts.anchor);
       const url = new URL(location.href);
       url.searchParams.set('tab', name);
-      url.hash = '';
+      url.hash = opts.anchor || '';
       const method = opts.push ? 'pushState' : 'replaceState';
-      history[method]({ tab: name }, '', url.toString());
-      if (opts.scroll !== false) window.scrollTo({ top: 0, left: 0, behavior: 'auto' });
+      history[method]({ tab: name, anchor: opts.anchor || '' }, '', url.toString());
+      if (opts.scroll !== false) {
+        const target = opts.anchor ? document.getElementById(opts.anchor) : null;
+        if (target) target.scrollIntoView({ block: 'start', behavior: 'auto' });
+        else window.scrollTo({ top: 0, left: 0, behavior: 'auto' });
+      }
       if (changed || opts.force) {
         document.dispatchEvent(new CustomEvent('admin:tab-activated', { detail: { tab: name } }));
       }
     }
+
     tabs.forEach((tab, index) => {
       tab.addEventListener('click', (e) => {
         e.preventDefault();
@@ -90,8 +118,44 @@
       e.preventDefault();
       activate(name, { push: true });
     });
-    window.addEventListener('popstate', () => activate(fromLocation(), { scroll: false }));
-    activate(fromLocation(), { scroll: false, force: true });
+    // 頁內分組導覽（合併版面用）
+    document.querySelectorAll('.panel-subnav').forEach((nav) => {
+      const panelTab = nav.closest('[data-tab-panel]')?.dataset.tabPanel;
+      nav.querySelectorAll('[data-subnav-target]').forEach((a) => {
+        a.addEventListener('click', (e) => {
+          e.preventDefault();
+          activate(panelTab || globalThis.__adminActiveTab || 'overview', {
+            push: true,
+            anchor: a.dataset.subnavTarget,
+          });
+        });
+      });
+    });
+    let spyTick = false;
+    function syncSubnavFromScroll() {
+      const nav = panels.find((p) => !p.hidden)?.querySelector('.panel-subnav');
+      if (!nav) return;
+      const links = [...nav.querySelectorAll('[data-subnav-target]')];
+      const offset = (document.querySelector('.admin-nav')?.offsetHeight || 0) + 28;
+      let current = null;
+      links.forEach((a) => {
+        const el = document.getElementById(a.dataset.subnavTarget);
+        if (el && el.getBoundingClientRect().top - offset <= 0) current = a.dataset.subnavTarget;
+      });
+      if (!current && links.length) current = links[0].dataset.subnavTarget;
+      links.forEach((a) => setPillActive(a, a.dataset.subnavTarget === current));
+    }
+    window.addEventListener('scroll', () => {
+      if (spyTick) return;
+      spyTick = true;
+      requestAnimationFrame(() => { spyTick = false; syncSubnavFromScroll(); });
+    }, { passive: true });
+    window.addEventListener('popstate', () => {
+      const t = fromLocation();
+      activate(t.tab, { scroll: !!t.anchor, anchor: t.anchor });
+    });
+    const start = fromLocation();
+    activate(start.tab, { scroll: !!start.anchor, anchor: start.anchor, force: true });
   }
 
   /* ---------- 匯出 Tabs ---------- */

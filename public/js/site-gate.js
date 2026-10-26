@@ -215,7 +215,23 @@
     }
   }
 
+  /** Topbar 登出：各版面共用（help.html 用頁內 script 綁同一邏輯）。 */
+  function bindLogoutLink() {
+    const link = document.getElementById('logout_link');
+    if (!link || link.dataset.logoutBound) return;
+    link.dataset.logoutBound = '1';
+    link.addEventListener('click', async (e) => {
+      e.preventDefault();
+      try {
+        await fetch('/api/portal/auth/logout', { method: 'POST', credentials: 'same-origin' });
+      } catch {}
+      clearSite();
+      window.location.href = '/portal/';
+    });
+  }
+
   async function initPublicSiteGate() {
+    bindLogoutLink();
     const hasSiteInput = !!document.getElementById('site_code');
     const qSite = document.getElementById('q_site');
     const rSite = document.getElementById('r_site');

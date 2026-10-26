@@ -10,19 +10,26 @@
 </head>
 <body>
   <header class="topbar">
-    <div>
-      <h1>店舖SKU項目申報平台</h1>
-      <div class="subtitle">圖文使用說明</div>
+    <div class="topbar-inner">
+      <div class="topbar-brand">
+        <span class="brand-mark" aria-hidden="true">RP</span>
+        <div>
+          <h1>NDRF Store Portal</h1>
+          <div class="subtitle">圖文使用說明</div>
+        </div>
+      </div>
+      <nav aria-label="主要導覽">
+        <a href="/portal/zero-sales.html">零銷售回覆</a>
+        <a href="/portal/store.html">一般NDRF · 暫停</a>
+        <a href="/urgent.html">Urgent · 暫停</a>
+        <a href="/sales.html">突發性銷售 · 暫停</a>
+        <a href="/return.html">行貨退貨 · 暫停</a>
+        <a href="/lookup.html">查詢／修改</a>
+        <a href="/help.html" class="active" aria-current="page">使用說明</a>
+        <a href="#" id="logout_link">登出</a>
+        <a href="/">平台首頁</a>
+      </nav>
     </div>
-    <nav aria-label="主要導覽">
-      <a href="/portal/zero-sales.html">90日零銷售回覆</a>
-      <a href="/portal/store.html">一般NDRF申報（暫停）</a>
-      <a href="/urgent.html">Urgent Order（暫停）</a>
-      <a href="/sales.html">突發性銷售（暫停）</a>
-      <a href="/return.html">行貨退貨（暫停）</a>
-      <a href="/lookup.html">查詢／修改（暫停）</a>
-      <a href="/help.html" class="active" aria-current="page">使用說明</a>
-    </nav>
   </header>
 
   <main class="container">
@@ -514,6 +521,26 @@
   </main>
 
   <footer class="site-footer">Developed by RP Team - Ricky Yue · <span class="app-version" data-app-version></span></footer>
+  <script>
+    // 與 site-gate.js 的登出邏輯一致（此頁不載入 site-gate）
+    (function () {
+      var link = document.getElementById('logout_link');
+      if (!link) return;
+      link.addEventListener('click', function (e) {
+        e.preventDefault();
+        fetch('/api/portal/auth/logout', { method: 'POST', credentials: 'same-origin' })
+          .catch(function () {})
+          .then(function () {
+            try {
+              localStorage.removeItem('ndrf_site');
+              localStorage.removeItem('ndrf_shop');
+              localStorage.removeItem('ndrf_portal_pass');
+            } catch (err) {}
+            window.location.href = '/portal/';
+          });
+      });
+    })();
+  </script>
   <script src="/js/version.js"></script>
 </body>
 </html>

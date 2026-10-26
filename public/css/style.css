@@ -73,7 +73,8 @@ a:hover {
 }
 .topbar-inner {
   width: 100%;
-  max-width: 1200px;
+  /* 店舖各版面統一用同一闊度，切頁時導覽連結位置先唔會跳位 */
+  max-width: min(1680px, 96vw);
   margin: 0 auto;
   padding: 14px 24px 0;
   display: flex;
@@ -1078,7 +1079,7 @@ a.btn-disabled {
 }
 
 /* ============ zero-sales 表格頁美化 ============ */
-.zs-page .topbar-inner,
+/* topbar-inner 闊度已統一（見 .topbar-inner），此處只放大內容區 */
 .zs-page .portal-main.container { max-width: min(1680px, 96vw); }
 .zs-head-card .site-banner {
   font-size: 30px; font-weight: 800; letter-spacing: 1px;

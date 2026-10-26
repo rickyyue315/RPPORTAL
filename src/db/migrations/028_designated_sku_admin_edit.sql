@@ -7,7 +7,7 @@
 -- 設計：
 --   * 只加兩欄記錄「最近一次由管理員修改」的時間及帳號，方便日後查閱；
 --   * 店舖原本的 replied_by / reply_count 不會被管理員修改覆蓋（代填除外）；
---   * 真正的內容以 designated_sku_reply_lines 為準，修改會整批取代該任務的明細。
+--   * 真正的內容以 designated_sku_reply_lines 為準，修改會整批取代該單位的明細。
 
 ALTER TABLE designated_sku_items
   ADD COLUMN IF NOT EXISTS admin_edited_at TIMESTAMPTZ,

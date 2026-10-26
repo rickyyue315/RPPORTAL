@@ -97,23 +97,37 @@ async function uploadBatch(
   return req.attach('file', buffer, 'designated-sku-test.xlsx');
 }
 
-interface AdminItem {
+interface MatterItem {
   id: string;
-  task_code: string;
-  site_code: string;
   sku: string;
   stock_qty: number | null;
   status: string;
-  lines: Array<{ year_code: string; qty: number }>;
+  no_transfer: boolean;
   reply_total: number | null;
   reply_note: string;
-  is_open: boolean;
+  reply_count: number;
+  admin_edited_at: string | null;
+  admin_edited_by: string;
+  lines: Array<{ year_code: string; qty: number }>;
 }
 
-async function batchItems(agent: Agent, batchId: string): Promise<{ batch: Record<string, unknown>; items: AdminItem[] }> {
-  const res = await agent.get(`/api/admin/designated-sku/batches/${batchId}/items`);
+interface Matter {
+  id: string;
+  matter_code: string;
+  site_code: string;
+  status: string;
+  item_count: number;
+  replied_item_count: number;
+  reply_total: number;
+  is_open: boolean;
+  replied_by: string;
+  items: MatterItem[];
+}
+
+async function batchMatters(agent: Agent, batchId: string): Promise<{ batch: Record<string, unknown>; matters: Matter[] }> {
+  const res = await agent.get(`/api/admin/designated-sku/batches/${batchId}/matters`);
   expect(res.status).toBe(200);
-  return res.body as { batch: Record<string, unknown>; items: AdminItem[] };
+  return res.body as { batch: Record<string, unknown>; matters: Matter[] };
 }
 
 beforeAll(async () => {
@@ -125,7 +139,7 @@ beforeAll(async () => {
       release: () => {},
     }),
   } as never);
-  const migrationFiles = ['001_init.sql', '002_drop_rp_type_completed_at.sql', '003_add_submission_type_qty.sql', '004_add_urgent_reason.sql', '005_add_sales_submission_type.sql', '006_add_return_submission_type.sql', '007_add_idempotency_and_import_recovery.sql', '008_add_export_file_archive.sql', '009_architecture_hardening.sql', '010_query_optimization.sql', '011_cleanup_legacy_schema.sql', '012_om_recovery_codes.sql', '013_recovery_code_plaintext.sql', '014_ndrf_workflow_portal.sql', '015_buyer_auto_approve.sql', '016_round_started_at.sql', '017_zero_sales.sql', '018_zero_sales_reasons.sql', '019_zero_sales_edit_once.sql', '020_portal_users_initial_password.sql', '021_store_passwordless.sql', '022_portal_passwordless.sql', '023_zero_sales_repeat_index.sql', '024_zero_sales_archive.sql', '025_zero_sales_auto_reply.sql', '026_shop_stock_snapshots.sql', '027_designated_sku_tasks.sql', '028_designated_sku_admin_edit.sql'];
+  const migrationFiles = ['001_init.sql', '002_drop_rp_type_completed_at.sql', '003_add_submission_type_qty.sql', '004_add_urgent_reason.sql', '005_add_sales_submission_type.sql', '006_add_return_submission_type.sql', '007_add_idempotency_and_import_recovery.sql', '008_add_export_file_archive.sql', '009_architecture_hardening.sql', '010_query_optimization.sql', '011_cleanup_legacy_schema.sql', '012_om_recovery_codes.sql', '013_recovery_code_plaintext.sql', '014_ndrf_workflow_portal.sql', '015_buyer_auto_approve.sql', '016_round_started_at.sql', '017_zero_sales.sql', '018_zero_sales_reasons.sql', '019_zero_sales_edit_once.sql', '020_portal_users_initial_password.sql', '021_store_passwordless.sql', '022_portal_passwordless.sql', '023_zero_sales_repeat_index.sql', '024_zero_sales_archive.sql', '025_zero_sales_auto_reply.sql', '026_shop_stock_snapshots.sql', '027_designated_sku_tasks.sql', '028_designated_sku_admin_edit.sql', '029_designated_sku_matters.sql'];
   for (const file of migrationFiles) {
     let sql = await readFile(path.join(__dirname, '..', 'src', 'db', 'migrations', file), 'utf8');
     sql = sql.replace(/CREATE EXTENSION IF NOT EXISTS pgcrypto;\s*/g, '');
@@ -221,19 +235,24 @@ describe('parseDesignatedSkuWorkbook', () => {
   });
 });
 
-describe('指定 SKU 回覆 API', () => {
+describe('指定 SKU 回覆 API（一個事項多個 SKU）', () => {
   let batchId = '';
   let batchCode = '';
-  let ha02Task = '';
-  let hb20Task = '';
-  let ha15Task = '';
+  let ha02Matter = '';
+  let ha02MatterId = '';
+  let hb20Matter = '';
+  let hb20MatterId = '';
+  let hc63MatterId = '';
+  let ha02SkuA = '';
+  let ha02SkuB = '';
 
-  it('admin 上載 Excel 建立任務，任務編號可追溯', async () => {
+  it('admin 上載 Excel：同店多個 SKU 歸入同一事項', async () => {
     const agent = await adminAgent();
     const buffer = await buildWorkbook([
-      { site: 'HA02', qty: 1 },
-      { site: 'HB20', qty: 4 },
-      { site: 'HA15', qty: 2 },
+      { site: 'HA02', sku: '107668017004', qty: 1 },
+      { site: 'HA02', sku: '108000000001', qty: 2, desc: '另一款貨品' },
+      { site: 'HB20', sku: '107668017004', qty: 4 },
+      { site: 'HC63', sku: '107668017004', qty: 3 },
     ]);
     const res = await uploadBatch(agent, buffer, {
       instructions: '請按年期填報可調撥件數',
@@ -242,123 +261,280 @@ describe('指定 SKU 回覆 API', () => {
     });
     expect(res.status).toBe(201);
     expect(res.body.batchCode).toMatch(/^DSKU-\d{6}-\d{4}$/);
-    expect(res.body.taskCount).toBe(3);
+    expect(res.body.matterCount).toBe(3);
+    expect(res.body.itemCount).toBe(4);
     expect(res.body.storeCount).toBe(3);
     batchId = res.body.batchId as string;
     batchCode = res.body.batchCode as string;
 
-    const { batch, items } = await batchItems(agent, batchId);
+    const { batch, matters } = await batchMatters(agent, batchId);
     expect(batch.batch_code).toBe(batchCode);
     expect(batch.subject).toBe('指定 SKU 存貨年期確認（測試）');
     expect(batch.instructions).toBe('請按年期填報可調撥件數');
     expect(batch.due_date).toBe('2026-11-10');
     expect(batch.reference).toBe('RP-2026-1042');
-    expect(items).toHaveLength(3);
-    for (const item of items) {
-      expect(item.task_code.startsWith(`${batchCode}-`)).toBe(true);
-      expect(item.stock_qty).not.toBeNull();
-    }
-    ha02Task = items.find((i) => i.site_code === 'HA02')!.task_code;
-    hb20Task = items.find((i) => i.site_code === 'HB20')!.task_code;
-    ha15Task = items.find((i) => i.site_code === 'HA15')!.task_code;
+    expect(batch.matter_count).toBe(3);
+    expect(batch.row_count).toBe(4);
+    expect(batch.store_count).toBe(3);
+    expect(matters).toHaveLength(3);
+
+    const ha02 = matters.find((m) => m.site_code === 'HA02')!;
+    expect(ha02.item_count).toBe(2);
+    expect(ha02.matter_code).toBe(`${batchCode}-01`);
+    expect(ha02.items.map((it) => it.sku)).toEqual(['107668017004', '108000000001']);
+    ha02Matter = ha02.matter_code;
+    ha02MatterId = ha02.id;
+    ha02SkuA = ha02.items[0]!.id;
+    ha02SkuB = ha02.items[1]!.id;
+
+    const hb20 = matters.find((m) => m.site_code === 'HB20')!;
+    expect(hb20.item_count).toBe(1);
+    hb20Matter = hb20.matter_code;
+    hb20MatterId = hb20.id;
+    hc63MatterId = matters.find((m) => m.site_code === 'HC63')!.id;
   });
 
-  it('同一檔案再上載會被擋，勾選 force 才可重新派發', async () => {
+  it('同一檔案再上載會被擋', async () => {
     const agent = await adminAgent();
-    // 用另一間店（HC63）避免影響 HA02 的任務數斷言
-    const buffer = await buildWorkbook([{ site: 'HC63', qty: 1 }]);
-    const first = await uploadBatch(agent, buffer);
-    expect(first.status).toBe(201);
+    const buffer = await buildWorkbook([
+      { site: 'HA02', sku: '107668017004', qty: 1 },
+      { site: 'HA02', sku: '108000000001', qty: 2, desc: '另一款貨品' },
+      { site: 'HB20', sku: '107668017004', qty: 4 },
+      { site: 'HC63', sku: '107668017004', qty: 3 },
+    ]);
     const res = await uploadBatch(agent, buffer);
     expect(res.status).toBe(409);
     expect(res.body.code).toBe('DUPLICATE_FILE');
-    const forced = await uploadBatch(agent, buffer, { force: '1' });
-    expect(forced.status).toBe(201);
-    expect(forced.body.batchCode).not.toBe(first.body.batchCode);
   });
 
-  it('店舖只見到自己的任務；直 link 只限涉及店舖', async () => {
+  it('店舖只見到自己的事項；直 link 只限涉及店舖', async () => {
     const ha02 = await storeAgent('HA02');
-    const list = await ha02.get('/api/portal/designated-sku/tasks');
+    const list = await ha02.get('/api/portal/designated-sku/matters');
     expect(list.status).toBe(200);
-    expect(list.body.tasks).toHaveLength(1);
-    expect(list.body.tasks[0].task_code).toBe(ha02Task);
+    expect(list.body.matters).toHaveLength(1);
+    expect(list.body.matters[0].matter_code).toBe(ha02Matter);
+    expect(list.body.matters[0].items).toHaveLength(2);
     expect(list.body.pending_count).toBe(1);
 
     const badge = await ha02.get('/api/portal/designated-sku/pending-count');
-    expect(badge.status).toBe(200);
     expect(badge.body.pending_count).toBe(1);
 
-    const own = await ha02.get(`/api/portal/designated-sku/tasks/${ha02Task}`);
+    const own = await ha02.get(`/api/portal/designated-sku/matters/${ha02Matter}`);
     expect(own.status).toBe(200);
-    expect(own.body.task.sku).toBe('107668017004');
-    expect(own.body.task.batch_code).toBe(batchCode);
+    expect(own.body.matter.batch_code).toBe(batchCode);
+    expect(own.body.matter.items.map((it: { sku: string }) => it.sku)).toEqual(['107668017004', '108000000001']);
+    // 內部欄位不外洩
+    expect(own.body.matter.settings).toBeUndefined();
+    expect(own.body.matter.batch_note).toBeUndefined();
+    expect(own.body.matter.items[0].payload).toBeUndefined();
 
-    // 另一間店用直 link 開別店任務：必須 403，且不可提交回覆
     const ha15 = await storeAgent('HA15');
-    const foreign = await ha15.get(`/api/portal/designated-sku/tasks/${ha02Task}`);
+    const foreign = await ha15.get(`/api/portal/designated-sku/matters/${ha02Matter}`);
     expect(foreign.status).toBe(403);
-    expect(foreign.body.code).toBe('TASK_FORBIDDEN');
+    expect(foreign.body.code).toBe('MATTER_FORBIDDEN');
 
     const foreignReply = await ha15
-      .put(`/api/portal/designated-sku/tasks/${ha02Task}/reply`)
+      .put(`/api/portal/designated-sku/matters/${ha02Matter}/reply`)
       .set('x-csrf-token', ha15._csrf ?? '')
-      .send({ lines: [{ year_code: '0827', qty: 1 }] });
+      .send({ items: [{ item_id: ha02SkuA, lines: [{ year_code: '0827', qty: 1 }], no_transfer: false }] });
     expect(foreignReply.status).toBe(403);
 
-    const missing = await ha02.get('/api/portal/designated-sku/tasks/DSKU-000000-0000-99');
+    const missing = await ha02.get('/api/portal/designated-sku/matters/DSKU-000000-0000-99');
     expect(missing.status).toBe(404);
   });
 
-  it('多個年期回覆：寫入明細、合計及狀態', async () => {
-    const hb20 = await storeAgent('HB20');
-    const res = await hb20
-      .put(`/api/portal/designated-sku/tasks/${hb20Task}/reply`)
-      .set('x-csrf-token', hb20._csrf ?? '')
+  it('一次過回覆多個 SKU：年期明細 + 無可調撥', async () => {
+    const ha02 = await storeAgent('HA02');
+    const res = await ha02
+      .put(`/api/portal/designated-sku/matters/${ha02Matter}/reply`)
+      .set('x-csrf-token', ha02._csrf ?? '')
       .send({
-        lines: [
-          { year_code: '0827', qty: 1 },
-          { year_code: '0927', qty: 1 },
-          { year_code: '0628', qty: 2 },
+        items: [
+          { item_id: ha02SkuA, lines: [{ year_code: '0827', qty: 1 }], note: 'A 可調撥' },
+          { item_id: ha02SkuB, lines: [], no_transfer: true, note: 'B 無貨可調' },
         ],
-        note: '全部可調撥',
       });
     expect(res.status).toBe(200);
-    expect(res.body.task.status).toBe('replied');
-    expect(res.body.task.reply_total).toBe(4);
-    expect(res.body.task.lines.map((l: { year_code: string; qty: number }) => [l.year_code, l.qty]))
-      .toEqual([['0628', 2], ['0827', 1], ['0927', 1]]);
-    expect(res.body.task.reply_note).toBe('全部可調撥');
+    expect(res.body.matter.status).toBe('replied');
+    expect(res.body.matter.replied_item_count).toBe(2);
+    expect(res.body.matter.reply_total).toBe(1);
+    const a = res.body.matter.items.find((it: MatterItem) => it.sku === '107668017004')!;
+    const b = res.body.matter.items.find((it: MatterItem) => it.sku === '108000000001')!;
+    expect(a.lines).toEqual([{ year_code: '0827', qty: 1 }]);
+    expect(a.reply_note).toBe('A 可調撥');
+    expect(b.no_transfer).toBe(true);
+    expect(b.status).toBe('replied');
+    expect(b.reply_total).toBe(0);
+    expect(b.lines).toEqual([]);
 
-    const again = await hb20.get('/api/portal/designated-sku/tasks');
+    const again = await ha02.get('/api/portal/designated-sku/matters');
     expect(again.body.pending_count).toBe(0);
-    expect(again.body.tasks[0].status).toBe('replied');
+    expect(again.body.matters[0].status).toBe('replied');
   });
 
-  it('年期格式、重複年期、超過存貨都會被拒', async () => {
+  it('驗證：缺 SKU、超存貨、年期格式、重複年期', async () => {
     const ha02 = await storeAgent('HA02');
-    const url = `/api/portal/designated-sku/tasks/${ha02Task}/reply`;
-    const badYear = await ha02.put(url).set('x-csrf-token', ha02._csrf ?? '')
-      .send({ lines: [{ year_code: '1327', qty: 1 }] });
-    expect(badYear.status).toBe(400);
-    expect(badYear.body.error).toContain('年期格式');
+    const url = `/api/portal/designated-sku/matters/${ha02Matter}/reply`;
 
-    const dup = await ha02.put(url).set('x-csrf-token', ha02._csrf ?? '')
-      .send({ lines: [{ year_code: '0827', qty: 1 }, { year_code: '08/27', qty: 1 }] });
-    expect(dup.status).toBe(400);
-    expect(dup.body.error).toContain('重複');
+    const missing = await ha02.put(url).set('x-csrf-token', ha02._csrf ?? '')
+      .send({ items: [{ item_id: ha02SkuA, lines: [{ year_code: '0827', qty: 1 }] }] });
+    expect(missing.status).toBe(400);
+    expect(missing.body.error).toContain('每個 SKU');
 
     const over = await ha02.put(url).set('x-csrf-token', ha02._csrf ?? '')
-      .send({ lines: [{ year_code: '0827', qty: 2 }] });
+      .send({
+        items: [
+          { item_id: ha02SkuA, lines: [{ year_code: '0827', qty: 1 }] },
+          { item_id: ha02SkuB, lines: [{ year_code: '0927', qty: 3 }] },
+        ],
+      });
     expect(over.status).toBe(400);
     expect(over.body.error).toContain('不可多於存貨');
 
-    const empty = await ha02.put(url).set('x-csrf-token', ha02._csrf ?? '')
-      .send({ lines: [] });
-    expect(empty.status).toBe(400);
+    const badYear = await ha02.put(url).set('x-csrf-token', ha02._csrf ?? '')
+      .send({
+        items: [
+          { item_id: ha02SkuA, lines: [{ year_code: '1327', qty: 1 }] },
+          { item_id: ha02SkuB, lines: [], no_transfer: true },
+        ],
+      });
+    expect(badYear.status).toBe(400);
+    expect(badYear.body.error).toContain('年期格式');
+
+    const dupYear = await ha02.put(url).set('x-csrf-token', ha02._csrf ?? '')
+      .send({
+        items: [
+          { item_id: ha02SkuA, lines: [{ year_code: '0827', qty: 1 }, { year_code: '08/27', qty: 1 }] },
+          { item_id: ha02SkuB, lines: [], no_transfer: true },
+        ],
+      });
+    expect(dupYear.status).toBe(400);
+    expect(dupYear.body.error).toContain('重複');
   });
 
-  it('封存後店舖不可再提交，重開後可補答', async () => {
+  it('管理員代填未回覆事項（多個年期）', async () => {
+    const admin = await adminAgent();
+    const res = await admin
+      .put(`/api/admin/designated-sku/batches/${batchId}/matters/${hb20MatterId}/reply`)
+      .set('x-csrf-token', admin._csrf ?? '')
+      .send({
+        items: [
+          {
+            item_id: (await batchMatters(admin, batchId)).matters.find((m) => m.id === hb20MatterId)!.items[0]!.id,
+            lines: [
+              { year_code: '0827', qty: 1 },
+              { year_code: '0927', qty: 1 },
+              { year_code: '0628', qty: 2 },
+            ],
+            note: '店舖 email 補交',
+          },
+        ],
+      });
+    expect(res.status).toBe(200);
+    expect(res.body.entered).toBe(true);
+    expect(res.body.matter.status).toBe('replied');
+    expect(res.body.matter.reply_total).toBe(4);
+    expect(res.body.matter.items[0].replied_by).toBe('管理員代填（admin）');
+    expect(res.body.matter.items[0].reply_count).toBe(1);
+    expect(res.body.matter.items[0].admin_edited_by).toBe('admin');
+
+    const audit = await db.query<{ count: string }>(
+      `SELECT count(*)::text AS count FROM audit_events WHERE event_type = 'designated_sku_reply_admin_edited'`,
+    );
+    expect(Number(audit.rows[0]!.count)).toBeGreaterThanOrEqual(1);
+  });
+
+  it('管理員編輯已回覆事項：保留原回覆人及次數', async () => {
+    const admin = await adminAgent();
+    const res = await admin
+      .put(`/api/admin/designated-sku/batches/${batchId}/matters/${ha02MatterId}/reply`)
+      .set('x-csrf-token', admin._csrf ?? '')
+      .send({
+        items: [
+          { item_id: ha02SkuA, lines: [{ year_code: '0927', qty: 1 }], note: '管理員更正年期' },
+          { item_id: ha02SkuB, lines: [], no_transfer: true },
+        ],
+      });
+    expect(res.status).toBe(200);
+    expect(res.body.entered).toBe(false);
+    const a = res.body.matter.items.find((it: MatterItem) => it.sku === '107668017004')!;
+    expect(a.lines).toEqual([{ year_code: '0927', qty: 1 }]);
+    expect(a.replied_by).toBe('HA02');
+    expect(a.reply_count).toBe(1);
+    expect(a.admin_edited_by).toBe('admin');
+    expect(a.admin_edited_at).toBeTruthy();
+  });
+
+  it('admin 匯出：事項回覆 / 年期明細 / 未回覆事項（每 SKU 一行）', async () => {
+    const admin = await adminAgent();
+    const res = await getXlsx(admin, `/api/admin/designated-sku/export?batch_id=${batchId}`);
+    expect(res.status).toBe(200);
+    const wb = new ExcelJS.Workbook();
+    await wb.xlsx.load(res.body as Buffer);
+    expect(wb.worksheets.map((w) => w.name)).toEqual(['事項回覆', '年期明細', '未回覆事項']);
+
+    const summary = wb.getWorksheet('事項回覆')!;
+    const header: string[] = [];
+    summary.getRow(1).eachCell((cell, col) => { header[col - 1] = String(cell.value ?? ''); });
+    expect(header).toContain('事項編號');
+    expect(header).toContain('SKU 狀態');
+    expect(header).toContain('無可調撥');
+
+    const rows: string[][] = [];
+    summary.eachRow((row, n) => {
+      if (n === 1) return;
+      rows.push([String(row.getCell(1).value ?? ''), String(row.getCell(7).value ?? ''), String(row.getCell(12).value ?? '')]);
+    });
+    expect(rows).toHaveLength(4);
+    expect(rows.filter((r) => r[0] === ha02Matter)).toHaveLength(2);
+    expect(rows.find((r) => r[1] === '108000000001')![2]).toBe('是');
+
+    const detail = wb.getWorksheet('年期明細')!;
+    const yearRows: string[][] = [];
+    detail.eachRow((row, n) => {
+      if (n === 1) return;
+      yearRows.push([String(row.getCell(1).value ?? ''), String(row.getCell(5).value ?? ''), String(row.getCell(6).value ?? ''), String(row.getCell(7).value ?? '')]);
+    });
+    expect(yearRows).toContainEqual([ha02Matter, '107668017004', '0927', '1']);
+    expect(yearRows.filter((r) => r[0] === hb20Matter)).toHaveLength(3);
+
+    const pending = wb.getWorksheet('未回覆事項')!;
+    const pendingRows: string[] = [];
+    pending.eachRow((row, n) => {
+      if (n === 1) return;
+      pendingRows.push(String(row.getCell(3).value ?? ''));
+    });
+    expect(pendingRows).toEqual([`${batchCode}-03`]);
+  });
+
+  it('刪除單一事項會同步批次事項數及 SKU 行數', async () => {
+    const admin = await adminAgent();
+    const del = await admin
+      .delete(`/api/admin/designated-sku/batches/${batchId}/matters/${hc63MatterId}`)
+      .set('x-csrf-token', admin._csrf ?? '');
+    expect(del.status).toBe(200);
+    expect(del.body.matterCode).toBe(`${batchCode}-03`);
+    expect(del.body.itemCount).toBe(1);
+
+    const after = await batchMatters(admin, batchId);
+    expect(after.batch.matter_count).toBe(2);
+    expect(after.batch.row_count).toBe(3);
+    expect(after.batch.store_count).toBe(2);
+    expect(after.matters.some((m) => m.site_code === 'HC63')).toBe(false);
+  });
+
+  it('統計反映事項與 SKU 數', async () => {
+    const admin = await adminAgent();
+    const summary = await admin.get('/api/admin/designated-sku/summary');
+    expect(summary.status).toBe(200);
+    expect(summary.body.matter_count).toBe(2);
+    expect(summary.body.item_count).toBe(3);
+    expect(summary.body.replied_count).toBe(2);
+    expect(summary.body.pending_count).toBe(0);
+    expect(summary.body.store_count).toBe(2);
+  });
+
+  it('封存後店舖不可再提交，管理員仍可更正；重開後店舖可補答', async () => {
     const admin = await adminAgent();
     const close = await admin
       .put(`/api/admin/designated-sku/batches/${batchId}/close`)
@@ -368,15 +544,31 @@ describe('指定 SKU 回覆 API', () => {
 
     const ha02 = await storeAgent('HA02');
     const closed = await ha02
-      .put(`/api/portal/designated-sku/tasks/${ha02Task}/reply`)
+      .put(`/api/portal/designated-sku/matters/${ha02Matter}/reply`)
       .set('x-csrf-token', ha02._csrf ?? '')
-      .send({ lines: [{ year_code: '0827', qty: 1 }] });
+      .send({
+        items: [
+          { item_id: ha02SkuA, lines: [{ year_code: '0827', qty: 1 }] },
+          { item_id: ha02SkuB, lines: [], no_transfer: true },
+        ],
+      });
     expect(closed.status).toBe(409);
-    expect(closed.body.code).toBe('TASK_CLOSED');
+    expect(closed.body.code).toBe('MATTER_CLOSED');
 
-    const detail = await ha02.get(`/api/portal/designated-sku/tasks/${ha02Task}`);
-    expect(detail.body.task.is_open).toBe(false);
-    expect(detail.body.task.status).toBe('pending');
+    const detail = await ha02.get(`/api/portal/designated-sku/matters/${ha02Matter}`);
+    expect(detail.body.matter.is_open).toBe(false);
+
+    const adminEdit = await admin
+      .put(`/api/admin/designated-sku/batches/${batchId}/matters/${ha02MatterId}/reply`)
+      .set('x-csrf-token', admin._csrf ?? '')
+      .send({
+        items: [
+          { item_id: ha02SkuA, lines: [{ year_code: '0628', qty: 1 }], note: '封存後更正' },
+          { item_id: ha02SkuB, lines: [], no_transfer: true },
+        ],
+      });
+    expect(adminEdit.status).toBe(200);
+    expect(adminEdit.body.matter.is_open).toBe(false);
 
     const reopen = await admin
       .put(`/api/admin/designated-sku/batches/${batchId}/reopen`)
@@ -385,190 +577,43 @@ describe('指定 SKU 回覆 API', () => {
     expect(reopen.status).toBe(200);
 
     const replied = await ha02
-      .put(`/api/portal/designated-sku/tasks/${ha02Task}/reply`)
+      .put(`/api/portal/designated-sku/matters/${ha02Matter}/reply`)
       .set('x-csrf-token', ha02._csrf ?? '')
-      .send({ lines: [{ year_code: '0827', qty: 1 }] });
+      .send({
+        items: [
+          { item_id: ha02SkuA, lines: [{ year_code: '0827', qty: 1 }] },
+          { item_id: ha02SkuB, lines: [], no_transfer: true },
+        ],
+      });
     expect(replied.status).toBe(200);
-    expect(replied.body.task.reply_total).toBe(1);
+    expect(replied.body.matter.reply_total).toBe(1);
   });
 
-  it('admin 匯出三個工作表，包含年期明細', async () => {
+  it('批次列表及店舖查詢不可用 query 指定別店', async () => {
     const admin = await adminAgent();
-    const res = await getXlsx(admin, `/api/admin/designated-sku/export?batch_id=${batchId}`);
-    expect(res.status).toBe(200);
-    expect(res.headers['content-type']).toContain('spreadsheetml');
-    const wb = new ExcelJS.Workbook();
-    await wb.xlsx.load(res.body as Buffer);
-    expect(wb.worksheets.map((w) => w.name)).toEqual(['任務回覆', '年期明細', '未回覆店舖']);
+    const list = await admin.get('/api/admin/designated-sku/batches?page=1&page_size=20');
+    expect(list.status).toBe(200);
+    expect(list.body.batches[0].matter_count).toBe(2);
+    expect(list.body.batches[0].row_count).toBe(3);
 
-    const summary = wb.getWorksheet('任務回覆')!;
-    const header: string[] = [];
-    summary.getRow(1).eachCell((cell, col) => { header[col - 1] = String(cell.value ?? ''); });
-    expect(header).toContain('任務編號');
-    expect(header).toContain('年期明細');
-    const rows: string[][] = [];
-    summary.eachRow((row, n) => {
-      if (n === 1) return;
-      rows.push([String(row.getCell(1).value ?? ''), String(row.getCell(12).value ?? '')]);
-    });
-    expect(rows.find((r) => r[0] === hb20Task)![1]).toContain('0827 × 1');
-
-    const detail = wb.getWorksheet('年期明細')!;
-    const yearRows: string[][] = [];
-    detail.eachRow((row, n) => {
-      if (n === 1) return;
-      yearRows.push([String(row.getCell(1).value ?? ''), String(row.getCell(6).value ?? ''), String(row.getCell(7).value ?? '')]);
-    });
-    expect(yearRows).toContainEqual([hb20Task, '0827', '1']);
-  });
-
-  it('批次統計反映回覆進度；刪除單一任務會同步行數', async () => {
-    const admin = await adminAgent();
-    const summary = await admin.get('/api/admin/designated-sku/summary');
-    expect(summary.status).toBe(200);
-    expect(summary.body.task_count).toBeGreaterThanOrEqual(3);
-    expect(summary.body.replied_count).toBeGreaterThanOrEqual(1);
-
-    const { items } = await batchItems(admin, batchId);
-    const target = items.find((i) => i.site_code === 'HA15')!;
-    expect(target.task_code).toBe(ha15Task);
-    const del = await admin
-      .delete(`/api/admin/designated-sku/batches/${batchId}/items/${target.id}`)
-      .set('x-csrf-token', admin._csrf ?? '');
-    expect(del.status).toBe(200);
-    const after = await batchItems(admin, batchId);
-    expect(after.batch.row_count).toBe(2);
-    expect(after.items.some((i) => i.site_code === 'HA15')).toBe(false);
-  });
-
-  it('店舖不能以 query / body 指定別店 site_code', async () => {
     const ha02 = await storeAgent('HA02');
-    const res = await ha02.get('/api/portal/designated-sku/tasks?site_code=HB20&status=pending');
+    const res = await ha02.get('/api/portal/designated-sku/matters?site_code=HB20&status=pending');
     expect(res.status).toBe(200);
     expect(res.body.site_code).toBe('HA02');
-    expect(res.body.tasks.every((t: { site_code: string }) => t.site_code === 'HA02')).toBe(true);
+    expect(res.body.matters.every((m: { site_code: string }) => m.site_code === 'HA02')).toBe(true);
   });
 
-  it('批次列表及分頁選項可供後台使用', async () => {
-    const admin = await adminAgent();
-    const res = await admin.get('/api/admin/designated-sku/batches?page=1&page_size=20');
-    expect(res.status).toBe(200);
-    expect(res.body.total).toBeGreaterThanOrEqual(2);
-    expect(Array.isArray(res.body.batch_options)).toBe(true);
-    expect(res.body.batches[0].batch_code).toMatch(/^DSKU-/);
-  });
-});
-
-describe('管理員代店舖回覆', () => {
-  let editBatchId = '';
-  let editTaskId = '';
-  let editTaskCode = '';
-
-  it('代填未回覆任務：狀態轉已回覆、回覆人為管理員代填、寫入審計', async () => {
-    const admin = await adminAgent();
-    const buffer = await buildWorkbook([{ site: 'HA15', qty: 1 }]);
-    const up = await uploadBatch(admin, buffer, { subject: '管理員代填測試' });
-    expect(up.status).toBe(201);
-    editBatchId = up.body.batchId as string;
-    const { items } = await batchItems(admin, editBatchId);
-    expect(items).toHaveLength(1);
-    editTaskId = items[0]!.id;
-    editTaskCode = items[0]!.task_code;
-
-    const res = await admin
-      .put(`/api/admin/designated-sku/batches/${editBatchId}/items/${editTaskId}/reply`)
-      .set('x-csrf-token', admin._csrf ?? '')
-      .send({ lines: [{ year_code: '0827', qty: 1 }], note: '店舖 email 補交' });
-    expect(res.status).toBe(200);
-    expect(res.body.entered).toBe(true);
-    expect(res.body.item.status).toBe('replied');
-    expect(res.body.item.replied_by).toBe('管理員代填（admin）');
-    expect(res.body.item.reply_count).toBe(1);
-    expect(res.body.item.reply_total).toBe(1);
-    expect(res.body.item.admin_edited_by).toBe('admin');
-    expect(res.body.item.admin_edited_at).toBeTruthy();
-
-    const audit = await db.query<{ count: string }>(
-      `SELECT count(*)::text AS count FROM audit_events WHERE event_type = 'designated_sku_reply_admin_edited'`,
-    );
-    expect(Number(audit.rows[0]!.count)).toBeGreaterThanOrEqual(1);
-  });
-
-  it('店舖之後仍可自行修改（管理員代填不佔用店舖次數），並清空管理員修改標記', async () => {
-    const ha15 = await storeAgent('HA15');
-    const res = await ha15
-      .put(`/api/portal/designated-sku/tasks/${editTaskCode}/reply`)
-      .set('x-csrf-token', ha15._csrf ?? '')
-      .send({ lines: [{ year_code: '0827', qty: 1 }], note: '店舖自行確認' });
-    expect(res.status).toBe(200);
-    expect(res.body.task.reply_count).toBe(2);
-    expect(res.body.task.replied_by).toBe('HA15');
-    expect(res.body.task.admin_edited_at).toBeNull();
-  });
-
-  it('編輯已回覆任務：保留原回覆人及次數，只加管理員修改紀錄', async () => {
-    const admin = await adminAgent();
-    const before = await batchItems(admin, editBatchId);
-    const beforeItem = before.items[0]!;
-    const res = await admin
-      .put(`/api/admin/designated-sku/batches/${editBatchId}/items/${editTaskId}/reply`)
-      .set('x-csrf-token', admin._csrf ?? '')
-      .send({ lines: [{ year_code: '0927', qty: 1 }], note: '管理員更正年期' });
-    expect(res.status).toBe(200);
-    expect(res.body.entered).toBe(false);
-    expect(res.body.item.replied_by).toBe(beforeItem.replied_by);
-    expect(res.body.item.reply_count).toBe(beforeItem.reply_count);
-    expect(res.body.item.lines).toEqual([{ year_code: '0927', qty: 1 }]);
-    expect(res.body.item.admin_edited_by).toBe('admin');
-  });
-
-  it('驗證年期格式、超過存貨及跨批次任務', async () => {
-    const admin = await adminAgent();
-    const url = `/api/admin/designated-sku/batches/${editBatchId}/items/${editTaskId}/reply`;
-    const badYear = await admin
-      .put(url)
-      .set('x-csrf-token', admin._csrf ?? '')
-      .send({ lines: [{ year_code: '1327', qty: 1 }] });
-    expect(badYear.status).toBe(400);
-    expect(badYear.body.error).toContain('年期格式');
-
-    const over = await admin
-      .put(url)
-      .set('x-csrf-token', admin._csrf ?? '')
-      .send({ lines: [{ year_code: '0827', qty: 2 }] });
-    expect(over.status).toBe(400);
-    expect(over.body.error).toContain('不可多於存貨');
-
-    const other = await uploadBatch(admin, await buildWorkbook([{ site: 'HB20', qty: 1 }]), { subject: '跨批次測試' });
-    expect(other.status).toBe(201);
-    const wrongBatch = await admin
-      .put(`/api/admin/designated-sku/batches/${other.body.batchId}/items/${editTaskId}/reply`)
-      .set('x-csrf-token', admin._csrf ?? '')
-      .send({ lines: [{ year_code: '0827', qty: 1 }] });
-    expect(wrongBatch.status).toBe(404);
-  });
-
-  it('批次封存後管理員仍可更正，店舖則不可', async () => {
-    const admin = await adminAgent();
-    const close = await admin
-      .put(`/api/admin/designated-sku/batches/${editBatchId}/close`)
-      .set('x-csrf-token', admin._csrf ?? '')
-      .send({});
-    expect(close.status).toBe(200);
-
-    const res = await admin
-      .put(`/api/admin/designated-sku/batches/${editBatchId}/items/${editTaskId}/reply`)
-      .set('x-csrf-token', admin._csrf ?? '')
-      .send({ lines: [{ year_code: '0628', qty: 1 }], note: '封存後更正' });
-    expect(res.status).toBe(200);
-    expect(res.body.item.is_open).toBe(false);
-    expect(res.body.item.lines).toEqual([{ year_code: '0628', qty: 1 }]);
-
-    const ha15 = await storeAgent('HA15');
-    const storeTry = await ha15
-      .put(`/api/portal/designated-sku/tasks/${editTaskCode}/reply`)
-      .set('x-csrf-token', ha15._csrf ?? '')
-      .send({ lines: [{ year_code: '0628', qty: 1 }] });
-    expect(storeTry.status).toBe(409);
+  it('同一檔案勾選 force 可重新派發', async () => {
+    const agent = await adminAgent();
+    const buffer = await buildWorkbook([
+      { site: 'HA02', sku: '107668017004', qty: 1 },
+      { site: 'HA02', sku: '108000000001', qty: 2, desc: '另一款貨品' },
+      { site: 'HB20', sku: '107668017004', qty: 4 },
+      { site: 'HC63', sku: '107668017004', qty: 3 },
+    ]);
+    const forced = await uploadBatch(agent, buffer, { force: '1' });
+    expect(forced.status).toBe(201);
+    expect(forced.body.batchCode).not.toBe(batchCode);
+    expect(forced.body.matterCount).toBe(3);
   });
 });

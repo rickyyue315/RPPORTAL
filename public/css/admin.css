@@ -580,7 +580,7 @@ body.stk-modal-open { overflow: hidden; }
 
 /* ---------------------------------------------------------------------------
    指定 SKU 回覆
-   任務編號要一眼睇得出（會貼落 WhatsApp / email），所以用等寬字；
+   事項編號要一眼睇得出（會貼落 WhatsApp / email），所以用等寬字；
    年期明細用 chips，避免長表格被「0827 × 1」拉散。
 --------------------------------------------------------------------------- */
 .dsku-code {
@@ -683,3 +683,54 @@ body.stk-modal-open { overflow: hidden; }
 }
 .dsku-total b { color: #0a3d69; }
 .dsku-total--over { border-color: #f5c6c2; background: #fdecea; }
+
+/* 指定 SKU 回覆：事項內的 SKU 明細（表格） */
+.dsku-sku-list { display: flex; flex-direction: column; gap: 10px; min-width: 320px; }
+.dsku-sku-row { border-left: 2px solid #e3ebf3; padding-left: 10px; }
+.dsku-sku-row:first-child { border-left-color: #cfe0f2; }
+.dsku-sku-row-head { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; font-size: 12.5px; }
+.dsku-sku-row-head b { font-size: 13px; color: var(--brand-deep); white-space: nowrap; }
+.dsku-sku-row-head span { color: #64748b; max-width: 240px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dsku-sku-row-head em { margin-left: auto; font-style: normal; color: #94a3b8; font-size: 12px; white-space: nowrap; }
+.dsku-sku-row-reply { margin-top: 3px; font-size: 12px; }
+.dsku-sku-row-reply .dsku-line-chip { margin-bottom: 0; }
+
+/* 指定 SKU 回覆：管理員代填／修改（多個 SKU） */
+.dsku-sku {
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  padding: 14px;
+  margin-bottom: 14px;
+  background: #fcfdff;
+}
+.dsku-sku.is-no-transfer { background: #f8fafc; }
+.dsku-sku-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-bottom: 10px;
+  font-size: 13px;
+}
+.dsku-sku-head b { font-size: 14px; color: var(--brand-deep); }
+.dsku-sku-head span { color: #64748b; font-size: 12.5px; }
+.dsku-none {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 4px 0 10px;
+  font-size: 13px;
+  color: #475569;
+  cursor: pointer;
+}
+.dsku-none input { width: 16px; height: 16px; accent-color: var(--brand); }
+.dsku-sku-total { font-size: 12.5px; padding: 7px 10px; }
+.dsku-sku-note { margin-top: 10px; font-size: 13px; }
+.dsku-sku-note-label {
+  display: block;
+  margin: 10px 0 4px;
+  font-size: 12px;
+  color: #64748b;
+  font-weight: 600;
+}

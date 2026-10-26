@@ -77,6 +77,7 @@ const MIGRATIONS = [
   '026_shop_stock_snapshots.sql',
   '027_designated_sku_tasks.sql',
   '028_designated_sku_admin_edit.sql',
+  '029_designated_sku_matters.sql',
 ];
 
 let db: PGlite;

@@ -11,22 +11,23 @@
   let currentBatch = null;
 
   /**
-   * 指定 SKU 回覆的直 link 可能經 /portal/ 登入頁回到這一頁（?task=CODE）。
-   * 認得就直接轉去任務頁，唔會丟失任務編號。
+   * 指定 SKU 回覆的直 link 可能經 /portal/ 登入頁回到這一頁（?matter=CODE）。
+   * 認得就直接轉去事項頁，唔會丟失事項編號；舊 ?task= 連結亦兼容。
    */
-  const deepTask = (() => {
+  const deepMatter = (() => {
     try {
-      return (new URLSearchParams(window.location.search).get('task') || '').trim();
+      const params = new URLSearchParams(window.location.search);
+      return (params.get('matter') || params.get('task') || '').trim();
     } catch {
       return '';
     }
   })();
-  if (deepTask) {
-    window.location.replace(`/portal/designated-sku.html?task=${encodeURIComponent(deepTask)}`);
+  if (deepMatter) {
+    window.location.replace(`/portal/designated-sku.html?matter=${encodeURIComponent(deepMatter)}`);
     return;
   }
 
-  /** 導覽列「指定SKU回覆」待回覆任務數（後端只計仍開放的批次） */
+  /** 導覽列「指定SKU回覆」待回覆事項數（後端只計仍開放的批次） */
   async function refreshDesignatedBadge() {
     try {
       const data = await p.api('/api/portal/designated-sku/pending-count');
@@ -40,7 +41,7 @@
       if (banner) {
         banner.hidden = n <= 0;
         banner.innerHTML = n > 0
-          ? `<div class="ds-pending-banner"><span>你有 <b>${n}</b> 個指定 SKU 任務需要回覆。</span><a href="/portal/designated-sku.html">立即前往填寫 →</a></div>`
+          ? `<div class="ds-pending-banner"><span>你有 <b>${n}</b> 個指定 SKU 事項需要回覆。</span><a href="/portal/designated-sku.html">立即前往填寫 →</a></div>`
           : '';
       }
     } catch {

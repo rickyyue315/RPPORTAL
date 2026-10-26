@@ -794,7 +794,7 @@
 
         <div class="card mt-0">
           <div class="card-header">
-            <h3 class="card-title">上載指定 SKU Excel — 建立任務</h3>
+            <h3 class="card-title">上載指定 SKU Excel — 建立事項</h3>
             <div class="card-actions">
               <a href="#" class="btn-action" data-bs-toggle="collapse" data-bs-target="#dsku-upload-collapse" aria-expanded="true" aria-label="摺疊上載">
                 <svg xmlns="http://www.w3.org/2000/svg" class="icon" width="24" height="24" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none" stroke-linecap="round" stroke-linejoin="round"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><polyline points="6 9 12 15 18 9" /></svg>
@@ -802,20 +802,20 @@
             </div>
           </div>
           <div class="card-body collapse show" id="dsku-upload-collapse">
-            <p class="text-secondary small">每行 = 一間店舖 + 一隻 SKU（<b>Site</b> / <b>Article</b> 為必填）。上載後系統會按 Site Code 只向該店舖派發任務，並為每個任務產生獨立<b>任務編號</b>（例：<code>DSKU-261026-0001-03</code>）供日後查閱及直 link 使用。<br>店舖就每個<b>貨品年期 (MMYY)</b> 回覆可調撥件數；同一 SKU 存貨 2 件以上而有多個年期時，可分成多行回覆。</p>
+            <p class="text-secondary small">每行 = 一間店舖 + 一隻 SKU（<b>Site</b> / <b>Article</b> 為必填）。上載後系統會按 Site Code 建立<b>事項</b>：<b>同一店舖的多個 SKU 會歸入同一個事項</b>，並產生獨立<b>事項編號</b>（例：<code>DSKU-261026-0001-03</code>）供日後查閱及直 link 使用。<br>店舖一次過為事項內每個 SKU 的每個<b>貨品年期 (MMYY)</b> 回覆可調撥件數；如同一 SKU 有多個年期，可分成多行回覆。</p>
             <div class="d-flex gap-2 mb-2 flex-wrap align-items-end">
-              <div style="min-width:260px;flex:1"><label class="form-label" for="dsku_subject">任務主題 <span class="text-danger">*</span></label><input type="text" id="dsku_subject" class="form-control" maxlength="200" placeholder="例：指定 SKU 存貨年期確認（10 月）"></div>
-              <div><label class="form-label" for="dsku_task_type">任務類型</label><select id="dsku_task_type" class="form-select"><option value="stock_year_breakdown">年期／可調撥件數</option></select></div>
+              <div style="min-width:260px;flex:1"><label class="form-label" for="dsku_subject">事項主題 <span class="text-danger">*</span></label><input type="text" id="dsku_subject" class="form-control" maxlength="200" placeholder="例：指定 SKU 存貨年期確認（10 月）"></div>
+              <div><label class="form-label" for="dsku_matter_type">事項類型</label><select id="dsku_matter_type" class="form-select"><option value="stock_year_breakdown">年期／可調撥件數</option></select></div>
               <div><label class="form-label" for="dsku_due_date">截止日期（選填）</label><input type="date" id="dsku_due_date" class="form-control"></div>
               <div style="min-width:180px"><label class="form-label" for="dsku_reference">參考編號（選填）</label><input type="text" id="dsku_reference" class="form-control" maxlength="100" placeholder="例：RP-2026-1042"></div>
             </div>
             <div class="d-flex gap-2 mb-2 flex-wrap align-items-end">
-              <div style="flex:1;min-width:280px"><label class="form-label" for="dsku_instructions">任務說明（選填，<b>空白時店舖端自動隱藏</b>）</label><textarea id="dsku_instructions" class="form-control" rows="2" maxlength="4000" placeholder="例：請按貨品年期填報可調撥件數，RP Team 會安排回收／調撥。"></textarea></div>
+              <div style="flex:1;min-width:280px"><label class="form-label" for="dsku_instructions">事項說明（選填，<b>空白時店舖端自動隱藏</b>）</label><textarea id="dsku_instructions" class="form-control" rows="2" maxlength="4000" placeholder="例：請按貨品年期填報可調撥件數，RP Team 會安排回收／調撥。"></textarea></div>
               <div style="min-width:200px"><label class="form-label" for="dsku_note">內部備註（選填，店舖唔會見到）</label><input type="text" id="dsku_note" class="form-control" maxlength="1000" placeholder="例：DRG 品牌回收"></div>
               <div style="min-width:220px"><label class="form-label" for="dsku_file">Excel (.xlsx) <span class="text-danger">*</span></label><input type="file" id="dsku_file" accept=".xlsx" class="form-control"></div>
               <div class="align-self-end d-flex gap-2">
                 <a class="btn btn-outline-primary" href="/api/admin/designated-sku/template">下載模板</a>
-                <button class="btn btn-primary" id="btn_dsku_upload" type="button">上載並建立任務</button>
+                <button class="btn btn-primary" id="btn_dsku_upload" type="button">上載並建立事項</button>
               </div>
             </div>
             <label class="form-check mt-1">
@@ -828,7 +828,7 @@
 
         <div class="card mt-3">
           <div class="card-header">
-            <h3 class="card-title">任務總覽</h3>
+            <h3 class="card-title">事項總覽</h3>
             <span class="ms-auto text-secondary small" id="dsku_kpi_note">—</span>
           </div>
           <div class="card-body">
@@ -850,8 +850,8 @@
             <div id="dsku_batch_error"></div>
             <div class="table-responsive">
               <table class="table table-vcenter">
-                <thead><tr><th>批次編號</th><th>任務主題</th><th class="text-end">任務數</th><th class="text-end">店數</th><th class="text-end">已回覆</th><th class="text-end">未回覆</th><th>狀態</th><th>建立</th><th>操作</th></tr></thead>
-                <tbody id="dsku_batches_body"><tr><td colspan="9" class="text-center text-secondary">載入中…</td></tr></tbody>
+                <thead><tr><th>批次編號</th><th>事項主題</th><th class="text-end">事項數</th><th class="text-end">SKU 行數</th><th class="text-end">店數</th><th class="text-end">已回覆</th><th class="text-end">未回覆</th><th>狀態</th><th>建立</th><th>操作</th></tr></thead>
+                <tbody id="dsku_batches_body"><tr><td colspan="10" class="text-center text-secondary">載入中…</td></tr></tbody>
               </table>
             </div>
             <div class="admin-pagination">
@@ -864,7 +864,7 @@
 
         <div class="card mt-3" id="dsku_detail_card" hidden>
           <div class="card-header">
-            <h3 class="card-title" id="dsku_detail_title">任務明細</h3>
+            <h3 class="card-title" id="dsku_detail_title">事項明細</h3>
             <div class="card-actions d-flex flex-wrap gap-2 align-items-center">
               <a class="btn btn-sm btn-outline-primary" id="dsku_detail_export" href="#">匯出此批次</a>
               <button class="btn btn-sm" id="btn_dsku_detail_close" type="button">收起</button>
@@ -876,14 +876,14 @@
               <div><label class="form-label" for="dsku_filter_site">篩選 Site Code</label><input type="text" id="dsku_filter_site" class="form-control form-control-sm" placeholder="例如 HB20" style="max-width:160px" autocomplete="off"></div>
               <div><label class="form-label" for="dsku_filter_status">狀態</label><select id="dsku_filter_status" class="form-select form-select-sm"><option value="">全部</option><option value="pending">未回覆</option><option value="replied">已回覆</option></select></div>
               <button class="btn btn-sm" id="btn_dsku_apply_filter" type="button">套用</button>
-              <button class="btn btn-sm btn-outline-primary" id="btn_dsku_copy_all" type="button" title="複製此批次所有未回覆任務的直 link（每行一條）">複製未回覆直 link</button>
+              <button class="btn btn-sm btn-outline-primary" id="btn_dsku_copy_all" type="button" title="複製此批次所有未回覆事項的直 link（每行一條）">複製未回覆直 link</button>
             </div>
             <div id="dsku_items_error"></div>
-            <p class="text-secondary small mt-1">已回覆的任務可按「<b>編輯回覆</b>」代店舖更正年期／件數；未回覆可按「<b>代回覆</b>」補錄（常見：店舖以 email 補交）。管理員操作<b>不受封存限制</b>、<b>不佔用店舖修改次數</b>；代填會記錄為「管理員代填」，所有修改另會標示管理員及時間並寫入審計日誌。</p>
+            <p class="text-secondary small mt-1">已回覆的事項可按「<b>編輯回覆</b>」代店舖更正事項內所有 SKU 的年期／件數；未回覆可按「<b>代回覆</b>」補錄（常見：店舖以 email 補交）。管理員操作<b>不受封存限制</b>、<b>不佔用店舖修改次數</b>；代填會記錄為「管理員代填」，所有修改另會標示管理員及時間並寫入審計日誌。</p>
             <div class="table-responsive">
               <table class="table table-vcenter">
-                <thead><tr><th>任務編號</th><th>Site</th><th>店舖</th><th>SKU</th><th>描述</th><th class="text-end">存貨</th><th>狀態</th><th>年期回覆</th><th>回覆人 / 時間</th><th>操作</th></tr></thead>
-                <tbody id="dsku_items_body"><tr><td colspan="10" class="text-center text-secondary">載入中…</td></tr></tbody>
+                <thead><tr><th>事項編號</th><th>Site</th><th>店舖</th><th>SKU 明細</th><th>狀態</th><th>回覆人 / 時間</th><th>操作</th></tr></thead>
+                <tbody id="dsku_items_body"><tr><td colspan="7" class="text-center text-secondary">載入中…</td></tr></tbody>
               </table>
             </div>
           </div>
@@ -892,7 +892,7 @@
         <div class="card mt-3">
           <div class="card-header">
             <h3 class="card-title">匯出</h3>
-            <span class="ms-auto text-secondary small">任務回覆 / 年期明細 / 未回覆店舖（三個工作表）</span>
+            <span class="ms-auto text-secondary small">事項回覆 / 年期明細 / 未回覆事項（三個工作表）</span>
           </div>
           <div class="card-body">
             <div class="d-flex gap-2 flex-wrap align-items-end">

@@ -75,14 +75,15 @@ import { getShopStockForStore } from '../services/shopStock.js';
 import { buildShopStockStoreBuffer } from '../services/shopStockExport.js';
 import { buildZeroSalesStoreExportBuffer } from '../lib/zeroSales.js';
 import {
-  countPendingTasks as countDesignatedSkuPending,
+  countPendingMatters as countDesignatedSkuPending,
   DesignatedSkuClosedError,
   DesignatedSkuError,
   DesignatedSkuForbiddenError,
   DesignatedSkuNotFoundError,
-  getMyTask as getDesignatedSkuTask,
-  listMyTasks as listDesignatedSkuTasks,
-  submitReply as submitDesignatedSkuReply,
+  getMyMatter as getDesignatedSkuMatter,
+  listMyMatters as listDesignatedSkuMatters,
+  submitMatterReply as submitDesignatedSkuReply,
+  type DesignatedSkuMatter,
 } from '../services/designatedSku.js';
 
 export const portalRouter = Router();
@@ -1114,23 +1115,26 @@ portalRouter.get(
 // ---------------------------------------------------------------------------
 // 指定 SKU 回覆（店舖端）
 //
-// 店舖隔離：site_code 一律取自 portal session（requireStoreSite），
-// 絕不接受 query / body 傳入；直 link 只帶任務編號，伺服器仍會核對
-// 任務是否屬於登入店舖，不屬於則 403，不能讀取亦不能回覆。
+// 一個事項內含多個 SKU；店舖一次過回覆整份清單。
+// 隔離：site_code 一律取自 portal session，直 link 只帶事項編號，
+// 伺服器仍會核對擁有權，不屬於該店舖回 403。
 // ---------------------------------------------------------------------------
 
-const designatedSkuTaskCodePattern = /^[A-Za-z0-9][A-Za-z0-9._-]{0,59}$/;
+const designatedSkuMatterCodePattern = /^[A-Za-z0-9][A-Za-z0-9._-]{0,59}$/;
 
 /**
- * 店舖端只需要顯示及回覆欄位：原文 payload 與批次 settings（預留內部設定）
+ * 店舖端只需要顯示及回覆欄位：原文 payload、批次內部備註 settings
  * 一律不回傳，避免日後新增內部欄位時意外外洩。
  */
-function serializeStoreTask(task: Awaited<ReturnType<typeof getDesignatedSkuTask>>) {
-  const { payload: _payload, settings: _settings, ...rest } = task;
-  return rest;
+function serializeStoreMatter(matter: DesignatedSkuMatter) {
+  const { settings: _settings, batch_note: _batchNote, items, ...rest } = matter;
+  return {
+    ...rest,
+    items: items.map(({ payload: _payload, ...item }) => item),
+  };
 }
 
-/** GET /api/portal/designated-sku/pending-count — 導覽列徽章用（只回數字，不下載任務） */
+/** GET /api/portal/designated-sku/pending-count — 導覽列徽章用（只回數字） */
 portalRouter.get(
   '/designated-sku/pending-count',
   requirePortalUser,
@@ -1141,17 +1145,17 @@ portalRouter.get(
   }),
 );
 
-/** GET /api/portal/designated-sku/tasks — 本店任務（預設未回覆排先） */
+/** GET /api/portal/designated-sku/matters — 本店事項（未回覆排先） */
 portalRouter.get(
-  '/designated-sku/tasks',
+  '/designated-sku/matters',
   requirePortalUser,
   requireStoreSite,
   adminActionLimiter,
   asyncHandler(async (req: Request, res: Response) => {
     const { status } = req.query as Record<string, string | undefined>;
     const siteCode = req.storeSiteCode!;
-    const [tasks, store, pending] = await Promise.all([
-      listDesignatedSkuTasks(siteCode, {
+    const [matters, store, pending] = await Promise.all([
+      listDesignatedSkuMatters(siteCode, {
         status: status === 'pending' || status === 'replied' ? status : undefined,
       }),
       getStore(siteCode),
@@ -1161,33 +1165,33 @@ portalRouter.get(
       site_code: siteCode,
       shop: store?.shop ?? '',
       pending_count: pending,
-      tasks: tasks.map(serializeStoreTask),
+      matters: matters.map(serializeStoreMatter),
     });
   }),
 );
 
-/** GET /api/portal/designated-sku/tasks/:code — 單一任務（直 link 用，只限涉及店舖） */
+/** GET /api/portal/designated-sku/matters/:code — 單一事項（直 link 用，只限涉及店舖） */
 portalRouter.get(
-  '/designated-sku/tasks/:code',
+  '/designated-sku/matters/:code',
   requirePortalUser,
   requireStoreSite,
   adminActionLimiter,
   asyncHandler(async (req: Request, res: Response) => {
     const code = String(req.params.code ?? '').trim();
-    if (!designatedSkuTaskCodePattern.test(code)) {
-      res.status(400).json({ error: '任務編號格式無效' });
+    if (!designatedSkuMatterCodePattern.test(code)) {
+      res.status(400).json({ error: '事項編號格式無效' });
       return;
     }
     try {
-      const task = await getDesignatedSkuTask(req.storeSiteCode!, code);
-      res.json({ task: serializeStoreTask(task) });
+      const matter = await getDesignatedSkuMatter(req.storeSiteCode!, code);
+      res.json({ matter: serializeStoreMatter(matter) });
     } catch (err) {
       if (err instanceof DesignatedSkuForbiddenError) {
-        res.status(403).json({ error: err.message, code: 'TASK_FORBIDDEN' });
+        res.status(403).json({ error: err.message, code: 'MATTER_FORBIDDEN' });
         return;
       }
       if (err instanceof DesignatedSkuNotFoundError) {
-        res.status(404).json({ error: err.message, code: 'TASK_NOT_FOUND' });
+        res.status(404).json({ error: err.message, code: 'MATTER_NOT_FOUND' });
         return;
       }
       throw err;
@@ -1196,28 +1200,38 @@ portalRouter.get(
 );
 
 const designatedSkuReplySchema = z.object({
-  lines: z
+  items: z
     .array(
       z.object({
-        year_code: z.union([z.string(), z.number()]),
-        qty: z.union([z.string(), z.number()]),
+        item_id: z.string().uuid('SKU 明細編號無效'),
+        lines: z
+          .array(
+            z.object({
+              year_code: z.union([z.string(), z.number()]),
+              qty: z.union([z.string(), z.number()]),
+            }),
+          )
+          .max(20)
+          .optional()
+          .default([]),
+        note: z.string().max(2000).optional().default(''),
+        no_transfer: z.boolean().optional().default(false),
       }),
     )
-    .min(1, '請至少填寫一個貨品年期及可調撥件數')
-    .max(20),
-  note: z.string().max(2000).optional().default(''),
+    .min(1, '請為事項內每個 SKU 填寫回覆')
+    .max(200),
 });
 
-/** PUT /api/portal/designated-sku/tasks/:code/reply — 店舖提交／更新回覆 */
+/** PUT /api/portal/designated-sku/matters/:code/reply — 店舖提交／更新整份事項 */
 portalRouter.put(
-  '/designated-sku/tasks/:code/reply',
+  '/designated-sku/matters/:code/reply',
   requirePortalUser,
   requireStoreSite,
   adminActionLimiter,
   asyncHandler(async (req: Request, res: Response) => {
     const code = String(req.params.code ?? '').trim();
-    if (!designatedSkuTaskCodePattern.test(code)) {
-      res.status(400).json({ error: '任務編號格式無效' });
+    if (!designatedSkuMatterCodePattern.test(code)) {
+      res.status(400).json({ error: '事項編號格式無效' });
       return;
     }
     const parsed = designatedSkuReplySchema.safeParse(req.body);
@@ -1226,11 +1240,10 @@ portalRouter.put(
       return;
     }
     try {
-      const task = await submitDesignatedSkuReply({
+      const matter = await submitDesignatedSkuReply({
         siteCode: req.storeSiteCode!,
-        taskCode: code,
-        lines: parsed.data.lines,
-        note: parsed.data.note ?? '',
+        matterCode: code,
+        items: parsed.data.items,
         repliedBy: req.portalUser!.username,
         repliedByUserId: req.portalUser!.id,
       });
@@ -1240,27 +1253,32 @@ portalRouter.put(
         actor: req.portalUser!.username,
         ip: getClientIp(req),
         metadata: {
-          task_code: task.task_code,
-          batch_code: task.batch_code,
-          site_code: task.site_code,
-          sku: task.sku,
-          total: task.reply_total,
-          lines: task.lines,
-          reply_count: task.reply_count,
+          matter_code: matter.matter_code,
+          batch_code: matter.batch_code,
+          site_code: matter.site_code,
+          item_count: matter.item_count,
+          total: matter.reply_total,
+          items: matter.items.map((item) => ({
+            sku: item.sku,
+            no_transfer: item.no_transfer,
+            total: item.reply_total,
+            lines: item.lines,
+            reply_count: item.reply_count,
+          })),
         },
       });
-      res.json({ ok: true, task: serializeStoreTask(task) });
+      res.json({ ok: true, matter: serializeStoreMatter(matter) });
     } catch (err) {
       if (err instanceof DesignatedSkuForbiddenError) {
-        res.status(403).json({ error: err.message, code: 'TASK_FORBIDDEN' });
+        res.status(403).json({ error: err.message, code: 'MATTER_FORBIDDEN' });
         return;
       }
       if (err instanceof DesignatedSkuNotFoundError) {
-        res.status(404).json({ error: err.message, code: 'TASK_NOT_FOUND' });
+        res.status(404).json({ error: err.message, code: 'MATTER_NOT_FOUND' });
         return;
       }
       if (err instanceof DesignatedSkuClosedError) {
-        res.status(409).json({ error: err.message, code: 'TASK_CLOSED' });
+        res.status(409).json({ error: err.message, code: 'MATTER_CLOSED' });
         return;
       }
       if (err instanceof DesignatedSkuError) {

@@ -397,12 +397,13 @@ export async function generateDesignatedSkuTemplateWorkbook(): Promise<Buffer> {
     ['Product Hierarchy', '產品分類（例：DRG），可留空'],
     ['Article', '貨品編號（SKU），必填'],
     ['Article Long Text (60 Chars)', '貨品描述'],
-    ['Site', '店舖 Site Code（例：HB20），必填；只會向該店舖派發任務'],
+    ['Site', '店舖 Site Code（例：HB20），必填；只會向該店舖派發事項'],
     ['SaSa Net Stock', '該店存貨件數；留空或非數字會顯示為「未提供」，不當 0'],
     ['店舖回覆可調撥件數', '店舖填寫用，上載時請留空'],
     ['貨品年期 (MMYY)', '店舖填寫用（例：0827 = 2027 年 8 月），上載時請留空'],
     ['', ''],
-    ['任務編號', '系統於上載後自動產生（批次編號 + 序號），供日後查閱'],
+    ['事項編號', '系統於上載後自動產生（批次編號 + 店舖序號），供日後查閱'],
+    ['多個 SKU', '同一店舖同一批次的多個 SKU 會歸入同一個事項，店舖一次過回覆'],
     ['多個年期', '同一店同一 SKU 存貨有 2 件或以上時，店舖可分成多個年期回覆'],
   ];
   lines.forEach(([a, b], i) => {
@@ -423,16 +424,19 @@ export interface DesignatedSkuExportLine {
 }
 
 export interface DesignatedSkuExportItem {
-  task_code: string;
+  matter_code: string;
+  matter_status: 'pending' | 'replied';
   batch_code: string;
   subject: string;
-  task_type: string;
+  matter_type: string;
   site_code: string;
   shop?: string;
   sku: string;
   description: string;
   stock_qty: number | null;
+  /** 此 SKU 的狀態（事項狀態另見 matter_status） */
   status: string;
+  no_transfer: boolean;
   reply_total: number | null;
   reply_note: string;
   replied_by: string | null;
@@ -445,18 +449,26 @@ export interface DesignatedSkuExportItem {
   lines: DesignatedSkuExportLine[];
 }
 
-export type DesignatedSkuTaskType = 'stock_year_breakdown';
+export type DesignatedSkuMatterType = 'stock_year_breakdown';
 
-function taskTypeLabel(type: string): string {
+function matterTypeLabel(type: string): string {
   if (type === 'stock_year_breakdown') return '年期／可調撥件數';
   return type || '—';
 }
 
-function statusLabel(item: DesignatedSkuExportItem): string {
+function matterStatusLabel(item: DesignatedSkuExportItem): string {
   if (!item.is_open) {
-    return item.status === 'replied' ? '已回覆（已封存）' : '未回覆（已截止）';
+    return item.matter_status === 'replied' ? '已回覆（已封存）' : '未回覆（已截止）';
   }
-  return item.status === 'replied' ? '已回覆' : '未回覆';
+  return item.matter_status === 'replied' ? '已回覆' : '未回覆';
+}
+
+function itemStatusLabel(item: DesignatedSkuExportItem): string {
+  if (item.status === 'replied') {
+    if (item.no_transfer) return '無可調撥';
+    return item.is_open ? '已回覆' : '已回覆（已封存）';
+  }
+  return item.is_open ? '未回覆' : '未回覆（已截止）';
 }
 
 function lineSummary(lines: DesignatedSkuExportLine[]): string {
@@ -468,21 +480,23 @@ function lineSummary(lines: DesignatedSkuExportLine[]): string {
     .join('；');
 }
 
-/** 後台匯出：任務回覆 / 年期明細 / 未回覆店舖 三張工作表 */
+/** 後台匯出：事項回覆 / 年期明細 / 未回覆事項 三張工作表（每個 SKU 一行） */
 export async function buildDesignatedSkuExportBuffer(items: DesignatedSkuExportItem[]): Promise<Buffer> {
   const workbook = new ExcelJS.Workbook();
 
   const summaryCols = [
-    '任務編號',
+    '事項編號',
     '批次編號',
     '批次主題',
-    '任務類型',
+    '事項類型',
     'Site',
     '店舖',
     'SKU',
     '描述',
     '存貨',
-    '狀態',
+    '事項狀態',
+    'SKU 狀態',
+    '無可調撥',
     '回覆合計（件）',
     '年期明細',
     '備註',
@@ -492,20 +506,22 @@ export async function buildDesignatedSkuExportBuffer(items: DesignatedSkuExportI
     '管理員修改人',
     '管理員修改時間',
   ] as const;
-  const summary = workbook.addWorksheet('任務回覆');
+  const summary = workbook.addWorksheet('事項回覆');
   styleHeader(summary, summaryCols);
   items.forEach((it) => {
     summary.addRow([
-      it.task_code,
+      it.matter_code,
       it.batch_code,
       it.subject,
-      taskTypeLabel(it.task_type),
+      matterTypeLabel(it.matter_type),
       it.site_code,
       it.shop ?? '',
       it.sku,
       it.description,
       it.stock_qty === null || it.stock_qty === undefined ? '' : it.stock_qty,
-      statusLabel(it),
+      matterStatusLabel(it),
+      itemStatusLabel(it),
+      it.no_transfer ? '是' : '',
       it.reply_total === null || it.reply_total === undefined ? '' : it.reply_total,
       lineSummary(it.lines),
       it.reply_note,
@@ -527,6 +543,8 @@ export async function buildDesignatedSkuExportBuffer(items: DesignatedSkuExportI
     { width: 38 },
     { width: 9 },
     { width: 18 },
+    { width: 16 },
+    { width: 10 },
     { width: 14 },
     { width: 34 },
     { width: 30 },
@@ -540,12 +558,12 @@ export async function buildDesignatedSkuExportBuffer(items: DesignatedSkuExportI
     summary.autoFilter = { from: { row: 1, column: 1 }, to: { row: 1, column: summaryCols.length } };
   }
 
-  const lineCols = ['任務編號', '批次編號', 'Site', '店舖', 'SKU', '貨品年期 (MMYY)', '可調撥件數'] as const;
+  const lineCols = ['事項編號', '批次編號', 'Site', '店舖', 'SKU', '貨品年期 (MMYY)', '可調撥件數'] as const;
   const detail = workbook.addWorksheet('年期明細');
   styleHeader(detail, lineCols);
   for (const it of items) {
     for (const line of it.lines) {
-      detail.addRow([it.task_code, it.batch_code, it.site_code, it.shop ?? '', it.sku, line.year_code, line.qty]);
+      detail.addRow([it.matter_code, it.batch_code, it.site_code, it.shop ?? '', it.sku, line.year_code, line.qty]);
     }
   }
   detail.columns = [
@@ -558,8 +576,8 @@ export async function buildDesignatedSkuExportBuffer(items: DesignatedSkuExportI
     { width: 14 },
   ];
 
-  const pendingCols = ['批次編號', '批次主題', '任務編號', 'Site', '店舖', 'SKU', '描述', '存貨', '建立時間'] as const;
-  const pending = workbook.addWorksheet('未回覆店舖');
+  const pendingCols = ['批次編號', '批次主題', '事項編號', 'Site', '店舖', 'SKU', '描述', '存貨', '建立時間'] as const;
+  const pending = workbook.addWorksheet('未回覆事項');
   styleHeader(pending, pendingCols);
   items
     .filter((it) => it.status === 'pending')
@@ -567,7 +585,7 @@ export async function buildDesignatedSkuExportBuffer(items: DesignatedSkuExportI
       pending.addRow([
         it.batch_code,
         it.subject,
-        it.task_code,
+        it.matter_code,
         it.site_code,
         it.shop ?? '',
         it.sku,

@@ -149,11 +149,11 @@ import {
   parseDesignatedSkuWorkbook,
 } from '../lib/designatedSku.js';
 import {
-  adminSubmitReply as adminSubmitDesignatedSkuReply,
+  adminSubmitMatterReply as adminSubmitDesignatedSkuReply,
   closeBatch as closeDesignatedSkuBatch,
   createBatch as createDesignatedSkuBatch,
   deleteBatch as deleteDesignatedSkuBatch,
-  deleteItem as deleteDesignatedSkuItem,
+  deleteMatter as deleteDesignatedSkuMatter,
   DesignatedSkuError,
   DesignatedSkuNotFoundError,
   findBatchByContentHash as findDesignatedSkuBatchByHash,
@@ -161,10 +161,10 @@ import {
   getSummary as getDesignatedSkuSummary,
   listBatchesForSelect as listDesignatedSkuBatchOptions,
   listBatchesPage as listDesignatedSkuBatchesPage,
-  listBatchItems as listDesignatedSkuBatchItems,
-  listItemsForExport as listDesignatedSkuForExport,
+  listBatchMatters as listDesignatedSkuBatchMatters,
+  listMattersForExport as listDesignatedSkuForExport,
   reopenBatch as reopenDesignatedSkuBatch,
-  type DesignatedSkuItemRow,
+  type DesignatedSkuMatter,
 } from '../services/designatedSku.js';
 
 export const adminRouter = Router();
@@ -3628,45 +3628,78 @@ adminRouter.get(
   }),
 );
 
+
 // ---------------------------------------------------------------------------
 // 指定 SKU 回覆（Designated SKU Reply）
 //
-// 上載一份「每店一 SKU」Excel，建立帶批次編號的任務；店舖登入後只看到
-// 屬於自己 Site Code 的任務，就每個貨品年期回覆可調撥件數。
+// 上載一份 Excel，按 Site Code 建立「事項」；同店多個 SKU 歸入同一事項，
+// 店舖一次過回覆每個 SKU 的年期及可調撥件數。
 // ---------------------------------------------------------------------------
 
 const designatedSkuUploadSchema = z.object({
-  subject: z.string().trim().min(1, '任務主題為必填').max(200),
-  task_type: z.string().trim().max(60).optional().default('stock_year_breakdown'),
+  subject: z.string().trim().min(1, '事項主題為必填').max(200),
+  matter_type: z.string().trim().max(60).optional().default('stock_year_breakdown'),
   instructions: z.string().max(4000).optional().default(''),
   due_date: z.string().trim().optional().default(''),
   reference: z.string().max(100).optional().default(''),
   note: z.string().max(1000).optional().default(''),
 });
 
-function designatedSkuExportRows(items: DesignatedSkuItemRow[]) {
-  return items.map((it) => ({
-    task_code: it.task_code,
-    batch_code: it.batch_code,
-    subject: it.subject,
-    task_type: it.task_type,
-    site_code: it.site_code,
-    shop: it.shop ?? '',
-    sku: it.sku,
-    description: it.description,
-    stock_qty: it.stock_qty,
-    status: it.status,
-    reply_total: it.reply_total,
-    reply_note: it.reply_note,
-    replied_by: it.replied_by,
-    replied_at: it.replied_at,
-    reply_count: it.reply_count,
-    admin_edited_by: it.admin_edited_by,
-    admin_edited_at: it.admin_edited_at,
-    is_open: it.is_open,
-    created_at: it.batch_created_at,
-    lines: it.lines,
-  }));
+/** 匯出用：把事項攤平為每個 SKU 一行 */
+function designatedSkuExportRows(matters: DesignatedSkuMatter[]) {
+  const rows: Array<{
+    matter_code: string;
+    matter_status: import('../lib/designatedSku.js').DesignatedSkuExportItem['matter_status'];
+    batch_code: string;
+    subject: string;
+    matter_type: string;
+    site_code: string;
+    shop: string;
+    sku: string;
+    description: string;
+    stock_qty: number | null;
+    status: string;
+    no_transfer: boolean;
+    reply_total: number | null;
+    reply_note: string;
+    replied_by: string | null;
+    replied_at: string | null;
+    reply_count: number;
+    admin_edited_by: string;
+    admin_edited_at: string | null;
+    is_open: boolean;
+    created_at: string;
+    lines: Array<{ year_code: string; qty: number }>;
+  }> = [];
+  for (const matter of matters) {
+    for (const item of matter.items) {
+      rows.push({
+        matter_code: matter.matter_code,
+        matter_status: matter.status,
+        batch_code: matter.batch_code,
+        subject: matter.subject,
+        matter_type: matter.matter_type,
+        site_code: matter.site_code,
+        shop: matter.shop,
+        sku: item.sku,
+        description: item.description,
+        stock_qty: item.stock_qty,
+        status: item.status,
+        no_transfer: item.no_transfer,
+        reply_total: item.reply_total,
+        reply_note: item.reply_note,
+        replied_by: item.replied_by,
+        replied_at: item.replied_at,
+        reply_count: item.reply_count,
+        admin_edited_by: item.admin_edited_by,
+        admin_edited_at: item.admin_edited_at,
+        is_open: matter.is_open,
+        created_at: matter.batch_created_at,
+        lines: item.lines,
+      });
+    }
+  }
+  return rows;
 }
 
 /** GET /api/admin/designated-sku/template — 下載上載模板 */
@@ -3682,7 +3715,7 @@ adminRouter.get(
   }),
 );
 
-/** POST /api/admin/designated-sku/batches — 上載 Excel 建立一批任務 */
+/** POST /api/admin/designated-sku/batches — 上載 Excel 建立一批事項 */
 adminRouter.post(
   '/designated-sku/batches',
   requireAdmin,
@@ -3740,9 +3773,9 @@ adminRouter.post(
       }
     }
 
-    const { batchId, batchCode, taskCodes } = await createDesignatedSkuBatch({
+    const { batchId, batchCode, matterCodes } = await createDesignatedSkuBatch({
       subject: meta.data.subject,
-      taskType: meta.data.task_type,
+      matterType: meta.data.matter_type,
       instructions: meta.data.instructions ?? '',
       dueDate: dueDate || null,
       reference: meta.data.reference ?? '',
@@ -3762,6 +3795,7 @@ adminRouter.post(
       createdBy: req.adminUsername!,
     });
 
+    const storeCount = new Set(parsed.rows.map((r) => r.siteCode)).size;
     await writeAuditEvent({
       eventType: 'designated_sku_batch_created',
       actorRole: 'admin',
@@ -3772,8 +3806,9 @@ adminRouter.post(
         batch_code: batchCode,
         batch_id: batchId,
         subject: meta.data.subject,
-        task_count: parsed.rows.length,
-        store_count: new Set(parsed.rows.map((r) => r.siteCode)).size,
+        matter_count: storeCount,
+        item_count: parsed.rows.length,
+        store_count: storeCount,
         skipped_rows: parsed.skippedRows,
         warn_count: (parsed.warnings ?? []).length,
         forced: force,
@@ -3784,12 +3819,13 @@ adminRouter.post(
       ok: true,
       batchId,
       batchCode,
-      taskCount: taskCodes.length,
-      storeCount: new Set(parsed.rows.map((r) => r.siteCode)).size,
+      matterCount: storeCount,
+      itemCount: parsed.rows.length,
+      storeCount,
       totalRows: parsed.totalRows,
       skippedRows: parsed.skippedRows,
       warnings: parsed.warnings ?? [],
-      taskCodes: taskCodes.slice(0, 5),
+      matterCodes: matterCodes.slice(0, 5),
     });
   }),
 );
@@ -3824,9 +3860,9 @@ adminRouter.get(
   }),
 );
 
-/** GET /api/admin/designated-sku/batches/:id/items — 批次內任務明細 */
+/** GET /api/admin/designated-sku/batches/:id/matters — 批次內事項明細（含每個 SKU） */
 adminRouter.get(
-  '/designated-sku/batches/:id/items',
+  '/designated-sku/batches/:id/matters',
   requireUuidParam('id'),
   requireAdmin,
   adminActionLimiter,
@@ -3837,11 +3873,11 @@ adminRouter.get(
       res.status(404).json({ error: '找不到批次' });
       return;
     }
-    const items = await listDesignatedSkuBatchItems(req.params.id as string, {
+    const matters = await listDesignatedSkuBatchMatters(req.params.id as string, {
       siteCode: site_code?.trim() ? normalizeSiteCode(site_code) : undefined,
       status: status === 'pending' || status === 'replied' ? status : undefined,
     });
-    res.json({ batch, items });
+    res.json({ batch, matters });
   }),
 );
 
@@ -3861,17 +3897,18 @@ adminRouter.get(
       res.status(400).json({ error: '狀態篩選無效' });
       return;
     }
-    const items = await listDesignatedSkuForExport({
+    const matters = await listDesignatedSkuForExport({
       batchId,
       siteCode: site_code?.trim() ? normalizeSiteCode(site_code) : undefined,
       status: status === 'pending' || status === 'replied' ? status : undefined,
     });
-    if (!items.length) {
-      res.status(404).json({ error: '沒有符合條件的任務可以匯出' });
+    const rows = designatedSkuExportRows(matters);
+    if (!rows.length) {
+      res.status(404).json({ error: '沒有符合條件的事項可以匯出' });
       return;
     }
-    const buffer = await buildDesignatedSkuExportBuffer(designatedSkuExportRows(items));
-    const label = items[0]?.batch_code ?? 'All';
+    const buffer = await buildDesignatedSkuExportBuffer(rows);
+    const label = matters[0]?.batch_code ?? 'All';
     const stamp = hkTodayForDateColumn().replace(/-/g, '');
     const filename = `Designated_SKU_${label}_${stamp}.xlsx`;
     await writeAuditEvent({
@@ -3879,7 +3916,14 @@ adminRouter.get(
       actorRole: 'admin',
       actor: req.adminUsername,
       ip: getClientIp(req),
-      metadata: { filename, batch_id: batchId ?? null, site_code: site_code ?? null, status: status ?? null, count: items.length },
+      metadata: {
+        filename,
+        batch_id: batchId ?? null,
+        site_code: site_code ?? null,
+        status: status ?? null,
+        matter_count: matters.length,
+        item_count: rows.length,
+      },
     });
     res.setHeader('Content-Type', EXPORT_CONTENT_TYPE);
     res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
@@ -3947,21 +3991,21 @@ adminRouter.delete(
       actorRole: 'admin',
       actor: req.adminUsername,
       ip: getClientIp(req),
-      metadata: { batch_code: result.batchCode, row_count: result.rowCount },
+      metadata: { batch_code: result.batchCode, matter_count: result.matterCount },
     });
     res.json({ ok: true, ...result });
   }),
 );
 
-/** DELETE /api/admin/designated-sku/batches/:id/items/:itemId — 刪除單一任務 */
+/** DELETE /api/admin/designated-sku/batches/:id/matters/:matterId — 刪除單一事項 */
 adminRouter.delete(
-  '/designated-sku/batches/:id/items/:itemId',
-  requireUuidParam('id', 'itemId'),
+  '/designated-sku/batches/:id/matters/:matterId',
+  requireUuidParam('id', 'matterId'),
   requireAdmin,
   asyncHandler(async (req: Request, res: Response) => {
-    const result = await deleteDesignatedSkuItem(req.params.id as string, req.params.itemId as string);
+    const result = await deleteDesignatedSkuMatter(req.params.id as string, req.params.matterId as string);
     if (!result) {
-      res.status(404).json({ error: '找不到任務' });
+      res.status(404).json({ error: '找不到此事項' });
       return;
     }
     await writeAuditEvent({
@@ -3969,32 +4013,46 @@ adminRouter.delete(
       actorRole: 'admin',
       actor: req.adminUsername,
       ip: getClientIp(req),
-      metadata: { task_code: result.taskCode, site_code: result.siteCode },
+      metadata: {
+        matter_code: result.matterCode,
+        site_code: result.siteCode,
+        item_count: result.itemCount,
+      },
     });
     res.json({ ok: true, ...result });
   }),
 );
 
 const designatedSkuAdminReplySchema = z.object({
-  lines: z
+  items: z
     .array(
       z.object({
-        year_code: z.union([z.string(), z.number()]),
-        qty: z.union([z.string(), z.number()]),
+        item_id: z.string().uuid('SKU 明細編號無效'),
+        lines: z
+          .array(
+            z.object({
+              year_code: z.union([z.string(), z.number()]),
+              qty: z.union([z.string(), z.number()]),
+            }),
+          )
+          .max(20)
+          .optional()
+          .default([]),
+        note: z.string().max(2000).optional().default(''),
+        no_transfer: z.boolean().optional().default(false),
       }),
     )
-    .min(1, '請至少填寫一個貨品年期及可調撥件數')
-    .max(20),
-  note: z.string().max(2000).optional().default(''),
+    .min(1, '請為事項內每個 SKU 填寫回覆')
+    .max(200),
 });
 
 /**
- * PUT /api/admin/designated-sku/batches/:id/items/:itemId/reply
- * 管理員代店舖輸入／修改回覆（不受封存限制、不佔用店舖修改次數）。
+ * PUT /api/admin/designated-sku/batches/:id/matters/:matterId/reply
+ * 管理員代店舖輸入／修改整個事項（多個 SKU），不受封存限制、不佔用店舖修改次數。
  */
 adminRouter.put(
-  '/designated-sku/batches/:id/items/:itemId/reply',
-  requireUuidParam('id', 'itemId'),
+  '/designated-sku/batches/:id/matters/:matterId/reply',
+  requireUuidParam('id', 'matterId'),
   requireAdmin,
   asyncHandler(async (req: Request, res: Response) => {
     const parsed = designatedSkuAdminReplySchema.safeParse(req.body);
@@ -4003,11 +4061,10 @@ adminRouter.put(
       return;
     }
     try {
-      const { item, entered } = await adminSubmitDesignatedSkuReply({
+      const { matter, entered } = await adminSubmitDesignatedSkuReply({
         batchId: req.params.id as string,
-        itemId: req.params.itemId as string,
-        lines: parsed.data.lines,
-        note: parsed.data.note ?? '',
+        matterId: req.params.matterId as string,
+        items: parsed.data.items,
         actor: req.adminUsername!,
       });
       await writeAuditEvent({
@@ -4016,18 +4073,24 @@ adminRouter.put(
         actor: req.adminUsername,
         ip: getClientIp(req),
         metadata: {
-          task_code: item.task_code,
-          batch_code: item.batch_code,
-          site_code: item.site_code,
-          sku: item.sku,
+          matter_code: matter.matter_code,
+          batch_code: matter.batch_code,
+          site_code: matter.site_code,
           entered,
-          total: item.reply_total,
-          lines: item.lines,
-          replied_by: item.replied_by,
-          reply_count: item.reply_count,
+          item_count: matter.item_count,
+          total: matter.reply_total,
+          items: matter.items.map((item) => ({
+            sku: item.sku,
+            status: item.status,
+            no_transfer: item.no_transfer,
+            total: item.reply_total,
+            lines: item.lines,
+            replied_by: item.replied_by,
+            reply_count: item.reply_count,
+          })),
         },
       });
-      res.json({ ok: true, item, entered });
+      res.json({ ok: true, matter, entered });
     } catch (err) {
       if (err instanceof DesignatedSkuNotFoundError) {
         res.status(404).json({ error: err.message });

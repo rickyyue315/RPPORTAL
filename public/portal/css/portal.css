@@ -299,14 +299,14 @@
 
 /* ==========================================================================
    指定 SKU 回覆（store/designated-sku.html）
-   任務以卡片呈現：手機上毋須橫向捲動，年期明細用 chips。
+   事項以卡片呈現：手機上毋須橫向捲動，年期明細用 chips。
    ========================================================================== */
 .ds-head-card h2 { margin: 0 0 4px; }
 .ds-intro { color: #475569; font-size: 13.5px; line-height: 1.65; margin: 8px 0 14px; }
 .ds-code { font-family: Consolas, 'Courier New', monospace; letter-spacing: .2px; }
 .ds-pending-count { color: #b42318; }
 
-.ds-task {
+.ds-matter {
   border: 1px solid #dbe4ee;
   border-left: 4px solid #d99a06;
   border-radius: 10px;
@@ -314,11 +314,11 @@
   padding: 14px 16px;
   margin: 0 0 12px;
 }
-.ds-task--replied { border-left-color: #1e8449; }
-.ds-task--closed { border-left-color: #94a3b8; background: #f8fafc; }
-.ds-task-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
-.ds-task-head-left { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
-.ds-task-code {
+.ds-matter--replied { border-left-color: #1e8449; }
+.ds-matter--closed { border-left-color: #94a3b8; background: #f8fafc; }
+.ds-matter-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+.ds-matter-head-left { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.ds-matter-code {
   font-family: Consolas, 'Courier New', monospace;
   font-size: 12.5px;
   font-weight: 700;
@@ -328,12 +328,28 @@
   border-radius: 6px;
   padding: 1px 7px;
 }
-.ds-task-title { margin: 8px 0 4px; font-size: 16px; color: #0f172a; }
-.ds-task-sku { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; font-size: 13.5px; color: #334155; }
-.ds-task-sku b { font-size: 14.5px; color: #0a3d69; }
-.ds-task-facts { margin-top: 6px; font-size: 12.8px; color: #64748b; }
-.ds-task-facts b { color: #334155; }
+.ds-matter-title { margin: 8px 0 4px; font-size: 16px; color: #0f172a; }
+.ds-matter-facts { margin-top: 6px; font-size: 12.8px; color: #64748b; }
+.ds-matter-facts b { color: #334155; }
 .ds-sep { margin: 0 6px; color: #cbd5e1; }
+.ds-sku-list { margin-top: 10px; border-top: 1px dashed #e2e8f0; }
+.ds-sku-line {
+  display: grid;
+  grid-template-columns: minmax(0, 1.35fr) auto minmax(0, 1fr);
+  gap: 12px;
+  align-items: center;
+  padding: 9px 0;
+  border-bottom: 1px solid #f0f3f7;
+  font-size: 13px;
+}
+.ds-sku-line:last-child { border-bottom: 0; }
+.ds-sku-line-id { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; min-width: 0; }
+.ds-sku-line-id b { font-size: 13.5px; color: #0a3d69; white-space: nowrap; }
+.ds-sku-line-id span { color: #64748b; font-size: 12.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ds-sku-line-stock { color: #64748b; font-size: 12.5px; white-space: nowrap; }
+.ds-sku-line-reply { text-align: right; }
+.ds-line-pending { color: #b42318; font-weight: 600; }
+.ds-line-none { color: #64748b; font-weight: 600; }
 .ds-instructions {
   margin-top: 10px;
   padding: 8px 12px;
@@ -344,7 +360,6 @@
   color: #334155;
   line-height: 1.6;
 }
-.ds-reply-summary { margin-top: 10px; padding-top: 10px; border-top: 1px dashed #e2e8f0; font-size: 13px; }
 .ds-chip {
   display: inline-flex;
   align-items: center;
@@ -360,6 +375,47 @@
 .ds-chip b { font-family: Consolas, 'Courier New', monospace; }
 .ds-total-inline { margin-left: 8px; color: #475569; }
 .ds-open { flex: 0 0 auto; }
+
+/* ---------- 回覆對話框：一個事項多個 SKU ---------- */
+.ds-sku {
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  padding: 14px 14px 12px;
+  margin: 0 0 14px;
+  background: #fcfdff;
+}
+.ds-sku.is-no-transfer { background: #f8fafc; }
+.ds-sku-head { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; flex-wrap: wrap; margin-bottom: 10px; }
+.ds-sku-id { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; min-width: 0; }
+.ds-sku-id b { font-size: 15px; color: #0a3d69; }
+.ds-sku-id span { color: #64748b; font-size: 12.5px; }
+.ds-sku-stock { font-size: 12.5px; color: #64748b; white-space: nowrap; }
+.ds-sku-stock b { color: #334155; }
+.ds-sku .ds-lines-head { margin-top: 2px; }
+.ds-sku .ds-add-line { min-height: 30px; }
+.ds-none {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 4px 0 10px;
+  font-size: 13px;
+  color: #475569;
+  cursor: pointer;
+}
+.ds-none input { width: 16px; height: 16px; accent-color: #0f5c9c; }
+.ds-sku-total { font-size: 12.5px; padding: 7px 10px; }
+.ds-sku-note {
+  width: 100%;
+  box-sizing: border-box;
+  margin-top: 10px;
+  padding: 8px 10px;
+  border: 1px solid #cfd9e4;
+  border-radius: 8px;
+  font-size: 13px;
+  font-family: inherit;
+}
+.ds-sku-readonly { font-size: 13px; line-height: 1.7; color: #334155; }
+.ds-sku-readonly .ds-chip { margin-top: 2px; }
 
 /* ---------- 回覆對話框 ---------- */
 dialog#ds_reply_dialog {
@@ -445,14 +501,16 @@ dialog#ds_reply_dialog::backdrop { background: rgba(7, 30, 50, 0.5); backdrop-fi
 .ds-over { color: #b42318; font-weight: 700; }
 
 @media (max-width: 640px) {
-  .ds-task { padding: 12px 12px; }
-  .ds-task-head { align-items: flex-start; }
-  .ds-task-code { font-size: 11.5px; }
+  .ds-matter { padding: 12px 12px; }
+  .ds-matter-head { align-items: flex-start; }
+  .ds-matter-code { font-size: 11.5px; }
+  .ds-sku-line { grid-template-columns: minmax(0, 1fr); gap: 4px; }
+  .ds-sku-line-reply { text-align: left; }
   .ds-lines-head { display: none; }
   .ds-line { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 34px; }
 }
 
-/* 導覽列待回覆任務徽章（零銷售頁 → 指定 SKU 回覆） */
+/* 導覽列待回覆事項徽章（零銷售頁 → 指定 SKU 回覆） */
 .nav-badge {
   display: inline-block;
   margin-left: 6px;
@@ -467,7 +525,7 @@ dialog#ds_reply_dialog::backdrop { background: rgba(7, 30, 50, 0.5); backdrop-fi
 }
 .nav-badge[hidden] { display: none; }
 
-/* 零銷售頁頂部：有待回覆指定 SKU 任務時的提示 */
+/* 零銷售頁頂部：有待回覆指定 SKU 事項時的提示 */
 .ds-pending-banner {
   display: flex;
   align-items: center;
@@ -484,3 +542,10 @@ dialog#ds_reply_dialog::backdrop { background: rgba(7, 30, 50, 0.5); backdrop-fi
 }
 .ds-pending-banner b { color: #7a3e00; }
 .ds-pending-banner a { color: #0a3d69; font-weight: 700; }
+.ds-sku-note-label {
+  display: block;
+  margin: 10px 0 4px;
+  font-size: 12px;
+  color: #64748b;
+  font-weight: 600;
+}

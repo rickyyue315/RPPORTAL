@@ -39,7 +39,7 @@
     <section class="card ds-head-card">
       <h2>指定 SKU 回覆</h2>
       <div id="ds_site_info"><div class="loading">載入中…</div></div>
-      <p class="ds-intro">RP Team 會按指定 SKU 派發任務，<b>只會顯示屬於你店舖的任務</b>。請就每個<b>貨品年期 (MMYY)</b> 填寫可調撥件數；同一 SKU 存貨有 2 件或以上而有多個年期時，可按「新增年期」分開填寫。<br>每個任務都有獨立<b>任務編號</b>，回覆後仍可修改，直至任務截止。</p>
+      <p class="ds-intro">RP Team 會按指定 SKU 派發<b>事項</b>，<b>只會顯示屬於你店舖的事項</b>。一個事項可以包含多個 SKU：請為每個 SKU 的每個<b>貨品年期 (MMYY)</b> 填寫可調撥件數；同一 SKU 有多個年期時，可按「新增年期」分開填寫。如某個 SKU 完全沒有可調撥存貨，請勾選「此 SKU 無可調撥件數」。<br>每個事項都有獨立<b>事項編號</b>，回覆後仍可修改，直至事項截止。</p>
 
       <div class="zs-toolbar" role="search">
         <div class="field">
@@ -47,7 +47,7 @@
           <select id="ds_status"><option value="">全部</option><option value="pending">未回覆</option><option value="replied">已回覆</option></select>
         </div>
         <div class="field field--search">
-          <label for="ds_search">搜尋任務編號 / SKU / 主題</label>
+          <label for="ds_search">搜尋事項編號 / SKU / 主題</label>
           <input type="text" id="ds_search" placeholder="例如 DSKU-261026、107668017004…" autocomplete="off">
         </div>
         <div>
@@ -59,31 +59,20 @@
     </section>
 
     <div class="card ds-foot-card">
-      <p class="hint" style="margin:0">如有任務不屬於你店舖，或對年期／件數有疑問，請聯絡 RP Team。如非你店舖，請按右上「登出」再輸入 Site Code。</p>
+      <p class="hint" style="margin:0">如有事項不屬於你店舖，或對年期／件數有疑問，請聯絡 RP Team。如非你店舖，請按右上「登出」再輸入 Site Code。</p>
     </div>
   </main>
 
   <dialog id="ds_reply_dialog" aria-labelledby="ds_reply_title">
     <div class="reply-head">
-      <h3 id="ds_reply_title">回覆任務</h3>
-      <div id="ds_reply_task" class="hint"></div>
-      <div id="ds_reply_sku" class="hint"></div>
+      <h3 id="ds_reply_title">回覆事項</h3>
+      <div id="ds_reply_matter" class="hint"></div>
+      <div id="ds_reply_sub" class="hint"></div>
     </div>
     <div class="reply-body">
       <div id="ds_reply_notice" class="ds-notice" hidden></div>
-      <div class="ds-lines-head" id="ds_lines_head" aria-hidden="true">
-        <span>貨品年期 (MMYY)</span>
-        <span>可調撥件數</span>
-        <span></span>
-      </div>
-      <div id="ds_lines"></div>
-      <button class="btn ghost btn-sm ds-add-line" id="ds_add_line" type="button">＋ 新增年期</button>
-      <div id="ds_total" class="ds-total" role="status"></div>
-
-      <div style="margin:14px 0 0">
-        <label for="ds_note">備註（選填）</label>
-        <textarea id="ds_note" rows="2" maxlength="2000" placeholder="例如：其中 1 件包裝破損；或補充說明…"></textarea>
-      </div>
+      <div id="ds_sku_sections"></div>
+      <div id="ds_reply_summary" class="ds-total" role="status"></div>
       <div id="ds_reply_error"></div>
       <div class="btn-row" style="justify-content:flex-end">
         <button class="btn ghost btn-sm" id="ds_cancel" type="button">取消</button>

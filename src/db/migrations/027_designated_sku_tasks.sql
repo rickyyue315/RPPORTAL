@@ -2,16 +2,16 @@
 -- 指定 SKU 回覆（Designated SKU Reply）
 --
 -- 用途：Admin 上載一份「指定 SKU」Excel（每行 = 一間店 + 一隻 SKU + 存貨），
--- 系統按 Site Code 只向該店舖派發一個任務；店舖登入後就每個「貨品年期 (MMYY)」
+-- 系統按 Site Code 只向該店舖派發一個單位（初版：每 SKU 一個）；店舖登入後就每個「貨品年期 (MMYY)」
 -- 回覆可調撥件數（同一 SKU 存貨 2 件以上可能有多個年期，故回覆是多行）。
 --
 -- 設計原則：
 --   * 純新增，不改動任何既有表（zero_sales_* / shop_stock_* / stores 完全不動）
---   * 任務 = 一行 Excel（batch + site + sku），有自己的 task_code 供直 link 及日後查閱
+--   * 初版：一行 Excel（batch + site + sku）一個單位，有自己的 task_code（029 已改為事項）
 --   * 回覆明細拆成 designated_sku_reply_lines，年期 + 件數可多行，數量不設上限（前端按存貨提示）
 --   * site_code 不設 FK 到 stores：新店未入主檔不應令整批上載失敗（由匯入層警告／剔除）
 --   * 預留欄位：settings JSONB + 下列 instructions / due_date / reference / note 全部可空白；
---     空白時前端自動隱藏，將來新增任務類型毋須再改 schema
+--     空白時前端自動隱藏，將來新增類型毋須再改 schema
 --   * stock_qty 可為 NULL（原檔缺值／非數字），NULL 不代表 0，回覆上限檢查會跳過
 
 -- ---------------------------------------------------------------------------
@@ -20,15 +20,15 @@
 CREATE SEQUENCE IF NOT EXISTS designated_sku_batch_seq;
 
 -- ---------------------------------------------------------------------------
--- 批次（一次上載 = 一批任務）
+-- 批次（一次上載 = 一批單位）
 -- ---------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS designated_sku_batches (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   -- 人類可讀批次編號，例：DSKU-261026-0001；店舖／管理員日後查閱用
   batch_code TEXT NOT NULL UNIQUE,
-  -- 任務主題（後台手動輸入，例：指定 SKU 存貨年期確認）
+  -- 主題（後台手動輸入，例：指定 SKU 存貨年期確認）
   subject TEXT NOT NULL DEFAULT '',
-  -- 任務類型：現時只有 stock_year_breakdown；將來新增類型在此擴充
+  -- 類型：現時只有 stock_year_breakdown；將來新增類型在此擴充
   task_type TEXT NOT NULL DEFAULT 'stock_year_breakdown',
   -- 以下為預留欄位：空白時前端自動隱藏
   instructions TEXT NOT NULL DEFAULT '',
@@ -56,12 +56,12 @@ CREATE INDEX IF NOT EXISTS idx_designated_sku_batches_created_at
   ON designated_sku_batches (created_at DESC);
 
 -- ---------------------------------------------------------------------------
--- 任務（每店每 SKU 一行）
+-- 初版單位（每店每 SKU 一行；029 已改為事項）
 -- ---------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS designated_sku_items (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   batch_id UUID NOT NULL REFERENCES designated_sku_batches(id) ON DELETE CASCADE,
-  -- 任務編號，例：DSKU-261026-0001-03；直 link / 查閱用
+  -- 初版編號，例：DSKU-261026-0001-03；直 link / 查閱用
   task_code TEXT NOT NULL UNIQUE,
   site_code TEXT NOT NULL CHECK (site_code <> ''),
   sku TEXT NOT NULL,
@@ -107,7 +107,7 @@ CREATE TABLE IF NOT EXISTS designated_sku_reply_lines (
   qty INTEGER NOT NULL CHECK (qty > 0),
   sort_order INTEGER NOT NULL DEFAULT 0,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-  -- 同一任務同一年的年期只可一行（店舖若要拆開，應合併為一行）
+  -- 同一單位同一年的年期只可一行（店舖若要拆開，應合併為一行）
   UNIQUE (item_id, year_code)
 );
 

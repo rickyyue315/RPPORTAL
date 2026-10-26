@@ -1,12 +1,13 @@
-/* Admin 指定 SKU 回覆：上載任務、批次進度、任務明細、直 link、匯出
-   獨立模組，唔改 admin.js 既有流程；只在切換到此 tab 時才載入資料。 */
+/* Admin 指定 SKU 回覆：上載 Excel、批次進度、事項明細、直 link、匯出
+   一個事項可包含多個 SKU；獨立模組，唔改 admin.js 既有流程。 */
 (() => {
   const $ = (id) => document.getElementById(id);
   let csrf = null;
   let page = 1;
   let currentBatch = null;
-  let currentItems = [];
+  let currentMatters = [];
   const PAGE_SIZE_KEY = 'ndrf_admin_dsku_page_size';
+  const MAX_LINES = 20;
 
   function esc(s) {
     const d = document.createElement('div');
@@ -37,7 +38,7 @@
     const token = await getCsrf();
     const headers = { ...(opts.headers || {}), 'x-csrf-token': token };
     if (opts.body && !(opts.body instanceof FormData)) headers['Content-Type'] = 'application/json';
-    const res = await fetch(url, { ...opts, headers, credentials: 'same-origin' });
+    const res = await fetch(url, { ...opts, credentials: 'same-origin' });
     const data = await res.json().catch(() => null);
     if (!res.ok) {
       const err = new Error(data?.error || `請求失敗 (${res.status})`);
@@ -78,19 +79,25 @@
       .join(' ');
   }
 
-  function statusTag(item) {
-    if (!item.is_open) {
-      return item.status === 'replied'
+  function itemReply(item) {
+    if (item.status !== 'replied') return '<span class="text-danger small">未回覆</span>';
+    if (item.no_transfer) return '<span class="text-secondary small">無可調撥</span>';
+    return `${fmtLines(item.lines)}<span class="text-secondary small">合計 ${item.reply_total ?? 0} 件</span>`;
+  }
+
+  function matterStatusTag(matter) {
+    if (!matter.is_open) {
+      return matter.status === 'replied'
         ? '<span class="badge-zs badge-zs-muted">已回覆 · 已封存</span>'
         : '<span class="badge-zs badge-zs-warn">未回覆 · 已截止</span>';
     }
-    return item.status === 'replied'
+    return matter.status === 'replied'
       ? '<span class="badge-zs badge-zs-ok">已回覆</span>'
       : '<span class="badge-zs badge-zs-warn">未回覆</span>';
   }
 
-  function taskLink(code) {
-    return `${location.origin}/portal/designated-sku.html?task=${encodeURIComponent(code)}`;
+  function matterLink(code) {
+    return `${location.origin}/portal/designated-sku.html?matter=${encodeURIComponent(code)}`;
   }
 
   async function copyText(text) {
@@ -119,7 +126,7 @@
     if (!el) {
       el = document.createElement('div');
       el.id = 'dsku_toast';
-      el.style.cssText = 'position:fixed;right:20px;bottom:20px;z-index:2000;max-width:360px;padding:12px 16px;border-radius:10px;font-size:13.5px;box-shadow:0 8px 24px rgba(15,23,42,.18);background:#0a5c36;color:#fff;';
+      el.style.cssText = 'position:fixed;right:20px;bottom:20px;z-index:2000;max-width:380px;padding:12px 16px;border-radius:10px;font-size:13.5px;box-shadow:0 8px 24px rgba(15,23,42,.18);background:#0a5c36;color:#fff;';
       document.body.appendChild(el);
     }
     el.textContent = message;
@@ -136,10 +143,10 @@
     if (!box) return;
     try {
       const s = await gFetch('/api/admin/designated-sku/summary');
-      const rate = s.task_count ? Math.round((s.replied_count / s.task_count) * 100) : 0;
+      const rate = s.matter_count ? Math.round((s.replied_count / s.matter_count) * 100) : 0;
       const items = [
         ['批次數', s.batch_count, `${s.open_batch_count} 個開放中`],
-        ['任務數', s.task_count, `${s.store_count} 間店舖`],
+        ['事項數', s.matter_count, `${s.item_count} 個 SKU`],
         ['已回覆', s.replied_count, `${rate}% 完成`],
         ['未回覆', s.pending_count, s.pending_count ? `${s.pending_store_count} 間店待回覆` : '全部完成'],
       ];
@@ -185,7 +192,7 @@
       fillBatchSelects(data.batch_options || []);
       const rows = data.batches || [];
       if (!rows.length) {
-        body.innerHTML = '<tr><td colspan="9" class="text-center text-secondary">暫無批次，請先上載 Excel 建立任務。</td></tr>';
+        body.innerHTML = '<tr><td colspan="10" class="text-center text-secondary">暫無批次，請先上載 Excel 建立事項。</td></tr>';
       } else {
         body.innerHTML = rows.map((b) => {
           const status = b.is_open
@@ -198,6 +205,7 @@
           return `<tr>
             <td><b class="dsku-code">${esc(b.batch_code)}</b><div class="text-secondary small">${esc(b.created_by)}</div></td>
             <td><b>${esc(b.subject)}</b>${optional ? `<div class="text-secondary small">${esc(optional)}</div>` : ''}${b.warn_count ? `<div class="text-warning small">${b.warn_count} 個匯入提示</div>` : ''}</td>
+            <td class="text-end">${b.matter_count ?? 0}</td>
             <td class="text-end">${b.row_count}</td>
             <td class="text-end">${b.store_count}</td>
             <td class="text-end text-success">${b.replied_count ?? 0}</td>
@@ -210,7 +218,7 @@
               ${b.is_open
                 ? `<button class="btn btn-sm btn-outline-secondary" data-dsku-close="${esc(b.id)}" data-code="${esc(b.batch_code)}">封存</button>`
                 : `<button class="btn btn-sm btn-outline-primary" data-dsku-reopen="${esc(b.id)}" data-code="${esc(b.batch_code)}">重開</button>`}
-              <button class="btn btn-sm btn-outline-danger" data-dsku-del="${esc(b.id)}" data-code="${esc(b.batch_code)}" data-rows="${b.row_count}">刪除</button>
+              <button class="btn btn-sm btn-outline-danger" data-dsku-del="${esc(b.id)}" data-code="${esc(b.batch_code)}" data-rows="${b.matter_count ?? 0}">刪除</button>
             </div></td></tr>`;
         }).join('');
         body.querySelectorAll('[data-dsku-view]').forEach((btn) => {
@@ -255,8 +263,8 @@
     }
   }
 
-  async function removeBatch(id, code, rows) {
-    if (!confirm(`確定刪除批次「${code}」（${rows} 個任務）？此操作會一併刪除所有已提交回覆，無法復原。`)) return;
+  async function removeBatch(id, code, matters) {
+    if (!confirm(`確定刪除批次「${code}」（${matters} 個事項）？此操作會一併刪除所有已提交回覆，無法復原。`)) return;
     try {
       await aFetch(`/api/admin/designated-sku/batches/${id}`, { method: 'DELETE' });
       if (currentBatch && currentBatch.id === id) closeDetail();
@@ -272,7 +280,7 @@
 
   function closeDetail() {
     currentBatch = null;
-    currentItems = [];
+    currentMatters = [];
     $('dsku_detail_card').hidden = true;
   }
 
@@ -281,9 +289,9 @@
       `<b class="dsku-code">${esc(batch.batch_code)}</b>`,
       `<b>${esc(batch.subject)}</b>`,
       batch.is_open ? '<span class="badge-zs badge-zs-ok">開放中</span>' : '<span class="badge-zs badge-zs-muted">已封存</span>',
-      `${batch.row_count} 個任務 / ${batch.store_count} 間店`,
-      `${batch.replied_count} 已回覆`,
-      `${batch.pending_count} 未回覆`,
+      `${batch.matter_count} 個事項 / ${batch.row_count} 個 SKU / ${batch.store_count} 間店`,
+      `${batch.replied_count} 個事項已回覆`,
+      `${batch.pending_count} 個未回覆`,
       `建立：${esc(batch.created_by)} ${esc(batch.created_at)}`,
     ];
     // 預留欄位：空白時自動隱藏
@@ -291,7 +299,7 @@
     if (batch.reference) bits.push(`參考編號：${esc(batch.reference)}`);
     let html = `<div>${bits.join(' ｜ ')}</div>`;
     if (batch.instructions) {
-      html += `<div class="mt-2 dsku-note"><b>任務說明</b><div>${esc(batch.instructions).replace(/\n/g, '<br>')}</div></div>`;
+      html += `<div class="mt-2 dsku-note"><b>事項說明</b><div>${esc(batch.instructions).replace(/\n/g, '<br>')}</div></div>`;
     }
     if (batch.note) {
       html += `<div class="mt-1 dsku-note dsku-note--internal"><b>內部備註</b><div>${esc(batch.note).replace(/\n/g, '<br>')}</div></div>`;
@@ -299,11 +307,11 @@
     $('dsku_detail_meta').innerHTML = html;
   }
 
-  async function loadItems(opts = {}) {
+  async function loadMatters(opts = {}) {
     if (!currentBatch) return;
     const body = $('dsku_items_body');
     if (!body) return;
-    body.innerHTML = '<tr><td colspan="10" class="text-center text-secondary">載入中…</td></tr>';
+    body.innerHTML = '<tr><td colspan="7" class="text-center text-secondary">載入中…</td></tr>';
     try {
       const params = new URLSearchParams();
       const site = ($('dsku_filter_site').value || '').trim();
@@ -311,58 +319,65 @@
       if (site) params.set('site_code', site);
       if (status) params.set('status', status);
       const qs = params.toString() ? `?${params.toString()}` : '';
-      const data = await aFetch(`/api/admin/designated-sku/batches/${currentBatch.id}/items${qs}`);
+      const data = await aFetch(`/api/admin/designated-sku/batches/${currentBatch.id}/matters${qs}`);
       currentBatch = { ...data.batch };
-      currentItems = data.items || [];
+      currentMatters = data.matters || [];
       renderDetailMeta(currentBatch);
-      renderItems();
+      renderMatters();
       setBox('dsku_items_error', '');
     } catch (err) {
-      body.innerHTML = `<tr><td colspan="10" class="text-center text-secondary">載入失敗</td></tr>`;
+      body.innerHTML = '<tr><td colspan="7" class="text-center text-secondary">載入失敗</td></tr>';
       setBox('dsku_items_error', alertHtml('danger', esc(err.message)));
     }
   }
 
-  function renderItems() {
+  function renderMatters() {
     const body = $('dsku_items_body');
     if (!body) return;
-    if (!currentItems.length) {
-      body.innerHTML = '<tr><td colspan="10" class="text-center text-secondary">沒有符合條件的任務。</td></tr>';
+    if (!currentMatters.length) {
+      body.innerHTML = '<tr><td colspan="7" class="text-center text-secondary">沒有符合條件的事項。</td></tr>';
       return;
     }
-    body.innerHTML = currentItems.map((it) => `<tr>
-      <td><b class="dsku-code">${esc(it.task_code)}</b><div class="text-secondary small">${esc(it.batch_code)}</div></td>
-      <td>${esc(it.site_code)}</td>
-      <td>${esc(it.shop || '')}</td>
-      <td class="dsku-code">${esc(it.sku)}</td>
-      <td class="dsku-desc">${esc(it.description || '')}</td>
-      <td class="text-end">${fmtStock(it.stock_qty)}</td>
-      <td>${statusTag(it)}</td>
-      <td>${fmtLines(it.lines)}${it.reply_total !== null && it.reply_total !== undefined ? `<div class="text-secondary small">合計 ${it.reply_total} 件${it.reply_note ? ` ｜ ${esc(it.reply_note)}` : ''}</div>` : ''}</td>
-      <td class="text-secondary small">${it.replied_by ? `${esc(it.replied_by)}<div>${esc(it.replied_at || '')}</div>` : '—'}${it.admin_edited_at ? `<div class="text-warning">管理員 ${esc(it.admin_edited_by)} 於 ${esc(it.admin_edited_at)} 修改</div>` : ''}</td>
-      <td><div class="d-flex gap-1 flex-wrap">
-        <button class="btn btn-sm btn-outline-primary" data-dsku-edit-reply="${esc(it.id)}">${it.status === 'replied' ? '編輯回覆' : '代回覆'}</button>
-        <button class="btn btn-sm btn-outline-primary" data-dsku-copy="${esc(it.task_code)}">複製連結</button>
-        <a class="btn btn-sm" href="${esc(taskLink(it.task_code))}" target="_blank" rel="noopener">開啟</a>
-        <button class="btn btn-sm btn-outline-danger" data-dsku-del-item="${esc(it.id)}" data-task="${esc(it.task_code)}">刪除</button>
-      </div></td></tr>`).join('');
+    body.innerHTML = currentMatters.map((matter) => {
+      const skuRows = (matter.items || []).map((item) => `
+        <div class="dsku-sku-row">
+          <div class="dsku-sku-row-head"><b class="dsku-code">${esc(item.sku)}</b><span>${esc(item.description || '')}</span><em>存貨 ${fmtStock(item.stock_qty)}</em></div>
+          <div class="dsku-sku-row-reply">${itemReply(item)}</div>
+        </div>`).join('');
+      const adminNote = (matter.items || []).some((it) => it.admin_edited_at)
+        ? `<div class="text-warning small">管理員於 ${esc((matter.items.find((it) => it.admin_edited_at) || {}).admin_edited_at || '')} 修改</div>`
+        : '';
+      return `<tr>
+        <td><b class="dsku-code">${esc(matter.matter_code)}</b><div class="text-secondary small">${esc(matter.batch_code)}</div></td>
+        <td>${esc(matter.site_code)}</td>
+        <td>${esc(matter.shop || '')}</td>
+        <td><div class="dsku-sku-list">${skuRows}</div></td>
+        <td>${matterStatusTag(matter)}<div class="text-secondary small">${matter.replied_item_count} / ${matter.item_count} 個 SKU</div></td>
+        <td class="text-secondary small">${matter.replied_by ? `${esc(matter.replied_by)}<div>${esc(matter.replied_at || '')}</div>` : '—'}${adminNote}</td>
+        <td><div class="d-flex gap-1 flex-wrap">
+          <button class="btn btn-sm btn-outline-primary" data-dsku-edit-reply="${esc(matter.id)}">${matter.status === 'replied' ? '編輯回覆' : '代回覆'}</button>
+          <button class="btn btn-sm btn-outline-primary" data-dsku-copy="${esc(matter.matter_code)}">複製連結</button>
+          <a class="btn btn-sm" href="${esc(matterLink(matter.matter_code))}" target="_blank" rel="noopener">開啟</a>
+          <button class="btn btn-sm btn-outline-danger" data-dsku-del-matter="${esc(matter.id)}" data-code="${esc(matter.matter_code)}">刪除</button>
+        </div></td></tr>`;
+    }).join('');
     body.querySelectorAll('[data-dsku-edit-reply]').forEach((btn) => {
       btn.addEventListener('click', () => openAdminReply(btn.dataset.dskuEditReply, btn));
     });
     body.querySelectorAll('[data-dsku-copy]').forEach((btn) => {
       btn.addEventListener('click', async () => {
-        const ok = await copyText(taskLink(btn.dataset.dskuCopy));
+        const ok = await copyText(matterLink(btn.dataset.dskuCopy));
         toast(ok ? `已複製 ${btn.dataset.dskuCopy} 的直 link` : '複製失敗，請手動複製網址', ok);
       });
     });
-    body.querySelectorAll('[data-dsku-del-item]').forEach((btn) => {
+    body.querySelectorAll('[data-dsku-del-matter]').forEach((btn) => {
       btn.addEventListener('click', async () => {
-        const task = btn.dataset.task;
-        if (!confirm(`確定刪除此任務「${task}」？已提交的回覆會一併刪除。`)) return;
+        const code = btn.dataset.code;
+        if (!confirm(`確定刪除事項「${code}」？事項內所有 SKU 的回覆會一併刪除。`)) return;
         try {
-          await aFetch(`/api/admin/designated-sku/batches/${currentBatch.id}/items/${btn.dataset.dskuDelItem}`, { method: 'DELETE' });
-          toast(`已刪除任務 ${task}`);
-          await loadItems();
+          await aFetch(`/api/admin/designated-sku/batches/${currentBatch.id}/matters/${btn.dataset.dskuDelMatter}`, { method: 'DELETE' });
+          toast(`已刪除事項 ${code}`);
+          await loadMatters();
           await loadBatches();
           await loadSummary();
         } catch (err) {
@@ -374,23 +389,23 @@
 
   async function openBatch(id, opts = {}) {
     try {
-      const data = await aFetch(`/api/admin/designated-sku/batches/${id}/items`);
+      const data = await aFetch(`/api/admin/designated-sku/batches/${id}/matters`);
       currentBatch = data.batch;
-      currentItems = data.items || [];
+      currentMatters = data.matters || [];
       $('dsku_detail_card').hidden = false;
-      $('dsku_detail_title').textContent = `任務明細 — ${data.batch.batch_code}`;
+      $('dsku_detail_title').textContent = `事項明細 — ${data.batch.batch_code}`;
       $('dsku_detail_export').href = `/api/admin/designated-sku/export?batch_id=${encodeURIComponent(id)}`;
       $('dsku_filter_site').value = '';
       $('dsku_filter_status').value = '';
       renderDetailMeta(currentBatch);
-      renderItems();
+      renderMatters();
       if (!opts.silent) $('dsku_detail_card').scrollIntoView({ behavior: 'smooth', block: 'start' });
     } catch (err) {
       setBox('dsku_batch_error', alertHtml('danger', esc(err.message)));
     }
   }
 
-  /* ---------------- 管理員代店舖回覆 ---------------- */
+  /* ---------------- 管理員代店舖回覆（多個 SKU） ---------------- */
 
   function lockBodyScroll() {
     document.body.classList.add('zs-modal-open');
@@ -417,7 +432,7 @@
       box.style.background = '#fff';
       box.style.borderRadius = '12px';
       box.style.padding = '26px';
-      box.style.maxWidth = '520px';
+      box.style.maxWidth = '640px';
       box.style.width = '100%';
       box.style.boxShadow = '0 10px 30px rgba(0,0,0,.25)';
       box.style.maxHeight = 'calc(100vh - 48px)';
@@ -448,28 +463,130 @@
     return `${mm}${yy}`;
   }
 
-  function openAdminReply(itemId, triggerBtn) {
-    const item = currentItems.find((x) => x.id === itemId);
-    if (!item) return;
+  function addAdminLine(wrap, line = {}) {
+    if (wrap.querySelectorAll('[data-line]').length >= MAX_LINES) return;
+    const row = document.createElement('div');
+    row.className = 'dsku-line';
+    row.setAttribute('data-line', '');
+    row.innerHTML = `<input class="form-control dsku-year" type="text" inputmode="numeric" autocomplete="off" maxlength="5" placeholder="0827" aria-label="貨品年期 MMYY" value="${line.year_code ? esc(line.year_code) : ''}">
+      <input class="form-control dsku-qty" type="number" inputmode="numeric" min="1" max="9999" step="1" placeholder="1" aria-label="可調撥件數" value="${line.qty ? esc(String(line.qty)) : ''}">
+      <button class="btn dsku-remove" type="button" aria-label="移除這一個年期">✕</button>`;
+    wrap.appendChild(row);
+    row.querySelector('.dsku-remove').addEventListener('click', () => {
+      if (wrap.querySelectorAll('[data-line]').length <= 1) {
+        row.querySelector('.dsku-year').value = '';
+        row.querySelector('.dsku-qty').value = '';
+      } else {
+        row.remove();
+      }
+      updateAdminTotal();
+    });
+    row.querySelectorAll('input').forEach((input) => input.addEventListener('input', updateAdminTotal));
+  }
+
+  function sectionLines(section) {
+    return Array.from(section.querySelectorAll('[data-line]'));
+  }
+
+  function sectionTotal(section) {
+    let total = 0;
+    for (const row of sectionLines(section)) {
+      const qty = Number(row.querySelector('.dsku-qty').value);
+      if (Number.isFinite(qty) && qty > 0) total += qty;
+    }
+    return total;
+  }
+
+  function updateSectionTotal(section) {
+    if (!section) return;
+    const stock = Number(section.dataset.stock);
+    const hasStock = section.dataset.stock !== '';
+    const noTransfer = section.querySelector('.dsku-no-transfer').checked;
+    const box = section.querySelector('.dsku-sku-total');
+    if (noTransfer) {
+      box.classList.remove('dsku-total--over');
+      box.innerHTML = '無可調撥件數（合計 0 件）';
+    } else {
+      const total = sectionTotal(section);
+      const over = hasStock && total > stock;
+      box.classList.toggle('dsku-total--over', over);
+      box.innerHTML = `合計 <b>${total}</b> 件${hasStock ? `｜存貨 <b>${stock}</b> 件` : ''}` +
+        (over ? ` <span class="text-danger">超出 ${total - stock} 件</span>` : '');
+    }
+    updateAdminTotal();
+  }
+
+  function updateAdminTotal() {
+    const wrap = $('dsku_admin_sections');
+    if (!wrap) return;
+    let total = 0;
+    wrap.querySelectorAll('[data-item]').forEach((section) => {
+      if (!section.querySelector('.dsku-no-transfer').checked) total += sectionTotal(section);
+    });
+    const box = $('dsku_admin_total');
+    if (box) box.innerHTML = `合計 <b>${total}</b> 件`;
+  }
+
+  function buildAdminSkuSection(item) {
+    const section = document.createElement('section');
+    section.className = 'dsku-sku';
+    section.setAttribute('data-item', item.id);
+    section.dataset.stock = item.stock_qty === null || item.stock_qty === undefined ? '' : String(item.stock_qty);
+    section.innerHTML = `
+      <div class="dsku-sku-head">
+        <div><b class="dsku-code">${esc(item.sku)}</b> <span>${esc(item.description || '')}</span></div>
+        <div class="text-secondary small">存貨 ${fmtStock(item.stock_qty)}</div>
+      </div>
+      <div class="dsku-editor">
+        <div class="dsku-lines-head"><span>貨品年期 (MMYY)</span><span>可調撥件數</span><span></span></div>
+        <div class="dsku-lines"></div>
+        <button class="btn btn-sm dsku-add-line" type="button" data-add>＋ 新增年期</button>
+      </div>
+      <label class="dsku-none"><input type="checkbox" class="dsku-no-transfer"> 此 SKU 無可調撥件數</label>
+      <div class="dsku-total dsku-sku-total"></div>
+      <label class="dsku-sku-note-label" for="dsku_note_${esc(item.id)}">此 SKU 備註（選填）</label>
+      <input class="form-control dsku-sku-note" id="dsku_note_${esc(item.id)}" type="text" maxlength="2000" placeholder="例如：店舖 email 補交、陳列品…" value="${esc(item.reply_note || '')}">
+    `;
+    const wrap = section.querySelector('.dsku-lines');
+    (item.lines && item.lines.length ? item.lines : [{}]).forEach((line) => addAdminLine(wrap, line));
+    section.querySelector('[data-add]').addEventListener('click', () => {
+      addAdminLine(wrap, {});
+      updateSectionTotal(section);
+    });
+    const checkbox = section.querySelector('.dsku-no-transfer');
+    checkbox.checked = item.no_transfer === true;
+    checkbox.addEventListener('change', () => {
+      const editor = section.querySelector('.dsku-editor');
+      editor.hidden = checkbox.checked;
+      section.classList.toggle('is-no-transfer', checkbox.checked);
+      updateSectionTotal(section);
+    });
+    if (checkbox.checked) {
+      section.querySelector('.dsku-editor').hidden = true;
+      section.classList.add('is-no-transfer');
+    }
+    updateSectionTotal(section);
+    return section;
+  }
+
+  function openAdminReply(matterId, triggerBtn) {
+    const matter = currentMatters.find((m) => m.id === matterId);
+    if (!matter) return;
     if (document.getElementById('dsku_edit_reply_overlay')) return;
-    const entering = item.status !== 'replied';
-    const stock = item.stock_qty === null || item.stock_qty === undefined ? null : Number(item.stock_qty);
+    const entering = matter.status !== 'replied';
     const overlay = document.createElement('div');
     overlay.id = 'dsku_edit_reply_overlay';
     overlay.innerHTML = `<div class="modal-box" role="dialog" aria-modal="true" aria-label="${entering ? '代店舖輸入回覆' : '編輯店舖回覆'}">
       <h3>${entering ? '代店舖輸入回覆' : '編輯店舖回覆'}</h3>
       <p class="text-secondary small" style="margin:6px 0">
-        任務：<b class="dsku-code">${esc(item.task_code)}</b>｜${esc(item.site_code)} ${esc(item.shop || '')}｜SKU ${esc(item.sku)}｜存貨 ${item.stock_qty === null || item.stock_qty === undefined ? '未提供' : `${item.stock_qty} 件`}｜${item.is_open ? '批次開放中' : '<b class="text-warning">批次已封存</b>'}
-        ${item.replied_by ? `<br>原回覆人：${esc(item.replied_by)}${item.replied_at ? `（${esc(item.replied_at)}）` : ''}` : ''}
+        事項：<b class="dsku-code">${esc(matter.matter_code)}</b>｜${esc(matter.site_code)} ${esc(matter.shop || '')}｜${matter.item_count} 個 SKU｜${matter.is_open ? '批次開放中' : '<b class="text-warning">批次已封存</b>'}
+        ${matter.replied_by ? `<br>原回覆人：${esc(matter.replied_by)}${matter.replied_at ? `（${esc(matter.replied_at)}）` : ''}` : ''}
       </p>
-      <div class="dsku-lines-head"><span>貨品年期 (MMYY)</span><span>可調撥件數</span><span></span></div>
-      <div id="dsku_admin_lines"></div>
-      <button type="button" class="btn btn-sm dsku-add-line" data-add>＋ 新增年期</button>
+      <div id="dsku_admin_sections"></div>
       <div id="dsku_admin_total" class="dsku-total"></div>
-      <div class="mt-2"><label class="form-label" for="dsku_admin_note">備註（選填）</label><textarea id="dsku_admin_note" class="form-control" rows="2" maxlength="2000" placeholder="例如：店舖以 email 補交／更正年期"></textarea></div>
       <p class="text-secondary small" style="margin:8px 0 0">${entering
-        ? '儲存後狀態轉為「已回覆」，回覆人記錄為「管理員代填（你的帳號）」，並寫入審計日誌。'
-        : '管理員修改不佔用店舖的修改次數；店舖原本的回覆人及時間會保留，另記錄今次修改的管理員及時間。'}${item.is_open ? '' : ' 此批次已封存，店舖不能修改，但管理員仍可更正紀錄。'}</p>
+        ? '儲存後未回覆的 SKU 會轉為「已回覆」，回覆人記錄為「管理員代填（你的帳號）」，並寫入審計日誌。'
+        : '管理員修改不佔用店舖的修改次數；店舖原本的回覆人及時間會保留，另記錄今次修改的管理員及時間。'}${matter.is_open ? '' : ' 此批次已封存，店舖不能修改，但管理員仍可更正紀錄。'}</p>
       <div id="dsku_admin_error" class="text-danger small"></div>
       <div class="d-flex gap-2 justify-content-end mt-3">
         <button class="btn btn-primary" data-save type="button">儲存</button>
@@ -479,70 +596,41 @@
     applyModalFallback(overlay);
     lockBodyScroll();
 
-    const linesWrap = overlay.querySelector('#dsku_admin_lines');
-    const note = overlay.querySelector('#dsku_admin_note');
+    const wrap = overlay.querySelector('#dsku_admin_sections');
+    (matter.items || []).forEach((item) => wrap.appendChild(buildAdminSkuSection(item)));
+    updateAdminTotal();
+
     const errBox = overlay.querySelector('#dsku_admin_error');
-    const totalBox = overlay.querySelector('#dsku_admin_total');
     const saveBtn = overlay.querySelector('[data-save]');
     const cancelBtn = overlay.querySelector('[data-cancel]');
 
-    const updateTotal = () => {
-      let total = 0;
-      linesWrap.querySelectorAll('[data-line]').forEach((row) => {
-        const qty = Number(row.querySelector('.dsku-qty').value);
-        if (Number.isFinite(qty) && qty > 0) total += qty;
-      });
-      const over = stock !== null && total > stock;
-      totalBox.classList.toggle('dsku-total--over', over);
-      totalBox.innerHTML = `合計 <b>${total}</b> 件${stock !== null ? `｜存貨 <b>${stock}</b> 件` : ''}` +
-        (over ? ` <span class="text-danger">超出 ${total - stock} 件，請調整</span>` : '');
-    };
-
-    const addLine = (line = {}) => {
-      if (linesWrap.querySelectorAll('[data-line]').length >= 20) return;
-      const row = document.createElement('div');
-      row.className = 'dsku-line';
-      row.setAttribute('data-line', '');
-      row.innerHTML = `<input class="form-control dsku-year" type="text" inputmode="numeric" autocomplete="off" maxlength="5" placeholder="0827" aria-label="貨品年期 MMYY" value="${line.year_code ? esc(line.year_code) : ''}">
-        <input class="form-control dsku-qty" type="number" inputmode="numeric" min="1" max="9999" step="1" placeholder="1" aria-label="可調撥件數" value="${line.qty ? esc(String(line.qty)) : ''}">
-        <button class="btn dsku-remove" type="button" aria-label="移除這一個年期">✕</button>`;
-      linesWrap.appendChild(row);
-      row.querySelector('.dsku-remove').addEventListener('click', () => {
-        if (linesWrap.querySelectorAll('[data-line]').length <= 1) {
-          row.querySelector('.dsku-year').value = '';
-          row.querySelector('.dsku-qty').value = '';
-        } else {
-          row.remove();
-        }
-        updateTotal();
-      });
-      row.querySelectorAll('input').forEach((input) => input.addEventListener('input', updateTotal));
-      updateTotal();
-    };
-
     const collect = () => {
-      const rows = Array.from(linesWrap.querySelectorAll('[data-line]'));
-      const out = [];
-      const seen = new Set();
-      for (const row of rows) {
-        const yearRaw = row.querySelector('.dsku-year').value.trim();
-        const qtyRaw = row.querySelector('.dsku-qty').value.trim();
-        if (!yearRaw && !qtyRaw) continue;
-        if (!yearRaw) throw new Error('請填寫貨品年期（MMYY）');
-        if (!qtyRaw) throw new Error(`年期「${yearRaw}」請填寫可調撥件數`);
-        const year = normalizeYear(yearRaw);
-        if (!year) throw new Error(`年期「${yearRaw}」格式不正確，請填 MMYY（例：0827）`);
-        if (seen.has(year)) throw new Error(`年期 ${year} 重複，請合併為一行`);
-        seen.add(year);
-        const qty = Number(qtyRaw);
-        if (!Number.isInteger(qty) || qty < 1) throw new Error(`年期 ${year} 的件數必須為 1 或以上的整數`);
-        if (qty > 9999) throw new Error(`年期 ${year} 的件數不可超過 9999`);
-        out.push({ year_code: year, qty });
-      }
-      if (!out.length) throw new Error('請至少填寫一個貨品年期及可調撥件數');
-      const total = out.reduce((sum, line) => sum + line.qty, 0);
-      if (stock !== null && total > stock) throw new Error(`可調撥件數合計 ${total} 件，不可多於存貨 ${stock} 件`);
-      return out;
+      return Array.from(wrap.querySelectorAll('[data-item]')).map((section) => {
+        const item = matter.items.find((it) => it.id === section.dataset.item);
+        const sku = item ? item.sku : '—';
+        const noTransfer = section.querySelector('.dsku-no-transfer').checked;
+        const note = section.querySelector('.dsku-sku-note').value.trim();
+        if (noTransfer) return { item_id: section.dataset.item, lines: [], note, no_transfer: true };
+        const lines = [];
+        const seen = new Set();
+        for (const row of sectionLines(section)) {
+          const yearRaw = row.querySelector('.dsku-year').value.trim();
+          const qtyRaw = row.querySelector('.dsku-qty').value.trim();
+          if (!yearRaw && !qtyRaw) continue;
+          if (!yearRaw) throw new Error(`SKU ${sku}：請填寫貨品年期（MMYY）`);
+          if (!qtyRaw) throw new Error(`SKU ${sku}：年期「${yearRaw}」請填寫可調撥件數`);
+          const year = normalizeYear(yearRaw);
+          if (!year) throw new Error(`SKU ${sku}：年期「${yearRaw}」格式不正確，請填 MMYY（例：0827）`);
+          if (seen.has(year)) throw new Error(`SKU ${sku}：年期 ${year} 重複，請合併為一行`);
+          seen.add(year);
+          const qty = Number(qtyRaw);
+          if (!Number.isInteger(qty) || qty < 1) throw new Error(`SKU ${sku}：年期 ${year} 的件數必須為 1 或以上的整數`);
+          if (qty > 9999) throw new Error(`SKU ${sku}：年期 ${year} 的件數不可超過 9999`);
+          lines.push({ year_code: year, qty });
+        }
+        if (!lines.length) throw new Error(`SKU ${sku}：請填寫至少一個年期，或勾選「無可調撥件數」`);
+        return { item_id: section.dataset.item, lines, note, no_transfer: false };
+      });
     };
 
     const close = () => {
@@ -554,16 +642,13 @@
     const onKey = (e) => { if (e.key === 'Escape') close(); };
     overlay.addEventListener('click', (e) => { if (e.target === overlay) close(); });
     cancelBtn.addEventListener('click', close);
-    overlay.querySelector('[data-add]').addEventListener('click', () => addLine({}));
-
-    (item.lines && item.lines.length ? item.lines : [{}]).forEach((line) => addLine(line));
-    note.value = item.reply_note || '';
 
     saveBtn.addEventListener('click', async () => {
       errBox.textContent = '';
-      let lines;
+      let items;
       try {
-        lines = collect();
+        items = collect();
+        if (items.length !== (matter.items || []).length) throw new Error('請為事項內每個 SKU 填寫回覆');
       } catch (err) {
         errBox.textContent = err.message;
         return;
@@ -572,16 +657,16 @@
       saveBtn.textContent = '儲存中…';
       const y = window.scrollY;
       try {
-        const saved = await aFetch(`/api/admin/designated-sku/batches/${item.batch_id}/items/${item.id}/reply`, {
+        const saved = await aFetch(`/api/admin/designated-sku/batches/${matter.batch_id}/matters/${matter.id}/reply`, {
           method: 'PUT',
-          body: JSON.stringify({ lines, note: note.value }),
+          body: JSON.stringify({ items }),
         });
         close();
-        await loadItems();
+        await loadMatters();
         await loadBatches();
         await loadSummary();
         window.scrollTo(0, y);
-        toast(saved?.entered ? `已代填回覆：${item.task_code}` : `已更新回覆：${item.task_code}`);
+        toast(saved?.entered ? `已代填回覆：${matter.matter_code}` : `已更新回覆：${matter.matter_code}`);
       } catch (err) {
         errBox.textContent = err.message;
         saveBtn.disabled = false;
@@ -589,9 +674,6 @@
       }
     });
     document.addEventListener('keydown', onKey);
-    const firstYear = linesWrap.querySelector('.dsku-year');
-    if (firstYear && !firstYear.value) firstYear.focus();
-    else if (firstQty) firstQty.focus();
   }
 
   /* ---------------- 上載 ---------------- */
@@ -601,7 +683,7 @@
     const subject = ($('dsku_subject').value || '').trim();
     const file = $('dsku_file').files[0];
     if (!subject) {
-      res.innerHTML = alertHtml('danger', '請輸入任務主題');
+      res.innerHTML = alertHtml('danger', '請輸入事項主題');
       $('dsku_subject').focus();
       return;
     }
@@ -611,7 +693,7 @@
     }
     const fd = new FormData();
     fd.append('subject', subject);
-    fd.append('task_type', $('dsku_task_type').value || 'stock_year_breakdown');
+    fd.append('matter_type', $('dsku_matter_type').value || 'stock_year_breakdown');
     fd.append('due_date', $('dsku_due_date').value || '');
     fd.append('reference', ($('dsku_reference').value || '').trim());
     fd.append('instructions', ($('dsku_instructions').value || '').trim());
@@ -621,18 +703,18 @@
 
     const btn = $('btn_dsku_upload');
     btn.disabled = true;
-    res.innerHTML = alertHtml('info', '上載及建立任務中…');
+    res.innerHTML = alertHtml('info', '上載及建立事項中…');
     try {
       const data = await aFetch('/api/admin/designated-sku/batches', { method: 'POST', body: fd });
       const warnRows = (data.warnings || []).slice(0, 8).map((w) =>
         `<li>第 ${esc(String(w.row))} 行${w.siteCode ? `（${esc(w.siteCode)}）` : ''}：${esc(w.reason)}</li>`).join('');
       res.innerHTML = `
         <div class="alert alert-success">
-          已建立批次 <b class="dsku-code">${esc(data.batchCode)}</b>：${data.taskCount} 個任務 / ${data.storeCount} 間店舖。
+          已建立批次 <b class="dsku-code">${esc(data.batchCode)}</b>：${data.matterCount} 個事項 / ${data.itemCount} 個 SKU（${data.storeCount} 間店舖）。
           ${data.skippedRows ? `已剔除 ${data.skippedRows} 個合計／空白列。` : ''}
-          <div class="small mt-1">店舖登入後只會見到屬於自己 Site Code 的任務；可按「批次列表 → 明細」複製直 link。</div>
+          <div class="small mt-1">同店多個 SKU 已歸入同一事項；店舖只會見到屬於自己 Site Code 的事項。可按「批次列表 → 明細」複製直 link。</div>
         </div>
-        ${warnRows ? `<div class="alert alert-warning"><b>${data.warnings.length} 個匯入提示</b>（任務已建立，請核對）<ul class="mb-0">${warnRows}</ul></div>` : ''}`;
+        ${warnRows ? `<div class="alert alert-warning"><b>${data.warnings.length} 個匯入提示</b>（事項已建立，請核對）<ul class="mb-0">${warnRows}</ul></div>` : ''}`;
       $('dsku_force').checked = false;
       $('dsku_file').value = '';
       await loadBatches(true);
@@ -677,7 +759,7 @@
       a.download = `Designated_SKU_${stamp}.xlsx`;
       a.click();
       URL.revokeObjectURL(url);
-      box.innerHTML = alertHtml('success', '已匯出 Excel（任務回覆 / 年期明細 / 未回覆店舖）。');
+      box.innerHTML = alertHtml('success', '已匯出 Excel（事項回覆 / 年期明細 / 未回覆事項）。');
     } catch (err) {
       box.innerHTML = alertHtml('danger', esc(err.message));
     }
@@ -691,14 +773,14 @@
     $('btn_dsku_upload').addEventListener('click', uploadBatch);
     $('btn_dsku_refresh').addEventListener('click', async () => { await loadBatches(); await loadSummary(); });
     $('btn_dsku_detail_close').addEventListener('click', closeDetail);
-    $('btn_dsku_apply_filter').addEventListener('click', () => loadItems());
-    $('dsku_filter_site').addEventListener('keydown', (e) => { if (e.key === 'Enter') loadItems(); });
+    $('btn_dsku_apply_filter').addEventListener('click', () => loadMatters());
+    $('dsku_filter_site').addEventListener('keydown', (e) => { if (e.key === 'Enter') loadMatters(); });
     $('btn_dsku_copy_all').addEventListener('click', async () => {
-      const pending = currentItems.filter((it) => it.status === 'pending' && it.is_open);
-      if (!pending.length) { toast('此批次已沒有未回覆任務', false); return; }
-      const text = pending.map((it) => `${it.site_code}\t${it.task_code}\t${taskLink(it.task_code)}`).join('\n');
+      const pending = currentMatters.filter((m) => m.status === 'pending' && m.is_open);
+      if (!pending.length) { toast('此批次已沒有未回覆事項', false); return; }
+      const text = pending.map((m) => `${m.site_code}\t${m.matter_code}\t${matterLink(m.matter_code)}`).join('\n');
       const ok = await copyText(text);
-      toast(ok ? `已複製 ${pending.length} 條未回覆直 link（Site / 任務編號 / 網址）` : '複製失敗', ok);
+      toast(ok ? `已複製 ${pending.length} 條未回覆直 link（Site / 事項編號 / 網址）` : '複製失敗', ok);
     });
     $('btn_dsku_export').addEventListener('click', () => exportExcel());
     $('btn_dsku_export_pending').addEventListener('click', () => exportExcel('pending'));

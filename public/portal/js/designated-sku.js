@@ -1,14 +1,15 @@
-/* Store 指定 SKU 回覆：只顯示屬於本店 Site Code 的任務（後端強制隔離） */
+/* Store 指定 SKU 回覆：只顯示屬於本店 Site Code 的事項（後端強制隔離）
+   一個事項可包含多個 SKU，店舖一次過回覆整份清單。 */
 (() => {
   const $ = (id) => document.getElementById(id);
   const p = window.portal;
 
-  let tasks = [];
-  let currentTask = null;
+  let matters = [];
+  let currentMatter = null;
   let readOnly = false;
   let saving = false;
-  /** 頁面帶 ?task=CODE 時，載入後自動開啟該任務（直 link） */
-  let wantedTaskCode = '';
+  /** 頁面帶 ?matter=CODE 時，載入後自動開啟該事項（直 link） */
+  let wantedMatterCode = '';
 
   const MAX_LINES = 20;
   const MAX_QTY = 9999;
@@ -19,22 +20,24 @@
     return value === null || value === undefined ? '未提供' : `${value} 件`;
   }
 
-  function taskStatus(task) {
-    if (!task.is_open) {
-      return task.status === 'replied'
+  function matterStatusBadge(matter) {
+    if (!matter.is_open) {
+      return matter.status === 'replied'
         ? '<span class="badge-archived">已回覆 · 已截止</span>'
         : '<span class="badge-archived">未回覆 · 已截止</span>';
     }
-    return task.status === 'replied'
+    return matter.status === 'replied'
       ? '<span class="badge-replied">已回覆</span>'
       : '<span class="badge-pending">未回覆</span>';
   }
 
-  function lineChips(task) {
-    if (!task.lines || !task.lines.length) return '';
-    return task.lines
+  function itemSummary(item) {
+    if (item.status !== 'replied') return '<span class="ds-line-pending">未回覆</span>';
+    if (item.no_transfer) return '<span class="ds-line-none">無可調撥</span>';
+    const chips = (item.lines || [])
       .map((l) => `<span class="ds-chip"><b>${p.escapeHtml(l.year_code)}</b> × ${p.escapeHtml(String(l.qty))}</span>`)
       .join(' ');
+    return `${chips}<span class="ds-total-inline">合計 <b>${item.reply_total ?? 0}</b> 件</span>`;
   }
 
   function setPageError(message) {
@@ -67,87 +70,83 @@
 
   /* ---------------- 載入 ---------------- */
 
-  async function loadTasks() {
+  async function loadMatters() {
     const list = $('ds_list');
     try {
-      const data = await p.api('/api/portal/designated-sku/tasks');
-      tasks = data.tasks || [];
+      const data = await p.api('/api/portal/designated-sku/matters');
+      matters = data.matters || [];
+      const skuCount = matters.reduce((sum, m) => sum + m.item_count, 0);
       $('ds_site_info').innerHTML =
         `<div class="site-banner">${p.escapeHtml(data.site_code)}${data.shop ? ` ${p.escapeHtml(data.shop)}` : ''}</div>` +
-        `<div>共 ${tasks.length} 個任務${data.pending_count ? `｜<b class="ds-pending-count">${data.pending_count} 個未回覆</b>` : '｜全部已回覆'}</div>`;
+        `<div>共 ${matters.length} 個事項（${skuCount} 個 SKU）${data.pending_count ? `｜<b class="ds-pending-count">${data.pending_count} 個事項未回覆</b>` : '｜全部已回覆'}</div>`;
       render();
-      if (wantedTaskCode) {
-        const code = wantedTaskCode;
-        wantedTaskCode = '';
+      if (wantedMatterCode) {
+        const code = wantedMatterCode;
+        wantedMatterCode = '';
         await openByCode(code);
       }
       setPageError('');
     } catch (err) {
-      list.innerHTML = '<div class="empty" style="padding:28px">暫時無法載入任務，請按「重新整理」再試。</div>';
+      list.innerHTML = '<div class="empty" style="padding:28px">暫時無法載入事項，請按「重新整理」再試。</div>';
       setPageError(p.escapeHtml(err.message));
     }
   }
 
-  function filteredTasks() {
+  function filteredMatters() {
     const q = ($('ds_search').value || '').trim().toUpperCase();
     const status = $('ds_status').value;
-    return tasks.filter((task) => {
-      if (status && task.status !== status) return false;
+    return matters.filter((matter) => {
+      if (status && matter.status !== status) return false;
       if (!q) return true;
-      const hay = `${task.task_code} ${task.batch_code} ${task.sku} ${task.subject} ${task.description || ''}`.toUpperCase();
+      const skuText = (matter.items || []).map((it) => `${it.sku} ${it.description || ''}`).join(' ');
+      const hay = `${matter.matter_code} ${matter.batch_code} ${matter.subject} ${skuText}`.toUpperCase();
       return hay.includes(q);
     });
   }
 
   function render() {
     const list = $('ds_list');
-    const rows = filteredTasks();
+    const rows = filteredMatters();
     if (!rows.length) {
-      const any = tasks.length > 0;
-      list.innerHTML = `<div class="empty" style="padding:36px 16px">${any ? '沒有符合條件的任務 — 試下轉「狀態」或清空搜尋字。' : '目前沒有指定 SKU 任務。有新任務時會在這裡顯示。'}</div>`;
+      const any = matters.length > 0;
+      list.innerHTML = `<div class="empty" style="padding:36px 16px">${any ? '沒有符合條件的事項 — 試下轉「狀態」或清空搜尋字。' : '目前沒有指定 SKU 事項。有新事項時會在這裡顯示。'}</div>`;
       return;
     }
-    list.innerHTML = rows.map((task) => {
-      const closed = !task.is_open;
-      const replied = task.status === 'replied';
+    list.innerHTML = rows.map((matter) => {
+      const closed = !matter.is_open;
+      const replied = matter.status === 'replied';
       const label = closed ? '查看回覆' : replied ? '修改回覆' : '回覆';
       const facts = [
-        `存貨 <b>${p.escapeHtml(fmtStock(task.stock_qty))}</b>`,
-        `批次 <span class="ds-code">${p.escapeHtml(task.batch_code)}</span>`,
-        task.due_date ? `截止 <b>${p.escapeHtml(task.due_date)}</b>` : '',
-        task.reference ? `參考 ${p.escapeHtml(task.reference)}` : '',
+        `<b>${matter.item_count}</b> 個 SKU`,
+        `批次 <span class="ds-code">${p.escapeHtml(matter.batch_code)}</span>`,
+        matter.due_date ? `截止 <b>${p.escapeHtml(matter.due_date)}</b>` : '',
+        matter.reference ? `參考 ${p.escapeHtml(matter.reference)}` : '',
       ].filter(Boolean).join('<span class="ds-sep">｜</span>');
-      const summary = replied
-        ? `<div class="ds-reply-summary"><div>${lineChips(task)}${task.reply_total !== null && task.reply_total !== undefined ? `<span class="ds-total-inline">合計 <b>${task.reply_total}</b> 件</span>` : ''}</div>${task.reply_note ? `<div class="hint">備註：${p.escapeHtml(task.reply_note)}</div>` : ''}</div>`
-        : '';
-      return `<article class="ds-task${closed ? ' ds-task--closed' : replied ? ' ds-task--replied' : ' ds-task--pending'}">
-        <div class="ds-task-head">
-          <div class="ds-task-head-left">${taskStatus(task)}<span class="ds-task-code">${p.escapeHtml(task.task_code)}</span></div>
-          <button class="btn ghost btn-sm ds-open" type="button" data-open="${p.escapeHtml(task.task_code)}"${!closed && !replied ? ' aria-label="此任務仍需要回覆"' : ''}>${label}</button>
+      const skuRows = (matter.items || []).map((item) => `
+        <div class="ds-sku-line">
+          <div class="ds-sku-line-id"><b class="ds-code">${p.escapeHtml(item.sku)}</b><span>${p.escapeHtml(item.description || '')}</span></div>
+          <div class="ds-sku-line-stock">存貨 ${p.escapeHtml(fmtStock(item.stock_qty))}</div>
+          <div class="ds-sku-line-reply">${itemSummary(item)}</div>
+        </div>`).join('');
+      return `<article class="ds-matter${closed ? ' ds-matter--closed' : replied ? ' ds-matter--replied' : ' ds-matter--pending'}">
+        <div class="ds-matter-head">
+          <div class="ds-matter-head-left">${matterStatusBadge(matter)}<span class="ds-code ds-matter-code">${p.escapeHtml(matter.matter_code)}</span></div>
+          <button class="btn ghost btn-sm ds-open" type="button" data-open="${p.escapeHtml(matter.matter_code)}"${!closed && !replied ? ' aria-label="此事項仍需要回覆"' : ''}>${label}</button>
         </div>
-        <h3 class="ds-task-title">${p.escapeHtml(task.subject)}</h3>
-        <div class="ds-task-sku"><b class="ds-code">${p.escapeHtml(task.sku)}</b><span>${p.escapeHtml(task.description || '')}</span></div>
-        <div class="ds-task-facts">${facts}</div>
-        ${task.instructions ? `<div class="ds-instructions">${p.escapeHtml(task.instructions).replace(/\n/g, '<br>')}</div>` : ''}
-        ${summary}
+        <h3 class="ds-matter-title">${p.escapeHtml(matter.subject)}</h3>
+        <div class="ds-matter-facts">${facts}</div>
+        <div class="ds-sku-list">${skuRows}</div>
+        ${matter.instructions ? `<div class="ds-instructions">${p.escapeHtml(matter.instructions).replace(/\n/g, '<br>')}</div>` : ''}
       </article>`;
     }).join('');
     list.querySelectorAll('[data-open]').forEach((btn) => {
-      btn.addEventListener('click', () => openTask(btn.dataset.open));
+      btn.addEventListener('click', () => openMatter(btn.dataset.open));
     });
   }
 
-  /* ---------------- 回覆彈窗 ---------------- */
+  /* ---------------- 回覆彈窗（多個 SKU） ---------------- */
 
-  function stockLimit() {
-    if (!currentTask) return null;
-    return currentTask.stock_qty === null || currentTask.stock_qty === undefined
-      ? null
-      : Number(currentTask.stock_qty);
-  }
-
-  function addLine(line = {}) {
-    const wrap = $('ds_lines');
+  function addLine(wrap, line = {}) {
     if (wrap.querySelectorAll('[data-line]').length >= MAX_LINES) return;
     const row = document.createElement('div');
     row.className = 'ds-line';
@@ -163,141 +162,186 @@
       if (wrap.querySelectorAll('[data-line]').length <= 1) {
         row.querySelector('.ds-year').value = '';
         row.querySelector('.ds-qty').value = '';
-        updateTotal();
-        return;
+      } else {
+        row.remove();
       }
-      row.remove();
-      updateTotal();
+      updateSectionTotal(row.closest('[data-item]'));
     });
-    row.querySelectorAll('input').forEach((input) => input.addEventListener('input', updateTotal));
-    if (readOnly) {
-      row.querySelectorAll('input').forEach((input) => { input.disabled = true; });
-      row.querySelector('.ds-remove').hidden = true;
-    }
-    updateTotal();
-    return row;
+    row.querySelectorAll('input').forEach((input) => input.addEventListener('input', () => updateSectionTotal(row.closest('[data-item]'))));
   }
 
-  function updateTotal() {
-    const box = $('ds_total');
-    if (!box) return;
+  function sectionLines(section) {
+    return Array.from(section.querySelectorAll('[data-line]'));
+  }
+
+  function sectionTotal(section) {
     let total = 0;
-    let bad = false;
-    $('ds_lines').querySelectorAll('[data-line]').forEach((row) => {
+    for (const row of sectionLines(section)) {
       const qty = Number(row.querySelector('.ds-qty').value);
       if (Number.isFinite(qty) && qty > 0) total += qty;
-      const year = normalizeYear(row.querySelector('.ds-year').value);
-      if (row.querySelector('.ds-year').value.trim() && !year) bad = true;
+    }
+    return total;
+  }
+
+  function updateSectionTotal(section) {
+    if (!section) return;
+    const item = (currentMatter.items || []).find((it) => it.id === section.dataset.item);
+    if (!item) return;
+    const box = section.querySelector('.ds-sku-total');
+    const stock = item.stock_qty === null || item.stock_qty === undefined ? null : Number(item.stock_qty);
+    const noTransfer = section.querySelector('.ds-no-transfer').checked;
+    if (noTransfer) {
+      box.classList.remove('ds-total--over');
+      box.innerHTML = '無可調撥件數（合計 0 件）';
+    } else {
+      const total = sectionTotal(section);
+      const over = stock !== null && total > stock;
+      box.classList.toggle('ds-total--over', over);
+      box.innerHTML = `合計 <b>${total}</b> 件${stock !== null ? `｜存貨 <b>${stock}</b> 件` : ''}` +
+        (over ? ` <span class="ds-over">超出 ${total - stock} 件，請調整</span>` : (stock !== null && total < stock ? ` <span class="hint">其餘 ${stock - total} 件未填</span>` : ''));
+    }
+    updateOverallTotal();
+  }
+
+  function updateOverallTotal() {
+    if (!currentMatter) return;
+    let total = 0;
+    const sections = Array.from($('ds_sku_sections').querySelectorAll('[data-item]'));
+    for (const section of sections) {
+      if (!section.querySelector('.ds-no-transfer').checked) total += sectionTotal(section);
+    }
+    $('ds_reply_summary').innerHTML = `${currentMatter.item_count} 個 SKU｜合計 <b>${total}</b> 件`;
+  }
+
+  function setNoTransfer(section, on) {
+    const editor = section.querySelector('.ds-editor');
+    const checkbox = section.querySelector('.ds-no-transfer');
+    checkbox.checked = on;
+    if (on) {
+      editor.hidden = true;
+      section.classList.add('is-no-transfer');
+    } else {
+      editor.hidden = false;
+      section.classList.remove('is-no-transfer');
+      if (!sectionLines(section).length) addLine(section.querySelector('.ds-lines'), {});
+    }
+    updateSectionTotal(section);
+  }
+
+  function buildSkuSection(item) {
+    const section = document.createElement('section');
+    section.className = 'ds-sku';
+    section.setAttribute('data-item', item.id);
+    const stock = item.stock_qty === null || item.stock_qty === undefined ? null : Number(item.stock_qty);
+    const isNoTransfer = item.no_transfer === true;
+
+    section.innerHTML = `
+      <div class="ds-sku-head">
+        <div class="ds-sku-id"><b class="ds-code">${p.escapeHtml(item.sku)}</b><span>${p.escapeHtml(item.description || '')}</span></div>
+        <div class="ds-sku-stock">存貨 <b>${p.escapeHtml(fmtStock(item.stock_qty))}</b></div>
+      </div>
+      <div class="ds-editor">
+        <div class="ds-lines-head" aria-hidden="true"><span>貨品年期 (MMYY)</span><span>可調撥件數</span><span></span></div>
+        <div class="ds-lines"></div>
+        <button class="btn ghost btn-sm ds-add-line" type="button">＋ 新增年期</button>
+      </div>
+      <label class="ds-none"><input type="checkbox" class="ds-no-transfer"> 此 SKU 無可調撥件數</label>
+      <div class="ds-total ds-sku-total"></div>
+      <label class="ds-sku-note-label" for="ds_note_${p.escapeHtml(item.id)}">此 SKU 備註（選填）</label>
+      <input class="ds-sku-note" id="ds_note_${p.escapeHtml(item.id)}" type="text" maxlength="2000" placeholder="例如：陳列品、包裝破損…" value="${p.escapeHtml(item.reply_note || '')}">
+    `;
+
+    const wrap = section.querySelector('.ds-lines');
+    if (readOnly) {
+      // 只供查閱：顯示靜態年期，不提供輸入
+      section.innerHTML = `
+        <div class="ds-sku-head">
+          <div class="ds-sku-id"><b class="ds-code">${p.escapeHtml(item.sku)}</b><span>${p.escapeHtml(item.description || '')}</span></div>
+          <div class="ds-sku-stock">存貨 <b>${p.escapeHtml(fmtStock(item.stock_qty))}</b></div>
+        </div>
+        <div class="ds-sku-readonly">${item.status !== 'replied'
+          ? '<span class="ds-line-pending">店舖未提交回覆（已截止）</span>'
+          : (item.no_transfer
+            ? '<span class="ds-line-none">無可調撥件數</span>'
+            : `${(item.lines || []).map((l) => `<span class="ds-chip"><b>${p.escapeHtml(l.year_code)}</b> × ${p.escapeHtml(String(l.qty))}</span>`).join(' ')}<span class="ds-total-inline">合計 <b>${item.reply_total ?? 0}</b> 件</span>`)}</div>
+        ${item.reply_note ? `<div class="hint">備註：${p.escapeHtml(item.reply_note)}</div>` : ''}`;
+      return section;
+    }
+
+    (item.lines && item.lines.length ? item.lines : [{}]).forEach((line) => addLine(wrap, line));
+    section.querySelector('.ds-add-line').addEventListener('click', () => {
+      addLine(wrap, {});
+      updateSectionTotal(section);
     });
-    const stock = stockLimit();
-    const over = stock !== null && total > stock;
-    const parts = [`合計 <b>${total}</b> 件`];
-    if (stock !== null) parts.push(`存貨 <b>${stock}</b> 件`);
-    if (over) parts.push(`<span class="ds-over">超出存貨 ${total - stock} 件，請調整</span>`);
-    else if (stock !== null && total < stock) parts.push(`<span class="hint">其餘 ${stock - total} 件未填（如不需調撥可留空）</span>`);
-    if (bad) parts.push('<span class="ds-over">有年期中格式不正確</span>');
-    box.innerHTML = parts.join('｜');
-    box.classList.toggle('ds-total--over', over || bad);
+    const checkbox = section.querySelector('.ds-no-transfer');
+    checkbox.checked = isNoTransfer;
+    checkbox.addEventListener('change', () => setNoTransfer(section, checkbox.checked));
+    if (isNoTransfer) setNoTransfer(section, true);
+    else updateSectionTotal(section);
+    return section;
   }
 
-  function collectLines() {
-    const rows = Array.from($('ds_lines').querySelectorAll('[data-line]'));
-    const out = [];
-    const seen = new Set();
-    for (const row of rows) {
-      const yearRaw = row.querySelector('.ds-year').value.trim();
-      const qtyRaw = row.querySelector('.ds-qty').value.trim();
-      if (!yearRaw && !qtyRaw) continue;
-      if (!yearRaw) throw new Error('請填寫貨品年期（MMYY）');
-      if (!qtyRaw) throw new Error(`年期「${yearRaw}」請填寫可調撥件數`);
-      const year = normalizeYear(yearRaw);
-      if (!year) throw new Error(`年期「${yearRaw}」格式不正確，請填 4 位數字 MMYY（例：0827 = 2027 年 8 月）`);
-      if (seen.has(year)) throw new Error(`年期 ${year} 重複，請合併為一行`);
-      seen.add(year);
-      const qty = Number(qtyRaw);
-      if (!Number.isInteger(qty) || qty < 1) throw new Error(`年期 ${year} 的可調撥件數必須為 1 或以上的整數`);
-      if (qty > MAX_QTY) throw new Error(`年期 ${year} 的可調撥件數不可超過 ${MAX_QTY} 件`);
-      out.push({ year_code: year, qty });
-    }
-    if (!out.length) throw new Error('請至少填寫一個貨品年期及可調撥件數');
-    const stock = stockLimit();
-    const total = out.reduce((sum, line) => sum + line.qty, 0);
-    if (stock !== null && total > stock) {
-      throw new Error(`可調撥件數合計 ${total} 件，不可多於存貨 ${stock} 件`);
-    }
-    return out;
-  }
-
-  function openTask(code) {
-    const task = tasks.find((t) => t.task_code === code);
-    if (!task) return;
-    currentTask = task;
-    readOnly = !task.is_open;
+  function openMatter(code) {
+    const matter = matters.find((m) => m.matter_code === code);
+    if (!matter) return;
+    currentMatter = matter;
+    readOnly = !matter.is_open;
     $('ds_reply_title').textContent = readOnly
-      ? `任務回覆（已截止） — ${task.sku}`
-      : task.status === 'replied' ? `修改回覆 — ${task.sku}` : `回覆任務 — ${task.sku}`;
-    $('ds_reply_task').textContent = `${task.task_code}｜${task.subject}｜批次 ${task.batch_code}`;
-    $('ds_reply_sku').textContent = `${task.description || ''}｜存貨 ${fmtStock(task.stock_qty)}` +
-      (task.due_date ? `｜截止 ${task.due_date}` : '') +
-      (task.reference ? `｜參考 ${task.reference}` : '') +
-      (task.reply_count ? `｜已提交 ${task.reply_count} 次` : '');
+      ? `事項回覆（已截止） — ${matter.matter_code}`
+      : matter.status === 'replied' ? `修改回覆 — ${matter.matter_code}` : `回覆事項 — ${matter.matter_code}`;
+    $('ds_reply_matter').textContent = `${matter.subject}｜批次 ${matter.batch_code}`;
+    $('ds_reply_sub').textContent = `${matter.item_count} 個 SKU` +
+      (matter.due_date ? `｜截止 ${matter.due_date}` : '') +
+      (matter.reference ? `｜參考 ${matter.reference}` : '');
 
     const notice = $('ds_reply_notice');
     if (readOnly) {
       notice.hidden = false;
       notice.className = 'ds-notice ds-notice--closed';
-      notice.innerHTML = '此任務已截止，只供查閱，不能再修改回覆。如需更正請聯絡 RP Team。';
-    } else if (task.instructions) {
+      notice.innerHTML = '此事項已截止，只供查閱，不能再修改回覆。如需更正請聯絡 RP Team。';
+    } else if (matter.instructions) {
       notice.hidden = false;
       notice.className = 'ds-notice';
-      notice.innerHTML = `<b>任務說明</b><div>${p.escapeHtml(task.instructions).replace(/\n/g, '<br>')}</div>`;
+      notice.innerHTML = `<b>事項說明</b><div>${p.escapeHtml(matter.instructions).replace(/\n/g, '<br>')}</div>`;
     } else {
       notice.hidden = true;
       notice.innerHTML = '';
     }
 
-    $('ds_lines').innerHTML = '';
-    const existing = task.lines && task.lines.length ? task.lines : (readOnly ? [] : [{}]);
-    $('ds_lines_head').hidden = existing.length === 0;
-    $('ds_total').hidden = existing.length === 0;
-    existing.forEach((line) => addLine(line));
-    if (readOnly && !existing.length) {
-      notice.hidden = false;
-      notice.className = 'ds-notice ds-notice--closed';
-      notice.innerHTML = '此任務已截止，店舖未提交回覆。如需補交請聯絡 RP Team。';
-    }
-    $('ds_note').value = task.reply_note || '';
-    $('ds_note').disabled = readOnly;
-    $('ds_add_line').hidden = readOnly;
+    const wrap = $('ds_sku_sections');
+    wrap.innerHTML = '';
+    (matter.items || []).forEach((item) => wrap.appendChild(buildSkuSection(item)));
+
+    $('ds_reply_summary').hidden = readOnly;
     $('ds_save').hidden = readOnly;
     $('ds_save').disabled = false;
+    $('ds_save').textContent = '儲存回覆';
     p.showAlert($('ds_reply_error'), '', '');
-    updateTotal();
+    updateOverallTotal();
     $('ds_reply_dialog').showModal();
-    // 未回覆時 focus 第一個年期，方便直接輸入
-    if (!readOnly && task.status === 'pending') {
-      const first = $('ds_lines').querySelector('.ds-year');
-      if (first && !first.value) setTimeout(() => first.focus(), 60);
+    if (!readOnly) {
+      const firstYear = wrap.querySelector('.ds-year');
+      if (firstYear) setTimeout(() => firstYear.focus(), 60);
     }
   }
 
   /** 直 link：先在本店清單找；找不到再向伺服器查（會被 403 / 404 擋） */
   async function openByCode(code) {
-    const local = tasks.find((t) => t.task_code === code);
+    const local = matters.find((m) => m.matter_code === code);
     if (local) {
-      openTask(code);
+      openMatter(code);
       return;
     }
     try {
-      const data = await p.api(`/api/portal/designated-sku/tasks/${encodeURIComponent(code)}`);
-      tasks = [data.task, ...tasks];
+      const data = await p.api(`/api/portal/designated-sku/matters/${encodeURIComponent(code)}`);
+      matters = [data.matter, ...matters];
       render();
-      openTask(data.task.task_code);
+      openMatter(data.matter.matter_code);
     } catch (err) {
       if (err.status === 403) {
-        setPageError(`<b>此任務不屬於你店舖。</b>${p.escapeHtml(err.message)}<div class="hint" style="margin-top:4px">如你剛登入其他店舖，請按「登出」再以正確 Site Code 進入。</div>`);
+        setPageError(`<b>此事項不屬於你店舖。</b>${p.escapeHtml(err.message)}<div class="hint" style="margin-top:4px">如你剛登入其他店舖，請按「登出」再以正確 Site Code 進入。</div>`);
       } else if (err.status === 404) {
-        setPageError(`<b>找不到任務 ${p.escapeHtml(code)}。</b>可能已被 RP Team 刪除，或連結有誤。`);
+        setPageError(`<b>找不到事項 ${p.escapeHtml(code)}。</b>可能已被 RP Team 刪除，或連結有誤。`);
       } else {
         setPageError(p.escapeHtml(err.message));
       }
@@ -306,12 +350,45 @@
 
   /* ---------------- 提交 ---------------- */
 
+  function collectSectionLines(section, sku) {
+    const out = [];
+    const seen = new Set();
+    for (const row of sectionLines(section)) {
+      const yearRaw = row.querySelector('.ds-year').value.trim();
+      const qtyRaw = row.querySelector('.ds-qty').value.trim();
+      if (!yearRaw && !qtyRaw) continue;
+      if (!yearRaw) throw new Error(`SKU ${sku}：請填寫貨品年期（MMYY）`);
+      if (!qtyRaw) throw new Error(`SKU ${sku}：年期「${yearRaw}」請填寫可調撥件數`);
+      const year = normalizeYear(yearRaw);
+      if (!year) throw new Error(`SKU ${sku}：年期「${yearRaw}」格式不正確，請填 MMYY（例：0827）`);
+      if (seen.has(year)) throw new Error(`SKU ${sku}：年期 ${year} 重複，請合併為一行`);
+      seen.add(year);
+      const qty = Number(qtyRaw);
+      if (!Number.isInteger(qty) || qty < 1) throw new Error(`SKU ${sku}：年期 ${year} 的件數必須為 1 或以上的整數`);
+      if (qty > MAX_QTY) throw new Error(`SKU ${sku}：年期 ${year} 的件數不可超過 ${MAX_QTY}`);
+      out.push({ year_code: year, qty });
+    }
+    if (!out.length) throw new Error(`SKU ${sku}：請填寫至少一個年期，或勾選「無可調撥件數」`);
+    return out;
+  }
+
+  function collectItems() {
+    return Array.from($('ds_sku_sections').querySelectorAll('[data-item]')).map((section) => {
+      const item = (currentMatter.items || []).find((it) => it.id === section.dataset.item);
+      const sku = item ? item.sku : '—';
+      const noTransfer = section.querySelector('.ds-no-transfer').checked;
+      const note = (section.querySelector('.ds-sku-note')?.value || '').trim();
+      if (noTransfer) return { item_id: section.dataset.item, lines: [], note, no_transfer: true };
+      return { item_id: section.dataset.item, lines: collectSectionLines(section, sku), note, no_transfer: false };
+    });
+  }
+
   async function saveReply() {
-    if (!currentTask || readOnly || saving) return;
+    if (!currentMatter || readOnly || saving) return;
     const btn = $('ds_save');
-    let lines;
+    let items;
     try {
-      lines = collectLines();
+      items = collectItems();
       p.showAlert($('ds_reply_error'), '', '');
     } catch (err) {
       p.showAlert($('ds_reply_error'), 'error', p.escapeHtml(err.message));
@@ -321,20 +398,20 @@
     btn.disabled = true;
     btn.textContent = '儲存中…';
     try {
-      const data = await p.api(`/api/portal/designated-sku/tasks/${encodeURIComponent(currentTask.task_code)}/reply`, {
+      const data = await p.api(`/api/portal/designated-sku/matters/${encodeURIComponent(currentMatter.matter_code)}/reply`, {
         method: 'PUT',
-        body: JSON.stringify({ lines, note: $('ds_note').value }),
+        body: JSON.stringify({ items }),
       });
-      const idx = tasks.findIndex((t) => t.task_code === data.task.task_code);
-      if (idx >= 0) tasks[idx] = data.task;
+      const idx = matters.findIndex((m) => m.matter_code === data.matter.matter_code);
+      if (idx >= 0) matters[idx] = data.matter;
       $('ds_reply_dialog').close();
       render();
-      await loadTasks();
-      p.showAlert($('ds_list_error'), 'success', `已儲存 <b>${p.escapeHtml(data.task.task_code)}</b> 的回覆（合計 ${data.task.reply_total} 件）。如發現輸入有誤，可在任務截止前再修改。`);
+      await loadMatters();
+      p.showAlert($('ds_list_error'), 'success', `已儲存 <b>${p.escapeHtml(data.matter.matter_code)}</b> 的回覆（${data.matter.item_count} 個 SKU，合計 ${data.matter.reply_total} 件）。如發現輸入有誤，可在截止前再修改。`);
     } catch (err) {
-      if (err.status === 409 && err.data?.code === 'TASK_CLOSED') {
+      if (err.status === 409 && err.data?.code === 'MATTER_CLOSED') {
         $('ds_reply_dialog').close();
-        await loadTasks();
+        await loadMatters();
         p.showAlert($('ds_list_error'), 'error', p.escapeHtml(err.message));
         return;
       }
@@ -350,23 +427,30 @@
 
   $('btn_ds_refresh').addEventListener('click', async () => {
     try {
-      await loadTasks();
+      await loadMatters();
     } catch (err) {
       setPageError(p.escapeHtml(err.message));
     }
   });
   $('ds_status').addEventListener('change', render);
   $('ds_search').addEventListener('input', render);
-  $('ds_add_line').addEventListener('click', () => addLine({}));
   $('ds_cancel').addEventListener('click', () => $('ds_reply_dialog').close());
   $('ds_save').addEventListener('click', saveReply);
   $('logout_link').addEventListener('click', (e) => { e.preventDefault(); p.logout(); });
 
   (async () => {
     try {
-      wantedTaskCode = (new URLSearchParams(window.location.search).get('task') || '').trim();
+      const params = new URLSearchParams(window.location.search);
+      wantedMatterCode = (params.get('matter') || '').trim();
+      // 兼容舊連結：?task= 自動轉為 ?matter=
+      if (!wantedMatterCode && params.get('task')) {
+        wantedMatterCode = params.get('task').trim();
+        params.delete('task');
+        params.set('matter', wantedMatterCode);
+        history.replaceState(null, '', `${window.location.pathname}?${params.toString()}`);
+      }
     } catch {
-      wantedTaskCode = '';
+      wantedMatterCode = '';
     }
     let site;
     try {
@@ -375,6 +459,6 @@
       return;
     }
     $('store_header').textContent = `指定 SKU 回覆 — ${site}`;
-    await loadTasks();
+    await loadMatters();
   })();
 })();

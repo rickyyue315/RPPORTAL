@@ -97,12 +97,13 @@ describe('static asset freshness', () => {
     const adminHtml = readFileSync(path.join(root, 'public', 'admin', 'index.html'), 'utf8');
     const adminScript = readFileSync(path.join(root, 'public', 'js', 'admin-designated-sku.js'), 'utf8');
 
-    // 店舖端：多個年期編輯器 + 直 link
+    // 店舖端：一個事項多個 SKU + 直 link
     expect(page).toContain('id="ds_reply_dialog"');
-    expect(page).toContain('id="ds_lines"');
+    expect(page).toContain('id="ds_sku_sections"');
     expect(page).toContain('/portal/js/designated-sku.js');
-    expect(storeScript).toContain("get('task')");
-    expect(storeScript).toContain('/api/portal/designated-sku/tasks/');
+    expect(storeScript).toContain("get('matter')");
+    expect(storeScript).toContain('/api/portal/designated-sku/matters/');
+    expect(storeScript).toContain('no_transfer');
 
     // 後台：新分頁 + 上載欄位（預留欄位可空白）
     expect(adminHtml).toContain('data-tab="designated-sku"');
@@ -110,6 +111,8 @@ describe('static asset freshness', () => {
     expect(adminHtml).toContain('id="dsku_subject"');
     expect(adminHtml).toContain('id="dsku_due_date"');
     expect(adminScript).toContain('__dskuRefresh');
+    expect(adminScript).toContain('matters/');
+    expect(adminScript).toContain('?matter=');
     expect(adminScript).toContain('designated-sku/export');
     // 管理員代店舖回覆：明細行有「代回覆 / 編輯回覆」，彈窗可改年期
     expect(adminScript).toContain('dsku_edit_reply_overlay');

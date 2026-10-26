@@ -125,6 +125,13 @@
   margin-bottom: 6px;
 }
 .dash-card-head h3 { margin: 0; font-size: 16px; }
+/* 卡頭右邊：期間說明 + 匯出按鈕 */
+.dash-head-tools {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
 .dash-legend {
   display: flex;
   flex-wrap: wrap;

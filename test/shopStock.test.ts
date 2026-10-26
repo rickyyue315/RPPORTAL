@@ -853,7 +853,14 @@ describe('shopStock service', () => {
 
 describe('shopStock routes', () => {
   it('rejects anonymous admin requests', async () => {
-    for (const url of ['/api/admin/stock/summary', '/api/admin/stock/summary/export?months=12', '/api/admin/stock/batches', '/api/admin/stock/weeks/2026-10-25']) {
+    for (const url of [
+      '/api/admin/stock/summary',
+      '/api/admin/stock/summary/export?months=12',
+      '/api/admin/stock/weeks/2026-10-25',
+      '/api/admin/stock/weeks/2026-10-25/export',
+      '/api/admin/stock/rf/export?months=12',
+      '/api/admin/stock/batches',
+    ]) {
       const res = await request(app).get(url);
       expect(res.status).toBe(401);
     }
@@ -862,6 +869,8 @@ describe('shopStock routes', () => {
   it('rejects anonymous portal requests', async () => {
     const res = await request(app).get('/api/portal/stock/summary');
     expect(res.status).toBe(401);
+    const exportRes = await request(app).get('/api/portal/stock/summary/export');
+    expect(exportRes.status).toBe(401);
   });
 
   it('returns 200 with has_data = false (not 404) for a store without snapshots', async () => {
@@ -903,6 +912,57 @@ describe('shopStock routes', () => {
     const res = await request(app).get('/api/admin/stock/weeks/2026-1-5');
     // 未登入先 401；登入後才是 400，所以這裡只驗證不是 200 的路徑不漏資料
     expect([400, 401]).toContain(res.status);
+  });
+
+  /** 取（or 建）某間店嘅 portal session；同一 site_code 只可以有一個 store 帳戶 */
+  async function storeSessionFor(siteCode: string) {
+    const found = await db.query<{ id: string }>(
+      `SELECT id FROM portal_users WHERE role = 'store' AND site_code = $1 LIMIT 1`,
+      [siteCode],
+    );
+    let userId = found.rows[0]?.id;
+    if (!userId) {
+      const inserted = await db.query<{ id: string }>(
+        `INSERT INTO portal_users (username, role, site_code, password_hash)
+         VALUES ($1, 'store', $2, 'x') RETURNING id`,
+        [`store-export-${siteCode}-${Date.now()}`, siteCode],
+      );
+      userId = inserted.rows[0]!.id;
+    }
+    return createPortalSession(userId);
+  }
+
+  it('exports only the signed-in store own rows to the store portal', async () => {
+    const session = await storeSessionFor('HA02');
+    const res = await request(app)
+      .get('/api/portal/stock/summary/export?site_code=HD09')
+      .set('Cookie', [`portal_session=${session.token}`])
+      .buffer(true)
+      .parse((response, cb) => {
+        const chunks: Buffer[] = [];
+        response.on('data', (chunk: Buffer) => chunks.push(chunk));
+        response.on('end', () => cb(null, Buffer.concat(chunks)));
+      });
+
+    expect(res.status).toBe(200);
+    expect(res.headers['content-type']).toContain('spreadsheetml');
+    expect(String(res.headers['content-disposition'])).toMatch(/filename="Stock_Trend_HA02_\d{8}\.xlsx"/);
+
+    const workbook = new ExcelJS.Workbook();
+    await workbook.xlsx.load(res.body as never);
+    expect(workbook.worksheets.map((w) => w.name)).toEqual(['本店走勢', '匯出說明']);
+    // 只可以見到自己店嘅數字，唔可以漏到 HD09
+    const raw = JSON.stringify(workbook.model).replace(/\\"/g, '"');
+    expect(raw).not.toContain('HD09');
+    expect(raw).not.toContain('59999.75');
+  });
+
+  it('returns 404 for the store export when the store has no stock data', async () => {
+    const session = await storeSessionFor('ZZ99');
+    const res = await request(app)
+      .get('/api/portal/stock/summary/export')
+      .set('Cookie', [`portal_session=${session.token}`]);
+    expect(res.status).toBe(404);
   });
 });
 
@@ -1141,6 +1201,76 @@ describe.skipIf(!config.adminPassword)('shopStock admin routes (logged in)', () 
   it('rejects an invalid export period', async () => {
     const res = await request(app)
       .get('/api/admin/stock/summary/export?months=0')
+      .set('Cookie', session.cookie);
+    expect(res.status).toBe(400);
+  });
+
+  async function getBinary(url: string) {
+    return request(app)
+      .get(url)
+      .set('Cookie', session.cookie)
+      .buffer(true)
+      .parse((response, cb) => {
+        const chunks: Buffer[] = [];
+        response.on('data', (chunk: Buffer) => chunks.push(chunk));
+        response.on('end', () => cb(null, Buffer.concat(chunks)));
+      });
+  }
+
+  it('exports the per-shop detail of one period as an xlsx', async () => {
+    const res = await getBinary('/api/admin/stock/weeks/2026-10-25/export');
+    expect(res.status).toBe(200);
+    expect(res.headers['content-type']).toContain('spreadsheetml');
+    expect(String(res.headers['content-disposition'])).toMatch(/filename="Shop_Stock_Detail_2026-10-25_\d{8}\.xlsx"/);
+
+    const workbook = new ExcelJS.Workbook();
+    await workbook.xlsx.load(res.body as never);
+    expect(workbook.worksheets.map((w) => w.name)).toEqual(['每店明細', '匯出說明']);
+
+    const sheet = workbook.getWorksheet('每店明細')!;
+    expect(sheet.getRow(1).getCell(1).value).toBe('排名');
+    expect(sheet.getRow(1).getCell(2).value).toBe('Site');
+    expect(sheet.getRow(1).getCell(8).value).toBe('不良存貨 SKU ÷ 店內貨品');
+    expect(sheet.getRow(1).getCell(11).value).toBe('不良存貨佔比');
+    expect(sheet.getColumn(11).numFmt).toBe('0.0%');
+    // 2026-10-25 一期三間店（HA02 / HD09 / HC71）
+    expect(sheet.actualRowCount).toBe(4);
+    const sites: string[] = [];
+    sheet.eachRow((row, n) => { if (n > 1) sites.push(String(row.getCell(2).value ?? '')); });
+    expect(sites.sort()).toEqual(['HA02', 'HC71', 'HD09']);
+  });
+
+  it('applies the on-screen search filter to the detail export', async () => {
+    const res = await getBinary('/api/admin/stock/weeks/2026-10-25/export?q=HA02&sort=ratio_desc');
+    expect(res.status).toBe(200);
+    const workbook = new ExcelJS.Workbook();
+    await workbook.xlsx.load(res.body as never);
+    const sheet = workbook.getWorksheet('每店明細')!;
+    expect(sheet.actualRowCount).toBe(2); // 表頭 + 一間店
+    expect(sheet.getCell(2, 2).value).toBe('HA02');
+  });
+
+  it('exports the RF SKU dashboard as an xlsx with the trend and both rankings', async () => {
+    const res = await getBinary('/api/admin/stock/rf/export?months=12');
+    expect(res.status).toBe(200);
+    expect(String(res.headers['content-disposition'])).toMatch(/filename="Shop_Stock_RF_SKU_12M_\d{8}\.xlsx"/);
+
+    const workbook = new ExcelJS.Workbook();
+    await workbook.xlsx.load(res.body as never);
+    expect(workbook.worksheets.map((w) => w.name)).toEqual([
+      'RF SKU 走勢',
+      'RF SKU 店舖排名',
+      '不良÷店內貨品 排名',
+      '匯出說明',
+    ]);
+    expect(workbook.getWorksheet('RF SKU 走勢')!.getRow(1).getCell(4).value).toBe('RF SKU 合計');
+    expect(workbook.getWorksheet('RF SKU 店舖排名')!.getRow(1).getCell(6).value).toBe('RF SKU');
+    expect(workbook.getWorksheet('不良÷店內貨品 排名')!.getRow(1).getCell(8).value).toBe('不良存貨 SKU ÷ 店內貨品');
+  });
+
+  it('rejects an invalid export period on the RF export', async () => {
+    const res = await request(app)
+      .get('/api/admin/stock/rf/export?months=99')
       .set('Cookie', session.cookie);
     expect(res.status).toBe(400);
   });

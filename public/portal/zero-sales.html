@@ -97,8 +97,12 @@
       <div class="card dash-card" id="dash_chart_card">
         <div class="dash-card-head">
           <h3>每週不良存貨佔比</h3>
-          <span class="hint" id="dash_chart_period"></span>
+          <div class="dash-head-tools">
+            <span class="hint" id="dash_chart_period"></span>
+            <button class="btn ghost btn-sm" id="btn_stock_export" type="button">匯出 Excel</button>
+          </div>
         </div>
+        <p class="hint" id="dash_export_result"></p>
         <div class="dash-legend" id="dash_legend">
           <span class="dash-legend-item"><i class="dash-line dash-line--self" aria-hidden="true"></i>本店佔比</span>
           <span class="dash-legend-item"><i class="dash-line dash-line--company" aria-hidden="true"></i>全公司合計（加權）</span>

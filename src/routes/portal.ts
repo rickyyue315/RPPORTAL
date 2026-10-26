@@ -72,6 +72,7 @@ import {
   ZeroSalesReplyError,
 } from '../services/zeroSales.js';
 import { getShopStockForStore } from '../services/shopStock.js';
+import { buildShopStockStoreBuffer } from '../services/shopStockExport.js';
 import { buildZeroSalesStoreExportBuffer } from '../lib/zeroSales.js';
 
 export const portalRouter = Router();
@@ -1057,5 +1058,45 @@ portalRouter.get(
     const siteCode = req.storeSiteCode!;
     const view = await getShopStockForStore(siteCode);
     res.json({ ok: true, ...view });
+  }),
+);
+
+/**
+ * GET /api/portal/stock/summary/export — 匯出本舖的存貨走勢 Excel
+ * 數據隔離同 /stock/summary 一樣：site_code 只取自 portal session，
+ * 絕不接受 query 參數；內容只有「本店數字 + 全公司加權平均線」，無其他店舖明細。
+ */
+portalRouter.get(
+  '/stock/summary/export',
+  requirePortalUser,
+  requireStoreSite,
+  excelExportLimiter,
+  asyncHandler(async (req: Request, res: Response) => {
+    const siteCode = req.storeSiteCode!;
+    const view = await getShopStockForStore(siteCode);
+    if (!view.series.length) {
+      res.status(404).json({ error: '未有可匯出的存貨數據' });
+      return;
+    }
+    const buffer = await buildShopStockStoreBuffer({
+      view,
+      generatedAt: toHKString(new Date()),
+    });
+    const stamp = toHKDateString(new Date()).replace(/-/g, '');
+    const filename = `Stock_Trend_${siteCode}_${stamp}.xlsx`;
+    await writeAuditEvent({
+      eventType: 'shop_stock_store_export',
+      actorRole: 'store',
+      actor: req.portalUser!.username,
+      ip: getClientIp(req),
+      metadata: {
+        filename,
+        site_code: siteCode,
+        periods: view.series.length,
+      },
+    });
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    res.send(buffer);
   }),
 );

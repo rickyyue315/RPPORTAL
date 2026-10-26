@@ -134,8 +134,15 @@ import {
   SHOP_STOCK_REPORT_KINDS,
   ShopStockDateConflictError,
   ShopStockImportError,
+  type ShopStockWeek,
 } from '../services/shopStock.js';
-import { buildShopStockTrendBuffer } from '../services/shopStockExport.js';
+import {
+  buildShopStockRfBuffer,
+  buildShopStockTrendBuffer,
+  buildShopStockWeekBuffer,
+  filterAndSortWeekRows,
+  normalizeWeekExportFilters,
+} from '../services/shopStockExport.js';
 
 export const adminRouter = Router();
 
@@ -3483,5 +3490,117 @@ adminRouter.get(
       return;
     }
     res.json({ ok: true, ...week });
+  }),
+);
+
+/**
+ * GET /api/admin/stock/weeks/:reportDate/export — 某一期每店明細匯出
+ * 篩選／排序同畫面一致（q / sort / only），即「匯出 = 畫面所見」。
+ * ⚠️ 篩選規則與 public/js/admin-stock.js 的 filteredWeekRows() 必須同步。
+ */
+adminRouter.get(
+  '/stock/weeks/:reportDate/export',
+  requireAdmin,
+  adminActionLimiter,
+  asyncHandler(async (req: Request, res: Response) => {
+    const reportDate = req.params.reportDate as string;
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(reportDate) || !isValidIsoDate(reportDate)) {
+      res.status(400).json({ error: '報表日期格式應為 YYYY-MM-DD' });
+      return;
+    }
+    const week = await getShopStockWeek(reportDate);
+    if (!week) {
+      res.status(404).json({ error: '找不到此報表日期的批次' });
+      return;
+    }
+    const filters = normalizeWeekExportFilters({
+      q: String(req.query.q ?? ''),
+      sort: String(req.query.sort ?? ''),
+      only: String(req.query.only ?? ''),
+    });
+    const rows = filterAndSortWeekRows(week.rows, filters);
+    const buffer = await buildShopStockWeekBuffer({
+      week,
+      filters,
+      rows,
+      generatedAt: toHKString(new Date()),
+    });
+    const stamp = hkTodayForDateColumn().replace(/-/g, '');
+    const filename = `Shop_Stock_Detail_${reportDate}_${stamp}.xlsx`;
+    await writeAuditEvent({
+      eventType: 'shop_stock_detail_export',
+      actorRole: 'admin',
+      actor: req.adminUsername,
+      ip: getClientIp(req),
+      metadata: {
+        filename,
+        report_date: reportDate,
+        rows: rows.length,
+        total_rows: week.rows.length,
+        filters,
+      },
+    });
+    res.setHeader('Content-Type', EXPORT_CONTENT_TYPE);
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    res.send(buffer);
+  }),
+);
+
+/**
+ * GET /api/admin/stock/rf/export — No. of RF SKU Dashboard 匯出
+ * 工作表：RF SKU 走勢 + RF SKU 店舖排名 + 不良÷店內貨品 排名 + 匯出說明。
+ * 走勢窗口與圖表一致（months，3/6/12/24）；排名用 report_date 指定期（預設最新一期）。
+ */
+adminRouter.get(
+  '/stock/rf/export',
+  requireAdmin,
+  adminActionLimiter,
+  asyncHandler(async (req: Request, res: Response) => {
+    const parsed = stockExportSchema.safeParse(req.query);
+    if (!parsed.success) {
+      res.status(400).json({ error: parsed.error.issues[0]?.message ?? '匯出參數無效' });
+      return;
+    }
+    const months = parsed.data.months;
+    const summary = await getShopStockSummary();
+    const latest = summary.series[summary.series.length - 1];
+    const cutoff = latest ? monthsBeforeDateOnly(latest.report_date, months) : '';
+    const series = cutoff
+      ? summary.series.filter((point) => point.report_date >= cutoff)
+      : summary.series;
+
+    // 排名期別：優先用畫面揀選嗰期，否則用最新一期
+    const requested = String(req.query.report_date ?? '').slice(0, 10);
+    let week: ShopStockWeek | null = null;
+    if (/^\d{4}-\d{2}-\d{2}$/.test(requested) && isValidIsoDate(requested)) {
+      week = await getShopStockWeek(requested);
+    }
+    if (!week && latest) week = await getShopStockWeek(latest.report_date);
+
+    const buffer = await buildShopStockRfBuffer({
+      series,
+      kpi: summary.kpi,
+      week,
+      months,
+      generatedAt: toHKString(new Date()),
+    });
+    const stamp = hkTodayForDateColumn().replace(/-/g, '');
+    const filename = `Shop_Stock_RF_SKU_${months}M_${stamp}.xlsx`;
+    await writeAuditEvent({
+      eventType: 'shop_stock_rf_export',
+      actorRole: 'admin',
+      actor: req.adminUsername,
+      ip: getClientIp(req),
+      metadata: {
+        filename,
+        months,
+        periods: series.length,
+        rank_report_date: week?.report_date ?? null,
+        ranked_rf_shops: week ? week.rows.filter((row) => row.rf_sku_count !== null).length : 0,
+      },
+    });
+    res.setHeader('Content-Type', EXPORT_CONTENT_TYPE);
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    res.send(buffer);
   }),
 );

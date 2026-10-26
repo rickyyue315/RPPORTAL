@@ -255,6 +255,17 @@ pg_restore --no-owner --no-privileges --clean --if-exists \
    `PPT 圖表用`（只有「期別 / 不良存貨佔比」兩欄，插入折線圖即用）、`匯出說明`（口徑、範圍、產生時間）。
    比率以小數儲存 + `0.0%` 格式，可直接在 Excel 改顯示位數；**分母 0 的期數留空**（不寫 0，避免畫出假 0% 線）。匯出為唯讀，會寫 audit event `shop_stock_trend_export`。
 9. **圖表 tooltip**：滑鼠懸停／點按可看該期數值。tooltip 會自動避開左右邊界（唔會黐出圖表），長系列名（例如「不良存貨 SKU 佔店內貨品比率」）會自動換行，文字**完整顯示**、唔會被深色底框截斷。
+10. **每個 Dashboard 都有 Excel 匯出**（三個按鈕，三份檔案）：
+
+| 位置 | 匯出內容 | 工作表 |
+|---|---|---|
+| 佔比趨勢卡右上 | 走勢數字（PPT 用） | 佔比趨勢 / PPT 圖表用 / 匯出說明 |
+| 每店明細卡右上 | 該期每店一行，**跟住畫面嘅搜尋／排序／只顯示**（即「匯出 = 畫面所見」） | 每店明細 / 匯出說明 |
+| RF SKU Dashboard 卡右上 | RF SKU 走勢 ＋ 兩張店舖排名（畫面只顯示頭 15 名，Excel 列出全部） | RF SKU 走勢 / RF SKU 店舖排名 / 不良÷店內貨品 排名 / 匯出說明 |
+
+   - 篩選／排序規則由 `filterAndSortWeekRows()` 實作，**必須同 `public/js/admin-stock.js` 的 `filteredWeekRows()` 保持一致**（改一邊就要改兩邊）。
+   - 缺值一律留空（分母 0／無效值唔會當 0）；新店／上期無數據照列但唔佔名次，並在「狀態」欄標明。
+   - 匯出為唯讀，會寫 audit event `shop_stock_detail_export` / `shop_stock_rf_export` / `shop_stock_store_export`。
 
 ### No. of RF SKU Dashboard（自動補貨）與「不良存貨 SKU 佔店內貨品比率」
 
@@ -278,6 +289,8 @@ pg_restore --no-owner --no-privileges --clean --if-exists \
 | GET | `/api/admin/stock/summary?from=&to=` | 趨勢序列 + 最新 KPI（加權比率、WoW 百分點） |
 | GET | `/api/admin/stock/summary/export?months=3\|6\|12\|24` | 匯出趨勢圖數字成 xlsx（3 張工作表；`months` 上限 24，預設 12） |
 | GET | `/api/admin/stock/weeks/:reportDate` | 某一期每店明細（含與上一期的百分點差、`rank`、`is_new`、`is_new_store`、`new_reason`） |
+| GET | `/api/admin/stock/weeks/:reportDate/export?q=&sort=&only=` | 該期每店明細匯出 xlsx（篩選／排序同畫面一致） |
+| GET | `/api/admin/stock/rf/export?months=3\|6\|12\|24&report_date=` | RF SKU Dashboard 匯出 xlsx（走勢＋兩張排名；`report_date` 指定排名期別，預設最新一期） |
 
 ### 店舖端
 
@@ -286,6 +299,7 @@ pg_restore --no-owner --no-privileges --clean --if-exists \
 - 分頁由 `public/portal/js/portal-tabs.js` 控制（`aria-selected` + `hidden` + 網址 hash `#stock`），並廣播 `portal:tab` 事件；`dashboard.js` 收到事件才首次載入，確保面板可見、圖表量得到闊度。
 - 舊網址 `/portal/dashboard.html` **已移除**（該頁只在分頁整合當日短暫存在，從未對外通知，故不留跳轉頁）。入口一律是 `/portal/zero-sales.html`，需要直接開存貨分頁時用 `/portal/zero-sales.html#stock`。
 - API：`GET /api/portal/stock/summary`（`requirePortalUser` + `requireStoreSite`）。
+- **店舖端亦可以匯出 Excel**：走勢卡右上角「匯出 Excel」→ `GET /api/portal/stock/summary/export`（`excelExportLimiter`），工作表「本店走勢」＋「匯出說明」，只含**本店**每期數字同全公司加權平均線；冇數據時回 404。audit event `shop_stock_store_export`。
 - **數據隔離**：`site_code` 一律取自登入 session，**不接受** query／body 傳入；回應只含本店數字與全公司加權比率，不含任何其他店數據。
 - 未有數據時回 `200 { has_data: false }`（不是 404），前端顯示空狀態。
 
@@ -293,5 +307,6 @@ pg_restore --no-owner --no-privileges --clean --if-exists \
 
 - `src/lib/shopStockXlsx.ts`：解析器。上游檔的 XML 帶 `x:` 命名空間前綴、`row`/`cell` 無 `r` 座標，ExcelJS 直接讀會失敗；會先試直接讀，失敗才用 `jszip` 正規化（去前綴、補座標、重新打包）再交 ExcelJS。解壓總量上限 20MB。
 - `src/services/shopStock.ts`：上載／取代／刪除批次、加權比率、WoW、每店明細、店舖端視圖。
+- `src/services/shopStockExport.ts`：Excel 匯出產生器（佔比趨勢、每店明細、RF SKU Dashboard、店舖端本店走勢）＋每店明細的篩選／排序規則 `filterAndSortWeekRows()`。
 - `src/db/migrations/026_shop_stock_snapshots.sql`：`shop_stock_batches`、`shop_stock_snapshots`、view `v_shop_weekly_deadstock`（純 CREATE，不影響既有表）。
 - `test/shopStock.test.ts`：解析（Total／空白／頁腳／重複）、同日取代、`content_hash` 冪等、加權比率數學、除零 → null、admin／portal 未登入 401、跨店隔離。

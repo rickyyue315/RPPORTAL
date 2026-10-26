@@ -346,6 +346,38 @@
     }
   }
 
+  /* ---------- 匯出 Excel（只含本店數字 + 全公司加權平均） ---------- */
+
+  async function downloadStockExport() {
+    const btn = $('btn_stock_export');
+    const box = $('dash_export_result');
+    if (btn) { btn.disabled = true; btn.textContent = '匯出中…'; }
+    if (box) box.textContent = '';
+    try {
+      // 後端以登入 session 限定 site_code，唔會漏到其他店嘅數字
+      const res = await fetch('/api/portal/stock/summary/export', { credentials: 'same-origin' });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error || '匯出失敗');
+      }
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      const match = /filename="([^"]+)"/.exec(res.headers.get('Content-Disposition') || '');
+      a.href = url;
+      a.download = match ? match[1] : 'Stock_Trend.xlsx';
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+      if (box) box.textContent = '已匯出本店嘅不良存貨走勢（只含本店數字同全公司加權平均）。';
+    } catch (err) {
+      if (box) box.textContent = err && err.message ? err.message : '匯出失敗';
+    } finally {
+      if (btn) { btn.disabled = false; btn.textContent = '匯出 Excel'; }
+    }
+  }
+
   document.addEventListener('portal:tab', (e) => {
     const tab = e && e.detail ? e.detail.tab : '';
     if (tab !== 'stock') return;
@@ -357,4 +389,8 @@
   // 獨立頁（沒有分頁籤）或面板本來就可見時立即載入；否則等分頁籤通知。
   const panel = $('panel_stock');
   if (standalone || !panel || !panel.hidden) start();
+
+  // 匯出 Excel（本店走勢）
+  const exportBtn = $('btn_stock_export');
+  if (exportBtn) exportBtn.addEventListener('click', downloadStockExport);
 })();

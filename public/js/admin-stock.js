@@ -800,14 +800,18 @@
   /* ==================== 匯出（PPT 用） ==================== */
 
   /** 把趨勢圖目前顯示期間的數字匯出成 Excel（三個工作表：明細 / PPT 圖表用 / 匯出說明） */
-  async function downloadTrendExport() {
-    const btn = $('btn_stk_export');
-    const box = $('stk_export_result');
+  /**
+   * 通用 Excel 下載：攞 blob → 觸發瀏覽器存檔。
+   * 按鈕會暫時變「匯出中…」並停用；成功／失敗訊息顯示喺 resultBox。
+   */
+  async function downloadExcel(url, fallbackName, btnId, boxId, okMessage) {
+    const btn = $(btnId);
+    const box = $(boxId);
     const label = btn ? btn.textContent : '';
     if (btn) { btn.disabled = true; btn.textContent = '匯出中…'; }
     if (box) box.innerHTML = '';
     try {
-      const res = await fetch(`/api/admin/stock/summary/export?months=${encodeURIComponent(String(chartMonths))}`, {
+      const res = await fetch(url, {
         credentials: 'same-origin',
         cache: 'no-store',
       });
@@ -818,22 +822,74 @@
       const blob = await res.blob();
       const disp = res.headers.get('Content-Disposition') || '';
       const match = disp.match(/filename="([^"]+)"/);
-      const url = URL.createObjectURL(blob);
+      const objUrl = URL.createObjectURL(blob);
       const a = document.createElement('a');
-      a.href = url;
-      a.download = match ? match[1] : 'Shop_Stock_Ratio.xlsx';
+      a.href = objUrl;
+      a.download = match ? match[1] : fallbackName;
       document.body.appendChild(a);
       a.click();
       a.remove();
-      URL.revokeObjectURL(url);
+      URL.revokeObjectURL(objUrl);
       if (box) {
-        box.innerHTML = `<div class="alert alert-success mt-2 mb-0">已匯出最近 ${chartMonths} 個月的佔比與 RF SKU 趨勢（明細＋PPT 圖表用兩張表）。</div>`;
+        box.innerHTML = `<div class="alert alert-success mt-2 mb-0">${esc(okMessage)}</div>`;
       }
     } catch (err) {
       if (box) box.innerHTML = `<div class="alert alert-danger mt-2 mb-0">${esc(err.message)}</div>`;
     } finally {
       if (btn) { btn.disabled = false; btn.textContent = label || '匯出 Excel'; }
     }
+  }
+
+  /** 佔比趨勢（圖表右上角）：走勢 + PPT 圖表用兩張表 */
+  function downloadTrendExport() {
+    return downloadExcel(
+      `/api/admin/stock/summary/export?months=${encodeURIComponent(String(chartMonths))}`,
+      'Shop_Stock_Ratio.xlsx',
+      'btn_stk_export',
+      'stk_export_result',
+      `已匯出最近 ${chartMonths} 個月的佔比與 RF SKU 趨勢（明細＋PPT 圖表用兩張表）。`,
+    );
+  }
+
+  /** 每店明細：跟住畫面嘅搜尋／排序／只顯示，即「匯出 = 畫面所見」 */
+  function downloadDetailExport() {
+    const week = String(selectedWeek || '').slice(0, 10);
+    if (!week) {
+      const box = $('stk_detail_export_result');
+      if (box) {
+        box.innerHTML = '<div class="alert alert-warning mt-2 mb-0">未有可匯出的期數，請先上載報表，或喺下方「上載批次」揀一期。</div>';
+      }
+      return Promise.resolve();
+    }
+    const params = new URLSearchParams();
+    const q = String((($('stk_q') || {}).value) || '').trim();
+    if (q) params.set('q', q);
+    params.set('sort', String((($('stk_sort') || {}).value) || '') || 'ratio_desc');
+    const only = String((($('stk_only') || {}).value) || '');
+    if (only) params.set('only', only);
+    const count = filteredWeekRows().length;
+    return downloadExcel(
+      `/api/admin/stock/weeks/${encodeURIComponent(week)}/export?${params.toString()}`,
+      'Shop_Stock_Detail.xlsx',
+      'btn_stk_detail_export',
+      'stk_detail_export_result',
+      `已匯出 ${week} 的每店明細，共 ${count} 間店（跟住畫面嘅搜尋／排序／篩選）。`,
+    );
+  }
+
+  /** RF SKU Dashboard：走勢 + 兩張店舖排名（排名期別跟畫面揀選嗰期） */
+  function downloadRfExport() {
+    const params = new URLSearchParams();
+    params.set('months', String(chartMonths));
+    const week = String(selectedWeek || '').slice(0, 10);
+    if (week) params.set('report_date', week);
+    return downloadExcel(
+      `/api/admin/stock/rf/export?${params.toString()}`,
+      'Shop_Stock_RF_SKU.xlsx',
+      'btn_stk_rf_export',
+      'stk_rf_export_result',
+      `已匯出 RF SKU 走勢（最近 ${chartMonths} 個月）同店舖排名${week ? `（${week}）` : ''}。`,
+    );
   }
 
   /* ==================== 批次列表 ==================== */
@@ -1355,6 +1411,14 @@
     // 匯出目前顯示期間的趨勢數字（Excel；不會改任何資料）
     const exportBtn = $('btn_stk_export');
     if (exportBtn) exportBtn.addEventListener('click', downloadTrendExport);
+
+    // 每店明細匯出（跟住畫面篩選）
+    const detailExportBtn = $('btn_stk_detail_export');
+    if (detailExportBtn) detailExportBtn.addEventListener('click', downloadDetailExport);
+
+    // RF SKU Dashboard 匯出（走勢 + 兩張排名）
+    const rfExportBtn = $('btn_stk_rf_export');
+    if (rfExportBtn) rfExportBtn.addEventListener('click', downloadRfExport);
 
     // 趨勢圖顯示期間（3 / 6 / 12 / 24 個月；資料本身永久保留，只影響畫幾多）
     const rangeEl = $('stk_range');

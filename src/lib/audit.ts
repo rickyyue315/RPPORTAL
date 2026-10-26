@@ -57,6 +57,9 @@ export type AuditEventType =
   | 'shop_stock_batch_updated'
   | 'shop_stock_batch_deleted'
   | 'shop_stock_trend_export'
+  | 'shop_stock_detail_export'
+  | 'shop_stock_rf_export'
+  | 'shop_stock_store_export'
   | 'shop_stock_import_error';
 
 interface AuditInput {

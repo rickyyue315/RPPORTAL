@@ -245,6 +245,13 @@ describe('指定 SKU 回覆 API（一個事項多個 SKU）', () => {
   let hc63MatterId = '';
   let ha02SkuA = '';
   let ha02SkuB = '';
+  /**
+   * 上載成功的原始檔案位元組。
+   * 重複檔案偵測用 contentHash = 檔案 bytes 雜湊，而 ExcelJS 每次 writeBuffer
+   * 都會寫入新的時間戳，所以「內容相同但重新產生」的檔案雜湊不同 —— 測試必
+   * 須重用同一份 buffer，否則會隨執行速度時好時壞（CI 曾因此失敗）。
+   */
+  let mainBuffer: Buffer;
 
   it('admin 上載 Excel：同店多個 SKU 歸入同一事項', async () => {
     const agent = await adminAgent();
@@ -254,6 +261,7 @@ describe('指定 SKU 回覆 API（一個事項多個 SKU）', () => {
       { site: 'HB20', sku: '107668017004', qty: 4 },
       { site: 'HC63', sku: '107668017004', qty: 3 },
     ]);
+    mainBuffer = buffer;
     const res = await uploadBatch(agent, buffer, {
       instructions: '請按年期填報可調撥件數',
       due_date: '2026-11-10',
@@ -294,17 +302,12 @@ describe('指定 SKU 回覆 API（一個事項多個 SKU）', () => {
     hc63MatterId = matters.find((m) => m.site_code === 'HC63')!.id;
   });
 
-  it('同一檔案再上載會被擋', async () => {
+  it('同一檔案再上載會被擋（DUPLICATE_FILE）', async () => {
     const agent = await adminAgent();
-    const buffer = await buildWorkbook([
-      { site: 'HA02', sku: '107668017004', qty: 1 },
-      { site: 'HA02', sku: '108000000001', qty: 2, desc: '另一款貨品' },
-      { site: 'HB20', sku: '107668017004', qty: 4 },
-      { site: 'HC63', sku: '107668017004', qty: 3 },
-    ]);
-    const res = await uploadBatch(agent, buffer);
+    const res = await uploadBatch(agent, mainBuffer);
     expect(res.status).toBe(409);
     expect(res.body.code).toBe('DUPLICATE_FILE');
+    expect(res.body.existing.batch_code).toBe(batchCode);
   });
 
   it('店舖只見到自己的事項；直 link 只限涉及店舖', async () => {
@@ -605,13 +608,7 @@ describe('指定 SKU 回覆 API（一個事項多個 SKU）', () => {
 
   it('同一檔案勾選 force 可重新派發', async () => {
     const agent = await adminAgent();
-    const buffer = await buildWorkbook([
-      { site: 'HA02', sku: '107668017004', qty: 1 },
-      { site: 'HA02', sku: '108000000001', qty: 2, desc: '另一款貨品' },
-      { site: 'HB20', sku: '107668017004', qty: 4 },
-      { site: 'HC63', sku: '107668017004', qty: 3 },
-    ]);
-    const forced = await uploadBatch(agent, buffer, { force: '1' });
+    const forced = await uploadBatch(agent, mainBuffer, { force: '1' });
     expect(forced.status).toBe(201);
     expect(forced.body.batchCode).not.toBe(batchCode);
     expect(forced.body.matterCount).toBe(3);

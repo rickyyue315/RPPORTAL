@@ -93,6 +93,17 @@
 .help-step p {
   margin: 0;
 }
+/* 步驟內的條列：收緊縮排與行距，bullet 用品牌色；預設 40px 縮排會令文字過窄 */
+.help-step ul {
+  margin: 10px 0 0;
+  padding-left: 20px;
+}
+.help-step li {
+  margin-top: 6px;
+}
+.help-step li::marker {
+  color: var(--brand);
+}
 .help-rules {
   display: grid;
   grid-template-columns: repeat(2, 1fr);

@@ -365,6 +365,7 @@ RP Team 指定個別 SKU 要求店舖回報「每個貨品年期可調撥幾件�
 ### 店舖端
 
 - 入口：`/portal/designated-sku.html`；零銷售頁導覽列有「指定SKU回覆」連結及待回覆事項數字，頁頂亦有提示橫幅。
+- **圖文使用說明：`/help.html#designated-sku`（第 2 章）**，店舖端頁腳亦有連結。新增或調整 `help.html` 章節時，要同步 TOC、章節編號，以及內文「第 N 章」的交叉引用與 `/help.html#…` 外部連結。
 - **一張卡 = 一個事項**，卡內列出該事項所有 SKU；店舖在**同一個彈窗**內逐個 SKU 填年期（可「新增年期」），或勾選「此 SKU 無可調撥件數」，一次過提交整份事項。
 - **只會顯示屬於登入 Site Code 的事項**；`site_code` 一律取自 portal session，不接受 query／body 傳入。
 - **直 link**：`/portal/designated-sku.html?matter=<事項編號>`（舊 `?task=` 會自動轉換）。未登入會先過 Site Code + 密碼閘；登入後自動開啟該事項。若事項不屬於該店舖，API 回 `403 MATTER_FORBIDDEN`；不存在回 `404`。

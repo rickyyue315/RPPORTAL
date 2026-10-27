@@ -799,3 +799,49 @@ body.stk-modal-open { overflow: hidden; }
 .dsku-manual-table { table-layout: fixed; width: 100%; max-width: 1040px; }
 .dsku-manual-table input[data-f="stock"] { text-align: center; }
 .dsku-manual-table td:last-child, .dsku-manual-table th:last-child { text-align: center; }
+
+/* ---------------------------------------------------------------------------
+   分段切換（segmented switch）
+   用於「上載 Excel / 人手輸入」這類互斥檢視切換。
+   以 .panel-subnav 的膠囊造型為基礎，但改成 button 元素並收窄，
+   避免瀏覽器預設按鈕樣式（立體邊框、灰色底）破壞版面。
+--------------------------------------------------------------------------- */
+.seg-switch {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 3px;
+  margin: 0 0 16px;
+  border: 1px solid #d3e3f2;
+  border-radius: 999px;
+  background: #f1f6fb;
+}
+.seg-switch-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 14px;
+  border: none;
+  border-radius: 999px;
+  background: transparent;
+  color: #0a3d69;
+  font-family: inherit;
+  font-size: 12.5px;
+  font-weight: 600;
+  line-height: 1.5;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background .15s ease, color .15s ease, box-shadow .15s ease;
+}
+.seg-switch-btn:hover { background: #e2eefb; }
+.seg-switch-btn:focus-visible {
+  outline: 2px solid rgba(15, 92, 156, .35);
+  outline-offset: 1px;
+}
+.seg-switch-btn.is-active {
+  background: #0f5c9c;
+  color: #fff;
+  box-shadow: 0 1px 2px rgba(10, 61, 105, .25);
+}
+.seg-switch-btn .icon { width: 15px; height: 15px; opacity: .9; }
+.seg-switch-btn.is-active .icon { opacity: 1; }

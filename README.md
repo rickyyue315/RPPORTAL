@@ -15,6 +15,7 @@ SASA RP Team 非正常補貨（NDRF）申報平台。申請端以「Site Code／
 - 同一 Site Code + SKU 於同一日（香港日期）只可申報一次；一般 NDRF、Urgent 與突發性銷售分開計算。被拒時可用查詢／修改更正，翌日可重新申報；管理後台操作不受此限
 - 管理後台：清單篩選（含申報類型；日期預設今日）、詳情編輯、版本歷史、模板下載、批量匯入、SAP 9 欄匯出、獨立 Urgent 匯出、獨立突發性銷售匯出、完整審計報表、門店主檔管理；概覽及清單每分鐘自動刷新
 - 管理後台另提供行貨退貨報數清單、詳情編輯及 Buyer 8 欄 Excel 預覽／匯出鎖定；系統不記錄 Buyer 審批結果或退貨 NO.
+- 90 日零銷售：每週派發每店 Top 10 零銷售 SKU 給店舖逐條回覆原因；新一週上載即自動封存舊週次。**支援「本週無須回覆」**（銷售繁忙期）：批次照樣派發（店舖仍看見本店 Top 10 清單可搜尋／匯出），但店舖不可回覆，亦不計入待回覆／逾期／回覆率；可隨時切回需要回覆
 - 後台導航收斂為 7 個分頁：總覽／申報清單／**匯出**（含匯出批次及重新下載）／零銷售／存貨 Dashboard／指定SKU回覆／**系統**（含帳戶與主檔、審批設定、系統工具）。合併頁面頂部有頁內分組導覽；舊連結 `?tab=batches|accounts|review` 及 `#sec-batches|sec-accounts|sec-review` 書籤會自動跳到對應分頁的分組，不會失效
 - 指定 SKU 回覆：批次可用**Excel 上載**或**人手輸入**建立（一個批次可含多間店舖 × 多個 SKU），系統按 Site Code 建立**事項**（同一店舖的多個 SKU 歸入同一事項）；店舖為每個 SKU 的各個貨品年期 (MMYY) 回覆可調撥件數，或標示「無可調撥」，一次過提交整份事項。每個事項有獨立事項編號、批次編號及直 link（只限涉及店舖，後端強制核對）。**截止日期及時間（香港時間）到點即自動截止**，管理員可延長期限、補加／修改 SKU、代店舖補錄或更正回覆（不佔店舖修改次數，會寫入審計日誌）
 - SAP 匯出只包含一般 NDRF，Urgent Order 使用獨立 6 欄匯出（Application No. | Site Code | SKU | QTY | Urgent Reason | Other Reason）；突發性銷售使用獨立 4 欄匯出（Application Date | Requested by | Shop Code | SKU）；匯出成功後鎖定該批申報，申請人不能再修改；匯出失敗不鎖定。管理員於 14:30 後開始匯出處理，期間 Urgent Order 申請人不可修改（查詢不受限）
@@ -226,6 +227,23 @@ pg_restore --no-owner --no-privileges --clean --if-exists \
 - 管理員匯入無 Idempotency-Key 需求（與公開匯入不同），但相同內容的檔案（`content_hash`）重複上載會被拒絕（409），避免誤按或網路重試造成重複寫入；修改過內容的檔案不受影響。
 - 錯誤訊息不包含資料庫或內部設定資訊。
 - 一般日誌不記錄申報內容、密碼或完整 IP。
+
+## 90日零銷售：「本週無須回覆」（銷售繁忙期）
+
+旺季／大檔期店舖忙於銷售時，RP Team 可以把某一週設為**無須回覆**：批次照樣派發，店舖仍看到本店 **Top 10** 零銷售 SKU 清單（可搜尋、可匯出 Excel），但不需要逐條回覆。
+
+- **開關位置**：後台「零銷售」分頁 → 批次列表每列的「**設定無須回覆**」／「**恢復需要回覆**」（只限未封存的週次）；上載新批次時亦可直接勾選「本週無須回覆」並填寫給店舖的說明（`reply_notice`，空白時店舖頁用預設文案）。
+- **資料模型**：`zero_sales_batches.reply_required`（預設 `true`）＋ `reply_notice`。migration `031_zero_sales_no_reply.sql`。
+- **狀態定義**（勿混淆）：
+  - `closed_at IS NULL` = 未封存；`closed_at` 非 NULL = 已封存（只供查閱）。
+  - `is_archived` = 是否已封存；`reply_required` = 是否需要回覆。
+  - **`is_open` = 未封存 AND 需要回覆**（= 店舖現時可否回覆）。因此「無須回覆」的週次 `is_open = false` 但 `is_archived = false`。
+- **店舖端**：藍色資訊帶說明本週無須回覆，隱藏進度條與狀態篩選，狀態欄顯示「無須回覆」、操作欄顯示「無須回覆」（沒有回覆按鈕）；清單、搜尋、匯出 Excel 照常。直接呼叫回覆 API 會回 `409 { code: 'REPLY_NOT_REQUIRED' }`。
+- **統計口徑**：無須回覆的行另計 `no_reply`，**永不計入 `pending` / `overdue` / 待回覆店舖名單**；回覆率分母 = 總行數 − `no_reply`（即只計需要回覆的行）。總覽卡下方會標示「其中 N 行屬無須回覆」。
+- **自動套用**：無須回覆的週次上載時**不會**自動套用重複 SKU 上次回覆（店舖毋須逐條確認），手動按「自動套用重複回覆」亦會被拒（400）。
+- **切換不回退資料**：切換只改「是否需要回覆」，不會修改任何已提交的回覆。切回需要回覆後，未回覆的行即變回待回覆（店舖可繼續回覆）；切為無須回覆後，已提交的回覆保留但不可再改。
+- **匯出**：Admin 匯出的「未回覆店舖」工作表不列無須回覆的週次；`記錄狀態` 欄標示「無須回覆（只供參考）」。店舖端匯出的狀態欄為「無須回覆」／「已回覆（本週無須回覆）」。
+- **API**：`PUT /api/admin/zero-sales/batches/:id/reply-required`，body `{ reply_required: boolean, notice?: string }`（省略 `notice` 時沿用原值）；上載 `POST /api/admin/zero-sales/batches` 可加 `reply_required=0` / `reply_notice`。切換會寫入審計 `zero_sales_reply_required_changed`。
 
 ## 每週店舖不良存貨 Dashboard（I14「By Shop」）
 

@@ -49,8 +49,8 @@
     <div class="card zs-head-card">
       <h2>90日零銷售 SKU 回覆</h2>
       <div id="site_info"><div class="loading">載入中…</div></div>
-      <div class="zs-progress" aria-hidden="true"><i id="zs_progress_bar" style="width:0%"></i></div>
-      <p class="zs-intro">RP Team 每週會從你店舖本身的存貨中，選出過去 90 日零銷售、庫存量最高的 <b>Top 10</b> SKU 派發提示。<br>請逐條選擇原因，可填補充說明。每 SKU 首次回覆後可修改 <b>1 次</b>；重複上榜（自動套用）可再修改 <b>2 次</b>，用完即鎖定（如需再改請聯絡 RP Team）。<b>只有最新一週可回覆</b>，舊週次會封存成紀錄。</p>
+      <div class="zs-progress" id="zs_progress" aria-hidden="true"><i id="zs_progress_bar" style="width:0%"></i></div>
+      <p class="zs-intro">RP Team 每週會從你店舖本身的存貨中，選出過去 90 日零銷售、庫存量最高的 <b>Top 10</b> SKU 派發提示。<br>請逐條選擇原因，可填補充說明。每 SKU 首次回覆後可修改 <b>1 次</b>；重複上榜（自動套用）可再修改 <b>2 次</b>，用完即鎖定（如需再改請聯絡 RP Team）。<b>只有最新一週可回覆</b>，舊週次會封存成紀錄。<br>如 RP Team 將該週設為「<b>本週無須回覆</b>」（例如銷售繁忙期），你仍會看到本店 Top 10 清單作銷售參考，但<b>不用逐條回覆</b>。</p>
 
       <section class="zs-solution" aria-labelledby="zs_solution_title">
         <h3 id="zs_solution_title">解決 SKU 上榜的兩種方法</h3>
@@ -66,7 +66,7 @@
           <label for="f_batch">週次（預設最新一週）</label>
           <select id="f_batch"><option value="">載入中…</option></select>
         </div>
-        <div class="field">
+        <div class="field" id="f_status_field">
           <label for="f_status">狀態篩選</label>
           <select id="f_status"><option value="">全部</option><option value="pending">未回覆</option><option value="replied">已回覆</option><option value="repeat">重複上榜（≥2次）</option></select>
         </div>

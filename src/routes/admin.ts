@@ -123,6 +123,7 @@ import {
   autoFillZeroSalesReplies,
   closeZeroSalesBatch,
   reopenZeroSalesBatch,
+  setZeroSalesBatchReplyRequired,
   ZeroSalesReplyError,
 } from '../services/zeroSales.js';
 import {
@@ -2784,6 +2785,7 @@ adminRouter.get(
       batch_label: i.week_label ?? '',
       reply_count: i.reply_count ?? (i.status === 'replied' ? 1 : 0),
       is_open: i.is_open !== false,
+      reply_required: i.reply_required !== false,
       auto_filled_from_week: i.auto_filled ? (i.auto_filled_from_week || null) : null,
     })), reasonLabels);
     const stamp = toHKDateString(new Date()).replace(/-/g, '');
@@ -2807,6 +2809,10 @@ adminRouter.get(
 const zeroSalesUploadSchema = z.object({
   week_label: z.string().trim().min(1, '週次為必填').max(60),
   note: z.string().max(1000).optional().default(''),
+  /** '0' = 本週無須回覆（只顯示 Top 10 清單）；其他 / 缺省 = 需要回覆 */
+  reply_required: z.string().optional(),
+  /** 給店舖看的說明（可選） */
+  reply_notice: z.string().max(1000).optional().default(''),
 });
 
 /** POST /api/admin/zero-sales/batches — 上載 Excel 開新一週批次 */
@@ -2842,6 +2848,7 @@ adminRouter.post(
       return;
     }
     const autoFillRepeats = String(req.body.auto_fill_repeats ?? '1') !== '0';
+    const replyRequired = String(req.body.reply_required ?? '1') !== '0';
     const { batchId, closedBatches, autoFilled } = await createZeroSalesBatch({
       weekLabel: meta.data.week_label,
       note: meta.data.note ?? '',
@@ -2849,6 +2856,8 @@ adminRouter.post(
       contentHash: parsed.contentHash ?? '',
       createdBy: req.adminUsername!,
       autoFillRepeats,
+      replyRequired,
+      replyNotice: meta.data.reply_notice ?? '',
     });
     await writeAuditEvent({
       eventType: 'zero_sales_batch_created',
@@ -2862,11 +2871,12 @@ adminRouter.post(
         totalRows: parsed.totalRows,
         auto_filled: autoFilled,
         auto_fill_repeats: autoFillRepeats,
+        reply_required: replyRequired,
         // 即時封存：記錄被自動封存的舊批次及當時未回覆行數，方便日後追查
         closed_batches: closedBatches.map((b) => ({ batch_id: b.id, week_label: b.week_label, pending: b.pending })),
       },
     });
-    res.status(201).json({ ok: true, batchId, totalRows: parsed.totalRows, closedBatches, autoFilled });
+    res.status(201).json({ ok: true, batchId, totalRows: parsed.totalRows, closedBatches, autoFilled, replyRequired });
   }),
 );
 
@@ -2912,6 +2922,7 @@ adminRouter.get(
       batch_label: i.week_label ?? '',
       reply_count: i.reply_count ?? (i.status === 'replied' ? 1 : 0),
       is_open: i.is_open !== false,
+      reply_required: i.reply_required !== false,
       auto_filled_from_week: i.auto_filled ? (i.auto_filled_from_week || null) : null,
     })), reasonLabels);
     const label = (items[0]?.week_label ?? 'batch').replace(/[^\w\-]+/g, '_');
@@ -2978,6 +2989,66 @@ adminRouter.put(
       week_label: result.weekLabel,
       pending: result.pending,
       already_closed: result.alreadyClosed,
+      reply_required: result.replyRequired,
+    });
+  }),
+);
+
+const zeroSalesReplyRequiredSchema = z.object({
+  reply_required: z.boolean(),
+  /** 給店舖看的說明（留空 = 用系統預設文案；只切換開關時可省略，會沿用原值） */
+  notice: z.string().max(1000).optional(),
+});
+
+/** PUT /api/admin/zero-sales/batches/:id/reply-required — 切換「本週無須回覆」
+ *  開啟後：批次照樣派發（店舖仍看見本店 Top 10 清單），但店舖不可回覆，亦不計入待回覆 / 回覆率。
+ *  可隨時切回需要回覆，未回覆的行即重新變成待回覆。 */
+adminRouter.put(
+  '/zero-sales/batches/:id/reply-required',
+  requireUuidParam('id'),
+  requireAdmin,
+  adminActionLimiter,
+  asyncHandler(async (req: Request, res: Response) => {
+    const parsed = zeroSalesReplyRequiredSchema.safeParse(req.body ?? {});
+    if (!parsed.success) {
+      res.status(400).json({ error: parsed.error.issues[0]?.message ?? '參數無效' });
+      return;
+    }
+    const batchId = req.params.id as string;
+    const result = await setZeroSalesBatchReplyRequired({
+      batchId,
+      replyRequired: parsed.data.reply_required,
+      notice: parsed.data.notice,
+      actor: req.adminUsername!,
+    });
+    if (!result) {
+      res.status(404).json({ error: '找不到此批次' });
+      return;
+    }
+    if (result.changed) {
+      await writeAuditEvent({
+        eventType: 'zero_sales_reply_required_changed',
+        actorRole: 'admin',
+        actor: req.adminUsername,
+        ip: getClientIp(req),
+        metadata: {
+          batch_id: batchId,
+          week_label: result.weekLabel,
+          reply_required: result.replyRequired,
+          notice: result.notice,
+          pending: result.pending,
+          replied: result.replied,
+        },
+      });
+    }
+    res.json({
+      ok: true,
+      week_label: result.weekLabel,
+      reply_required: result.replyRequired,
+      notice: result.notice,
+      changed: result.changed,
+      pending: result.pending,
+      replied: result.replied,
     });
   }),
 );
@@ -3027,9 +3098,19 @@ adminRouter.post(
       return;
     }
     const batchId = req.params.id as string;
-    const result = await autoFillZeroSalesReplies(batchId, {
-      onlyUnrepliedStores: parsed.data.only_unreplied_stores,
-    });
+    let result: Awaited<ReturnType<typeof autoFillZeroSalesReplies>>;
+    try {
+      result = await autoFillZeroSalesReplies(batchId, {
+        onlyUnrepliedStores: parsed.data.only_unreplied_stores,
+      });
+    } catch (err) {
+      // 無須回覆的週次不需要套用（服務層擋），回 400 而不是 500
+      if (err instanceof ZeroSalesReplyError) {
+        res.status(400).json({ error: err.message });
+        return;
+      }
+      throw err;
+    }
     if (!result) {
       res.status(404).json({ error: '找不到此批次' });
       return;

@@ -191,6 +191,8 @@ export interface ZeroSalesExportItem {
   reply_count: number;
   /** 所屬週次是否仍可回覆；false = 已封存（未回覆會標示為已截止，仍會列入匯出紀錄） */
   is_open?: boolean;
+  /** 所屬週次是否需要回覆；false = 「本週無須回覆」（未回覆屬正常，不算欠交） */
+  reply_required?: boolean;
   /** 若回覆由系統自動套用，記錄來源週次；null／undefined = 店舖自行回覆 */
   auto_filled_from_week?: string | null;
 }
@@ -228,11 +230,13 @@ export async function buildZeroSalesExportBuffer(items: ZeroSalesExportItem[], r
       it.reason_note ?? '',
       it.status === 'replied'
         ? (it.auto_filled_from_week ? `已回覆（自動套用 ${it.auto_filled_from_week}）` : '已回覆')
-        : '未回覆',
+        : (it.reply_required === false ? '未回覆（本週無須回覆）' : '未回覆'),
       it.reply_count ?? (it.status === 'replied' ? 1 : 0),
       it.replied_at ?? '',
       it.replied_by ?? '',
-      it.is_open === false ? '已截止（已封存）' : '可回覆',
+      it.reply_required === false
+        ? '無須回覆（只供參考）'
+        : (it.is_open === false ? '已截止（已封存）' : '可回覆'),
     ]);
   }
   sheet.columns = headers.map(() => ({ width: 18 }));
@@ -243,6 +247,8 @@ export async function buildZeroSalesExportBuffer(items: ZeroSalesExportItem[], r
   pendingHeaders.forEach((_, i) => { pendingSheet.getCell(1, i + 1).style = headerStyle; });
   const storeMap = new Map<string, { site_code: string; shop: string; om: string; week: string; archived: boolean; total: number; replied: number; skus: string[]; reasons: Map<string, number> }>();
   for (const it of items) {
+    // 「本週無須回覆」的週次：未回覆屬正常，不可列入跟進名單（只保留已回覆的紀錄）
+    if (it.reply_required === false && it.status !== 'replied') continue;
     // 跨批次匯出時，已封存週次的未回覆行亦要保留（歷史紀錄），以「批次狀態」標示不可再回覆
     const key = `${it.site_code}|${it.batch_label}`;
     let s = storeMap.get(key);
@@ -271,7 +277,7 @@ export async function buildZeroSalesExportBuffer(items: ZeroSalesExportItem[], r
   pendingSheet.getColumn(10).width = 40;
   // 註解：說明括號內數字的意義（括號內為行數）
   const pendingNote = pendingSheet.getCell(pendingStores.length + 3, 1);
-  pendingNote.value = '註：括號內數字為行數（該店以該原因回覆的行數）；「批次狀態」為已封存的週次不可再回覆。';
+  pendingNote.value = '註：括號內數字為行數（該店以該原因回覆的行數）；「批次狀態」為已封存的週次不可再回覆；「本週無須回覆」的週次不列入此工作表。';
   pendingNote.font = { italic: true, color: { argb: 'FF808080' } };
 
   buildSkuReasonSheet(workbook, items, reasonLabels, headerStyle);
@@ -582,6 +588,8 @@ export interface ZeroSalesStoreExportItem {
   batch_date: string;
   /** 所屬週次是否仍可回覆；false = 已封存（匯出時狀態會標示為已截止／已封存） */
   is_open?: boolean;
+  /** 所屬週次是否需要回覆；false = 「本週無須回覆」（狀態欄標示為無須回覆，不算欠交） */
+  reply_required?: boolean;
   /** 跨批次累計上榜次數（<2 為首次） */
   occurrence_count: number;
   prev_week_label: string | null;
@@ -616,11 +624,14 @@ export async function buildZeroSalesStoreExportBuffer(items: ZeroSalesStoreExpor
     const replied = it.status === 'replied';
     const archived = it.is_open === false;
     // 已封存週次：狀態欄同時交代回覆結果與「不可再回覆」，避免匯出表被當成待辦清單
-    const statusText = archived
-      ? (replied ? '已回覆（已封存）' : '未回覆（已截止）')
-      : (replied
-        ? (it.auto_filled_from_week ? `已回覆（自動套用 ${it.auto_filled_from_week}）` : '已回覆')
-        : '未回覆');
+    // 「本週無須回覆」：未回覆屬正常，標示為無須回覆而非欠交
+    const statusText = it.reply_required === false
+      ? (replied ? '已回覆（本週無須回覆）' : '無須回覆')
+      : archived
+        ? (replied ? '已回覆（已封存）' : '未回覆（已截止）')
+        : (replied
+          ? (it.auto_filled_from_week ? `已回覆（自動套用 ${it.auto_filled_from_week}）` : '已回覆')
+          : '未回覆');
     sheet.addRow([
       it.week_label ?? '',
       p['Brand'] ?? '',

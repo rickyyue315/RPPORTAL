@@ -158,6 +158,7 @@
                     </tbody>
                   </table>
                 </div>
+                <p class="hint mb-0 mt-2" id="zs_no_reply_hint" hidden></p>
                 <div class="mt-2 text-end"><a href="?tab=zero-sales" class="btn btn-sm btn-outline-primary" data-tab-link="zero-sales">前往統計及匯出</a></div>
               </div>
             </div>
@@ -351,6 +352,14 @@
               <input class="form-check-input" type="checkbox" id="zs_auto_fill_upload" checked>
               <span class="form-check-label">上載新批次時，重複上榜 SKU 自動套用上次店舖回覆（店舖仍可修改 2 次）</span>
             </label>
+            <label class="form-check mt-2">
+              <input class="form-check-input" type="checkbox" id="zs_no_reply_upload">
+              <span class="form-check-label"><b>本週無須回覆</b>（銷售繁忙期適用）：照樣派發每店 Top 10 清單給店舖參考銷售，但店舖不必逐條回覆，亦不計入待回覆／逾期／回覆率；勾選後不會自動套用重複回覆。</span>
+            </label>
+            <div class="mt-2" id="zs_no_reply_notice_wrap" hidden>
+              <label class="form-label" for="zs_no_reply_notice">給店舖的說明（可留空，店舖頁會顯示）</label>
+              <input type="text" id="zs_no_reply_notice" class="form-control" maxlength="200" placeholder="例如：本週銷售繁忙期，無須逐條回覆；請優先銷售以下 Top 10 SKU。">
+            </div>
             <div id="zs_upload_result"></div>
             <div class="d-flex align-items-center gap-2 flex-wrap mt-4">
               <h4 class="m-0">統計總覽</h4>
@@ -431,7 +440,7 @@
               </div>
             </div>
             <div id="zs_export_result"></div>
-            <p class="text-secondary small mt-2">批次狀態：<b>開放中</b> = 店舖可回覆；<b>已封存</b> = 只供查閱。上載新批次時，之前開放的批次會自動封存；如需讓店舖補答舊週次，可按「重開」（下次上載時會再次封存）。<br>「自動套用重複回覆」只會更新仍<b>未回覆</b>的 SKU，永不覆寫店舖已提交的回覆；建議保留下方勾選，只套用於<b>完全未回覆的店舖</b>（適合已派發中、已有部分店舖回覆的週次，例如 2026-W43）。</p>
+            <p class="text-secondary small mt-2">批次狀態：<b>開放中</b> = 店舖可回覆；<b>已封存</b> = 只供查閱；<b>本週無須回覆</b> = 照樣派發 Top 10 給店舖參考銷售，但店舖不可回覆，亦不計入待回覆／逾期／回覆率（可隨時按「恢復需要回覆」重新開放回覆）。上載新批次時，之前開放的批次會自動封存；如需讓店舖補答舊週次，可按「重開」（下次上載時會再次封存）。<br>「自動套用重複回覆」只會更新仍<b>未回覆</b>的 SKU，永不覆寫店舖已提交的回覆；建議保留下方勾選，只套用於<b>完全未回覆的店舖</b>（適合已派發中、已有部分店舖回覆的週次，例如 2026-W43）。</p>
             <label class="form-check mt-2">
               <input class="form-check-input" type="checkbox" id="zs_autofill_only_unreplied" checked>
               <span class="form-check-label">自動套用時，只限完全未回覆的店舖（已回覆店舖及所有已回覆 SKU 不受影響）</span>

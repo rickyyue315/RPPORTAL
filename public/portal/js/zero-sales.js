@@ -103,6 +103,18 @@
     return `上次 ${it.prev_week_label}：${reason}`;
   }
 
+  /** 已封存（只供查閱）：is_archived 為新欄位；舊回應只有 is_open，故以其推斷 */
+  function isArchivedBatch(b) {
+    if (!b) return false;
+    if (typeof b.is_archived === 'boolean') return b.is_archived;
+    return b.is_open === false && b.reply_required !== false;
+  }
+
+  /** 本週無須回覆：批次未封存，但 RP Team 已設定店舖不必逐條回覆 */
+  function isNoReplyBatch(b) {
+    return !!b && !isArchivedBatch(b) && b.reply_required === false;
+  }
+
   /** 'EYG - EO YUNG GAM(HAN BANG)' 只顯示 Brand Code 'EYG' */
   function brandCode(it) {
     const full = payloadVal(it, 'Brand');
@@ -126,13 +138,22 @@
       sel.value = 'all';
       return;
     }
-    // 預設落在最新一個「仍可回覆」的週次；若全部已封存（管理員手動封存）才退回最新一週
-    const fallback = (batches.find((b) => b.is_open) || batches[0]).id;
+    // 預設落在最新一個「仍可回覆」的週次；若最新一週是「無須回覆」，就停在該週（讓店舖看到 Top 10）；
+    // 只有全部已封存（管理員手動封存）才退回最新一週
+    const fallback = (batches.find((b) => b.is_open)
+      || batches.find((b) => !isArchivedBatch(b))
+      || batches[0]).id;
     sel.innerHTML = batches.map((b) => {
       // 已封存的週次不再顯示「未回覆」數字，避免變成永遠清不完的 to-do list
-      const label = b.is_open
-        ? `${b.week_label}（${b.pending} 未回覆 / ${b.total}）${b.id === batches[0].id ? ' — 最新' : ''}`
-        : `${b.week_label}（已封存 · ${b.total} 個 SKU）`;
+      // 「本週無須回覆」亦不顯示未回覆數，只顯示 SKU 數
+      const archived = isArchivedBatch(b);
+      const noReply = isNoReplyBatch(b);
+      const latest = b.id === batches[0].id ? ' — 最新' : '';
+      const label = archived
+        ? `${b.week_label}（已封存 · ${b.total} 個 SKU）`
+        : noReply
+          ? `${b.week_label}（無須回覆 · ${b.total} 個 SKU）${latest}`
+          : `${b.week_label}（${b.pending} 未回覆 / ${b.total}）${latest}`;
       return `<option value="${p.escapeHtml(b.id)}">${p.escapeHtml(label)}</option>`;
     }).join('');
     // refresh 時保留店舖正在看的週次（即使該週已被封存，仍可查看歷史）
@@ -156,6 +177,14 @@
   }
 
   async function loadList() {
+    const batchVal = $('f_batch') ? $('f_batch').value : '';
+    currentBatch = batches.find((b) => b.id === batchVal) || null;
+    const archived = isArchivedBatch(currentBatch);
+    const noReply = isNoReplyBatch(currentBatch);
+    // 無須回覆的週次沒有「未回覆／已回覆」的分別，狀態篩選隱藏並重設，避免清單被隱藏的條件過濾
+    const statusField = $('f_status_field');
+    if (statusField) statusField.hidden = noReply;
+    if (noReply && $('f_status').value) $('f_status').value = '';
     // 「重複上榜」為前端篩選（後端 status 只支援 pending / replied）
     onlyRepeat = $('f_status').value === 'repeat';
     const params = filterParams();
@@ -163,9 +192,6 @@
     const data = await p.api(`/api/portal/zero-sales/my${qs}`);
     const all = data.items || [];
     items = onlyRepeat ? all.filter(isRepeat) : all;
-    const batchVal = $('f_batch') ? $('f_batch').value : '';
-    currentBatch = batches.find((b) => b.id === batchVal) || null;
-    const archived = !!(currentBatch && currentBatch.is_open === false);
     const replied = items.filter((i) => i.status === 'replied').length;
     const rate = items.length ? Math.round((replied / items.length) * 100) : 0;
     const repeatN = all.filter(isRepeat).length;
@@ -173,13 +199,16 @@
     const weekLabel = currentBatch ? currentBatch.week_label : '全部週次';
     const latestOpen = batches.find((b) => b.is_open);
     const bar = document.getElementById('zs_progress_bar');
+    const progress = document.getElementById('zs_progress');
+    // 無須回覆：不顯示進度條，避免看起來仍有「未完成」的壓力
+    if (progress) progress.hidden = noReply;
     if (bar) {
       // 已封存週次用中性灰進度，避免看起來仍有「待完成」的感覺
       const archivedRate = currentBatch && currentBatch.total
         ? Math.round((currentBatch.replied / currentBatch.total) * 100)
         : 0;
       bar.style.width = `${archived ? archivedRate : rate}%`;
-      bar.classList.toggle('is-archived', archived);
+      bar.classList.toggle('is-archived', archived || noReply);
     }
     if (archived) {
       const histReplied = currentBatch ? currentBatch.replied : replied;
@@ -193,6 +222,16 @@
         `</div>` +
         `<div>歷史紀錄：${histTotal} 個指定 SKU（${histReplied} 已回覆）${repeatN ? `｜<b>${repeatN}</b> 個重複上榜（≥2 次）` : ''}${onlyRepeat ? '｜現只顯示重複上榜' : ''}</div>` +
         `<div class="hint">如非你店舖，請按右上「登出」再輸入 Site Code。</div>`;
+    } else if (noReply) {
+      const notice = (currentBatch && currentBatch.reply_notice ? String(currentBatch.reply_notice).trim() : '');
+      $('site_info').innerHTML =
+        `<div class="site-banner">${p.escapeHtml(data.site_code)}${shop}</div>` +
+        `<div class="zs-no-reply-banner"><b>${p.escapeHtml(weekLabel)} 本週無須回覆</b> — RP Team 已設定此週不用逐條回覆。` +
+        `<div style="margin-top:4px">以下 <b>${items.length}</b> 個 SKU 就是你店舖本週的 <b>Top 10</b> 名單（90 日零銷售、庫存最高），請把握本週優先安排<b>銷售／調撥</b>。</div>` +
+        (notice ? `<div class="zs-no-reply-notice">RP Team 訊息：${p.escapeHtml(notice)}</div>` : '') +
+        `</div>` +
+        `<div>清單 ${items.length} 個 SKU${replied ? `｜其中 ${replied} 個曾有回覆紀錄` : ''}${repeatN ? `｜<b>${repeatN}</b> 個重複上榜（≥2 次）` : ''}</div>` +
+        `<div class="hint">此週不會計算回覆率，亦不會因為未回覆而變成逾期。清單仍可搜尋及匯出 Excel。如非你店舖，請按右上「登出」再輸入 Site Code。</div>`;
     } else {
       $('site_info').innerHTML =
         `<div class="site-banner">${p.escapeHtml(data.site_code)}${shop}</div>` +
@@ -210,7 +249,8 @@
   }
 
   function render() {
-    const archived = !!(currentBatch && currentBatch.is_open === false);
+    const archived = isArchivedBatch(currentBatch);
+    const noReply = isNoReplyBatch(currentBatch);
     const q = ($('f_search').value || '').trim().toUpperCase();
     const filtered = items.filter((it) => {
       if (!q) return true;
@@ -218,7 +258,7 @@
       return hay.includes(q);
     }).sort((a, b) => (a.status === 'pending' ? 0 : 1) - (b.status === 'pending' ? 0 : 1));
     if (!filtered.length) {
-      $('zs_list').innerHTML = `<div class="empty" style="padding:36px 16px">${archived ? '此週次沒有符合條件的歷史紀錄。' : '暫無指定 SKU — 試下轉「狀態」或清空搜尋字。'}</div>`;
+      $('zs_list').innerHTML = `<div class="empty" style="padding:36px 16px">${archived ? '此週次沒有符合條件的歷史紀錄。' : (noReply ? '此週次沒有符合條件的 SKU — 試下清空搜尋字。' : '暫無指定 SKU — 試下轉「狀態」或清空搜尋字。')}</div>`;
       const c0 = document.getElementById('zs_count');
       if (c0) c0.textContent = '';
       return;
@@ -232,11 +272,15 @@
       const n = editCount(it);
       const left = remainingEdits(it);
       const locked = !canEdit(it);
+      // 逐行判斷：即使切換期間狀態改變，行本身仍以其批次資料為準
+      const rowNoReply = it.reply_required === false;
       const badge = archived
-        ? `<span class="badge-archived">${replied ? '已回覆 · 已封存' : '未回覆 · 已截止'}</span>`
+        ? `<span class="badge-archived">${replied ? '已回覆 · 已封存' : (rowNoReply ? '無須回覆 · 已封存' : '未回覆 · 已截止')}</span>`
         : (replied
           ? `<span class="badge-replied">已回覆</span>${auto ? '<span class="badge-auto">自動套用</span>' : ''}`
-          : '<span class="badge-pending">未回覆</span>');
+          : (rowNoReply
+            ? '<span class="badge-no-reply">無須回覆</span>'
+            : '<span class="badge-pending">未回覆</span>'));
       let reply = replied ? `${p.escapeHtml(it.reason_label || '')}${it.reason_note ? `<div class="hint">${p.escapeHtml(it.reason_note)}</div>` : ''}` : '—';
       if (replied && auto) {
         const source = it.auto_filled_from_week ? `上次（${it.auto_filled_from_week}）回覆` : '上次回覆';
@@ -255,14 +299,14 @@
         repeatCell = `<span class="badge-repeat">第${rc}次上榜</span>` +
           (prev ? `<div class="hint">${p.escapeHtml(prev)}${prevNote}</div>` : '') + notImproved +
           // 上次已回覆 → 開啟回覆彈窗時自動帶入上次內容（按鍵在彈窗內可重設）
-          (it.prev_status === 'replied' && !archived && !locked && !auto ? '<div class="hint">回覆時會自動帶入上次內容</div>' : '');
+          (it.prev_status === 'replied' && !archived && !rowNoReply && !locked && !auto ? '<div class="hint">回覆時會自動帶入上次內容</div>' : '');
       }
       const rowClass = archived ? 'zs-archived' : (isRepeat(it) ? 'zs-repeat' : '');
-      const weekCell = `${p.escapeHtml(it.week_label || '')}${archived ? '<span class="zs-week-tag">已封存</span>' : ''}`;
-      const highlight = replyLimit(it) === 3 && !locked && !archived && n > 0;
-      const needReply = it.status === 'pending' && !archived;
-      const action = archived
-        ? '<span class="zs-closed">已截止</span>'
+      const weekCell = `${p.escapeHtml(it.week_label || '')}${archived ? '<span class="zs-week-tag">已封存</span>' : (rowNoReply ? '<span class="zs-week-tag">無須回覆</span>' : '')}`;
+      const highlight = replyLimit(it) === 3 && !locked && !archived && !rowNoReply && n > 0;
+      const needReply = it.status === 'pending' && !archived && !rowNoReply;
+      const action = (archived || rowNoReply)
+        ? `<span class="zs-closed">${archived ? '已截止' : '無須回覆'}</span>`
         : `<button class="btn ghost${needReply ? ' zs-reply-needed' : ''}${highlight ? ' zs-edit-highlight' : ''}" data-reply="${it.id}" ${locked ? 'disabled' : ''}${needReply ? ' title="此 SKU 仍需要回覆"' : (highlight ? ` title="此 SKU 可再修改 ${left} 次"` : '')}>${btnLabel}</button>`;
       html += `<tr${rowClass ? ` class="${rowClass}"` : ''}><td>${weekCell}</td>`;
       COLS.forEach((c) => {
@@ -331,8 +375,12 @@
   function openReply(id) {
     const it = items.find((x) => x.id === id);
     if (!it) return;
-    if (currentBatch && currentBatch.is_open === false) {
+    if (isArchivedBatch(currentBatch)) {
       p.showAlert($('list_error'), 'error', `「${p.escapeHtml(currentBatch.week_label)}」已封存，只供查閱，不能回覆。請切換到最新一週。`);
+      return;
+    }
+    if (isNoReplyBatch(currentBatch) || it.reply_required === false) {
+      p.showAlert($('list_error'), 'info', `「${p.escapeHtml(currentBatch.week_label)}」本週無須回覆，只供參考銷售；如要補充說明，請直接聯絡 RP Team。`);
       return;
     }
     if (!canEdit(it)) {
@@ -398,12 +446,12 @@
       await loadBatches(true);
       await loadList();
     } catch (err) {
-      // 週次在開啟彈窗後被新批次封存：關窗、重新載入週次並引導到最新一週
-      if (err.status === 409 && err.data?.code === 'BATCH_CLOSED') {
+      // 週次在開啟彈窗後被新批次封存 / 被設為無須回覆：關窗、重新載入並顯示原因
+      if (err.status === 409 && (err.data?.code === 'BATCH_CLOSED' || err.data?.code === 'REPLY_NOT_REQUIRED')) {
         $('reply_dialog').close();
         await loadBatches(true);
         await loadList();
-        p.showAlert($('list_error'), 'error', p.escapeHtml(err.message));
+        p.showAlert($('list_error'), err.data?.code === 'REPLY_NOT_REQUIRED' ? 'info' : 'error', p.escapeHtml(err.message));
         return;
       }
       p.showAlert($('reply_error'), 'error', p.escapeHtml(err.message));

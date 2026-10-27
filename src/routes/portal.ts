@@ -69,6 +69,7 @@ import {
   listReasons as listZeroSalesReasons,
   replyItem as replyZeroSalesItem,
   ZeroSalesBatchClosedError,
+  ZeroSalesReplyNotRequiredError,
   ZeroSalesReplyError,
 } from '../services/zeroSales.js';
 import { getShopStockForStore } from '../services/shopStock.js';
@@ -974,6 +975,7 @@ portalRouter.get(
       reason_note: it.reason_note,
       batch_date: it.batch_date ?? (it.batch_created_at ?? '').slice(0, 10),
       is_open: it.is_open !== false,
+      reply_required: it.reply_required !== false,
       occurrence_count: it.occurrence_count ?? 1,
       prev_week_label: it.prev_week_label ?? null,
       prev_status: it.prev_status ?? null,
@@ -1038,6 +1040,11 @@ portalRouter.put(
       });
       res.json({ ok: true, item });
     } catch (err) {
+      if (err instanceof ZeroSalesReplyNotRequiredError) {
+        // 409 = 本週無須回覆（只供參考），前端據 code 轉為唯讀並重新載入
+        res.status(409).json({ error: err.message, code: 'REPLY_NOT_REQUIRED' });
+        return;
+      }
       if (err instanceof ZeroSalesBatchClosedError) {
         // 409 = 週次已封存，前端據 code 自動跳去最新一週
         res.status(409).json({ error: err.message, code: 'BATCH_CLOSED' });

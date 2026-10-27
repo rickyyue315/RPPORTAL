@@ -1249,6 +1249,21 @@ table.zs-table tbody tr.zs-archived .badge-repeat { opacity: .75; }
   color: #475569; font-size: 13px;
 }
 .zs-archived-banner .btn { margin-left: 8px; }
+/* 「本週無須回覆」：藍色資訊帶，不是警告也不是失敗，避免店舖以為要補做 */
+.zs-no-reply-banner {
+  margin: 8px 0 10px; padding: 11px 15px; border-radius: 8px;
+  background: #eaf4fd; border: 1px solid #b9dcfa; border-left: 4px solid #2f86d6;
+  color: #17456b; font-size: 13.5px; line-height: 1.6;
+}
+.zs-no-reply-banner .zs-no-reply-notice {
+  margin-top: 6px; padding-top: 6px; border-top: 1px dashed #b9dcfa; font-size: 12.5px;
+}
+.badge-no-reply {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 3px 11px; border-radius: 999px; font-size: 12px; font-weight: 700; white-space: nowrap;
+  background: #eaf4fd; color: #185fa5; border: 1px solid #b9dcfa;
+}
+.badge-no-reply::before { content: ''; width: 7px; height: 7px; border-radius: 50%; background: #2f86d6; }
 .zs-progress > i.is-archived { background: #cbd5e1; }
 .zs-table .btn.ghost { min-height: 32px; padding: 5px 16px; font-size: 13px; border-radius: 8px; }
 .zs-table .btn.ghost:disabled { background: #eef1f4; border-color: var(--border); color: var(--muted); cursor: not-allowed; }

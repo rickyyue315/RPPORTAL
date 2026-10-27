@@ -109,7 +109,8 @@ describe('static asset freshness', () => {
     expect(adminHtml).toContain('data-tab="designated-sku"');
     expect(adminHtml).toContain('id="panel-designated-sku"');
     expect(adminHtml).toContain('id="dsku_subject"');
-    expect(adminHtml).toContain('id="dsku_due_date"');
+    expect(adminHtml).toContain('id="dsku_due_at"');
+    expect(adminHtml).toContain('id="dsku_manual_body"');
     expect(adminScript).toContain('__dskuRefresh');
     expect(adminScript).toContain('matters/');
     expect(adminScript).toContain('?matter=');

@@ -1,4 +1,5 @@
 import { Router, type Request, type Response } from 'express';
+import { createHash } from 'node:crypto';
 import { z } from 'zod';
 import multer from 'multer';
 import {
@@ -149,10 +150,12 @@ import {
   parseDesignatedSkuWorkbook,
 } from '../lib/designatedSku.js';
 import {
+  addItem as addDesignatedSkuItem,
   adminSubmitMatterReply as adminSubmitDesignatedSkuReply,
   closeBatch as closeDesignatedSkuBatch,
   createBatch as createDesignatedSkuBatch,
   deleteBatch as deleteDesignatedSkuBatch,
+  deleteItem as deleteDesignatedSkuItem,
   deleteMatter as deleteDesignatedSkuMatter,
   DesignatedSkuError,
   DesignatedSkuNotFoundError,
@@ -164,6 +167,8 @@ import {
   listBatchMatters as listDesignatedSkuBatchMatters,
   listMattersForExport as listDesignatedSkuForExport,
   reopenBatch as reopenDesignatedSkuBatch,
+  updateBatch as updateDesignatedSkuBatch,
+  updateItem as updateDesignatedSkuItem,
   type DesignatedSkuMatter,
 } from '../services/designatedSku.js';
 
@@ -3640,10 +3645,28 @@ const designatedSkuUploadSchema = z.object({
   subject: z.string().trim().min(1, '事項主題為必填').max(200),
   matter_type: z.string().trim().max(60).optional().default('stock_year_breakdown'),
   instructions: z.string().max(4000).optional().default(''),
-  due_date: z.string().trim().optional().default(''),
+  due_at: z.string().trim().optional().default(''),
   reference: z.string().max(100).optional().default(''),
   note: z.string().max(1000).optional().default(''),
 });
+
+/**
+ * 截止時間輸入：一律當香港時間（GMT+8）。
+ * 接受 `2026-11-10T18:00`、`2026-11-10 18:00`、`2026-11-10`（= 當日 23:59）
+ * 或完整 ISO（自帶時區則依該時區）。回傳 UTC ISO 字串供 timestamptz 使用。
+ */
+function parseDueAtInput(raw: string): { ok: true; value: string | null } | { ok: false } {
+  const text = String(raw ?? '').trim();
+  if (!text) return { ok: true, value: null };
+  let iso = text;
+  const dateOnly = /^(\d{4}-\d{2}-\d{2})$/.exec(text);
+  const local = /^(\d{4}-\d{2}-\d{2})[T ](\d{2}:\d{2})(?::(\d{2}))?$/.exec(text);
+  if (dateOnly) iso = `${dateOnly[1]}T23:59:00+08:00`;
+  else if (local) iso = `${local[1]}T${local[2]}:${local[3] ?? '00'}+08:00`;
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return { ok: false };
+  return { ok: true, value: date.toISOString() };
+}
 
 /** 匯出用：把事項攤平為每個 SKU 一行 */
 function designatedSkuExportRows(matters: DesignatedSkuMatter[]) {
@@ -3733,9 +3756,9 @@ adminRouter.post(
       res.status(400).json({ error: meta.error.issues[0]?.message ?? '上載資料無效' });
       return;
     }
-    const dueDate = meta.data.due_date;
-    if (dueDate && !isValidIsoDate(dueDate)) {
-      res.status(400).json({ error: '截止日期格式無效（應為 YYYY-MM-DD）' });
+    const due = parseDueAtInput(meta.data.due_at);
+    if (!due.ok) {
+      res.status(400).json({ error: '截止時間格式無效（例：2026-11-10T18:00，香港時間）' });
       return;
     }
 
@@ -3777,7 +3800,7 @@ adminRouter.post(
       subject: meta.data.subject,
       matterType: meta.data.matter_type,
       instructions: meta.data.instructions ?? '',
-      dueDate: dueDate || null,
+      dueAt: due.value,
       reference: meta.data.reference ?? '',
       note: meta.data.note ?? '',
       sourceFilename: file.originalname,
@@ -3827,6 +3850,383 @@ adminRouter.post(
       warnings: parsed.warnings ?? [],
       matterCodes: matterCodes.slice(0, 5),
     });
+  }),
+);
+
+const designatedSkuManualRowSchema = z.object({
+  site_code: z.string().trim().min(1, '請選擇店舖').max(20),
+  sku: z.string().trim().min(1, '請填寫 SKU').max(60),
+  description: z.string().max(200).optional().default(''),
+  hierarchy: z.string().max(120).optional().default(''),
+  stock_qty: z.union([z.string(), z.number(), z.null()]).optional(),
+});
+
+const designatedSkuManualSchema = z.object({
+  subject: z.string().trim().min(1, '事項主題為必填').max(200),
+  matter_type: z.string().trim().max(60).optional().default('stock_year_breakdown'),
+  instructions: z.string().max(4000).optional().default(''),
+  due_at: z.string().trim().optional().default(''),
+  reference: z.string().max(100).optional().default(''),
+  note: z.string().max(1000).optional().default(''),
+  rows: z.array(designatedSkuManualRowSchema).min(1, '請至少加入一行 SKU').max(2000),
+  force: z.string().optional().default(''),
+});
+
+/** 人手輸入的存貨：空白 → null（不代表 0）；非數字直接擋 */
+function parseManualStock(raw: unknown): { ok: true; value: number | null } | { ok: false } {
+  if (raw === null || raw === undefined) return { ok: true, value: null };
+  const text = String(raw).trim().replace(/,/g, '');
+  if (!text) return { ok: true, value: null };
+  if (!/^\d+$/.test(text)) return { ok: false };
+  return { ok: true, value: Number(text) };
+}
+
+/**
+ * POST /api/admin/designated-sku/batches/manual
+ * 人手輸入建立批次：與 Excel 上載同一資料模型，只是來源不是檔案。
+ */
+adminRouter.post(
+  '/designated-sku/batches/manual',
+  requireAdmin,
+  excelImportLimiter,
+  asyncHandler(async (req: Request, res: Response) => {
+    const parsed = designatedSkuManualSchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ error: parsed.error.issues[0]?.message ?? '輸入資料無效' });
+      return;
+    }
+    const due = parseDueAtInput(parsed.data.due_at);
+    if (!due.ok) {
+      res.status(400).json({ error: '截止時間格式無效（例：2026-11-10T18:00，香港時間）' });
+      return;
+    }
+    if (parsed.data.rows.length > config.maxImportRows) {
+      res.status(400).json({ error: `一次最多只可輸入 ${config.maxImportRows} 行` });
+      return;
+    }
+
+    const stores = await query<{ site_code: string }>('SELECT site_code FROM stores');
+    const storeCodes = new Set(stores.rows.map((s) => s.site_code));
+    const rows: Array<{
+      siteCode: string;
+      sku: string;
+      hierarchy: string;
+      description: string;
+      stockQty: number | null;
+      data: Record<string, string>;
+    }> = [];
+    const errors: Array<{ row: number; siteCode: string; field: string; reason: string }> = [];
+    const seen = new Set<string>();
+
+    parsed.data.rows.forEach((row, index) => {
+      const siteCode = normalizeSiteCode(row.site_code);
+      const sku = row.sku.trim();
+      const line = index + 1;
+      if (!storeCodes.has(siteCode)) {
+        errors.push({ row: line, siteCode, field: 'Site', reason: '不存在於門店主檔' });
+        return;
+      }
+      const key = `${siteCode}|${sku}`;
+      if (seen.has(key)) {
+        errors.push({ row: line, siteCode, field: 'SKU', reason: '同一店舖重複填寫同一 SKU' });
+        return;
+      }
+      seen.add(key);
+      const stock = parseManualStock(row.stock_qty);
+      if (!stock.ok) {
+        errors.push({ row: line, siteCode, field: '存貨', reason: '必須為整數（留空代表未提供）' });
+        return;
+      }
+      rows.push({
+        siteCode,
+        sku,
+        hierarchy: row.hierarchy ?? '',
+        description: row.description ?? '',
+        stockQty: stock.value,
+        data: {},
+      });
+    });
+
+    if (errors.length) {
+      res.status(400).json({ error: '輸入資料有誤', errors, warnings: [] });
+      return;
+    }
+
+    // 用人手輸入的內容做指紋，重複提交同一份清單一樣會提示（可用 force 強制）
+    const fingerprint = createHash('sha256')
+      .update(rows.map((r) => `${r.siteCode}|${r.sku}|${r.stockQty ?? ''}`).sort().join('\n'))
+      .digest('hex');
+    const force = parsed.data.force === '1';
+    if (!force) {
+      const existing = await findDesignatedSkuBatchByHash(fingerprint);
+      if (existing) {
+        res.status(409).json({
+          error: `相同清單已於 ${existing.created_at} 建立（批次 ${existing.batch_code}），如要重新派發請勾選「仍要重新派發」`,
+          code: 'DUPLICATE_FILE',
+          existing,
+        });
+        return;
+      }
+    }
+
+    const { batchId, batchCode, matterCodes } = await createDesignatedSkuBatch({
+      subject: parsed.data.subject,
+      matterType: parsed.data.matter_type,
+      instructions: parsed.data.instructions ?? '',
+      dueAt: due.value,
+      reference: parsed.data.reference ?? '',
+      note: parsed.data.note ?? '',
+      sourceFilename: '（人手輸入）',
+      rows,
+      skippedRows: 0,
+      warnCount: rows.filter((r) => r.stockQty === null).length,
+      contentHash: fingerprint,
+      createdBy: req.adminUsername!,
+    });
+    const storeCount = new Set(rows.map((r) => r.siteCode)).size;
+    await writeAuditEvent({
+      eventType: 'designated_sku_batch_created',
+      actorRole: 'admin',
+      actor: req.adminUsername,
+      ip: getClientIp(req),
+      metadata: {
+        source: 'manual',
+        batch_code: batchCode,
+        batch_id: batchId,
+        subject: parsed.data.subject,
+        matter_count: storeCount,
+        item_count: rows.length,
+        store_count: storeCount,
+        due_at: due.value,
+        forced: force,
+      },
+    });
+    res.status(201).json({
+      ok: true,
+      batchId,
+      batchCode,
+      matterCount: storeCount,
+      itemCount: rows.length,
+      storeCount,
+      totalRows: rows.length,
+      skippedRows: 0,
+      warnings: [],
+      matterCodes: matterCodes.slice(0, 5),
+    });
+  }),
+);
+
+const designatedSkuItemSchema = z.object({
+  site_code: z.string().trim().min(1, '請選擇店舖').max(20),
+  sku: z.string().trim().min(1, '請填寫 SKU').max(60),
+  description: z.string().max(200).optional(),
+  hierarchy: z.string().max(120).optional(),
+  stock_qty: z.union([z.string(), z.number(), z.null()]).optional(),
+});
+
+/** POST /api/admin/designated-sku/batches/:id/items — 在既有批次補加 SKU */
+adminRouter.post(
+  '/designated-sku/batches/:id/items',
+  requireUuidParam('id'),
+  requireAdmin,
+  asyncHandler(async (req: Request, res: Response) => {
+    const parsed = designatedSkuItemSchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ error: parsed.error.issues[0]?.message ?? 'SKU 資料無效' });
+      return;
+    }
+    const stock = parseManualStock(parsed.data.stock_qty);
+    if (!stock.ok) {
+      res.status(400).json({ error: '存貨必須為整數（留空代表未提供）' });
+      return;
+    }
+    try {
+      const result = await addDesignatedSkuItem({
+        batchId: req.params.id as string,
+        siteCode: normalizeSiteCode(parsed.data.site_code),
+        sku: parsed.data.sku,
+        description: parsed.data.description ?? '',
+        hierarchy: parsed.data.hierarchy ?? '',
+        stockQty: stock.value,
+      });
+      await writeAuditEvent({
+        eventType: 'designated_sku_item_added',
+        actorRole: 'admin',
+        actor: req.adminUsername,
+        ip: getClientIp(req),
+        metadata: {
+          matter_code: result.matterCode,
+          matter_created: result.matterCreated,
+          site_code: normalizeSiteCode(parsed.data.site_code),
+          sku: parsed.data.sku,
+          stock_qty: stock.value,
+        },
+      });
+      res.status(201).json({ ok: true, ...result });
+    } catch (err) {
+      if (err instanceof DesignatedSkuNotFoundError) {
+        res.status(404).json({ error: err.message });
+        return;
+      }
+      if (err instanceof DesignatedSkuError) {
+        res.status(400).json({ error: err.message });
+        return;
+      }
+      throw err;
+    }
+  }),
+);
+
+const designatedSkuItemUpdateSchema = z.object({
+  site_code: z.string().trim().min(1).max(20).optional(),
+  sku: z.string().trim().min(1, 'SKU 不可留空').max(60).optional(),
+  description: z.string().max(200).optional(),
+  hierarchy: z.string().max(120).optional(),
+  stock_qty: z.union([z.string(), z.number(), z.null()]).optional(),
+});
+
+/** PUT /api/admin/designated-sku/batches/:id/items/:itemId — 修改 SKU／存貨／所屬店舖 */
+adminRouter.put(
+  '/designated-sku/batches/:id/items/:itemId',
+  requireUuidParam('id', 'itemId'),
+  requireAdmin,
+  asyncHandler(async (req: Request, res: Response) => {
+    const parsed = designatedSkuItemUpdateSchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ error: parsed.error.issues[0]?.message ?? 'SKU 資料無效' });
+      return;
+    }
+    let stockQty: number | null | undefined;
+    if (parsed.data.stock_qty !== undefined) {
+      const stock = parseManualStock(parsed.data.stock_qty);
+      if (!stock.ok) {
+        res.status(400).json({ error: '存貨必須為整數（留空代表未提供）' });
+        return;
+      }
+      stockQty = stock.value;
+    }
+    try {
+      const result = await updateDesignatedSkuItem({
+        batchId: req.params.id as string,
+        itemId: req.params.itemId as string,
+        siteCode: parsed.data.site_code === undefined ? undefined : normalizeSiteCode(parsed.data.site_code),
+        sku: parsed.data.sku,
+        description: parsed.data.description,
+        hierarchy: parsed.data.hierarchy,
+        stockQty,
+      });
+      await writeAuditEvent({
+        eventType: 'designated_sku_item_updated',
+        actorRole: 'admin',
+        actor: req.adminUsername,
+        ip: getClientIp(req),
+        metadata: {
+          matter_code: result.matterCode,
+          moved: result.moved,
+          site_code: parsed.data.site_code ?? null,
+          sku: parsed.data.sku ?? null,
+          stock_qty: stockQty === undefined ? null : stockQty,
+        },
+      });
+      res.json({ ok: true, ...result });
+    } catch (err) {
+      if (err instanceof DesignatedSkuNotFoundError) {
+        res.status(404).json({ error: err.message });
+        return;
+      }
+      if (err instanceof DesignatedSkuError) {
+        res.status(400).json({ error: err.message });
+        return;
+      }
+      throw err;
+    }
+  }),
+);
+
+/** DELETE /api/admin/designated-sku/batches/:id/items/:itemId — 移除單一 SKU */
+adminRouter.delete(
+  '/designated-sku/batches/:id/items/:itemId',
+  requireUuidParam('id', 'itemId'),
+  requireAdmin,
+  asyncHandler(async (req: Request, res: Response) => {
+    const result = await deleteDesignatedSkuItem({
+      batchId: req.params.id as string,
+      itemId: req.params.itemId as string,
+    });
+    if (!result) {
+      res.status(404).json({ error: '找不到此 SKU' });
+      return;
+    }
+    await writeAuditEvent({
+      eventType: 'designated_sku_item_deleted',
+      actorRole: 'admin',
+      actor: req.adminUsername,
+      ip: getClientIp(req),
+      metadata: {
+        matter_code: result.matterCode,
+        site_code: result.siteCode,
+        sku: result.sku,
+        matter_deleted: result.matterDeleted,
+      },
+    });
+    res.json({ ok: true, ...result });
+  }),
+);
+
+const designatedSkuBatchUpdateSchema = z.object({
+  subject: z.string().trim().min(1).max(200).optional(),
+  matter_type: z.string().trim().max(60).optional(),
+  instructions: z.string().max(4000).optional(),
+  due_at: z.string().trim().optional(),
+  reference: z.string().max(100).optional(),
+  note: z.string().max(1000).optional(),
+});
+
+/** PUT /api/admin/designated-sku/batches/:id — 修改批次資料（例：延長截止時間） */
+adminRouter.put(
+  '/designated-sku/batches/:id',
+  requireUuidParam('id'),
+  requireAdmin,
+  asyncHandler(async (req: Request, res: Response) => {
+    const parsed = designatedSkuBatchUpdateSchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ error: parsed.error.issues[0]?.message ?? '批次資料無效' });
+      return;
+    }
+    let dueAt: string | null | undefined;
+    if (parsed.data.due_at !== undefined) {
+      const due = parseDueAtInput(parsed.data.due_at);
+      if (!due.ok) {
+        res.status(400).json({ error: '截止時間格式無效（例：2026-11-10T18:00，香港時間）' });
+        return;
+      }
+      dueAt = due.value;
+    }
+    const batch = await updateDesignatedSkuBatch({
+      batchId: req.params.id as string,
+      subject: parsed.data.subject,
+      matterType: parsed.data.matter_type,
+      instructions: parsed.data.instructions,
+      dueAt,
+      reference: parsed.data.reference,
+      note: parsed.data.note,
+    });
+    if (!batch) {
+      res.status(404).json({ error: '找不到批次' });
+      return;
+    }
+    await writeAuditEvent({
+      eventType: 'designated_sku_batch_updated',
+      actorRole: 'admin',
+      actor: req.adminUsername,
+      ip: getClientIp(req),
+      metadata: {
+        batch_code: batch.batch_code,
+        due_at: batch.due_at,
+        subject: batch.subject,
+      },
+    });
+    res.json({ ok: true, batch });
   }),
 );
 

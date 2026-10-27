@@ -22,8 +22,9 @@
 
   function matterStatusBadge(matter) {
     if (!matter.is_open) {
-      return matter.status === 'replied'
-        ? '<span class="badge-archived">已回覆 · 已截止</span>'
+      if (matter.status === 'replied') return '<span class="badge-archived">已回覆 · 已截止</span>';
+      return matter.is_expired
+        ? '<span class="badge-archived">未回覆 · 已過截止</span>'
         : '<span class="badge-archived">未回覆 · 已截止</span>';
     }
     return matter.status === 'replied'
@@ -119,7 +120,7 @@
       const facts = [
         `<b>${matter.item_count}</b> 個 SKU`,
         `批次 <span class="ds-code">${p.escapeHtml(matter.batch_code)}</span>`,
-        matter.due_date ? `截止 <b>${p.escapeHtml(matter.due_date)}</b>` : '',
+        matter.due_at ? `截止 <b>${p.escapeHtml(matter.due_at)}</b>（香港時間）` : '',
         matter.reference ? `參考 ${p.escapeHtml(matter.reference)}` : '',
       ].filter(Boolean).join('<span class="ds-sep">｜</span>');
       const skuRows = (matter.items || []).map((item) => `
@@ -291,14 +292,16 @@
       : matter.status === 'replied' ? `修改回覆 — ${matter.matter_code}` : `回覆事項 — ${matter.matter_code}`;
     $('ds_reply_matter').textContent = `${matter.subject}｜批次 ${matter.batch_code}`;
     $('ds_reply_sub').textContent = `${matter.item_count} 個 SKU` +
-      (matter.due_date ? `｜截止 ${matter.due_date}` : '') +
+      (matter.due_at ? `｜截止 ${matter.due_at}（香港時間）` : '') +
       (matter.reference ? `｜參考 ${matter.reference}` : '');
 
     const notice = $('ds_reply_notice');
     if (readOnly) {
       notice.hidden = false;
       notice.className = 'ds-notice ds-notice--closed';
-      notice.innerHTML = '此事項已截止，只供查閱，不能再修改回覆。如需更正請聯絡 RP Team。';
+      notice.innerHTML = matter.is_expired
+        ? `此事項已過截止時間（${p.escapeHtml(matter.due_at || '')}），只供查閱，不能再提交回覆。如需補交請聯絡 RP Team。`
+        : '此事項已截止，只供查閱，不能再修改回覆。如需更正請聯絡 RP Team。';
     } else if (matter.instructions) {
       notice.hidden = false;
       notice.className = 'ds-notice';

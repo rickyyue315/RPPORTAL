@@ -69,7 +69,10 @@ export type AuditEventType =
   | 'designated_sku_item_deleted'
   | 'designated_sku_export'
   | 'designated_sku_replied'
-  | 'designated_sku_reply_admin_edited';
+  | 'designated_sku_reply_admin_edited'
+  | 'designated_sku_batch_updated'
+  | 'designated_sku_item_added'
+  | 'designated_sku_item_updated';
 
 interface AuditInput {
   eventType: AuditEventType;

@@ -197,9 +197,11 @@
         body.innerHTML = rows.map((b) => {
           const status = b.is_open
             ? '<span class="badge-zs badge-zs-ok">開放中</span>'
-            : `<span class="badge-zs badge-zs-muted">已封存</span><div class="text-secondary small">${esc(b.closed_at || '')}</div>`;
+            : b.is_expired
+              ? `<span class="badge-zs badge-zs-warn">已逾期</span><div class="text-secondary small">截止 ${esc(b.due_at || '')}</div>`
+              : `<span class="badge-zs badge-zs-muted">已封存</span><div class="text-secondary small">${esc(b.closed_at || '')}</div>`;
           const optional = [
-            b.due_date ? `截止 ${b.due_date}` : '',
+            b.due_at ? `截止 ${b.due_at}（香港時間）` : '',
             b.reference ? `參考 ${b.reference}` : '',
           ].filter(Boolean).join(' ｜ ');
           return `<tr>
@@ -253,8 +255,11 @@
     const verb = action === 'close' ? '封存' : '重開';
     if (action === 'close' && !confirm(`確定封存批次「${code}」？封存後店舖只可查閱，不能再提交回覆。`)) return;
     try {
-      await aFetch(`/api/admin/designated-sku/batches/${id}/${action}`, { method: 'PUT', body: '{}' });
+      const result = await aFetch(`/api/admin/designated-sku/batches/${id}/${action}`, { method: 'PUT', body: '{}' });
       toast(`已${verb}批次 ${code}`);
+      if (action === 'reopen' && result?.dueAtPassed) {
+        toast('已重開，但截止時間已過 — 店舖仍不能提交，請「編輯批次資料」延長截止時間', false);
+      }
       await loadBatches();
       await loadSummary();
       if (currentBatch && currentBatch.id === id) await openBatch(id, { silent: true });
@@ -288,14 +293,18 @@
     const bits = [
       `<b class="dsku-code">${esc(batch.batch_code)}</b>`,
       `<b>${esc(batch.subject)}</b>`,
-      batch.is_open ? '<span class="badge-zs badge-zs-ok">開放中</span>' : '<span class="badge-zs badge-zs-muted">已封存</span>',
+      batch.is_open
+        ? '<span class="badge-zs badge-zs-ok">開放中</span>'
+        : batch.is_expired
+          ? '<span class="badge-zs badge-zs-warn">已逾期</span>'
+          : '<span class="badge-zs badge-zs-muted">已封存</span>',
       `${batch.matter_count} 個事項 / ${batch.row_count} 個 SKU / ${batch.store_count} 間店`,
       `${batch.replied_count} 個事項已回覆`,
       `${batch.pending_count} 個未回覆`,
       `建立：${esc(batch.created_by)} ${esc(batch.created_at)}`,
     ];
     // 預留欄位：空白時自動隱藏
-    if (batch.due_date) bits.push(`截止日期：<b>${esc(batch.due_date)}</b>`);
+    if (batch.due_at) bits.push(`截止：<b>${esc(batch.due_at)}</b>（香港時間）`);
     if (batch.reference) bits.push(`參考編號：${esc(batch.reference)}`);
     let html = `<div>${bits.join(' ｜ ')}</div>`;
     if (batch.instructions) {
@@ -343,6 +352,10 @@
         <div class="dsku-sku-row">
           <div class="dsku-sku-row-head"><b class="dsku-code">${esc(item.sku)}</b><span>${esc(item.description || '')}</span><em>存貨 ${fmtStock(item.stock_qty)}</em></div>
           <div class="dsku-sku-row-reply">${itemReply(item)}</div>
+          <div class="dsku-sku-row-actions">
+            <button class="btn btn-sm btn-outline-primary" data-dsku-edit-item="${esc(item.id)}" data-matter="${esc(matter.id)}">編輯</button>
+            <button class="btn btn-sm btn-outline-danger" data-dsku-del-item="${esc(item.id)}" data-sku="${esc(item.sku)}">移除</button>
+          </div>
         </div>`).join('');
       const adminNote = (matter.items || []).some((it) => it.admin_edited_at)
         ? `<div class="text-warning small">管理員於 ${esc((matter.items.find((it) => it.admin_edited_at) || {}).admin_edited_at || '')} 修改</div>`
@@ -377,6 +390,29 @@
         try {
           await aFetch(`/api/admin/designated-sku/batches/${currentBatch.id}/matters/${btn.dataset.dskuDelMatter}`, { method: 'DELETE' });
           toast(`已刪除事項 ${code}`);
+          await loadMatters();
+          await loadBatches();
+          await loadSummary();
+        } catch (err) {
+          setBox('dsku_items_error', alertHtml('danger', esc(err.message)));
+        }
+      });
+    });
+    body.querySelectorAll('[data-dsku-edit-item]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const matter = currentMatters.find((m) => m.id === btn.dataset.matter);
+        const item = (matter?.items || []).find((it) => it.id === btn.dataset.dskuEditItem);
+        if (!item || !matter) return;
+        openItemModal({ mode: 'edit', item, matter });
+      });
+    });
+    body.querySelectorAll('[data-dsku-del-item]').forEach((btn) => {
+      btn.addEventListener('click', async () => {
+        const sku = btn.dataset.sku;
+        if (!confirm(`確定移除 SKU「${sku}」？此 SKU 的回覆會一併刪除；若該事項再無其他 SKU，事項亦會移除。`)) return;
+        try {
+          await aFetch(`/api/admin/designated-sku/batches/${currentBatch.id}/items/${btn.dataset.dskuDelItem}`, { method: 'DELETE' });
+          toast(`已移除 SKU ${sku}`);
           await loadMatters();
           await loadBatches();
           await loadSummary();
@@ -676,6 +712,265 @@
     document.addEventListener('keydown', onKey);
   }
 
+  /* ---------------- 建立方式切換（Excel / 人手輸入） ---------------- */
+
+  function setMode(mode) {
+    document.querySelectorAll('[data-dsku-mode]').forEach((btn) => {
+      const on = btn.dataset.dskuMode === mode;
+      btn.classList.toggle('is-active', on);
+      btn.setAttribute('aria-selected', on ? 'true' : 'false');
+    });
+    document.querySelectorAll('[data-dsku-pane]').forEach((pane) => {
+      pane.hidden = pane.dataset.dskuPane !== mode;
+    });
+    setBox('dsku_upload_result', '');
+  }
+
+  /** 後端回傳「YYYY-MM-DD HH:mm」（香港時間），轉成 datetime-local 需要的格式 */
+  function toInputValue(value) {
+    return value ? String(value).replace(' ', 'T').slice(0, 16) : '';
+  }
+
+  /* ---------------- 人手輸入 ---------------- */
+
+  function addManualRow(row = {}) {
+    const body = $('dsku_manual_body');
+    if (!body) return;
+    const tr = document.createElement('tr');
+    tr.setAttribute('data-manual-row', '');
+    tr.innerHTML = `
+      <td><input class="form-control form-control-sm" data-f="site" maxlength="20" autocomplete="off" placeholder="HB20" value="${esc(row.site_code || '')}"></td>
+      <td><input class="form-control form-control-sm" data-f="sku" maxlength="60" autocomplete="off" placeholder="107668017004" value="${esc(row.sku || '')}"></td>
+      <td><input class="form-control form-control-sm" data-f="desc" maxlength="200" autocomplete="off" value="${esc(row.description || '')}"></td>
+      <td><input class="form-control form-control-sm" data-f="stock" inputmode="numeric" autocomplete="off" placeholder="—" value="${row.stock_qty === null || row.stock_qty === undefined ? '' : esc(String(row.stock_qty))}"></td>
+      <td><button class="btn btn-sm dsku-remove" type="button" aria-label="移除此行">✕</button></td>`;
+    tr.querySelector('button').addEventListener('click', () => {
+      if (body.querySelectorAll('[data-manual-row]').length <= 1) {
+        tr.querySelectorAll('input').forEach((inp) => { inp.value = ''; });
+      } else {
+        tr.remove();
+      }
+    });
+    body.appendChild(tr);
+    return tr;
+  }
+
+  function collectManualRows() {
+    return [...$('dsku_manual_body').querySelectorAll('[data-manual-row]')]
+      .map((tr) => {
+        const get = (f) => (tr.querySelector(`[data-f="${f}"]`)?.value || '').trim();
+        return {
+          site_code: get('site'),
+          sku: get('sku'),
+          description: get('desc'),
+          stock_qty: get('stock'),
+        };
+      })
+      .filter((r) => r.site_code || r.sku || r.stock_qty);
+  }
+
+  function applyPastedRows() {
+    const box = $('dsku_manual_paste');
+    const text = (box?.value || '').trim();
+    if (!text) {
+      toast('請先貼上資料', false);
+      return;
+    }
+    const lines = text.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+    let added = 0;
+    for (const line of lines) {
+      const sep = line.includes('\t') ? /\t/ : /,/;
+      const parts = line.split(sep).map((p) => p.trim());
+      if (!parts[0] && !parts[1]) continue;
+      addManualRow({ site_code: parts[0], sku: parts[1], description: parts[2] || '', stock_qty: parts[3] || '' });
+      added += 1;
+    }
+    box.value = '';
+    $('dsku_manual_paste_box').hidden = true;
+    toast(`已加入 ${added} 行，請核對後按「建立事項」`);
+  }
+
+  async function submitManual() {
+    const res = $('dsku_upload_result');
+    const subject = ($('dsku_subject').value || '').trim();
+    const rows = collectManualRows();
+    if (!subject) {
+      res.innerHTML = alertHtml('danger', '請輸入事項主題');
+      $('dsku_subject').focus();
+      return;
+    }
+    if (!rows.length) {
+      res.innerHTML = alertHtml('danger', '請至少輸入一行（Site Code 及 SKU）');
+      return;
+    }
+    const btn = $('btn_dsku_manual_submit');
+    btn.disabled = true;
+    res.innerHTML = alertHtml('info', '建立事項中…');
+    try {
+      const data = await aFetch('/api/admin/designated-sku/batches/manual', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          subject,
+          matter_type: $('dsku_matter_type').value || 'stock_year_breakdown',
+          due_at: $('dsku_due_at').value || '',
+          reference: ($('dsku_reference').value || '').trim(),
+          instructions: ($('dsku_instructions').value || '').trim(),
+          note: ($('dsku_note').value || '').trim(),
+          rows,
+          force: $('dsku_manual_force').checked ? '1' : '',
+        }),
+      });
+      res.innerHTML = `
+        <div class="alert alert-success">
+          已建立批次 <b class="dsku-code">${esc(data.batchCode)}</b>：${data.matterCount} 個事項 / ${data.itemCount} 個 SKU（${data.storeCount} 間店舖）。
+          <div class="small mt-1">同店多個 SKU 已歸入同一事項；店舖只會見到屬於自己 Site Code 的事項。</div>
+        </div>`;
+      $('dsku_manual_body').innerHTML = '';
+      addManualRow();
+      $('dsku_manual_force').checked = false;
+      await loadBatches(true);
+      await loadSummary();
+      if (data.batchId) await openBatch(data.batchId, { silent: true });
+    } catch (err) {
+      if (err.status === 409 && err.data?.code === 'DUPLICATE_FILE') {
+        res.innerHTML = alertHtml('warning', `${esc(err.message)}<div class="small mt-1">如確定要重新派發，請勾選「相同清單已建立過仍要重新派發」再試。</div>`);
+        $('dsku_manual_force').checked = true;
+      } else {
+        const list = (err.data?.errors || []).slice(0, 12)
+          .map((e) => `<li>第 ${esc(String(e.row))} 行${e.siteCode ? `（${esc(e.siteCode)}）` : ''}：${esc(e.field)} — ${esc(e.reason)}</li>`)
+          .join('');
+        res.innerHTML = alertHtml('danger', `${esc(err.message)}${list ? `<ul class="mb-0 mt-1">${list}</ul>` : ''}`);
+      }
+    } finally {
+      btn.disabled = false;
+    }
+  }
+
+  /* ---------------- SKU 補加／修改 ---------------- */
+
+  let itemModalState = { mode: 'add', itemId: null, matterId: null };
+
+  function openOverlay(id) {
+    const el = $(id);
+    if (!el) return;
+    el.hidden = false;
+    applyModalFallback(el);
+    lockBodyScroll();
+    el.dataset.open = '1';
+  }
+
+  function closeOverlay(id) {
+    const el = $(id);
+    if (!el) return;
+    el.hidden = true;
+    setBox(id === 'dsku_item_overlay' ? 'dsku_item_error' : 'dsku_batch_error', '');
+    unlockBodyScroll();
+  }
+
+  function openItemModal(opts) {
+    if (!currentBatch) return;
+    const editing = opts.mode === 'edit';
+    itemModalState = {
+      mode: editing ? 'edit' : 'add',
+      itemId: editing ? opts.item.id : null,
+      matterId: editing ? opts.matter.id : null,
+    };
+    $('dsku_item_title').textContent = editing ? '修改 SKU' : '加入 SKU';
+    $('dsku_item_hint').textContent = `${currentBatch.batch_code}｜${currentBatch.subject}`;
+    $('dsku_item_site').value = editing ? opts.item.site_code : (opts.siteCode || '');
+    $('dsku_item_sku').value = editing ? opts.item.sku : '';
+    $('dsku_item_stock').value = editing && opts.item.stock_qty !== null ? String(opts.item.stock_qty) : '';
+    $('dsku_item_desc').value = editing ? (opts.item.description || '') : '';
+    setBox('dsku_item_error', '');
+    openOverlay('dsku_item_overlay');
+    ($('dsku_item_site').value ? $('dsku_item_sku') : $('dsku_item_site')).focus();
+  }
+
+  async function saveItemModal() {
+    const site = ($('dsku_item_site').value || '').trim().toUpperCase();
+    const sku = ($('dsku_item_sku').value || '').trim();
+    if (!site) { setBox('dsku_item_error', '請填寫 Site Code'); return; }
+    if (!sku) { setBox('dsku_item_error', '請填寫 SKU'); return; }
+    const payload = {
+      site_code: site,
+      sku,
+      description: ($('dsku_item_desc').value || '').trim(),
+      stock_qty: ($('dsku_item_stock').value || '').trim(),
+    };
+    const btn = $('btn_dsku_item_save');
+    btn.disabled = true;
+    try {
+      if (itemModalState.mode === 'add') {
+        await aFetch(`/api/admin/designated-sku/batches/${currentBatch.id}/items`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        });
+        toast(`已加入 SKU ${sku}`);
+      } else {
+        await aFetch(`/api/admin/designated-sku/batches/${currentBatch.id}/items/${itemModalState.itemId}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        });
+        toast(`已更新 SKU ${sku}`);
+      }
+      closeOverlay('dsku_item_overlay');
+      await loadMatters();
+      await loadBatches();
+      await loadSummary();
+    } catch (err) {
+      setBox('dsku_item_error', esc(err.message));
+    } finally {
+      btn.disabled = false;
+    }
+  }
+
+  /* ---------------- 批次資料（截止時間） ---------------- */
+
+  function openBatchModal() {
+    if (!currentBatch) return;
+    $('dsku_batch_hint').textContent = `${currentBatch.batch_code}｜${currentBatch.matter_count} 個事項 / ${currentBatch.row_count} 個 SKU`;
+    $('dsku_batch_subject').value = currentBatch.subject || '';
+    $('dsku_batch_due').value = toInputValue(currentBatch.due_at);
+    $('dsku_batch_reference').value = currentBatch.reference || '';
+    $('dsku_batch_instructions').value = currentBatch.instructions || '';
+    $('dsku_batch_note').value = currentBatch.note || '';
+    setBox('dsku_batch_error', '');
+    openOverlay('dsku_batch_overlay');
+    $('dsku_batch_subject').focus();
+  }
+
+  async function saveBatchModal() {
+    const subject = ($('dsku_batch_subject').value || '').trim();
+    if (!subject) { setBox('dsku_batch_error', '事項主題不可留空'); return; }
+    const btn = $('btn_dsku_batch_save');
+    btn.disabled = true;
+    try {
+      await aFetch(`/api/admin/designated-sku/batches/${currentBatch.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          subject,
+          due_at: $('dsku_batch_due').value || '',
+          reference: ($('dsku_batch_reference').value || '').trim(),
+          instructions: $('dsku_batch_instructions').value || '',
+          note: ($('dsku_batch_note').value || '').trim(),
+        }),
+      });
+      toast('已更新批次資料');
+      closeOverlay('dsku_batch_overlay');
+      await loadBatches();
+      await loadSummary();
+      if (currentBatch) await openBatch(currentBatch.id, { silent: true });
+    } catch (err) {
+      setBox('dsku_batch_error', esc(err.message));
+    } finally {
+      btn.disabled = false;
+    }
+  }
+
   /* ---------------- 上載 ---------------- */
 
   async function uploadBatch() {
@@ -694,7 +989,7 @@
     const fd = new FormData();
     fd.append('subject', subject);
     fd.append('matter_type', $('dsku_matter_type').value || 'stock_year_breakdown');
-    fd.append('due_date', $('dsku_due_date').value || '');
+    fd.append('due_at', $('dsku_due_at').value || '');
     fd.append('reference', ($('dsku_reference').value || '').trim());
     fd.append('instructions', ($('dsku_instructions').value || '').trim());
     fd.append('note', ($('dsku_note').value || '').trim());
@@ -782,8 +1077,40 @@
       const ok = await copyText(text);
       toast(ok ? `已複製 ${pending.length} 條未回覆直 link（Site / 事項編號 / 網址）` : '複製失敗', ok);
     });
+    // 建立方式切換
+    document.querySelectorAll('[data-dsku-mode]').forEach((btn) => {
+      btn.addEventListener('click', () => setMode(btn.dataset.dskuMode));
+    });
+    // 人手輸入
+    $('btn_dsku_manual_add').addEventListener('click', () => addManualRow());
+    $('btn_dsku_manual_paste_toggle').addEventListener('click', () => {
+      const box = $('dsku_manual_paste_box');
+      box.hidden = !box.hidden;
+      if (!box.hidden) $('dsku_manual_paste').focus();
+    });
+    $('btn_dsku_manual_paste_apply').addEventListener('click', applyPastedRows);
+    $('btn_dsku_manual_paste_clear').addEventListener('click', () => { $('dsku_manual_paste').value = ''; });
+    $('btn_dsku_manual_submit').addEventListener('click', submitManual);
+    // SKU 補加／修改
+    $('btn_dsku_add_item').addEventListener('click', () => {
+      const site = ($('dsku_filter_site').value || '').trim().toUpperCase();
+      openItemModal({ mode: 'add', siteCode: site });
+    });
+    $('btn_dsku_item_save').addEventListener('click', saveItemModal);
+    $('btn_dsku_item_cancel').addEventListener('click', () => closeOverlay('dsku_item_overlay'));
+    // 批次資料（截止時間）
+    $('btn_dsku_edit_batch').addEventListener('click', openBatchModal);
+    $('btn_dsku_batch_save').addEventListener('click', saveBatchModal);
+    $('btn_dsku_batch_cancel').addEventListener('click', () => closeOverlay('dsku_batch_overlay'));
+    [['dsku_item_overlay', 'dsku_item'], ['dsku_batch_overlay', 'dsku_batch']].forEach(([overlayId]) => {
+      $(overlayId).addEventListener('click', (e) => {
+        if (e.target === e.currentTarget) closeOverlay(overlayId);
+      });
+    });
     $('btn_dsku_export').addEventListener('click', () => exportExcel());
     $('btn_dsku_export_pending').addEventListener('click', () => exportExcel('pending'));
+
+    if ($('dsku_manual_body') && !$('dsku_manual_body').querySelector('[data-manual-row]')) addManualRow();
 
     // 由 admin.js 在切換到此 tab 時呼叫；第一次才真正載入
     globalThis.__dskuRefresh = async () => {

@@ -57,7 +57,9 @@ export interface DesignatedSkuMatter {
   subject: string;
   matter_type: string;
   instructions: string;
-  due_date: string | null;
+  due_at: string | null;
+  /** 已過截止時間（未封存但 due_at 已過） */
+  is_expired: boolean;
   reference: string;
   batch_note: string;
   settings: Record<string, unknown>;
@@ -80,7 +82,9 @@ export interface DesignatedSkuBatchRow {
   subject: string;
   matter_type: string;
   instructions: string;
-  due_date: string | null;
+  due_at: string | null;
+  /** 已過截止時間（未封存但 due_at 已過） */
+  is_expired: boolean;
   reference: string;
   note: string;
   settings: Record<string, unknown>;
@@ -105,10 +109,17 @@ export class DesignatedSkuNotFoundError extends DesignatedSkuError {}
 export class DesignatedSkuForbiddenError extends DesignatedSkuError {}
 export class DesignatedSkuClosedError extends DesignatedSkuError {}
 
-function dateOnly(value: string | Date | null | undefined): string | null {
+/** 香港時間「YYYY-MM-DD HH:mm」，供前台顯示及 datetime-local 回填 */
+function hkDateTime(value: string | Date | null | undefined): string | null {
   if (!value) return null;
-  if (typeof value === 'string') return value.slice(0, 10);
-  return toHKDateString(value);
+  return toHKString(value).slice(0, 16);
+}
+
+/** 判斷時間值是否已過去（容許 pg 回來的是 Date 或字串） */
+function isPast(value: unknown): boolean {
+  if (!value) return false;
+  const d = value instanceof Date ? value : new Date(String(value));
+  return !Number.isNaN(d.getTime()) && d.getTime() <= Date.now();
 }
 
 function asRecord(value: unknown): Record<string, unknown> {
@@ -131,9 +142,10 @@ function asStringRecord(value: unknown): Record<string, string> {
 }
 
 const MATTER_SELECT = `
-  SELECT m.*, b.batch_code, b.subject, b.matter_type, b.instructions, b.due_date, b.reference,
+  SELECT m.*, b.batch_code, b.subject, b.matter_type, b.instructions, b.due_at, b.reference,
          b.note AS batch_note, b.settings, b.created_at AS batch_created_at,
-         b.closed_at AS batch_closed_at, s.shop
+         b.closed_at AS batch_closed_at, s.shop,
+         (b.closed_at IS NULL AND (b.due_at IS NULL OR b.due_at > now())) AS is_open_now
     FROM designated_sku_matters m
     JOIN designated_sku_batches b ON b.id = m.batch_id
     LEFT JOIN stores s ON s.site_code = m.site_code
@@ -149,7 +161,9 @@ interface MatterBase {
   subject: string;
   matter_type: string;
   instructions: string;
-  due_date: string | null;
+  due_at: string | null;
+  /** 已過截止時間（未封存但 due_at 已過） */
+  is_expired: boolean;
   reference: string;
   batch_note: string;
   settings: Record<string, unknown>;
@@ -163,10 +177,11 @@ function mapMatterBase(row: Record<string, unknown>): MatterBase {
   return {
     ...m,
     settings: asRecord(m.settings),
-    due_date: dateOnly(m.due_date as unknown as string | Date | null),
+    due_at: hkDateTime(m.due_at as unknown as string | Date | null),
     batch_created_at: toHKString(m.batch_created_at as unknown as string),
     batch_closed_at: m.batch_closed_at ? toHKString(m.batch_closed_at as unknown as string) : null,
-    is_open: !m.batch_closed_at,
+    is_open: Boolean((row as Record<string, unknown>).is_open_now),
+    is_expired: !m.batch_closed_at && Boolean((row as Record<string, unknown>).due_at) && !(row as Record<string, unknown>).is_open_now,
     shop: m.shop ?? '',
   };
 }
@@ -257,7 +272,7 @@ export interface CreateDesignatedSkuBatchInput {
   subject: string;
   matterType?: string;
   instructions?: string;
-  dueDate?: string | null;
+  dueAt?: string | null;
   reference?: string;
   note?: string;
   settings?: Record<string, unknown>;
@@ -283,7 +298,7 @@ export async function createBatch(
     const batchCode = await nextBatchCode(client);
     const ins = await client.query<{ id: string }>(
       `INSERT INTO designated_sku_batches
-         (batch_code, subject, matter_type, instructions, due_date, reference, note, settings,
+         (batch_code, subject, matter_type, instructions, due_at, reference, note, settings,
           source_filename, row_count, store_count, skipped_rows, warn_count, content_hash, created_by)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
        RETURNING id`,
@@ -292,7 +307,7 @@ export async function createBatch(
         input.subject,
         input.matterType || 'stock_year_breakdown',
         input.instructions ?? '',
-        input.dueDate || null,
+        input.dueAt || null,
         input.reference ?? '',
         input.note ?? '',
         JSON.stringify(input.settings ?? {}),
@@ -375,11 +390,12 @@ function mapBatch(row: Record<string, unknown>): DesignatedSkuBatchRow {
   const b = row as unknown as DesignatedSkuBatchRow;
   return {
     ...b,
-    due_date: dateOnly(b.due_date as unknown as string | Date | null),
+    due_at: hkDateTime(b.due_at as unknown as string | Date | null),
     settings: asRecord(b.settings),
     created_at: toHKString(b.created_at as unknown as string),
     closed_at: b.closed_at ? toHKString(b.closed_at as unknown as string) : null,
-    is_open: !b.closed_at,
+    is_open: Boolean((row as Record<string, unknown>).is_open_now),
+    is_expired: !b.closed_at && Boolean((row as Record<string, unknown>).due_at) && !(row as Record<string, unknown>).is_open_now,
     replied_count: Number(b.replied_count ?? 0),
     pending_count: Number(b.pending_count ?? 0),
     matter_count: Number(b.matter_count ?? 0),
@@ -422,7 +438,7 @@ export async function listBatchesPage(opts: { page?: number; pageSize?: number }
   const count = await query<{ total: string }>('SELECT count(*)::text AS total FROM designated_sku_batches');
   const total = Number(count.rows[0]?.total ?? 0);
   const rows = await query(
-    `SELECT b.*, ${BATCH_COUNT_SELECT}
+    `SELECT b.*, (b.closed_at IS NULL AND (b.due_at IS NULL OR b.due_at > now())) AS is_open_now, ${BATCH_COUNT_SELECT}
        FROM designated_sku_batches b
       ORDER BY b.created_at DESC, b.batch_code DESC
       LIMIT $1 OFFSET $2`,
@@ -438,7 +454,7 @@ export async function listBatchesPage(opts: { page?: number; pageSize?: number }
 
 export async function getBatch(batchId: string): Promise<DesignatedSkuBatchRow | null> {
   const r = await query(
-    `SELECT b.*, ${BATCH_COUNT_SELECT} FROM designated_sku_batches b WHERE b.id = $1`,
+    `SELECT b.*, (b.closed_at IS NULL AND (b.due_at IS NULL OR b.due_at > now())) AS is_open_now, ${BATCH_COUNT_SELECT} FROM designated_sku_batches b WHERE b.id = $1`,
     [batchId],
   );
   return r.rows[0] ? mapBatch(r.rows[0]) : null;
@@ -684,8 +700,15 @@ async function replaceLines(client: PoolClient, itemId: string, lines: Designate
 
 export async function submitMatterReply(input: SubmitMatterReplyInput): Promise<DesignatedSkuMatter> {
   await withTransaction(async (client) => {
-    const r = await client.query<{ id: string; site_code: string; closed_at: string | null }>(
-      `SELECT m.id, m.site_code, b.closed_at
+    const r = await client.query<{
+      id: string;
+      site_code: string;
+      closed_at: string | null;
+      due_at: string | null;
+      overdue: boolean;
+    }>(
+      `SELECT m.id, m.site_code, b.closed_at, b.due_at,
+              (b.due_at IS NOT NULL AND b.due_at <= now()) AS overdue
          FROM designated_sku_matters m
          JOIN designated_sku_batches b ON b.id = m.batch_id
         WHERE m.matter_code = $1
@@ -699,6 +722,11 @@ export async function submitMatterReply(input: SubmitMatterReplyInput): Promise<
     }
     if (matter.closed_at) {
       throw new DesignatedSkuClosedError('此事項已截止，只供查閱，不能再提交回覆');
+    }
+    if (matter.overdue) {
+      throw new DesignatedSkuClosedError(
+        `此事項已過截止時間（${hkDateTime(matter.due_at)}），不能再提交回覆；如需補交請聯絡 RP Team`,
+      );
     }
 
     const itemRows = await client.query<{ id: string; sku: string; stock_qty: number | null; status: string }>(
@@ -875,21 +903,330 @@ export async function closeBatch(
 export async function reopenBatch(
   batchId: string,
   actor: string,
-): Promise<{ batchCode: string; wasOpen: boolean } | null> {
-  const r = await query<{ batch_code: string; was_open: boolean }>(
+): Promise<{ batchCode: string; wasOpen: boolean; dueAtPassed: boolean } | null> {
+  const r = await query<{ batch_code: string; due_at: string | null }>(
     `UPDATE designated_sku_batches
         SET closed_at = NULL, closed_by = $2, close_reason = ''
       WHERE id = $1 AND closed_at IS NOT NULL
-      RETURNING batch_code, false AS was_open`,
+      RETURNING batch_code, due_at`,
     [batchId, actor],
   );
-  const row = r.rows[0];
-  if (row) return { batchCode: row.batch_code, wasOpen: false };
-  const existing = await query<{ batch_code: string }>(
-    'SELECT batch_code FROM designated_sku_batches WHERE id = $1',
+  const updated = r.rows[0];
+  if (updated) {
+    return {
+      batchCode: updated.batch_code,
+      wasOpen: false,
+      // 已重開但仍然過期 → 前台即時判斷為截止，需要同時延長期限
+      dueAtPassed: isPast(updated.due_at),
+    };
+  }
+  const existing = await query<{ batch_code: string; due_at: string | null }>(
+    'SELECT batch_code, due_at FROM designated_sku_batches WHERE id = $1',
     [batchId],
   );
-  return existing.rows[0] ? { batchCode: existing.rows[0].batch_code, wasOpen: true } : null;
+  const row = existing.rows[0];
+  return row ? { batchCode: row.batch_code, wasOpen: true, dueAtPassed: isPast(row.due_at) } : null;
+}
+
+/** 重算批次的 SKU 行數及店數（加入／移除 SKU 後必須同步） */
+async function bumpBatchCounts(client: PoolClient, batchId: string): Promise<void> {
+  await client.query(
+    `UPDATE designated_sku_batches b
+        SET row_count = (
+              SELECT count(*) FROM designated_sku_items i
+               JOIN designated_sku_matters m ON m.id = i.matter_id
+              WHERE m.batch_id = b.id
+            ),
+            store_count = (SELECT count(*) FROM designated_sku_matters m WHERE m.batch_id = b.id)
+      WHERE b.id = $1`,
+    [batchId],
+  );
+}
+
+/**
+ * 取得（或建立）某店舖在此批次的事項。
+ * 新事項編號 = 批次內現有最大序號 + 1；中間被刪除的編號不會重用，
+ * 避免舊 link／舊匯出對到另一個事項。
+ */
+async function ensureMatter(
+  client: PoolClient,
+  batchId: string,
+  siteCode: string,
+): Promise<{ id: string; matterCode: string; created: boolean }> {
+  const existing = await client.query<{ id: string; matter_code: string }>(
+    'SELECT id, matter_code FROM designated_sku_matters WHERE batch_id = $1 AND site_code = $2 FOR UPDATE',
+    [batchId, siteCode],
+  );
+  const found = existing.rows[0];
+  if (found) return { id: found.id, matterCode: found.matter_code, created: false };
+
+  const batch = await client.query<{ batch_code: string }>(
+    'SELECT batch_code FROM designated_sku_batches WHERE id = $1 FOR UPDATE',
+    [batchId],
+  );
+  const batchCode = batch.rows[0]?.batch_code;
+  if (!batchCode) throw new DesignatedSkuNotFoundError('找不到批次，可能已被刪除');
+
+  const maxSeq = await client.query<{ max: number | null }>(
+    `SELECT max(NULLIF(regexp_replace(matter_code, '^.*-', ''), '')::int) AS max
+       FROM designated_sku_matters WHERE batch_id = $1`,
+    [batchId],
+  );
+  const seq = Number(maxSeq.rows[0]?.max ?? 0) + 1;
+  const matterCode = `${batchCode}-${String(seq).padStart(2, '0')}`;
+  const ins = await client.query<{ id: string }>(
+    'INSERT INTO designated_sku_matters (batch_id, matter_code, site_code) VALUES ($1, $2, $3) RETURNING id',
+    [batchId, matterCode, siteCode],
+  );
+  return { id: ins.rows[0]!.id, matterCode, created: true };
+}
+
+export interface AddDesignatedSkuItemInput {
+  batchId: string;
+  siteCode: string;
+  sku: string;
+  hierarchy?: string;
+  description?: string;
+  stockQty?: number | null;
+}
+
+/** 在既有批次補加一個 SKU（該店舖未有事項時自動建立） */
+export async function addItem(
+  input: AddDesignatedSkuItemInput,
+): Promise<{ itemId: string; matterId: string; matterCode: string; matterCreated: boolean }> {
+  return withTransaction(async (client) => {
+    const batch = await client.query<{ closed_at: string | null }>(
+      'SELECT closed_at FROM designated_sku_batches WHERE id = $1 FOR UPDATE',
+      [input.batchId],
+    );
+    const batchRow = batch.rows[0];
+    if (!batchRow) throw new DesignatedSkuNotFoundError('找不到批次，可能已被刪除');
+    if (batchRow.closed_at) {
+      throw new DesignatedSkuError('批次已封存，請先「重開」再加入 SKU');
+    }
+
+    const site = await client.query<{ site_code: string }>('SELECT site_code FROM stores WHERE site_code = $1', [
+      input.siteCode,
+    ]);
+    if (!site.rows[0]) throw new DesignatedSkuError(`店舖 ${input.siteCode} 不存在於門店主檔`);
+
+    const dup = await client.query(
+      'SELECT 1 FROM designated_sku_items WHERE batch_id = $1 AND site_code = $2 AND sku = $3',
+      [input.batchId, input.siteCode, input.sku],
+    );
+    if (dup.rows[0]) {
+      throw new DesignatedSkuError(`店舖 ${input.siteCode} 在此批次已有 SKU ${input.sku}`);
+    }
+
+    const matter = await ensureMatter(client, input.batchId, input.siteCode);
+    const ins = await client.query<{ id: string }>(
+      `INSERT INTO designated_sku_items
+         (batch_id, matter_id, site_code, sku, product_hierarchy, description, stock_qty, payload)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, '{}'::jsonb)
+       RETURNING id`,
+      [
+        input.batchId,
+        matter.id,
+        input.siteCode,
+        input.sku,
+        input.hierarchy ?? '',
+        input.description ?? '',
+        input.stockQty ?? null,
+      ],
+    );
+    await bumpBatchCounts(client, input.batchId);
+    return {
+      itemId: ins.rows[0]!.id,
+      matterId: matter.id,
+      matterCode: matter.matterCode,
+      matterCreated: matter.created,
+    };
+  });
+}
+
+export interface UpdateDesignatedSkuItemInput {
+  batchId: string;
+  itemId: string;
+  /** 有提供才更新；設為 null 代表清空存貨（不當 0） */
+  siteCode?: string;
+  sku?: string;
+  hierarchy?: string;
+  description?: string;
+  stockQty?: number | null;
+}
+
+/**
+ * 修改單一 SKU 的店舖、編號、描述或存貨。
+ *
+ * 存貨是店舖回覆的上限，所以**新存貨不可低於已回覆合計**（否則資料自相矛盾），
+ * 要改就先更正回覆。改店舖會把 SKU 搬到該店的事項（必要時新建）。
+ */
+export async function updateItem(input: UpdateDesignatedSkuItemInput): Promise<{
+  itemId: string;
+  matterId: string;
+  matterCode: string;
+  moved: boolean;
+}> {
+  return withTransaction(async (client) => {
+    const itemRes = await client.query<{
+      id: string;
+      matter_id: string;
+      site_code: string;
+      sku: string;
+      stock_qty: number | null;
+      status: string;
+      reply_total: number | null;
+      matter_code: string;
+    }>(
+      `SELECT i.id, i.matter_id, i.site_code, i.sku, i.stock_qty, i.status, i.reply_total, m.matter_code
+         FROM designated_sku_items i
+         JOIN designated_sku_matters m ON m.id = i.matter_id
+        WHERE i.id = $1 AND i.batch_id = $2
+        FOR UPDATE OF i`,
+      [input.itemId, input.batchId],
+    );
+    const item = itemRes.rows[0];
+    if (!item) throw new DesignatedSkuNotFoundError('找不到此 SKU，可能已被刪除');
+
+    const batch = await client.query<{ closed_at: string | null }>(
+      'SELECT closed_at FROM designated_sku_batches WHERE id = $1 FOR UPDATE',
+      [input.batchId],
+    );
+    const batchRow = batch.rows[0];
+    if (!batchRow) throw new DesignatedSkuNotFoundError('找不到批次，可能已被刪除');
+    if (batchRow.closed_at) throw new DesignatedSkuError('批次已封存，請先「重開」再修改');
+
+    const nextStock = input.stockQty === undefined ? item.stock_qty : input.stockQty;
+    if (nextStock !== null && nextStock !== undefined && item.status === 'replied') {
+      const replied = Number(item.reply_total ?? 0);
+      if (replied > Number(nextStock)) {
+        throw new DesignatedSkuError(
+          `SKU ${item.sku} 已回覆 ${replied} 件，新存貨不可少於 ${replied} 件；請先更正回覆`,
+        );
+      }
+    }
+
+    const nextSite = input.siteCode === undefined ? item.site_code : input.siteCode;
+    const nextSku = input.sku === undefined ? item.sku : input.sku;
+    const moved = nextSite !== item.site_code;
+    if (moved || nextSku !== item.sku) {
+      const dup = await client.query(
+        'SELECT 1 FROM designated_sku_items WHERE batch_id = $1 AND site_code = $2 AND sku = $3 AND id <> $4',
+        [input.batchId, nextSite, nextSku, input.itemId],
+      );
+      if (dup.rows[0]) {
+        throw new DesignatedSkuError(`店舖 ${nextSite} 在此批次已有 SKU ${nextSku}`);
+      }
+    }
+
+    let matterId = item.matter_id;
+    let matterCode = item.matter_code;
+    if (moved) {
+      const site = await client.query<{ site_code: string }>('SELECT site_code FROM stores WHERE site_code = $1', [
+        nextSite,
+      ]);
+      if (!site.rows[0]) throw new DesignatedSkuError(`店舖 ${nextSite} 不存在於門店主檔`);
+      const matter = await ensureMatter(client, input.batchId, nextSite);
+      matterId = matter.id;
+      matterCode = matter.matterCode;
+    }
+
+    await client.query(
+      `UPDATE designated_sku_items
+          SET matter_id = $2,
+              site_code = $3,
+              sku = $4,
+              product_hierarchy = COALESCE($5, product_hierarchy),
+              description = COALESCE($6, description),
+              stock_qty = $7,
+              updated_at = now()
+        WHERE id = $1`,
+      [
+        input.itemId,
+        matterId,
+        nextSite,
+        nextSku,
+        input.hierarchy ?? null,
+        input.description ?? null,
+        nextStock ?? null,
+      ],
+    );
+
+    if (moved) {
+      // 舊事項若已無 SKU，連同事項一併刪除，避免出現空卡
+      const left = await client.query<{ count: string }>(
+        'SELECT count(*)::text AS count FROM designated_sku_items WHERE matter_id = $1',
+        [item.matter_id],
+      );
+      if (Number(left.rows[0]?.count ?? 0) === 0) {
+        await client.query('DELETE FROM designated_sku_matters WHERE id = $1', [item.matter_id]);
+      }
+      await bumpBatchCounts(client, input.batchId);
+    }
+
+    return { itemId: input.itemId, matterId, matterCode, moved };
+  });
+}
+
+/** 刪除單一 SKU；若該事項已無其他 SKU，連事項一併刪除 */
+export async function deleteItem(input: {
+  batchId: string;
+  itemId: string;
+}): Promise<{ matterCode: string; siteCode: string; sku: string; matterDeleted: boolean } | null> {
+  return withTransaction(async (client) => {
+    const itemRes = await client.query<{ id: string; matter_id: string; site_code: string; sku: string; matter_code: string }>(
+      `SELECT i.id, i.matter_id, i.site_code, i.sku, m.matter_code
+         FROM designated_sku_items i
+         JOIN designated_sku_matters m ON m.id = i.matter_id
+        WHERE i.id = $1 AND i.batch_id = $2
+        FOR UPDATE OF i`,
+      [input.itemId, input.batchId],
+    );
+    const item = itemRes.rows[0];
+    if (!item) return null;
+
+    await client.query('DELETE FROM designated_sku_items WHERE id = $1', [input.itemId]);
+    const left = await client.query<{ count: string }>(
+      'SELECT count(*)::text AS count FROM designated_sku_items WHERE matter_id = $1',
+      [item.matter_id],
+    );
+    const matterDeleted = Number(left.rows[0]?.count ?? 0) === 0;
+    if (matterDeleted) {
+      await client.query('DELETE FROM designated_sku_matters WHERE id = $1', [item.matter_id]);
+    }
+    await bumpBatchCounts(client, input.batchId);
+    return { matterCode: item.matter_code, siteCode: item.site_code, sku: item.sku, matterDeleted };
+  });
+}
+
+export interface UpdateDesignatedSkuBatchInput {
+  batchId: string;
+  subject?: string;
+  matterType?: string;
+  instructions?: string;
+  /** null = 清除截止時間；undefined = 不改 */
+  dueAt?: string | null;
+  reference?: string;
+  note?: string;
+}
+
+/** 修改批次資料（主題、說明、截止時間…），主要用於延長截止或更正資料 */
+export async function updateBatch(input: UpdateDesignatedSkuBatchInput): Promise<DesignatedSkuBatchRow | null> {
+  const sets: string[] = [];
+  const params: unknown[] = [input.batchId];
+  const push = (column: string, value: unknown) => {
+    params.push(value);
+    sets.push(`${column} = $${params.length}`);
+  };
+  if (input.subject !== undefined) push('subject', input.subject);
+  if (input.matterType !== undefined) push('matter_type', input.matterType);
+  if (input.instructions !== undefined) push('instructions', input.instructions);
+  if (input.dueAt !== undefined) push('due_at', input.dueAt);
+  if (input.reference !== undefined) push('reference', input.reference);
+  if (input.note !== undefined) push('note', input.note);
+  if (!sets.length) return getBatch(input.batchId);
+  await query(`UPDATE designated_sku_batches SET ${sets.join(', ')} WHERE id = $1`, params);
+  return getBatch(input.batchId);
 }
 
 /** 店舖端首頁提示用：待回覆事項數（只要事項內仍有 SKU 未回覆即計） */
@@ -900,7 +1237,9 @@ export async function countPendingMatters(siteCode: string): Promise<number> {
          FROM designated_sku_matters m
          JOIN designated_sku_batches b ON b.id = m.batch_id
          JOIN designated_sku_items i ON i.matter_id = m.id
-        WHERE m.site_code = $1 AND b.closed_at IS NULL
+        WHERE m.site_code = $1
+          AND b.closed_at IS NULL
+          AND (b.due_at IS NULL OR b.due_at > now())
         GROUP BY m.id
        HAVING count(*) FILTER (WHERE i.status = 'pending') > 0
      ) x`,

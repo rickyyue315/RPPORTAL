@@ -139,7 +139,7 @@ beforeAll(async () => {
       release: () => {},
     }),
   } as never);
-  const migrationFiles = ['001_init.sql', '002_drop_rp_type_completed_at.sql', '003_add_submission_type_qty.sql', '004_add_urgent_reason.sql', '005_add_sales_submission_type.sql', '006_add_return_submission_type.sql', '007_add_idempotency_and_import_recovery.sql', '008_add_export_file_archive.sql', '009_architecture_hardening.sql', '010_query_optimization.sql', '011_cleanup_legacy_schema.sql', '012_om_recovery_codes.sql', '013_recovery_code_plaintext.sql', '014_ndrf_workflow_portal.sql', '015_buyer_auto_approve.sql', '016_round_started_at.sql', '017_zero_sales.sql', '018_zero_sales_reasons.sql', '019_zero_sales_edit_once.sql', '020_portal_users_initial_password.sql', '021_store_passwordless.sql', '022_portal_passwordless.sql', '023_zero_sales_repeat_index.sql', '024_zero_sales_archive.sql', '025_zero_sales_auto_reply.sql', '026_shop_stock_snapshots.sql', '027_designated_sku_tasks.sql', '028_designated_sku_admin_edit.sql', '029_designated_sku_matters.sql'];
+  const migrationFiles = ['001_init.sql', '002_drop_rp_type_completed_at.sql', '003_add_submission_type_qty.sql', '004_add_urgent_reason.sql', '005_add_sales_submission_type.sql', '006_add_return_submission_type.sql', '007_add_idempotency_and_import_recovery.sql', '008_add_export_file_archive.sql', '009_architecture_hardening.sql', '010_query_optimization.sql', '011_cleanup_legacy_schema.sql', '012_om_recovery_codes.sql', '013_recovery_code_plaintext.sql', '014_ndrf_workflow_portal.sql', '015_buyer_auto_approve.sql', '016_round_started_at.sql', '017_zero_sales.sql', '018_zero_sales_reasons.sql', '019_zero_sales_edit_once.sql', '020_portal_users_initial_password.sql', '021_store_passwordless.sql', '022_portal_passwordless.sql', '023_zero_sales_repeat_index.sql', '024_zero_sales_archive.sql', '025_zero_sales_auto_reply.sql', '026_shop_stock_snapshots.sql', '027_designated_sku_tasks.sql', '028_designated_sku_admin_edit.sql', '029_designated_sku_matters.sql', '030_designated_sku_due_at.sql'];
   for (const file of migrationFiles) {
     let sql = await readFile(path.join(__dirname, '..', 'src', 'db', 'migrations', file), 'utf8');
     sql = sql.replace(/CREATE EXTENSION IF NOT EXISTS pgcrypto;\s*/g, '');
@@ -264,7 +264,7 @@ describe('指定 SKU 回覆 API（一個事項多個 SKU）', () => {
     mainBuffer = buffer;
     const res = await uploadBatch(agent, buffer, {
       instructions: '請按年期填報可調撥件數',
-      due_date: '2026-11-10',
+      due_at: '2026-11-10T18:00',
       reference: 'RP-2026-1042',
     });
     expect(res.status).toBe(201);
@@ -279,7 +279,8 @@ describe('指定 SKU 回覆 API（一個事項多個 SKU）', () => {
     expect(batch.batch_code).toBe(batchCode);
     expect(batch.subject).toBe('指定 SKU 存貨年期確認（測試）');
     expect(batch.instructions).toBe('請按年期填報可調撥件數');
-    expect(batch.due_date).toBe('2026-11-10');
+    // 輸入香港時間 18:00，讀回同一時間
+    expect(batch.due_at).toBe('2026-11-10 18:00');
     expect(batch.reference).toBe('RP-2026-1042');
     expect(batch.matter_count).toBe(3);
     expect(batch.row_count).toBe(4);
@@ -612,5 +613,279 @@ describe('指定 SKU 回覆 API（一個事項多個 SKU）', () => {
     expect(forced.status).toBe(201);
     expect(forced.body.batchCode).not.toBe(batchCode);
     expect(forced.body.matterCount).toBe(3);
+  });
+});
+
+describe('人手輸入與批次維護', () => {
+  let mb = '';
+  let mbCode = '';
+  let hb20Matter = '';
+  let hb20MatterId = '';
+  let hb20ItemA = '';
+  let hb20ItemB = '';
+
+  const manualRows = [
+    { site_code: 'HB20', sku: '200000000001', description: 'A 貨品', stock_qty: '4' },
+    { site_code: 'HB20', sku: '200000000002', description: 'B 貨品', stock_qty: '' },
+    { site_code: 'HA15', sku: '200000000001', stock_qty: '2' },
+  ];
+
+  it('人手輸入建立批次：同店多個 SKU 歸入同一事項，存貨留空保持 null', async () => {
+    const admin = await adminAgent();
+    const res = await admin
+      .post('/api/admin/designated-sku/batches/manual')
+      .set('x-csrf-token', admin._csrf ?? '')
+      .send({ subject: '人手輸入測試', due_at: '2026-12-31T18:30', rows: manualRows });
+    expect(res.status).toBe(201);
+    expect(res.body.matterCount).toBe(2);
+    expect(res.body.itemCount).toBe(3);
+    mb = res.body.batchId as string;
+    mbCode = res.body.batchCode as string;
+
+    const { batch, matters } = await batchMatters(admin, mb);
+    expect(batch.due_at).toBe('2026-12-31 18:30');
+    expect(batch.row_count).toBe(3);
+    expect(matters).toHaveLength(2);
+
+    const hb20 = matters.find((m) => m.site_code === 'HB20')!;
+    expect(hb20.items).toHaveLength(2);
+    expect(hb20.items.find((it) => it.sku === '200000000001')!.stock_qty).toBe(4);
+    expect(hb20.items.find((it) => it.sku === '200000000002')!.stock_qty).toBeNull();
+    hb20Matter = hb20.matter_code;
+    hb20MatterId = hb20.id;
+    hb20ItemA = hb20.items.find((it) => it.sku === '200000000001')!.id;
+    hb20ItemB = hb20.items.find((it) => it.sku === '200000000002')!.id;
+  });
+
+  it('人手輸入：同店重複 SKU 會逐行報錯', async () => {
+    const admin = await adminAgent();
+    const res = await admin
+      .post('/api/admin/designated-sku/batches/manual')
+      .set('x-csrf-token', admin._csrf ?? '')
+      .send({
+        subject: '重複行測試',
+        rows: [
+          { site_code: 'HB20', sku: '200000000009', stock_qty: '1' },
+          { site_code: 'HB20', sku: '200000000009', stock_qty: '2' },
+        ],
+      });
+    expect(res.status).toBe(400);
+    expect(res.body.errors[0].reason).toContain('重複');
+  });
+
+  it('人手輸入：相同清單再提交 409，勾 force 可重新派發', async () => {
+    const admin = await adminAgent();
+    const dup = await admin
+      .post('/api/admin/designated-sku/batches/manual')
+      .set('x-csrf-token', admin._csrf ?? '')
+      .send({ subject: '人手輸入測試（重複）', rows: manualRows });
+    expect(dup.status).toBe(409);
+    expect(dup.body.code).toBe('DUPLICATE_FILE');
+
+    const forced = await admin
+      .post('/api/admin/designated-sku/batches/manual')
+      .set('x-csrf-token', admin._csrf ?? '')
+      .send({ subject: '人手輸入測試（重派）', rows: manualRows, force: '1' });
+    expect(forced.status).toBe(201);
+    expect(forced.body.batchCode).not.toBe(mbCode);
+    // 清掉，避免影響後面的人手批次斷言
+    await admin
+      .delete(`/api/admin/designated-sku/batches/${forced.body.batchId}`)
+      .set('x-csrf-token', admin._csrf ?? '');
+  });
+
+  it('批次內補加 SKU：新店自動建立事項、同店加入現有事項、重複會擋', async () => {
+    const admin = await adminAgent();
+    const first = await admin
+      .post(`/api/admin/designated-sku/batches/${mb}/items`)
+      .set('x-csrf-token', admin._csrf ?? '')
+      .send({ site_code: 'HC63', sku: '200000000003', description: 'C 貨品', stock_qty: 5 });
+    expect(first.status).toBe(201);
+    expect(first.body.matterCreated).toBe(true);
+
+    const second = await admin
+      .post(`/api/admin/designated-sku/batches/${mb}/items`)
+      .set('x-csrf-token', admin._csrf ?? '')
+      .send({ site_code: 'HC63', sku: '200000000004', stock_qty: '' });
+    expect(second.status).toBe(201);
+    expect(second.body.matterCreated).toBe(false);
+    expect(second.body.matterId).toBe(first.body.matterId);
+
+    const dup = await admin
+      .post(`/api/admin/designated-sku/batches/${mb}/items`)
+      .set('x-csrf-token', admin._csrf ?? '')
+      .send({ site_code: 'HC63', sku: '200000000003', stock_qty: 1 });
+    expect(dup.status).toBe(400);
+
+    const { batch } = await batchMatters(admin, mb);
+    expect(batch.matter_count).toBe(3);
+    expect(batch.row_count).toBe(5);
+  });
+
+  it('修改存貨：不可低於已回覆合計；可改描述及 SKU 編號', async () => {
+    const admin = await adminAgent();
+    const store = await storeAgent('HB20');
+    const replied = await store
+      .put(`/api/portal/designated-sku/matters/${hb20Matter}/reply`)
+      .set('x-csrf-token', store._csrf ?? '')
+      .send({
+        items: [
+          { item_id: hb20ItemA, lines: [{ year_code: '0927', qty: 3 }] },
+          { item_id: hb20ItemB, lines: [], no_transfer: true },
+        ],
+      });
+    expect(replied.status).toBe(200);
+
+    const tooLow = await admin
+      .put(`/api/admin/designated-sku/batches/${mb}/items/${hb20ItemA}`)
+      .set('x-csrf-token', admin._csrf ?? '')
+      .send({ stock_qty: 2 });
+    expect(tooLow.status).toBe(400);
+    expect(tooLow.body.error).toContain('不可少於');
+
+    const ok = await admin
+      .put(`/api/admin/designated-sku/batches/${mb}/items/${hb20ItemA}`)
+      .set('x-csrf-token', admin._csrf ?? '')
+      .send({ stock_qty: 5, description: 'A 貨品（已更正）', sku: '200000000001X' });
+    expect(ok.status).toBe(200);
+
+    const { matters } = await batchMatters(admin, mb);
+    const item = matters
+      .find((m) => m.id === hb20MatterId)!
+      .items.find((it) => it.id === hb20ItemA)!;
+    expect(item.stock_qty).toBe(5);
+    expect(item.sku).toBe('200000000001X');
+    expect(item.description).toBe('A 貨品（已更正）');
+    // 回覆紀錄不受影響
+    expect(item.lines).toEqual([{ year_code: '0927', qty: 3 }]);
+  });
+
+  it('改店舖：SKU 會搬到該店的事項，舊事項空了自動移除', async () => {
+    const admin = await adminAgent();
+    const moved = await admin
+      .put(`/api/admin/designated-sku/batches/${mb}/items/${hb20ItemB}`)
+      .set('x-csrf-token', admin._csrf ?? '')
+      .send({ site_code: 'HA02' });
+    expect(moved.status).toBe(200);
+    expect(moved.body.moved).toBe(true);
+    expect(moved.body.matterCode).toBe(`${mbCode}-04`);
+
+    const { batch, matters } = await batchMatters(admin, mb);
+    expect(batch.matter_count).toBe(4);
+    expect(batch.row_count).toBe(5);
+    expect(matters.find((m) => m.site_code === 'HA02')!.items.map((it) => it.sku)).toEqual(['200000000002']);
+    expect(matters.find((m) => m.id === hb20MatterId)!.items.map((it) => it.sku)).toEqual(['200000000001X']);
+
+    // 搬走最後一隻 → 事項消失
+    const back = await admin
+      .put(`/api/admin/designated-sku/batches/${mb}/items/${hb20ItemB}`)
+      .set('x-csrf-token', admin._csrf ?? '')
+      .send({ site_code: 'HB20' });
+    expect(back.status).toBe(200);
+    const after = await batchMatters(admin, mb);
+    expect(after.batch.matter_count).toBe(3);
+  });
+
+  it('刪除 SKU：事項再無其他 SKU 時連事項一併移除', async () => {
+    const admin = await adminAgent();
+    // 先搬一隻 SKU 去 HA02，建立一個只有 1 個 SKU 的事項
+    const moved = await admin
+      .put(`/api/admin/designated-sku/batches/${mb}/items/${hb20ItemB}`)
+      .set('x-csrf-token', admin._csrf ?? '')
+      .send({ site_code: 'HA02' });
+    expect(moved.status).toBe(200);
+
+    const before = await batchMatters(admin, mb);
+    const ha02Matter = before.matters.find((m) => m.site_code === 'HA02')!;
+    expect(ha02Matter.items).toHaveLength(1);
+    const del = await admin
+      .delete(`/api/admin/designated-sku/batches/${mb}/items/${ha02Matter.items[0]!.id}`)
+      .set('x-csrf-token', admin._csrf ?? '');
+    expect(del.status).toBe(200);
+    expect(del.body.matterDeleted).toBe(true);
+
+    const after = await batchMatters(admin, mb);
+    expect(after.batch.matter_count).toBe(3);
+    expect(after.batch.row_count).toBe(4);
+    expect(after.matters.some((m) => m.site_code === 'HA02')).toBe(false);
+  });
+
+  it('截止時間已過：店舖不可提交、標示已逾期；管理員仍可代填，延長後店舖可提交', async () => {
+    const admin = await adminAgent();
+    const past = await admin
+      .post('/api/admin/designated-sku/batches/manual')
+      .set('x-csrf-token', admin._csrf ?? '')
+      .send({
+        subject: '過期測試',
+        due_at: '2020-01-01T10:00',
+        rows: [{ site_code: 'HA15', sku: '200000000099', stock_qty: 2 }],
+      });
+    expect(past.status).toBe(201);
+    const batchId = past.body.batchId as string;
+
+    const { matters } = await batchMatters(admin, batchId);
+    expect(matters[0]!.is_open).toBe(false);
+    expect(matters[0]!.is_expired).toBe(true);
+    const code = matters[0]!.matter_code;
+    const itemId = matters[0]!.items[0]!.id;
+
+    const store = await storeAgent('HA15');
+    const list = await store.get('/api/portal/designated-sku/matters');
+    const seen = list.body.matters.find((m: { matter_code: string }) => m.matter_code === code);
+    expect(seen.is_open).toBe(false);
+    expect(seen.is_expired).toBe(true);
+
+    const blocked = await store
+      .put(`/api/portal/designated-sku/matters/${code}/reply`)
+      .set('x-csrf-token', store._csrf ?? '')
+      .send({ items: [{ item_id: itemId, lines: [{ year_code: '0827', qty: 1 }] }] });
+    expect(blocked.status).toBe(409);
+    expect(blocked.body.code).toBe('MATTER_CLOSED');
+    expect(blocked.body.error).toContain('截止時間');
+
+    const adminEdit = await admin
+      .put(`/api/admin/designated-sku/batches/${batchId}/matters/${matters[0]!.id}/reply`)
+      .set('x-csrf-token', admin._csrf ?? '')
+      .send({ items: [{ item_id: itemId, lines: [{ year_code: '0827', qty: 1 }] }] });
+    expect(adminEdit.status).toBe(200);
+
+    const extended = await admin
+      .put(`/api/admin/designated-sku/batches/${batchId}`)
+      .set('x-csrf-token', admin._csrf ?? '')
+      .send({ due_at: '2030-01-01T18:00' });
+    expect(extended.status).toBe(200);
+    expect(extended.body.batch.due_at).toBe('2030-01-01 18:00');
+    expect(extended.body.batch.is_open).toBe(true);
+    expect(extended.body.batch.is_expired).toBe(false);
+
+    const allowed = await store
+      .put(`/api/portal/designated-sku/matters/${code}/reply`)
+      .set('x-csrf-token', store._csrf ?? '')
+      .send({ items: [{ item_id: itemId, lines: [{ year_code: '0827', qty: 1 }] }] });
+    expect(allowed.status).toBe(200);
+  });
+
+  it('封存後不可再補加 SKU，重開後可', async () => {
+    const admin = await adminAgent();
+    await admin
+      .put(`/api/admin/designated-sku/batches/${mb}/close`)
+      .set('x-csrf-token', admin._csrf ?? '')
+      .send({});
+    const blocked = await admin
+      .post(`/api/admin/designated-sku/batches/${mb}/items`)
+      .set('x-csrf-token', admin._csrf ?? '')
+      .send({ site_code: 'HC63', sku: '200000000077', stock_qty: 1 });
+    expect(blocked.status).toBe(400);
+    expect(blocked.body.error).toContain('封存');
+
+    await admin
+      .put(`/api/admin/designated-sku/batches/${mb}/reopen`)
+      .set('x-csrf-token', admin._csrf ?? '')
+      .send({});
+    const ok = await admin
+      .post(`/api/admin/designated-sku/batches/${mb}/items`)
+      .set('x-csrf-token', admin._csrf ?? '')
+      .send({ site_code: 'HC63', sku: '200000000077', stock_qty: 1 });
+    expect(ok.status).toBe(201);
   });
 });

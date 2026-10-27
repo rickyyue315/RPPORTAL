@@ -753,3 +753,49 @@ body.stk-modal-open { overflow: hidden; }
   color: #64748b;
   font-weight: 600;
 }
+
+/* 指定 SKU 回覆：通用彈窗（補加／修改 SKU、編輯批次資料） */
+.dsku-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1056;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  background: rgba(0, 0, 0, .45);
+}
+.dsku-overlay[hidden] { display: none; }
+.dsku-overlay .modal-box {
+  width: 100%;
+  max-width: 640px;
+  max-height: calc(100vh - 48px);
+  overflow-y: auto;
+  box-sizing: border-box;
+  padding: 26px;
+  border-radius: 12px;
+  background: #fff;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, .25);
+}
+.dsku-overlay h3 { margin: 0 0 8px; }
+.dsku-overlay .form-label { margin-bottom: 4px; }
+
+/* 人手輸入：可增減的表格與貼上區 */
+.dsku-manual-table td { padding: 4px 6px; vertical-align: middle; }
+.dsku-manual-table th { font-size: 12px; color: #64748b; }
+.dsku-paste-box {
+  margin: 0 0 12px;
+  padding: 12px;
+  border: 1px dashed #cfe0f2;
+  border-radius: 10px;
+  background: #f8fbff;
+}
+.dsku-paste-box textarea { font-family: Consolas, 'Courier New', monospace; font-size: 12.5px; }
+
+/* 明細內每個 SKU 的編輯／移除 */
+.dsku-sku-row-actions { margin-top: 4px; display: flex; gap: 6px; }
+.dsku-sku-row-actions .btn { padding: 1px 8px; font-size: 12px; line-height: 18px; }
+
+.dsku-manual-table { table-layout: fixed; width: 100%; max-width: 1040px; }
+.dsku-manual-table input[data-f="stock"] { text-align: center; }
+.dsku-manual-table td:last-child, .dsku-manual-table th:last-child { text-align: center; }

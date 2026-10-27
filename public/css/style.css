@@ -948,6 +948,23 @@ input[readonly]#r_site {
   white-space: nowrap;
   flex-shrink: 0;
 }
+/* 暫停中的服務：連結調暗，但仍然入得去（頁面會講明暫停收單）。
+   同 .nav-disabled 唔同：唔用虛線框、cursor 保持 pointer。 */
+.topbar nav a.nav-paused {
+  color: rgba(255, 255, 255, 0.5);
+}
+.topbar nav a.nav-paused:hover {
+  color: rgba(255, 255, 255, 0.78);
+  background: rgba(255, 255, 255, 0.1);
+  transform: none;
+}
+/* 身處暫停頁面時：保留「你在這裡」的實心底，但唔用搶眼的白底 pill */
+.topbar nav a.nav-paused.active,
+.topbar nav a.nav-paused[aria-current='page'] {
+  background: rgba(255, 255, 255, 0.16);
+  color: rgba(255, 255, 255, 0.82);
+  box-shadow: none;
+}
 .badge-paused {
   display: inline-flex;
   align-items: center;

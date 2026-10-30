@@ -233,9 +233,9 @@ describe('OM portal', () => {
     );
     const batchId = batch.rows[0]!.id;
     for (const row of [
-      { site: 'HA02', shop: '駱克', om: 'Ivy', excess: 10, soh: 100, sku0: 1 },
-      { site: 'HA06', shop: '北角', om: 'Ivy', excess: 20, soh: 100, sku0: 2 },
-      { site: 'HA19', shop: '康山', om: 'Violet', excess: 900, soh: 1000, sku0: 9 },
+      { site: 'HA02', shop: '駱克', om: 'Ivy', excess: 10, soh: 100, sku0: 1, rf: 8 },
+      { site: 'HA06', shop: '北角', om: 'Ivy', excess: 20, soh: 100, sku0: 2, rf: 7 },
+      { site: 'HA19', shop: '康山', om: 'Violet', excess: 900, soh: 1000, sku0: 9, rf: 9 },
     ]) {
       await db.query(
         `INSERT INTO shop_stock_snapshots
@@ -249,7 +249,7 @@ describe('OM portal', () => {
           row.sku0,
           row.excess,
           row.soh,
-          JSON.stringify({ 'No. of SKU Carry': '10' }),
+          JSON.stringify({ 'No. of SKU Carry': '10', 'No. of RF SKU': String(row.rf) }),
         ],
       );
     }
@@ -260,6 +260,29 @@ describe('OM portal', () => {
     expect(res.body.stores.map((s: { site_code: string }) => s.site_code)).toEqual(['HA02', 'HA06']);
     expect(res.body.kpi.ratio).toBeCloseTo(30 / 200, 6);
     expect(res.body.kpi.company_ratio).toBeCloseTo(930 / 1200, 6);
+    // 不良 SKU ÷ Carry SKU：Ivy = 3 / 20；全公司 = 12 / 30
+    expect(res.body.kpi.sku_count_0sale).toBe(3);
+    expect(res.body.kpi.total_sku_carry).toBe(20);
+    expect(res.body.kpi.ovs_carry_ratio).toBeCloseTo(3 / 20, 6);
+    expect(res.body.kpi.company_ovs_carry_ratio).toBeCloseTo(12 / 30, 6);
+    expect(res.body.series[0].total_sku_carry).toBe(20);
+    expect(res.body.series[0].ovs_carry_ratio).toBeCloseTo(3 / 20, 6);
+    expect(res.body.company_series[0].total_sku_carry).toBe(30);
+    expect(res.body.company_series[0].ovs_carry_ratio).toBeCloseTo(12 / 30, 6);
+
+    const ha02 = res.body.stores.find((s: { site_code: string }) => s.site_code === 'HA02');
+    expect(ha02.sku_count_0sale).toBe(1);
+    expect(ha02.total_sku_carry).toBe(10);
+    expect(ha02.rf_sku_count).toBe(8);
+    expect(ha02.ovs_carry_ratio).toBeCloseTo(1 / 10, 6);
+
+    const selected = await agent.get('/api/portal/om/stock?site_code=HA02');
+    expect(selected.status).toBe(200);
+    expect(selected.body.selected_store.site_code).toBe('HA02');
+    expect(selected.body.selected_store.kpi.total_sku_carry).toBe(10);
+    expect(selected.body.selected_store.kpi.ovs_carry_ratio).toBeCloseTo(1 / 10, 6);
+    expect(selected.body.selected_store.kpi.company_ovs_carry_ratio).toBeCloseTo(12 / 30, 6);
+    expect(selected.body.selected_store.series[0].ovs_carry_ratio).toBeCloseTo(1 / 10, 6);
 
     const other = await agent.get('/api/portal/om/stock?site_code=HA19');
     expect(other.status).toBe(403);

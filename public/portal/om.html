@@ -176,7 +176,7 @@
       <section id="panel_om_stock" role="tabpanel" aria-labelledby="tab_om_stock" tabindex="0" hidden>
         <div class="card dash-head-card">
           <h2>管轄店舖存貨走勢</h2>
-          <p class="dash-intro">OM 合計以管轄店舖的「不良存貨值 ÷ 店舖存貨值」加權計算，並與全公司加權平均比較。可選擇單一店舖查看其走勢；只會顯示你管理範圍內的店舖。</p>
+          <p class="dash-intro">OM 合計以管轄店舖加權計算，並與全公司加權平均比較。除了「不良存貨值 ÷ 店舖存貨值」，另設「不良存貨 SKU ÷ Carry SKU」走勢，方便了解存貨質素與 SKU 結構。可選擇單一店舖查看其走勢；只會顯示你管理範圍內的店舖。</p>
           <div class="zs-toolbar" role="search">
             <div class="field">
               <label for="om_stock_site">顯示範圍</label>
@@ -206,6 +206,19 @@
           <p class="hint dash-chart-note" id="om_stock_note"></p>
         </div>
 
+        <div class="card dash-card" id="om_sku_chart_card">
+          <div class="dash-card-head">
+            <h3>每週不良存貨 SKU ÷ Carry SKU</h3>
+            <span class="hint" id="om_sku_period"></span>
+          </div>
+          <div class="dash-legend" id="om_sku_legend">
+            <span class="dash-legend-item"><i class="dash-line dash-line--self" aria-hidden="true"></i><span id="om_sku_legend_self">OM 管轄合計</span></span>
+            <span class="dash-legend-item"><i class="dash-line dash-line--company" aria-hidden="true"></i>全公司合計（加權）</span>
+          </div>
+          <div class="dash-chart" id="om_sku_chart"></div>
+          <p class="hint dash-chart-note" id="om_sku_note"></p>
+        </div>
+
         <div class="card">
           <div class="dash-card-head">
             <h3>各店最新一期</h3>
@@ -221,11 +234,12 @@
                   <th>店舖存貨值</th>
                   <th>不良存貨佔比</th>
                   <th>較上一期</th>
-                  <th>不良 SKU 數</th>
+                  <th>不良 SKU / Carry SKU</th>
+                  <th>SKU 比率</th>
                 </tr>
               </thead>
               <tbody id="om_stock_table_body">
-                <tr><td colspan="7" class="text-center text-secondary">載入中…</td></tr>
+                <tr><td colspan="8" class="text-center text-secondary">載入中…</td></tr>
               </tbody>
             </table>
           </div>

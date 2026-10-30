@@ -18,7 +18,7 @@ SASA RP Team 非正常補貨（NDRF）申報平台。申請端以「Site Code／
 - 90 日零銷售：每週派發每店 Top 10 零銷售 SKU 給店舖逐條回覆原因；新一週上載即自動封存舊週次。**支援「本週無須回覆」**（銷售繁忙期）：批次照樣派發（店舖仍看見本店 Top 10 清單可搜尋／匯出），但店舖不可回覆，亦不計入待回覆／逾期／回覆率；可隨時切回需要回覆
 - 後台導航收斂為 7 個分頁：總覽／申報清單／**匯出**（含匯出批次及重新下載）／零銷售／存貨 Dashboard／指定SKU回覆／**系統**（含帳戶與主檔、審批設定、系統工具）。合併頁面頂部有頁內分組導覽；舊連結 `?tab=batches|accounts|review` 及 `#sec-batches|sec-accounts|sec-review` 書籤會自動跳到對應分頁的分組，不會失效
 - 指定 SKU 回覆：批次可用**Excel 上載**或**人手輸入**建立（一個批次可含多間店舖 × 多個 SKU），系統按 Site Code 建立**事項**（同一店舖的多個 SKU 歸入同一事項）；店舖為每個 SKU 的各個貨品年期 (MMYY) 回覆可調撥件數，或標示「無可調撥」，一次過提交整份事項。每個事項有獨立事項編號、批次編號及直 link（只限涉及店舖，後端強制核對）。**截止日期及時間（香港時間）到點即自動截止**，管理員可延長期限、補加／修改 SKU、代店舖補錄或更正回覆（不佔店舖修改次數，會寫入審計日誌）
-- **OM（區域主管）Portal**（`/portal/om.html`）：OM 以自己名稱＋OM 專用密碼（`PORTAL_OM_PASSWORD`，預設 `SASAOM178`）登入，只會看到 `stores.om` 等於自己名稱的店舖。提供管轄店舖總覽（零銷售待回覆、指定 SKU 待回事項、最新不良存貨佔比）、零銷售逐 SKU 代覆、指定 SKU 事項代覆，以及 OM 合計／單店存貨走勢（含全公司加權平均對比）；所有代覆寫入審計日誌，已封存的週次／事項不可代覆
+- **OM（區域主管）Portal**（`/portal/om.html`）：OM 以自己名稱＋OM 專用密碼（`PORTAL_OM_PASSWORD`，預設 `SASAOM178`）登入，只會看到 `stores.om` 等於自己名稱的店舖。提供管轄店舖總覽（零銷售待回覆、指定 SKU 待回事項、最新不良存貨佔比及 SKU 比率）、零銷售逐 SKU 代覆、指定 SKU 事項代覆，以及 OM 合計／單店存貨走勢（不良存貨值佔比及不良存貨 SKU ÷ Carry SKU，均含全公司加權平均對比）；所有代覆寫入審計日誌，已封存的週次／事項不可代覆
 - SAP 匯出只包含一般 NDRF，Urgent Order 使用獨立 6 欄匯出（Application No. | Site Code | SKU | QTY | Urgent Reason | Other Reason）；突發性銷售使用獨立 4 欄匯出（Application Date | Requested by | Shop Code | SKU）；匯出成功後鎖定該批申報，申請人不能再修改；匯出失敗不鎖定。管理員於 14:30 後開始匯出處理，期間 Urgent Order 申請人不可修改（查詢不受限）
 - Submission、version history 及 audit event 的 IP 按 `IP_RETENTION_DAYS` 自動匿名化；login attempts、import/export batches、expired sessions 及 rate-limit counters 按各自 retention 設定清理
 - 公開單筆及 Excel 提交使用 Idempotency-Key；網絡中斷或回應遺失時，店舖重試會取回原申請編號／原匯入批次，不會重複寫入；Urgent 網頁 1 至 5 SKU 批次使用同一 request key，重試會一次取回全部申請編號。匯入記錄由伺服器按 batch ID 重新產生，不再信任瀏覽器回傳整批資料

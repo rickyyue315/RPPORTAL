@@ -169,6 +169,9 @@ describe('static asset freshness', () => {
     expect(page).toContain('id="panel_om_zero"');
     expect(page).toContain('id="panel_om_dsku"');
     expect(page).toContain('id="panel_om_stock"');
+    expect(page).toContain('id="om_sku_chart"');
+    expect(page).toContain('id="om_sku_note"');
+    expect(page).toContain('不良 SKU / Carry SKU');
     expect(page).toContain('/portal/js/om.js');
     expect(page).toContain('/portal/js/om-designated-sku.js');
     expect(script).toContain('/api/portal/om/zero-sales/items/');

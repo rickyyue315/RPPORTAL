@@ -380,7 +380,7 @@
         <td>${zText}</td>
         <td>${rate === null ? '<span class="om-muted">—</span>' : `${rate.toFixed(0)}%`}</td>
         <td>${dText}</td>
-        <td>${s ? fmtRatio(s.ratio) : '<span class="om-muted">—</span>'}</td>
+        <td>${s ? `${fmtRatio(s.ratio)}<div class="hint">SKU ${fmtRatio(s.ovs_carry_ratio)}（${esc(String(s.sku_count_0sale ?? '—'))} / ${esc(String(s.total_sku_carry ?? '—'))}）</div>` : '<span class="om-muted">—</span>'}</td>
         <td>${s ? deltaHtml(s.wow_delta_pt) : '<span class="om-muted">—</span>'}</td>
         <td><div class="om-store-actions">
           <button type="button" data-action="zero" data-site="${esc(store.site_code)}">零銷售</button>
@@ -622,42 +622,44 @@
       kpi.innerHTML = '<div class="dash-kpi"><div class="dash-kpi-value">—</div><div class="dash-kpi-label">暫無存貨數據</div><div class="dash-kpi-sub">待 RP Team 上載 I14 報表</div></div>';
       return;
     }
+    const skuCounts = k.total_sku_carry === null
+      ? 'Carry SKU 未提供'
+      : `不良 ${k.sku_count_0sale ?? '—'} / Carry ${k.total_sku_carry}`;
+    const companySku = k.company_ovs_carry_ratio === null
+      ? '全公司暫無對比'
+      : `全公司 ${fmtRatio(k.company_ovs_carry_ratio)}`;
     kpi.innerHTML = [
       kpiCard(fmtRatio(k.ratio), '不良存貨佔比',
         `${fmtDate(k.report_date)}｜${scope}`, deltaClass(k.wow_delta_pt)),
       kpiCard(fmtMoney(k.total_excess), '不良存貨值（P90D 0 Sales）', scope),
       kpiCard(fmtMoney(k.total_soh), '店舖存貨值（CM）', scope),
-      kpiCard(fmtRatio(k.ovs_carry_ratio), '不良存貨 SKU ÷ 店內貨品 SKU',
-        k.company_ratio === null ? '全公司暫無對比' : `全公司 ${fmtRatio(k.company_ratio)}`,
-        deltaClass(k.delta_vs_company_pt)),
+      kpiCard(fmtRatio(k.ovs_carry_ratio), '不良存貨 SKU ÷ Carry SKU',
+        `${skuCounts}｜${companySku}`,
+        deltaClass(k.ovs_wow_delta_pt)),
     ].join('');
   }
 
-  function renderStockChart(data) {
-    const el = $('om_stock_chart');
-    const note = $('om_stock_note');
-    const period = $('om_stock_period');
+  /** 兩個存貨走勢圖共用：valueKey 可選 ratio 或 ovs_carry_ratio。 */
+  function renderRatioTrend(opts) {
+    const el = $(opts.elId);
+    const note = $(opts.noteId);
+    const period = $(opts.periodId);
     if (!el) return;
-    const selected = data.selected_store;
-    const selfLabel = selected
-      ? `${selected.site_code} ${selected.shop || ''}`.trim()
-      : 'OM 管轄合計';
-    if ($('om_stock_legend_self')) $('om_stock_legend_self').textContent = selfLabel;
-
-    const series = selected ? selected.series : data.series;
-    const usable = (series || []).filter((row) => row.ratio !== null);
-    const company = (data.company_series || []).filter((row) => row.ratio !== null);
+    const series = opts.series || [];
+    const company = opts.company || [];
+    const usable = series.filter((row) => row[opts.valueKey] !== null);
+    const companyUsable = company.filter((row) => row[opts.valueKey] !== null);
     if (period) period.textContent = '';
     if (note) note.textContent = '';
     if (!usable.length) {
-      el.innerHTML = '<div class="ct-empty">暫無可顯示的存貨走勢。</div>';
-      if (note) note.textContent = '待 RP Team 上載最新一期 I14「By Shop」報表後會自動更新。';
+      el.innerHTML = `<div class="ct-empty">${opts.emptyText || '暫無可顯示的走勢。'}</div>`;
+      if (note) note.textContent = opts.emptyNote || '待 RP Team 上載最新一期 I14「By Shop」報表後會自動更新。';
       return;
     }
     if (usable.length === 1) {
       el.innerHTML = '<div class="ct-empty">目前只有 1 期資料，下期上載後會顯示走勢。</div>';
       if (period) period.textContent = fmtDate(usable[0].report_date);
-      if (note) note.textContent = `本期佔比 ${fmtRatio(usable[0].ratio)}。`;
+      if (note) note.textContent = opts.singleText ? opts.singleText(usable[0]) : `本期數值 ${fmtRatio(usable[0][opts.valueKey])}。`;
       return;
     }
     const chartApi = globalThis.ChartLite;
@@ -670,28 +672,79 @@
     }
     const chartSeries = [{
       key: 'self',
-      label: selfLabel,
+      label: opts.selfLabel || 'OM 管轄合計',
       color: '#0f5c9c',
-      points: (series || []).map((row) => ({ date: row.report_date, value: row.ratio })),
+      points: series.map((row) => ({ date: row.report_date, value: row[opts.valueKey] })),
     }];
-    if (company.length) {
+    if (companyUsable.length) {
       chartSeries.push({
         key: 'company',
         label: '全公司合計（加權）',
         color: '#94a3b8',
         dashed: true,
-        points: company.map((row) => ({ date: row.report_date, value: row.ratio })),
+        points: companyUsable.map((row) => ({ date: row.report_date, value: row[opts.valueKey] })),
       });
     }
     chartApi.renderLine(el, {
       series: chartSeries,
       height: 260,
-      emptyText: '暫無佔比數據',
+      emptyText: opts.emptyText || '暫無數據',
       yFormat: (v) => `${(Number(v) * 100).toFixed(1)}%`,
       tipFormat: (v) => fmtRatio(v),
-      ariaLabel: `${selfLabel}不良存貨佔比趨勢，共 ${usable.length} 期`,
+      ariaLabel: `${opts.selfLabel || 'OM 管轄合計'}${opts.ariaLabel || '走勢'}，共 ${usable.length} 期`,
     });
-    if (note) note.textContent = '點或懸停圖表可查看該期數值；OM 合計以管轄店舖加權計算。';
+    if (note) note.textContent = opts.noteText ? opts.noteText(usable) : '點或懸停圖表可查看該期數值。';
+  }
+
+  function currentSelfLabel(data) {
+    return data.selected_store
+      ? `${data.selected_store.site_code} ${data.selected_store.shop || ''}`.trim()
+      : 'OM 管轄合計';
+  }
+
+  function renderStockChart(data) {
+    const selected = data.selected_store;
+    const selfLabel = currentSelfLabel(data);
+    if ($('om_stock_legend_self')) $('om_stock_legend_self').textContent = selfLabel;
+    renderRatioTrend({
+      elId: 'om_stock_chart',
+      periodId: 'om_stock_period',
+      noteId: 'om_stock_note',
+      valueKey: 'ratio',
+      series: selected ? selected.series : data.series,
+      company: data.company_series || [],
+      selfLabel,
+      emptyText: '暫無可顯示的存貨走勢。',
+      ariaLabel: '不良存貨佔比趨勢',
+      noteText: () => '點或懸停圖表可查看該期數值；OM 合計以管轄店舖加權計算。',
+    });
+  }
+
+  function renderSkuChart(data) {
+    const selected = data.selected_store;
+    const selfLabel = currentSelfLabel(data);
+    if ($('om_sku_legend_self')) $('om_sku_legend_self').textContent = selfLabel;
+    const company = (data.company_series || []).filter((row) => row.ovs_carry_ratio !== null);
+    const companyByDate = new Map((data.company_series || []).map((row) => [row.report_date, row.ovs_carry_ratio]));
+    renderRatioTrend({
+      elId: 'om_sku_chart',
+      periodId: 'om_sku_period',
+      noteId: 'om_sku_note',
+      valueKey: 'ovs_carry_ratio',
+      series: selected ? selected.series : data.series,
+      company,
+      selfLabel,
+      emptyText: '暫無可顯示的 SKU 比率走勢。',
+      ariaLabel: '不良存貨 SKU ÷ Carry SKU 趨勢',
+      singleText: (row) => `本期 SKU 比率 ${fmtRatio(row.ovs_carry_ratio)}（不良 ${row.sku_count_0sale ?? '—'} / Carry ${row.total_sku_carry ?? '—'}）。`,
+      noteText: (usable) => {
+        const last = usable[usable.length - 1];
+        const cmp = companyByDate.get(last.report_date);
+        return `最新一期：不良 SKU ${last.sku_count_0sale ?? '—'} / Carry SKU ${last.total_sku_carry ?? '—'} = ${fmtRatio(last.ovs_carry_ratio)}` +
+          (cmp === null || cmp === undefined ? '；全公司暫無對比。' : `；全公司 ${fmtRatio(cmp)}。`) +
+          ' Carry SKU = No. of RF SKU + ND with Stock。';
+      },
+    });
   }
 
   function renderStockStores(data) {
@@ -704,7 +757,7 @@
       return b.ratio - a.ratio;
     });
     if (!rows.length) {
-      body.innerHTML = '<tr><td colspan="7" class="text-center text-secondary">暫無存貨數據。</td></tr>';
+      body.innerHTML = '<tr><td colspan="8" class="text-center text-secondary">暫無存貨數據。</td></tr>';
       return;
     }
     body.innerHTML = rows.map((row) => `<tr>
@@ -714,7 +767,8 @@
       <td>${fmtMoney(row.total_soh)}</td>
       <td>${fmtRatio(row.ratio)}</td>
       <td>${deltaHtml(row.wow_delta_pt)}</td>
-      <td>${row.sku_count_0sale === null ? '—' : esc(String(row.sku_count_0sale))}</td>
+      <td>${esc(String(row.sku_count_0sale ?? '—'))} / ${esc(String(row.total_sku_carry ?? '—'))}${row.rf_sku_count !== null && row.rf_sku_count !== undefined ? `<div class="hint">RF ${esc(String(row.rf_sku_count))}</div>` : ''}</td>
+      <td>${fmtRatio(row.ovs_carry_ratio)}${row.ovs_wow_delta_pt == null ? '' : `<div class="hint">${deltaHtml(row.ovs_wow_delta_pt)}</div>`}</td>
     </tr>`).join('');
     body.querySelectorAll('[data-stock-site]').forEach((btn) => {
       btn.addEventListener('click', () => {
@@ -730,6 +784,7 @@
       const data = await omApi(`/api/portal/om/stock${site ? `?site_code=${encodeURIComponent(site)}` : ''}`);
       renderStockKpi(data);
       renderStockChart(data);
+      renderSkuChart(data);
       renderStockStores(data);
       showAlert($('om_stock_error'), '', '');
     } catch (err) {

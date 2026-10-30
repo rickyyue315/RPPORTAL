@@ -310,7 +310,11 @@ export interface OmStockSeriesPoint {
   total_excess: number | null;
   total_soh: number | null;
   sku_count_0sale: number | null;
+  /** 店內貨品 SKU 總數（I14 No. of SKU Carry）；缺值時 null */
+  total_sku_carry: number | null;
   ovs_carry_ratio: number | null;
+  /** 不良 SKU 比率與上一期的百分點差 */
+  ovs_wow_delta_pt: number | null;
 }
 
 export interface OmStockStoreRow {
@@ -323,7 +327,12 @@ export interface OmStockStoreRow {
   total_excess: number | null;
   total_soh: number | null;
   sku_count_0sale: number | null;
+  /** 店內貨品 SKU 總數（I14 No. of SKU Carry） */
+  total_sku_carry: number | null;
+  /** RF SKU 數（I14 No. of RF SKU） */
+  rf_sku_count: number | null;
   ovs_carry_ratio: number | null;
+  ovs_wow_delta_pt: number | null;
 }
 
 export interface OmStockKpi {
@@ -335,16 +344,29 @@ export interface OmStockKpi {
   total_excess: number | null;
   total_soh: number | null;
   sku_count_0sale: number | null;
+  total_sku_carry: number | null;
   ovs_carry_ratio: number | null;
+  ovs_wow_delta_pt: number | null;
   company_ratio: number | null;
+  company_ovs_carry_ratio: number | null;
   delta_vs_company_pt: number | null;
+}
+
+export interface OmStockCompanySeriesPoint {
+  report_date: string;
+  ratio: number | null;
+  wow_delta_pt: number | null;
+  sku_count_0sale: number | null;
+  total_sku_carry: number | null;
+  ovs_carry_ratio: number | null;
+  ovs_wow_delta_pt: number | null;
 }
 
 export interface OmStockSummary {
   has_data: boolean;
   site_count: number;
   series: OmStockSeriesPoint[];
-  company_series: Array<{ report_date: string; ratio: number | null; wow_delta_pt: number | null }>;
+  company_series: OmStockCompanySeriesPoint[];
   selected_store: { site_code: string; shop: string; series: OmStockSeriesPoint[]; kpi: OmStockKpi | null } | null;
   kpi: OmStockKpi | null;
   stores: OmStockStoreRow[];
@@ -398,6 +420,7 @@ interface OmStockRawRow {
   shop_stock_value_cm: unknown;
   sku_count_0sale: unknown;
   carry_text: unknown;
+  rf_text: unknown;
 }
 
 export async function getOmStockSummary(username: string, selectedSiteCode = ''): Promise<OmStockSummary> {
@@ -418,7 +441,8 @@ export async function getOmStockSummary(username: string, selectedSiteCode = '')
             s.excess_value_0sale,
             s.shop_stock_value_cm,
             s.sku_count_0sale,
-            s.payload->>'No. of SKU Carry' AS carry_text
+            s.payload->>'No. of SKU Carry' AS carry_text,
+            s.payload->>'No. of RF SKU' AS rf_text
        FROM shop_stock_snapshots s
        JOIN shop_stock_batches b ON b.id = s.batch_id
       WHERE s.site_code = ANY($1::text[])
@@ -437,7 +461,10 @@ export async function getOmStockSummary(username: string, selectedSiteCode = '')
       total_excess: null,
       total_soh: null,
       sku_count_0sale: null,
+      total_sku_carry: null,
+      rf_sku_count: null,
       ovs_carry_ratio: null,
+      ovs_wow_delta_pt: null,
     }));
     return empty;
   }
@@ -497,19 +524,33 @@ export async function getOmStockSummary(username: string, selectedSiteCode = '')
       total_excess: agg.soh > 0 ? agg.excess : null,
       total_soh: agg.soh > 0 ? agg.soh : null,
       sku_count_0sale: agg.sku0,
+      total_sku_carry: agg.hasCarry ? agg.carry : null,
       ovs_carry_ratio: agg.hasCarry ? ratioOf(agg.sku0, agg.carry) : null,
+      ovs_wow_delta_pt: null,
     }));
   for (let i = 1; i < series.length; i += 1) {
     series[i]!.wow_delta_pt = deltaPt(series[i]!.ratio, series[i - 1]!.ratio);
+    series[i]!.ovs_wow_delta_pt = deltaPt(series[i]!.ovs_carry_ratio, series[i - 1]!.ovs_carry_ratio);
   }
 
   const company = await getShopStockSummary();
-  const company_series = company.series.map((point) => ({
+  const company_series: OmStockCompanySeriesPoint[] = company.series.map((point) => ({
     report_date: point.report_date,
     ratio: point.ratio,
     wow_delta_pt: point.wow_delta_pt,
+    sku_count_0sale: point.sku_count_0sale,
+    total_sku_carry: point.total_sku_carry,
+    ovs_carry_ratio: point.ovs_carry_ratio,
+    ovs_wow_delta_pt: null,
   }));
+  for (let i = 1; i < company_series.length; i += 1) {
+    company_series[i]!.ovs_wow_delta_pt = deltaPt(
+      company_series[i]!.ovs_carry_ratio,
+      company_series[i - 1]!.ovs_carry_ratio,
+    );
+  }
   const companyByDate = new Map(company_series.map((point) => [point.report_date, point.ratio]));
+  const companyOvsByDate = new Map(company_series.map((point) => [point.report_date, point.ovs_carry_ratio]));
 
   // 每店最新一期（同店按 report_date 升序，取最後兩期計 WoW）
   const rowsByStore = new Map<string, OmStockRawRow[]>();
@@ -535,12 +576,18 @@ export async function getOmStockSummary(username: string, selectedSiteCode = '')
         total_excess: null,
         total_soh: null,
         sku_count_0sale: null,
+        total_sku_carry: null,
+        rf_sku_count: null,
         ovs_carry_ratio: null,
+        ovs_wow_delta_pt: null,
       };
     }
     const latestRatio = ratioOf(latest.excess_value_0sale, latest.shop_stock_value_cm);
     const prevRatio = previous ? ratioOf(previous.excess_value_0sale, previous.shop_stock_value_cm) : null;
     const carry = skuCount(latest.carry_text);
+    const prevCarry = previous ? skuCount(previous.carry_text) : null;
+    const latestOvs = carry !== null ? ratioOf(latest.sku_count_0sale, carry) : null;
+    const prevOvs = previous && prevCarry !== null ? ratioOf(previous.sku_count_0sale, prevCarry) : null;
     return {
       site_code: store.site_code,
       shop: store.shop,
@@ -551,7 +598,10 @@ export async function getOmStockSummary(username: string, selectedSiteCode = '')
       total_excess: num(latest.excess_value_0sale),
       total_soh: num(latest.shop_stock_value_cm),
       sku_count_0sale: num(latest.sku_count_0sale),
-      ovs_carry_ratio: carry !== null ? ratioOf(latest.sku_count_0sale, carry) : null,
+      total_sku_carry: carry,
+      rf_sku_count: skuCount(latest.rf_text),
+      ovs_carry_ratio: latestOvs,
+      ovs_wow_delta_pt: deltaPt(latestOvs, prevOvs),
     };
   });
 
@@ -572,14 +622,18 @@ export async function getOmStockSummary(username: string, selectedSiteCode = '')
           total_excess: num(row.excess_value_0sale),
           total_soh: num(row.shop_stock_value_cm),
           sku_count_0sale: num(row.sku_count_0sale),
+          total_sku_carry: carry,
           ovs_carry_ratio: carry !== null ? ratioOf(row.sku_count_0sale, carry) : null,
+          ovs_wow_delta_pt: null,
         };
       });
     for (let i = 1; i < selectedSeries.length; i += 1) {
       selectedSeries[i]!.wow_delta_pt = deltaPt(selectedSeries[i]!.ratio, selectedSeries[i - 1]!.ratio);
+      selectedSeries[i]!.ovs_wow_delta_pt = deltaPt(selectedSeries[i]!.ovs_carry_ratio, selectedSeries[i - 1]!.ovs_carry_ratio);
     }
     const lastSelected = selectedSeries[selectedSeries.length - 1];
     const selectedCompanyRatio = lastSelected ? companyByDate.get(lastSelected.report_date) ?? null : null;
+    const selectedCompanyOvs = lastSelected ? companyOvsByDate.get(lastSelected.report_date) ?? null : null;
     const selectedKpi: OmStockKpi | null = lastSelected
       ? {
           report_date: lastSelected.report_date,
@@ -590,8 +644,11 @@ export async function getOmStockSummary(username: string, selectedSiteCode = '')
           total_excess: lastSelected.total_excess,
           total_soh: lastSelected.total_soh,
           sku_count_0sale: lastSelected.sku_count_0sale,
+          total_sku_carry: lastSelected.total_sku_carry,
           ovs_carry_ratio: lastSelected.ovs_carry_ratio,
+          ovs_wow_delta_pt: lastSelected.ovs_wow_delta_pt,
           company_ratio: selectedCompanyRatio,
+          company_ovs_carry_ratio: selectedCompanyOvs,
           delta_vs_company_pt: deltaPt(lastSelected.ratio, selectedCompanyRatio),
         }
       : null;
@@ -611,6 +668,7 @@ export async function getOmStockSummary(username: string, selectedSiteCode = '')
     };
   }
   const companyRatio = companyByDate.get(latestPoint.report_date) ?? null;
+  const companyOvsRatio = companyOvsByDate.get(latestPoint.report_date) ?? null;
   return {
     has_data: true,
     site_count: stores.length,
@@ -626,8 +684,11 @@ export async function getOmStockSummary(username: string, selectedSiteCode = '')
       total_excess: latestPoint.total_excess,
       total_soh: latestPoint.total_soh,
       sku_count_0sale: latestPoint.sku_count_0sale,
+      total_sku_carry: latestPoint.total_sku_carry,
       ovs_carry_ratio: latestPoint.ovs_carry_ratio,
+      ovs_wow_delta_pt: latestPoint.ovs_wow_delta_pt,
       company_ratio: companyRatio,
+      company_ovs_carry_ratio: companyOvsRatio,
       delta_vs_company_pt: deltaPt(latestPoint.ratio, companyRatio),
     },
     stores: stockStores,

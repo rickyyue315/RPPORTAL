@@ -68,6 +68,9 @@ export const config = {
   // "outsider" gate (the portal only records SKU/QTY-level data), not a
   // per-account secret.
   portalSharedPassword: process.env.PORTAL_SHARED_PASSWORD ?? 'SASA1234',
+  // OM（區域主管）專用密碼。OM 以「OM 名稱」登入，只可查看／代覆自己
+  // 管理的店舖；與店舖共用密碼分開，避免店舖帳戶登入 OM 介面。
+  portalOmPassword: process.env.PORTAL_OM_PASSWORD || 'SASAOM178',
   sessionTtlHours: int('SESSION_TTL_HOURS', 8),
   loginLockThreshold: int('LOGIN_LOCK_THRESHOLD', 5),
   loginLockMinutes: int('LOGIN_LOCK_MINUTES', 15),

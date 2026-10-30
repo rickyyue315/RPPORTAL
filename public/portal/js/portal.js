@@ -31,8 +31,12 @@
     }
     if (!res.ok) {
       if (res.status === 401 && !options.noRedirect) {
-        // Keep ?user= so the login page can pick it up again.
-        window.location.href = '/portal/' + window.location.search;
+        // Keep ?user= so the login page can pick it up again. OM pages return
+        // to the OM login instead of the store gate.
+        const loginPath = window.location.pathname.startsWith('/portal/om')
+          ? '/portal/om.html'
+          : '/portal/';
+        window.location.href = loginPath + window.location.search;
         throw new Error('登入已過期');
       }
       if (res.status === 401) {
@@ -133,6 +137,7 @@
         <div class="btn-row" style="margin-top:16px">
           <button class="btn" type="button" id="site_gate_go">進入</button>
         </div>
+        <p class="hint" style="margin-top:14px;text-align:center">OM 區域主管請使用 <a href="/portal/om.html">OM 登入</a>（輸入 OM 名稱及 OM 專用密碼）。</p>
       </div>`;
       document.body.appendChild(overlay);
       const input = overlay.querySelector('#site_gate_input');
@@ -148,6 +153,10 @@
           rememberPass(passInput.value);
           if ((me.user.role === 'buyer' || me.user.role === 'sct')) {
             window.location.href = '/portal/reviewer.html';
+            return;
+          }
+          if (me.user.role === 'om') {
+            window.location.href = '/portal/om.html';
             return;
           }
           if (me.user.role !== 'store' || !me.user.site_code) throw new Error('帳戶無效');
@@ -185,6 +194,10 @@
         window.location.href = '/portal/reviewer.html';
         throw new Error('role');
       }
+      if (me.user.role === 'om') {
+        window.location.href = '/portal/om.html';
+        throw new Error('role');
+      }
     } catch (err) {
       if (err && err.message === 'role') throw err;
     }
@@ -198,6 +211,10 @@
         }
         if (me.user.role === 'buyer' || me.user.role === 'sct') {
           window.location.href = '/portal/reviewer.html';
+          throw new Error('role');
+        }
+        if (me.user.role === 'om') {
+          window.location.href = '/portal/om.html';
           throw new Error('role');
         }
       } catch (err) {

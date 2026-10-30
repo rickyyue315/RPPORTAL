@@ -87,8 +87,67 @@ export async function syncStorePortalAccounts(adminUsername: string): Promise<St
   });
 }
 
-/** Creates a Buyer or SCT account; login is the username plus the shared portal password. */
-export async function createBuyerOrSctAccount(input: {
+export interface OmAccountSyncResult {
+  created: string[];
+  reactivated: string[];
+  unchanged: number;
+  skipped: string[];
+}
+
+/**
+ * Creates one OM account per distinct stores.om value.
+ * Login password is PORTAL_OM_PASSWORD (default SASAOM178); the account hash
+ * is deliberately unusable. Existing OM accounts are left untouched (including
+ * deactivated ones, so an admin's revocation is respected). Removed OMs are
+ * NOT auto-deactivated so an admin can decide whether to revoke access; their
+ * account simply manages no stores.
+ */
+export async function syncOmPortalAccounts(createdBy: string): Promise<OmAccountSyncResult> {
+  return withTransaction(async (client) => {
+    const omRows = await client.query<{ om: string }>(
+      `SELECT DISTINCT BTRIM(om) AS om
+         FROM stores
+        WHERE BTRIM(COALESCE(om, '')) <> ''
+        ORDER BY 1`,
+    );
+    const existing = await client.query<{ id: string; username: string; role: string; active: boolean }>(
+      "SELECT id, username, role, active FROM portal_users WHERE username = ANY($1::text[])",
+      [omRows.rows.map((row) => normalizePortalUsername(row.om))],
+    );
+    const byUsername = new Map(existing.rows.map((row) => [row.username, row]));
+    const result: OmAccountSyncResult = { created: [], reactivated: [], unchanged: 0, skipped: [] };
+
+    for (const row of omRows.rows) {
+      const username = normalizePortalUsername(row.om);
+      if (!username) continue;
+      const found = byUsername.get(username);
+      if (found) {
+        if (found.role !== 'om') {
+          result.skipped.push(username);
+          continue;
+        }
+        // 不自動重新啟用：管理員刻意停用的 OM 帳戶應保持停用，
+        // 要恢復請由管理員在帳戶管理頁手動啟用。
+        result.unchanged++;
+        continue;
+      }
+      const inserted = await client.query(
+        `INSERT INTO portal_users
+           (username, display_name, role, site_code, password_hash, initial_password,
+            must_change_password, active, created_by)
+         VALUES ($1, $2, 'om', NULL, 'unusable$om-portal', NULL, false, true, $3)
+         ON CONFLICT (username) DO NOTHING
+         RETURNING username`,
+        [username, row.om, createdBy],
+      );
+      if (inserted.rows[0]) result.created.push(username);
+      else result.skipped.push(username);
+    }
+    return result;
+  });
+}
+
+/** Creates a Buyer or SCT account; login is the username plus the shared portal password. */export async function createBuyerOrSctAccount(input: {
   username: string;
   displayName: string;
   role: 'buyer' | 'sct';

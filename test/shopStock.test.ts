@@ -78,6 +78,7 @@ const MIGRATIONS = [
   '027_designated_sku_tasks.sql',
   '028_designated_sku_admin_edit.sql',
   '029_designated_sku_matters.sql', '030_designated_sku_due_at.sql', '031_zero_sales_no_reply.sql',
+  '032_om_portal.sql',
 ];
 
 let db: PGlite;

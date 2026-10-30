@@ -22,6 +22,7 @@ import {
   createPortalSession,
   destroyPortalSession,
   normalizePortalUsername,
+  verifyOmPassword,
   verifySharedPassword,
   type PortalUserRow,
 } from '../services/portalAuth.js';
@@ -86,8 +87,13 @@ import {
   submitMatterReply as submitDesignatedSkuReply,
   type DesignatedSkuMatter,
 } from '../services/designatedSku.js';
+import { omRouter } from './om.js';
 
 export const portalRouter = Router();
+
+// OM（區域主管）專用 API；與店舖 portal 共用 session / CSRF，但角色與
+// 資料範圍完全分開（只可存取 stores.om = 登入 OM 名稱的店舖）。
+portalRouter.use('/om', omRouter);
 
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -187,17 +193,14 @@ portalRouter.post(
   '/auth/login',
   adminActionLimiter,
   asyncHandler(async (req: Request, res: Response) => {
-    // Portal (Store / Buyer / SCT) login: Site Code (username) + one shared
-    // password (PORTAL_SHARED_PASSWORD, default SASA1234). The account must
-    // still exist and be active; the admin backend is unaffected and keeps its
-    // own ADMIN_PASSWORD.
+    // Portal login supports two separate shared passwords:
+    //   * Store / Buyer / SCT: PORTAL_SHARED_PASSWORD (default SASA1234)
+    //   * OM: PORTAL_OM_PASSWORD (default SASAOM178), username = OM name
+    // The account must exist and be active; the admin backend is unaffected
+    // and keeps its own ADMIN_PASSWORD.
     const parsed = loginSchema.safeParse(req.body);
     if (!parsed.success) {
       res.status(400).json({ error: '請輸入使用者名稱' });
-      return;
-    }
-    if (!verifySharedPassword(parsed.data.password)) {
-      res.status(401).json({ error: '密碼不正確' });
       return;
     }
     const normalized = normalizePortalUsername(parsed.data.username);
@@ -206,13 +209,55 @@ portalRouter.post(
       return;
     }
     const found = await query<PortalUserRow>('SELECT * FROM portal_users WHERE username = $1', [normalized]);
-    const user = found.rows[0];
+    const user: PortalUserRow | undefined = found.rows[0];
+
+    if (verifyOmPassword(parsed.data.password)) {
+      if (!user || user.role !== 'om' || !user.active) {
+        res.status(401).json({ error: 'OM 名稱不正確或帳戶已停用' });
+        return;
+      }
+      const session = await createPortalSession(user.id);
+      res.cookie(PORTAL_SESSION_COOKIE, session.token, {
+        httpOnly: true,
+        secure: config.env === 'production',
+        sameSite: 'lax',
+        path: '/',
+        maxAge: config.sessionTtlHours * 3600 * 1000,
+      });
+      await writeAuditEvent({
+        eventType: 'portal_login',
+        actorRole: 'om',
+        actor: user.username,
+        ip: getClientIp(req),
+        metadata: { role: 'om', om: user.display_name || user.username, auth_mode: 'om_password' },
+      });
+      res.json({
+        ok: true,
+        user: {
+          username: user.username,
+          display_name: user.display_name,
+          role: 'om',
+          site_code: null,
+          must_change_password: false,
+        },
+      });
+      return;
+    }
+
+    if (!verifySharedPassword(parsed.data.password)) {
+      res.status(401).json({ error: '密碼不正確' });
+      return;
+    }
     // No self-service: accounts are created by Admin (store sync / manual
     // creation), so an unknown or deactivated username is simply rejected.
     if (!user || !user.active) {
       // Same message either way so the response does not reveal whether
       // the username exists or is deactivated.
       res.status(401).json({ error: '使用者名稱不正確或帳戶已停用' });
+      return;
+    }
+    if (user.role === 'om') {
+      res.status(401).json({ error: 'OM 帳戶請使用 OM 專用密碼登入' });
       return;
     }
     const session = await createPortalSession(user.id);

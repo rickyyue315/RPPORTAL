@@ -73,11 +73,13 @@ export type AuditEventType =
   | 'designated_sku_reply_admin_edited'
   | 'designated_sku_batch_updated'
   | 'designated_sku_item_added'
-  | 'designated_sku_item_updated';
+  | 'designated_sku_item_updated'
+  | 'om_zero_sales_reply'
+  | 'om_designated_sku_reply';
 
 interface AuditInput {
   eventType: AuditEventType;
-  actorRole?: 'applicant' | 'admin' | 'store' | 'buyer' | 'sct';
+  actorRole?: 'applicant' | 'admin' | 'store' | 'buyer' | 'sct' | 'om';
   actor?: string;
   submissionId?: string;
   applicationNo?: string;

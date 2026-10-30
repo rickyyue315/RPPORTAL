@@ -1094,8 +1094,7 @@ export async function listZeroSalesRepeatSkus(
 }
 
 export async function listMyItems(siteCode: string, opts: { status?: string; batchId?: string }): Promise<ZeroSalesItemRow[]> {
-  const where = ['i.site_code = $1'];
-  const params: unknown[] = [siteCode];
+  const where = ['i.site_code = $1'];  const params: unknown[] = [siteCode];
   if (opts.status === 'pending' || opts.status === 'replied') { params.push(opts.status); where.push(`i.status = $${params.length}`); }
   if (opts.batchId) { params.push(opts.batchId); where.push(`i.batch_id = $${params.length}`); }
   const r = await query<ZeroSalesItemRow>(
@@ -1107,6 +1106,65 @@ export async function listMyItems(siteCode: string, opts: { status?: string; bat
               CASE WHEN i.status = 'pending' THEN 0 ELSE 1 END,
               i.sku
      LIMIT 1000`,
+    params,
+  );
+  const mapped = r.rows.map((row) => ({
+    ...row,
+    payload: typeof row.payload === 'string' ? JSON.parse(row.payload as unknown as string) : (row.payload ?? {}),
+    replied_at: row.replied_at ? toHKString(row.replied_at) : null,
+    auto_filled_at: row.auto_filled_at ? toHKString(row.auto_filled_at as unknown as string) : null,
+    auto_filled: Boolean(row.auto_filled_at),
+    auto_filled_from_week: row.auto_filled_from_week ?? '',
+    reply_limit: row.reply_limit ?? 2,
+    batch_created_at: row.batch_created_at ? toHKString(row.batch_created_at as unknown as string) : undefined,
+    batch_closed_at: row.batch_closed_at ? toHKString(row.batch_closed_at as unknown as string) : null,
+    is_open: !row.batch_closed_at && row.reply_required !== false,
+    batch_date: row.batch_created_at ? toHKDateString(row.batch_created_at as unknown as string) : undefined,
+  }));
+  return attachZeroSalesHistory(mapped);
+}
+
+/**
+ * OM 版：一次取得多間店舖的零銷售行（site codes 由呼叫者按登入 OM 強制帶入）。
+ * 篩選與店舖版一致：batch / site / status / 搜尋 SKU、Brand、描述。
+ */
+export async function listItemsForSites(
+  siteCodes: string[],
+  opts: { status?: string; batchId?: string; siteCode?: string; q?: string; limit?: number } = {},
+): Promise<ZeroSalesItemRow[]> {
+  if (!siteCodes.length) return [];
+  const where = ['i.site_code = ANY($1::text[])'];
+  const params: unknown[] = [siteCodes];
+  if (opts.batchId) {
+    params.push(opts.batchId);
+    where.push(`i.batch_id = $${params.length}`);
+  }
+  if (opts.siteCode) {
+    params.push(opts.siteCode);
+    where.push(`i.site_code = $${params.length}`);
+  }
+  if (opts.status === 'pending' || opts.status === 'replied') {
+    params.push(opts.status);
+    where.push(`i.status = $${params.length}`);
+  }
+  const q = (opts.q ?? '').trim();
+  if (q) {
+    params.push(`%${q}%`);
+    where.push(
+      `(i.sku ILIKE $${params.length} OR COALESCE(i.payload->>'Brand', '') ILIKE $${params.length} OR COALESCE(i.payload->>'SKU Desc', '') ILIKE $${params.length})`,
+    );
+  }
+  const limit = Math.min(5000, Math.max(1, Math.floor(opts.limit ?? 3000) || 3000));
+  params.push(limit);
+  const r = await query<ZeroSalesItemRow>(
+    `SELECT i.*, b.week_label, b.reply_required, b.created_at AS batch_created_at, b.closed_at AS batch_closed_at
+       FROM zero_sales_items i
+       JOIN zero_sales_batches b ON b.id = i.batch_id
+      WHERE ${where.join(' AND ')}
+      ORDER BY b.created_at DESC,
+               CASE WHEN i.status = 'pending' THEN 0 ELSE 1 END,
+               i.site_code, i.sku
+      LIMIT $${params.length}`,
     params,
   );
   const mapped = r.rows.map((row) => ({
@@ -1176,6 +1234,38 @@ export async function listMyBatches(siteCode: string): Promise<ZeroSalesMyBatchR
       GROUP BY b.id, b.week_label, b.created_at, b.closed_at, b.reply_required, b.reply_notice
       ORDER BY b.created_at DESC LIMIT 52`,
     [siteCode],
+  );
+  return r.rows.map((b) => {
+    const replyRequired = b.reply_required !== false;
+    return {
+      ...b,
+      created_at: toHKString(b.created_at),
+      closed_at: b.closed_at ? toHKString(b.closed_at) : null,
+      reply_required: replyRequired,
+      reply_notice: b.reply_notice ?? '',
+      is_archived: Boolean(b.closed_at),
+      is_open: !b.closed_at && replyRequired,
+      pending: replyRequired ? b.pending : 0,
+    };
+  });
+}
+
+/** OM 版：只回傳涉及該 OM 店舖的週次，計數亦只計其店舖。 */
+export async function listBatchesForSites(siteCodes: string[]): Promise<ZeroSalesMyBatchRow[]> {
+  if (!siteCodes.length) return [];
+  const r = await query<Omit<ZeroSalesMyBatchRow, 'is_open' | 'is_archived' | 'reply_required' | 'reply_notice'> & {
+    reply_required: boolean | null;
+    reply_notice: string | null;
+  }>(
+    `SELECT b.id, b.week_label, b.created_at, b.closed_at, b.reply_required, b.reply_notice,
+            count(*)::int AS total,
+            count(*) FILTER (WHERE i.status = 'replied')::int AS replied,
+            count(*) FILTER (WHERE i.status = 'pending')::int AS pending
+       FROM zero_sales_batches b
+       JOIN zero_sales_items i ON i.batch_id = b.id AND i.site_code = ANY($1::text[])
+      GROUP BY b.id, b.week_label, b.created_at, b.closed_at, b.reply_required, b.reply_notice
+      ORDER BY b.created_at DESC LIMIT 52`,
+    [siteCodes],
   );
   return r.rows.map((b) => {
     const replyRequired = b.reply_required !== false;
@@ -1478,6 +1568,10 @@ export async function adminReplyItem(input: {
   reasonNote: string;
   /** 管理員帳號，寫入 replied_by 供日後追查 */
   adminUser: string;
+  /** 寫入 replied_by 的前綴；預設「管理員代填」，OM 代覆時傳「OM 代覆」 */
+  actorLabel?: string;
+  /** true = 只可在仍開放且需要回覆的週次操作（OM 代覆用）；預設 false（管理員可改歷史） */
+  requireOpen?: boolean;
 }): Promise<{
   before: { reason_code: string | null; reason_label: string | null; reason_note: string };
   item: ZeroSalesItemRow;
@@ -1489,6 +1583,29 @@ export async function adminReplyItem(input: {
   const note = (input.reasonNote ?? '').trim();
   if (found.require_note && !note) throw new ZeroSalesReplyError(`選擇「${found.label}」必須填寫補充說明`);
   if (note.length > 2000) throw new ZeroSalesReplyError('補充說明最多 2000 字');
+
+  if (input.requireOpen) {
+    const batch = await query<{ closed_at: string | null; reply_required: boolean; week_label: string }>(
+      'SELECT closed_at, reply_required, week_label FROM zero_sales_batches WHERE id = $1',
+      [input.batchId],
+    );
+    const row = batch.rows[0];
+    if (!row) throw new ZeroSalesReplyError('找不到此週次（可能已被刪除）');
+    if (row.reply_required === false) {
+      throw new ZeroSalesReplyNotRequiredError(`「${row.week_label}」本週無須回覆，只供參考銷售。`);
+    }
+    if (row.closed_at) {
+      throw new ZeroSalesBatchClosedError(
+        `「${row.week_label}」已截止回覆（只供查閱），OM 不可再代覆；如需更正請聯絡 RP Team。`,
+      );
+    }
+  }
+  const openGuard = input.requireOpen
+    ? `AND EXISTS (SELECT 1 FROM zero_sales_batches ob
+                    WHERE ob.id = i.batch_id AND ob.closed_at IS NULL AND ob.reply_required = true)`
+    : '';
+  const actorLabel = input.actorLabel ?? '管理員代填';
+
   const current = await query<{
     status: string;
     reply_count: number;
@@ -1504,16 +1621,16 @@ export async function adminReplyItem(input: {
   const before = { reason_code: cur.reason_code, reason_label: cur.reason_label, reason_note: cur.reason_note };
 
   if (cur.status === 'pending') {
-    // 代填：狀態轉 replied、記錄回覆人為管理員、給予 1 次（店舖仍可在開放週次修改一次）
+    // 代填：狀態轉 replied、記錄回覆人為代覆者、給予 1 次（店舖仍可在開放週次修改一次）
     const inserted = await query<ZeroSalesItemRow>(
-      `UPDATE zero_sales_items
+      `UPDATE zero_sales_items i
           SET status = 'replied', reason_code = $1, reason_label = $2, reason_note = $3,
               replied_at = now(), replied_by = $4, replied_by_user_id = NULL,
               updated_at = now(), reply_count = GREATEST(reply_count, 1),
               auto_filled_at = NULL
-        WHERE id = $5 AND batch_id = $6 AND status = 'pending'
-        RETURNING *`,
-      [found.code, found.label, note, `管理員代填（${input.adminUser}）`, input.itemId, input.batchId],
+        WHERE i.id = $5 AND i.batch_id = $6 AND i.status = 'pending' ${openGuard}
+        RETURNING i.*`,
+      [found.code, found.label, note, `${actorLabel}（${input.adminUser}）`, input.itemId, input.batchId],
     );
     const row = inserted.rows[0];
     if (!row) throw new ZeroSalesReplyError('此 SKU 狀態已改變，請重新載入後再試');
@@ -1535,11 +1652,11 @@ export async function adminReplyItem(input: {
 
   if (!cur.reason_code) throw new ZeroSalesReplyError('此 SKU 沒有可編輯的回覆原因');
   const r = await query<ZeroSalesItemRow>(
-    `UPDATE zero_sales_items
+    `UPDATE zero_sales_items i
         SET reason_code = $1, reason_label = $2, reason_note = $3, updated_at = now(),
             auto_filled_at = NULL
-      WHERE id = $4 AND batch_id = $5
-      RETURNING *`,
+      WHERE i.id = $4 AND i.batch_id = $5 ${openGuard}
+      RETURNING i.*`,
     [found.code, found.label, note, input.itemId, input.batchId],
   );
   const row = r.rows[0];

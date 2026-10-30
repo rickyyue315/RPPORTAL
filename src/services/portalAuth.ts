@@ -2,7 +2,7 @@ import { createHash, randomBytes, scrypt as scryptCb, timingSafeEqual } from 'no
 import { query } from '../db/pool.js';
 import { config } from '../config.js';
 
-export type PortalUserRole = 'store' | 'buyer' | 'sct';
+export type PortalUserRole = 'store' | 'buyer' | 'sct' | 'om';
 
 export interface PortalUserRow {
   id: string;
@@ -67,6 +67,14 @@ export function normalizePortalUsername(raw: string): string {
 /** Constant-time comparison against the shared portal password (default SASA1234). */
 export function verifySharedPassword(given: string): boolean {
   const expected = Buffer.from(config.portalSharedPassword, 'utf8');
+  const actual = Buffer.from(given ?? '', 'utf8');
+  if (expected.length === 0 || expected.length !== actual.length) return false;
+  return timingSafeEqual(expected, actual);
+}
+
+/** Constant-time comparison against the OM-only password (default SASAOM178). */
+export function verifyOmPassword(given: string): boolean {
+  const expected = Buffer.from(config.portalOmPassword, 'utf8');
   const actual = Buffer.from(given ?? '', 'utf8');
   if (expected.length === 0 || expected.length !== actual.length) return false;
   return timingSafeEqual(expected, actual);

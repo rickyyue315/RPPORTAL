@@ -5,6 +5,7 @@ import { pool, waitForDatabase, withAdvisoryLock } from './db/pool.js';
 import { writeAuditEvent } from './lib/audit.js';
 import { countRecoveryCodes } from './lib/recovery.js';
 import { seedStoresFromFile, countStores } from './services/stores.js';
+import { syncOmPortalAccounts } from './services/storeAccounts.js';
 import { cleanupExpiredExportFiles } from './services/exportFiles.js';
 import { cleanupRetentionData } from './services/retention.js';
 import { runBuyerAutoApproveJob } from './services/ndrfWorkflow.js';
@@ -65,6 +66,17 @@ async function main(): Promise<void> {
     console.log(`[boot] stores master empty, seeding from ${csvPath}`);
     const seeded = await seedStoresFromFile(csvPath);
     console.log(`[boot] seeded ${seeded} stores`);
+  }
+
+  // Ensure one OM account per stores.om value (migration seeds existing data;
+  // this covers a fresh database and any OM added while the app was running).
+  try {
+    const omSync = await syncOmPortalAccounts('system');
+    if (omSync.created.length || omSync.reactivated.length) {
+      console.log(`[boot] OM accounts created ${omSync.created.length}, reactivated ${omSync.reactivated.length}`);
+    }
+  } catch (err) {
+    console.error('[boot] OM account sync failed', err);
   }
 
 

@@ -9,8 +9,10 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const { version } = JSON.parse(readFileSync(path.join(root, 'package.json'), 'utf8')) as { version: string };
 const app = createApp();
 
-const HTML_PAGES = ['/', '/portal/', '/portal/zero-sales.html', '/portal/store.html', '/portal/designated-sku.html'];
+const HTML_PAGES = ['/', '/portal/', '/portal/om.html', '/portal/zero-sales.html', '/portal/store.html', '/portal/designated-sku.html'];
 const VERSIONED_ASSETS = [
+  '/portal/js/om.js',
+  '/portal/js/om-designated-sku.js',
   '/portal/js/zero-sales.js',
   '/portal/js/designated-sku.js',
   '/portal/js/portal.js',
@@ -156,6 +158,23 @@ describe('static asset freshness', () => {
     expect(html).toContain('data-lazy-section="recovery-codes"');
     expect(script).toContain("tab === 'export'");
     expect(script).not.toContain("tab === 'batches'");
+  });
+
+  it('wires the OM portal login, reply and stock views', () => {
+    const page = readFileSync(path.join(root, 'public', 'portal', 'om.html'), 'utf8');
+    const script = readFileSync(path.join(root, 'public', 'portal', 'js', 'om.js'), 'utf8');
+    const dskuScript = readFileSync(path.join(root, 'public', 'portal', 'js', 'om-designated-sku.js'), 'utf8');
+    expect(page).toContain('id="om_login_form"');
+    expect(page).toContain('id="panel_om_overview"');
+    expect(page).toContain('id="panel_om_zero"');
+    expect(page).toContain('id="panel_om_dsku"');
+    expect(page).toContain('id="panel_om_stock"');
+    expect(page).toContain('/portal/js/om.js');
+    expect(page).toContain('/portal/js/om-designated-sku.js');
+    expect(script).toContain('/api/portal/om/zero-sales/items/');
+    expect(script).toContain('/api/portal/om/stock');
+    expect(dskuScript).toContain('/api/portal/om/designated-sku/matters/');
+    expect(dskuScript).toContain('OM 代覆');
   });
 
   it('keeps the store navigation identical on every store page', () => {

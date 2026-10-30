@@ -45,6 +45,7 @@ import {
   createBuyerOrSctAccount,
   createSingleStoreAccount,
   StoreAccountError,
+  syncOmPortalAccounts,
   syncStorePortalAccounts,
 } from '../services/storeAccounts.js';
 import {
@@ -1654,14 +1655,15 @@ adminRouter.put(
       return;
     }
     const count = await replaceStores(parsed.stores);
+    const omAccounts = await syncOmPortalAccounts(req.adminUsername!);
     await writeAuditEvent({
       eventType: 'store_master_updated',
       actorRole: 'admin',
       actor: req.adminUsername,
       ip: getClientIp(req),
-      metadata: { filename: file.originalname, count },
+      metadata: { filename: file.originalname, count, om_accounts_created: omAccounts.created.length },
     });
-    res.json({ ok: true, count });
+    res.json({ ok: true, count, om_accounts: omAccounts });
   }),
 );
 
@@ -1672,6 +1674,7 @@ adminRouter.post(
   adminActionLimiter,
   asyncHandler(async (req: Request, res: Response) => {
     const result = await syncStorePortalAccounts(req.adminUsername!);
+    const omAccounts = await syncOmPortalAccounts(req.adminUsername!);
     await writeAuditEvent({
       eventType: 'store_accounts_synced',
       actorRole: 'admin',
@@ -1682,9 +1685,11 @@ adminRouter.post(
         reactivated: result.reactivated.length,
         deactivated: result.deactivated.length,
         unchanged: result.unchanged,
+        om_created: omAccounts.created.length,
+        om_reactivated: omAccounts.reactivated.length,
       },
     });
-    res.json(result);
+    res.json({ ...result, om_accounts: omAccounts });
   }),
 );
 

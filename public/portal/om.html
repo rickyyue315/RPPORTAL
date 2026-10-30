@@ -1,0 +1,287 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg">
+  <title>NDRF OM Portal — 區域主管</title>
+  <link rel="stylesheet" href="/css/style.css">
+  <link rel="stylesheet" href="/portal/css/portal.css">
+</head>
+<body class="zs-page dash-page om-page">
+  <header class="topbar">
+    <div class="topbar-inner">
+      <div class="topbar-brand">
+        <span class="brand-mark" aria-hidden="true">OM</span>
+        <div>
+          <h1>NDRF OM Portal</h1>
+          <div class="subtitle" id="om_header">區域主管 · 管理店舖回覆與走勢</div>
+        </div>
+      </div>
+      <nav aria-label="主要導覽">
+        <a href="/portal/om.html" class="active" aria-current="page">OM 總覽</a>
+        <a href="/help.html">使用說明</a>
+        <a href="#" id="om_logout_link" hidden>登出</a>
+        <a href="/">平台首頁</a>
+      </nav>
+    </div>
+  </header>
+
+  <main class="container portal-main">
+    <!-- 未登入：OM 專用登入卡 -->
+    <section id="om_login_section" class="card om-login-card" hidden>
+      <h2>OM 區域主管登入</h2>
+      <p class="hint">請輸入你的 OM 名稱（例如 Ivy、Violet）及 OM 專用密碼。登入後只會看到你管理範圍內的店舖。</p>
+      <form id="om_login_form" autocomplete="off">
+        <div id="om_login_error"></div>
+        <label for="om_login_name">OM 名稱</label>
+        <input type="text" id="om_login_name" autocomplete="username" placeholder="例如 Ivy" required>
+        <label for="om_login_pass" style="margin-top:12px">OM 密碼</label>
+        <input type="password" id="om_login_pass" autocomplete="current-password" placeholder="請輸入 OM 密碼" required>
+        <div class="btn-row" style="margin-top:16px">
+          <button class="btn" type="submit" id="om_login_btn">登入</button>
+          <a class="btn ghost" href="/portal/zero-sales.html">店舖登入</a>
+        </div>
+      </form>
+      <p class="hint" style="margin-top:14px">店舖同事請使用原來的 Site Code 及店舖密碼，不需要使用此頁。</p>
+    </section>
+
+    <!-- 已登入 -->
+    <section id="om_app" hidden>
+      <div class="card om-head-card">
+        <div class="om-head-row">
+          <div>
+            <h2 style="margin:0 0 4px">OM 管理台 <span id="om_who" class="om-who"></span></h2>
+            <div class="hint" id="om_scope">載入中…</div>
+          </div>
+          <div class="btn-row" style="margin:0">
+            <button class="btn ghost btn-sm" type="button" id="om_refresh">重新整理</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="portal-tabs" role="tablist" aria-label="OM 專區">
+        <button class="portal-tab is-active" type="button" role="tab" id="tab_om_overview"
+                aria-controls="panel_om_overview" aria-selected="true"
+                data-panel="panel_om_overview" data-subtitle="OM 總覽">總覽</button>
+        <button class="portal-tab" type="button" role="tab" id="tab_om_zero"
+                aria-controls="panel_om_zero" aria-selected="false" tabindex="-1"
+                data-panel="panel_om_zero" data-subtitle="零銷售回覆">零銷售回覆</button>
+        <button class="portal-tab" type="button" role="tab" id="tab_om_dsku"
+                aria-controls="panel_om_dsku" aria-selected="false" tabindex="-1"
+                data-panel="panel_om_dsku" data-subtitle="指定 SKU 回覆">指定 SKU 回覆</button>
+        <button class="portal-tab portal-tab--accent" type="button" role="tab" id="tab_om_stock"
+                aria-controls="panel_om_stock" aria-selected="false" tabindex="-1"
+                data-panel="panel_om_stock" data-subtitle="存貨走勢">存貨走勢</button>
+      </div>
+
+      <!-- 總覽 -->
+      <section id="panel_om_overview" role="tabpanel" aria-labelledby="tab_om_overview" tabindex="0">
+        <div id="om_overview_error"></div>
+        <section class="dash-kpi-grid" id="om_kpi" aria-label="OM 管轄範圍指標">
+          <div class="dash-kpi"><div class="dash-kpi-value">—</div><div class="dash-kpi-label">載入中…</div></div>
+        </section>
+        <div class="card">
+          <div class="dash-card-head">
+            <h3>管轄店舖一覽</h3>
+            <span class="hint">點擊店舖可跳至該店的回覆清單</span>
+          </div>
+          <div class="table-scroll">
+            <table class="om-table">
+              <thead>
+                <tr>
+                  <th>店舖</th>
+                  <th>零銷售（最新週次）</th>
+                  <th>零銷售回覆率</th>
+                  <th>指定 SKU 待回覆</th>
+                  <th>最新不良存貨佔比</th>
+                  <th>較上一期</th>
+                  <th>操作</th>
+                </tr>
+              </thead>
+              <tbody id="om_store_body">
+                <tr><td colspan="7" class="text-center text-secondary">載入中…</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <!-- 零銷售 -->
+      <section id="panel_om_zero" role="tabpanel" aria-labelledby="tab_om_zero" tabindex="0" hidden>
+        <div class="card">
+          <h2>零銷售回覆情況</h2>
+          <p class="hint" style="margin-top:0">可檢視管轄店舖每週的 90 日零銷售 SKU，並以 OM 身份代店舖回覆。已封存的週次只供查閱，不能代覆。</p>
+          <div class="zs-toolbar" role="search">
+            <div class="field">
+              <label for="om_zs_batch">週次</label>
+              <select id="om_zs_batch"><option value="">載入中…</option></select>
+            </div>
+            <div class="field">
+              <label for="om_zs_site">店舖</label>
+              <select id="om_zs_site"><option value="">全部管轄店舖</option></select>
+            </div>
+            <div class="field">
+              <label for="om_zs_status">狀態</label>
+              <select id="om_zs_status">
+                <option value="">全部</option>
+                <option value="pending">未回覆</option>
+                <option value="replied">已回覆</option>
+              </select>
+            </div>
+            <div class="field field--search">
+              <label for="om_zs_search">搜尋 SKU / Brand / 描述</label>
+              <input type="text" id="om_zs_search" placeholder="例如 1234567、EYG…" autocomplete="off">
+            </div>
+            <div>
+              <button class="btn btn-sm" id="om_zs_refresh" type="button" style="min-height:42px;padding:10px 22px;font-size:14px;border-radius:999px">重新整理</button>
+            </div>
+          </div>
+          <div id="om_zs_info"></div>
+          <div id="om_zs_error"></div>
+          <div class="zs-table-wrap"><div id="om_zs_list"><div class="loading" style="padding:28px;text-align:center">載入中…</div></div></div>
+          <p class="hint" id="om_zs_count" style="margin-bottom:0"></p>
+        </div>
+      </section>
+
+      <!-- 指定 SKU -->
+      <section id="panel_om_dsku" role="tabpanel" aria-labelledby="tab_om_dsku" tabindex="0" hidden>
+        <div class="card ds-head-card">
+          <h2>指定 SKU 回覆情況</h2>
+          <p class="ds-intro">只顯示管轄店舖的指定 SKU 事項。OM 可代店舖提交整份事項；已截止或已封存的事項只供查閱。<b>事項回覆後仍可在截止前修改。</b></p>
+          <div class="zs-toolbar" role="search">
+            <div class="field">
+              <label for="om_ds_site">店舖</label>
+              <select id="om_ds_site"><option value="">全部管轄店舖</option></select>
+            </div>
+            <div class="field">
+              <label for="om_ds_status">狀態</label>
+              <select id="om_ds_status"><option value="">全部</option><option value="pending">未回覆</option><option value="replied">已回覆</option></select>
+            </div>
+            <div class="field field--search">
+              <label for="om_ds_search">搜尋事項編號 / SKU / 主題</label>
+              <input type="text" id="om_ds_search" placeholder="例如 DSKU-261026、107668017004…" autocomplete="off">
+            </div>
+            <div>
+              <button class="btn btn-sm" id="om_ds_refresh" type="button" style="min-height:42px;padding:10px 22px;font-size:14px;border-radius:999px">重新整理</button>
+            </div>
+          </div>
+          <div id="om_ds_info"></div>
+          <div id="om_ds_error"></div>
+          <div id="om_ds_list"><div class="loading" style="padding:28px;text-align:center">載入中…</div></div>
+        </div>
+      </section>
+
+      <!-- 存貨走勢 -->
+      <section id="panel_om_stock" role="tabpanel" aria-labelledby="tab_om_stock" tabindex="0" hidden>
+        <div class="card dash-head-card">
+          <h2>管轄店舖存貨走勢</h2>
+          <p class="dash-intro">OM 合計以管轄店舖的「不良存貨值 ÷ 店舖存貨值」加權計算，並與全公司加權平均比較。可選擇單一店舖查看其走勢；只會顯示你管理範圍內的店舖。</p>
+          <div class="zs-toolbar" role="search">
+            <div class="field">
+              <label for="om_stock_site">顯示範圍</label>
+              <select id="om_stock_site"><option value="">OM 管轄合計</option></select>
+            </div>
+            <div>
+              <button class="btn btn-sm" id="om_stock_refresh" type="button" style="min-height:42px;padding:10px 22px;font-size:14px;border-radius:999px">重新整理</button>
+            </div>
+          </div>
+          <div id="om_stock_error"></div>
+        </div>
+
+        <section class="dash-kpi-grid" id="om_stock_kpi" aria-label="OM 存貨指標">
+          <div class="dash-kpi"><div class="dash-kpi-value">—</div><div class="dash-kpi-label">載入中…</div></div>
+        </section>
+
+        <div class="card dash-card" id="om_stock_chart_card">
+          <div class="dash-card-head">
+            <h3>每週不良存貨佔比</h3>
+            <span class="hint" id="om_stock_period"></span>
+          </div>
+          <div class="dash-legend" id="om_stock_legend">
+            <span class="dash-legend-item"><i class="dash-line dash-line--self" aria-hidden="true"></i><span id="om_stock_legend_self">OM 管轄合計</span></span>
+            <span class="dash-legend-item"><i class="dash-line dash-line--company" aria-hidden="true"></i>全公司合計（加權）</span>
+          </div>
+          <div class="dash-chart" id="om_stock_chart"></div>
+          <p class="hint dash-chart-note" id="om_stock_note"></p>
+        </div>
+
+        <div class="card">
+          <div class="dash-card-head">
+            <h3>各店最新一期</h3>
+            <span class="hint">按不良存貨佔比由高至低</span>
+          </div>
+          <div class="table-scroll">
+            <table class="om-table">
+              <thead>
+                <tr>
+                  <th>店舖</th>
+                  <th>最新一期</th>
+                  <th>不良存貨值</th>
+                  <th>店舖存貨值</th>
+                  <th>不良存貨佔比</th>
+                  <th>較上一期</th>
+                  <th>不良 SKU 數</th>
+                </tr>
+              </thead>
+              <tbody id="om_stock_table_body">
+                <tr><td colspan="7" class="text-center text-secondary">載入中…</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+    </section>
+  </main>
+
+  <!-- 零銷售代覆 -->
+  <dialog id="om_zs_dialog" aria-labelledby="om_zs_dialog_title">
+    <div class="reply-head">
+      <h3 id="om_zs_dialog_title">OM 代覆</h3>
+      <div id="om_zs_dialog_info" class="hint"></div>
+    </div>
+    <div class="reply-body">
+      <div style="margin:0 0 12px">
+        <label for="om_zs_reason">回覆原因 <span class="optional">（必選）</span></label>
+        <select id="om_zs_reason" style="width:100%"></select>
+      </div>
+      <div style="margin:12px 0">
+        <label for="om_zs_note">補充說明</label>
+        <textarea id="om_zs_note" rows="3" style="width:100%" maxlength="2000" placeholder="例如：店舖電話回覆，已安排陳列…"></textarea>
+      </div>
+      <div id="om_zs_reply_error"></div>
+      <div class="btn-row" style="justify-content:flex-end">
+        <button class="btn ghost btn-sm" id="om_zs_cancel" type="button">取消</button>
+        <button class="btn btn-sm" id="om_zs_save" type="button" style="min-height:36px;border-radius:8px">儲存代覆</button>
+      </div>
+    </div>
+  </dialog>
+
+  <!-- 指定 SKU 代覆（內容由 JS 建立，沿用店舖版樣式） -->
+  <dialog id="om_ds_dialog" aria-labelledby="om_ds_dialog_title">
+    <div class="reply-head">
+      <h3 id="om_ds_dialog_title">OM 代覆事項</h3>
+      <div id="om_ds_dialog_info" class="hint"></div>
+      <div id="om_ds_dialog_sub" class="hint"></div>
+    </div>
+    <div class="reply-body">
+      <div id="om_ds_notice" class="ds-notice" hidden></div>
+      <div id="om_ds_sections"></div>
+      <div id="om_ds_summary" class="ds-total" role="status"></div>
+      <div id="om_ds_reply_error"></div>
+      <div class="btn-row" style="justify-content:flex-end">
+        <button class="btn ghost btn-sm" id="om_ds_cancel" type="button">取消</button>
+        <button class="btn btn-sm" id="om_ds_save" type="button" style="min-height:36px;border-radius:8px">儲存代覆</button>
+      </div>
+    </div>
+  </dialog>
+
+  <script src="/js/api.js"></script>
+  <script src="/portal/js/portal.js"></script>
+  <script src="/js/chart-lite.js"></script>
+  <script src="/portal/js/om.js"></script>
+  <script src="/portal/js/om-designated-sku.js"></script>
+  <script src="/js/version.js"></script>
+  <footer class="site-footer">Developed by RP Team - Ricky Yue · <span class="app-version" data-app-version></span></footer>
+</body>
+</html>

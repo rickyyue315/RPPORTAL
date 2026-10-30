@@ -1202,12 +1202,15 @@
       if (!tbody) return;
       tbody.innerHTML = data.users.length
         ? data.users.map((u) => {
-          const loginUrl = `${window.location.origin}/portal/?user=${encodeURIComponent(u.username)}`;
+          const roleLabels = { store: 'Store', buyer: 'Buyer', sct: 'SCT', om: 'OM' };
+          const loginUrl = u.role === 'om'
+            ? `${window.location.origin}/portal/om.html?user=${encodeURIComponent(u.username)}`
+            : `${window.location.origin}/portal/?user=${encodeURIComponent(u.username)}`;
           return `<tr>
         <td><input type="checkbox" class="pu-select" data-id="${u.id}" aria-label="選擇 ${escapeHtml(u.username)}"></td>
         <td>${escapeHtml(u.username)}</td>
         <td>${escapeHtml(u.display_name || '—')}</td>
-        <td>${escapeHtml(u.role)}</td>
+        <td>${escapeHtml(roleLabels[u.role] || u.role)}</td>
         <td>${escapeHtml(u.site_code || '—')}</td>
         <td>${u.active ? '<span class="status-badge received">啟用</span>' : '<span class="status-badge locked">停用</span>'}</td>
         <td><a href="${escapeHtml(loginUrl)}" target="_blank" rel="noopener">開啟</a> <button class="btn ghost btn-sm btn-pu-link-copy" data-url="${escapeHtml(loginUrl)}">複製</button></td>
@@ -1407,9 +1410,13 @@
     btn.disabled = true;
     try {
       const data = await adminFetch('/api/admin/stores/sync-accounts', { method: 'POST', body: JSON.stringify({}) });
-      let html = `<div class="alert success">同步完成：新增 ${data.created.length}、重新啟用 ${data.reactivated.length}、停用 ${data.deactivated.length}、不變 ${data.unchanged}</div>`;
+      const om = data.om_accounts || { created: [], reactivated: [], skipped: [] };
+      let html = `<div class="alert success">同步完成：店舖帳戶新增 ${data.created.length}、重新啟用 ${data.reactivated.length}、停用 ${data.deactivated.length}、不變 ${data.unchanged}；OM 帳戶新增 ${(om.created || []).length}</div>`;
       if (data.created.length) {
         html += '<div class="alert success">以下新店舖帳戶已建立（登入時輸入 Site Code 及密碼）：<ul>' + data.created.map((c) => `<li><b>${escapeHtml(c.username)}</b>（${escapeHtml(c.site_code)}）</li>`).join('') + '</ul></div>';
+      }
+      if ((om.created || []).length) {
+        html += '<div class="alert success">以下 OM 帳戶已建立（登入時輸入 OM 名稱及 OM 專用密碼）：<b>' + escapeHtml(om.created.join(', ')) + '</b></div>';
       }
       if (data.deactivated.length) html += `<div class="alert info">已停用（不在門店主檔）：${escapeHtml(data.deactivated.join(', '))}</div>`;
       showAlert($('portal_users_result'), '', html);

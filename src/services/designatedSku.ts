@@ -590,6 +590,41 @@ export async function listMyMatters(
   return matters;
 }
 
+/** OM 版：一次取得多間店舖的指定 SKU 事項（site codes 由呼叫者按登入 OM 強制帶入）。 */
+export async function listMattersForSites(
+  siteCodes: string[],
+  opts: { batchId?: string; status?: 'pending' | 'replied'; q?: string } = {},
+): Promise<DesignatedSkuMatter[]> {
+  if (!siteCodes.length) return [];
+  const where = ['m.site_code = ANY($1::text[])'];
+  const params: unknown[] = [siteCodes];
+  if (opts.batchId) {
+    params.push(opts.batchId);
+    where.push(`m.batch_id = $${params.length}`);
+  }
+  const r = await query(
+    `${MATTER_SELECT} WHERE ${where.join(' AND ')}
+      ORDER BY (
+        SELECT count(*) FROM designated_sku_items i
+         WHERE i.matter_id = m.id AND i.status = 'pending'
+      ) > 0 DESC, b.created_at DESC, m.site_code, m.matter_code
+      LIMIT 2000`,
+    params,
+  );
+  let matters = await attachItems(r.rows.map(mapMatterBase));
+  if (opts.status) matters = matters.filter((m) => m.status === opts.status);
+  const q = (opts.q ?? '').trim().toUpperCase();
+  if (q) {
+    matters = matters.filter((m) => {
+      const skuText = (m.items || []).map((it) => `${it.sku} ${it.description || ''}`).join(' ');
+      return `${m.matter_code} ${m.batch_code} ${m.subject} ${m.site_code} ${m.shop} ${skuText}`
+        .toUpperCase()
+        .includes(q);
+    });
+  }
+  return matters;
+}
+
 export async function getMyMatter(siteCode: string, matterCode: string): Promise<DesignatedSkuMatter> {
   const r = await query(`${MATTER_SELECT} WHERE m.matter_code = $1`, [matterCode]);
   const row = r.rows[0];

@@ -29,6 +29,10 @@
   let chartMonths = 12;
   /** RF 走勢圖口徑：count = RF SKU 數；ratio = 不良存貨 SKU 佔店內貨品比率 */
   let rfMetric = 'count';
+  /** 分組小圖口徑：sku = 不良 SKU ÷ SKU Carry；value = 不良存貨值 ÷ 店舖存貨值 */
+  let groupMetric = 'sku';
+  /** 分組小圖維度：nature = Shop Nature；om = 區域主管 */
+  let groupDim = 'nature';
   let weekPage = 1;
   let autoDate = '';
 
@@ -183,8 +187,8 @@
     return stripped || name;
   }
 
-  /** 店舖性質（報表 Shop Nature：Local / Tourist / Mix）＋ 中文提示 */
-  const NATURE_LABELS = { local: '本地客', tourist: '遊客區', mix: '混合' };
+  /** 店舖性質（報表 Shop Nature：Local / Non Tourist / Tourist / Mix）＋ 中文提示 */
+  const NATURE_LABELS = { local: '民生區（Local / Non Tourist）', tourist: '遊客區', mix: '混合區' };
   function natureTitle(value) {
     const key = String(value || '').trim().toLowerCase();
     return NATURE_LABELS[key] ? `Shop Nature：${value}（${NATURE_LABELS[key]}）` : 'Shop Nature（報表原值）';
@@ -483,6 +487,7 @@
       setResult('stk_kpi_error', 'info', '');
       setResult('stk_rf_error', 'info', '');
       renderKpi(data, series);
+      renderGroupChart(data, series);
       renderChart(data, series);
       renderRfDashboard(data, series);
       if (!selectedWeek) selectedWeek = series.length ? String(series[series.length - 1].report_date).slice(0, 10) : '';
@@ -490,8 +495,15 @@
       summaryCache = null;
       if (note) note.textContent = '載入失敗';
       setResult('stk_kpi_error', 'error', `未能載入存貨摘要：${err.message}`);
+      setResult('stk_group_error', 'error', `未能載入分組走勢：${err.message}`);
       setResult('stk_chart_error', 'error', err.message);
       setResult('stk_rf_error', 'error', `未能載入 RF SKU 摘要：${err.message}`);
+      const groupChart = $('stk_group_chart');
+      if (groupChart) {
+        if (globalThis.ChartLite) globalThis.ChartLite.clear(groupChart);
+        else groupChart.innerHTML = '';
+        groupChart.innerHTML = '<div class="ct-empty">未能載入分組走勢。</div>';
+      }
       const kpi = $('stk_kpi');
       if (kpi) kpi.innerHTML = '<div class="stk-kpi stk-kpi--wide"><div class="stk-kpi-value">—</div><div class="stk-kpi-label">未能載入 KPI</div></div>';
       const rfKpi = $('stk_rf_kpi');
@@ -550,6 +562,147 @@
       note.textContent = avg === null
         ? `${series.length} 期資料`
         : `${series.length} 期資料｜全公司平均（加權）${fmtRatio(avg)}`;
+    }
+  }
+
+  /* ==================== 不良銷售 SKU 佔比走勢（分組小圖） ==================== */
+
+  const GROUP_DIM_LABELS = { nature: 'Shop Nature', om: 'OM' };
+  const GROUP_METRIC_LABELS = {
+    sku: '不良 SKU ÷ SKU Carry',
+    value: '不良存貨值 ÷ 店舖存貨值',
+  };
+
+  function groupPointTip(point, isSku) {
+    if (!point || !num(point.store_count)) return '此期沒有這個分組的店舖';
+    if (isSku) {
+      if (point.total_sku_carry == null) return '此期沒有有效 SKU Carry';
+      return `不良 SKU ${fmtInt(point.sku_count_0sale)} ÷ SKU Carry ${fmtInt(point.total_sku_carry)}（${fmtInt(point.sku_store_count)} 店）`;
+    }
+    if (point.total_soh == null) return '此期沒有有效店舖存貨值';
+    return `不良存貨值 ${fmtMoney(point.total_excess)} ÷ 店舖存貨值 ${fmtMoney(point.total_soh)}（${fmtInt(point.ratio_store_count)} 店）`;
+  }
+
+  function groupSeriesSpec(group, visible, isSku) {
+    const byDate = new Map();
+    (Array.isArray(group.points) ? group.points : []).forEach((point) => {
+      const date = String((point && point.report_date) || '').slice(0, 10);
+      if (date) byDate.set(date, point);
+    });
+
+    const points = visible.map((row) => {
+      const date = String((row && row.report_date) || '').slice(0, 10);
+      const point = byDate.get(date) || null;
+      return {
+        date,
+        value: point ? num(isSku ? point.ovs_carry_ratio : point.ratio) : null,
+        tip: groupPointTip(point, isSku),
+      };
+    });
+
+    const finite = points.filter((point) => point.value !== null);
+    const last = finite.length ? finite[finite.length - 1] : null;
+    const prev = finite.length > 1 ? finite[finite.length - 2] : null;
+    const delta = last && prev ? (last.value - prev.value) * 100 : null;
+    const deltaTone = delta === null
+      ? ''
+      : (delta > 0.0001 ? 'is-worse' : (delta < -0.0001 ? 'is-better' : 'is-flat'));
+
+    return {
+      key: group.key,
+      label: group.label,
+      color: isSku ? COLOR_RF : COLOR_MAIN,
+      points,
+      latest: last ? fmtRatio(last.value) : '—',
+      latestTitle: last ? `最新有效日期 ${String(last.date).slice(0, 10)}` : '',
+      delta: delta === null ? '' : `${delta > 0 ? '+' : ''}${delta.toFixed(2)}pt`,
+      deltaTone,
+    };
+  }
+
+  function renderGroupChart(data, series) {
+    const el = $('stk_group_chart');
+    const legend = $('stk_group_legend');
+    const note = $('stk_group_note');
+    const chartApi = globalThis.ChartLite;
+    if (!el) return;
+    setResult('stk_group_error', 'info', '');
+    if (legend) legend.innerHTML = '';
+    if (note) note.textContent = '';
+
+    const clearChart = () => {
+      if (chartApi) chartApi.clear(el);
+      else el.innerHTML = '';
+    };
+
+    const trend = data && data.group_trend;
+    if (!trend || typeof trend !== 'object') {
+      clearChart();
+      el.innerHTML = '<div class="ct-empty">後端未提供分組走勢資料。請重新整理頁面；若問題持續，請確認前後端版本一致。</div>';
+      return;
+    }
+    if (!series.length) {
+      clearChart();
+      el.innerHTML = '<div class="ct-empty">尚未上載任何存貨報表，分組走勢會在第一次上載後出現。</div>';
+      return;
+    }
+
+    const allDates = series
+      .map((row) => String(row.report_date || '').slice(0, 10))
+      .filter(Boolean)
+      .sort();
+    const latestDate = allDates.length ? allDates[allDates.length - 1] : '';
+    const cutoff = latestDate ? monthsBefore(latestDate, chartMonths) : '';
+    const visible = cutoff
+      ? series.filter((row) => String(row.report_date || '').slice(0, 10) >= cutoff)
+      : series;
+    if (!visible.length) {
+      clearChart();
+      el.innerHTML = '<div class="ct-empty">所選期間沒有存貨報表期數。</div>';
+      return;
+    }
+
+    const isSku = groupMetric === 'sku';
+    const groups = groupDim === 'om'
+      ? (Array.isArray(trend.om) ? trend.om : [])
+      : (Array.isArray(trend.nature) ? trend.nature : []);
+    const seriesList = [];
+    if (trend.total && typeof trend.total === 'object') seriesList.push(trend.total);
+    groups.forEach((group) => { if (group && group.key) seriesList.push(group); });
+    if (!seriesList.length) {
+      clearChart();
+      el.innerHTML = '<div class="ct-empty">目前沒有可用的分組資料（報表可能缺少 Shop Nature／OM 欄）。</div>';
+      return;
+    }
+
+    const specs = seriesList.map((group) => groupSeriesSpec(group, visible, isSku));
+    const color = isSku ? COLOR_RF : COLOR_MAIN;
+
+    if (legend) {
+      legend.innerHTML = `<span class="stk-legend-item"><i class="stk-legend-swatch" style="background:${color}"></i>${GROUP_METRIC_LABELS[groupMetric]}</span>`
+        + `<span class="stk-legend-item" style="color:#66727f">期間 ${visible.length} 期｜最新 ${esc(latestDate)}</span>`;
+    }
+
+    if (!chartApi) {
+      el.innerHTML = '<div class="ct-empty">圖表元件未載入（/js/chart-lite.js），請重新整理頁面。</div>';
+      return;
+    }
+
+    chartApi.renderBarGrid(el, {
+      series: specs,
+      height: 150,
+      yFormat: (value) => `${(Number(value) * 100).toFixed(1)}%`,
+      labelFormat: (value) => fmtRatio(value),
+      emptyText: '所選期間沒有有效的分組比率數據。',
+      ariaLabel: `${GROUP_METRIC_LABELS[groupMetric]}，按 ${GROUP_DIM_LABELS[groupDim]} 分組`,
+    });
+
+    if (note) {
+      const groupLabel = groupDim === 'om' ? 'OM' : 'Shop Nature';
+      const omSource = groupDim === 'om'
+        ? 'OM 分組以最後上載報表的 OM 為準，歷史期數會自動歸入最新 OM。'
+        : '';
+      note.textContent = `${omSource}Grand Total ＋ ${groups.length} 個 ${groupLabel}；每組先加總分子／分母再相除（加權），不是各店比率平均。某組某期沒有店舖時會留空，不會當成 0%。`;
     }
   }
 
@@ -1420,23 +1573,28 @@
     const rfExportBtn = $('btn_stk_rf_export');
     if (rfExportBtn) rfExportBtn.addEventListener('click', downloadRfExport);
 
-    // 趨勢圖顯示期間（3 / 6 / 12 / 24 個月；資料本身永久保留，只影響畫幾多）
-    const rangeEl = $('stk_range');
-    if (rangeEl) {
-      rangeEl.addEventListener('click', (e) => {
-        const btn = e.target instanceof Element ? e.target.closest('[data-stk-months]') : null;
-        if (!btn) return;
-        const months = Number(btn.dataset.stkMonths);
-        if (!Number.isFinite(months) || months === chartMonths) return;
-        chartMonths = months;
-        rangeEl.querySelectorAll('[data-stk-months]').forEach((b) => {
-          b.setAttribute('aria-pressed', String(Number(b.dataset.stkMonths) === months));
+    // 趨勢圖顯示期間（3 / 6 / 12 / 24 個月；兩張卡同步，資料本身永久保留，只影響畫幾多）
+    const rangeEls = [$('stk_range'), $('stk_group_range')].filter(Boolean);
+    if (rangeEls.length) {
+      rangeEls.forEach((rangeEl) => {
+        rangeEl.addEventListener('click', (e) => {
+          const btn = e.target instanceof Element ? e.target.closest('[data-stk-months]') : null;
+          if (!btn) return;
+          const months = Number(btn.dataset.stkMonths);
+          if (!Number.isFinite(months) || months === chartMonths) return;
+          chartMonths = months;
+          rangeEls.forEach((el) => {
+            el.querySelectorAll('[data-stk-months]').forEach((b) => {
+              b.setAttribute('aria-pressed', String(Number(b.dataset.stkMonths) === months));
+            });
+          });
+          const series = normalizedSeries(summaryCache);
+          if (series.length) {
+            renderGroupChart(summaryCache, series);
+            renderChart(summaryCache, series);
+            renderRfChart(series);
+          }
         });
-        const series = normalizedSeries(summaryCache);
-        if (series.length) {
-          renderChart(summaryCache, series);
-          renderRfChart(series);
-        }
       });
     }
 
@@ -1454,6 +1612,39 @@
         });
         const series = normalizedSeries(summaryCache);
         if (series.length) renderRfChart(series);
+      });
+    }
+
+    // 分組小圖：口徑（SKU / 存貨值）與維度（Shop Nature / OM）
+    const groupMetricEl = $('stk_group_metric');
+    if (groupMetricEl) {
+      groupMetricEl.addEventListener('click', (e) => {
+        const btn = e.target instanceof Element ? e.target.closest('[data-stk-group-metric]') : null;
+        if (!btn) return;
+        const metric = btn.dataset.stkGroupMetric === 'value' ? 'value' : 'sku';
+        if (metric === groupMetric) return;
+        groupMetric = metric;
+        groupMetricEl.querySelectorAll('[data-stk-group-metric]').forEach((b) => {
+          b.setAttribute('aria-pressed', String(b.dataset.stkGroupMetric === metric));
+        });
+        const series = normalizedSeries(summaryCache);
+        if (series.length) renderGroupChart(summaryCache, series);
+      });
+    }
+
+    const groupDimEl = $('stk_group_dim');
+    if (groupDimEl) {
+      groupDimEl.addEventListener('click', (e) => {
+        const btn = e.target instanceof Element ? e.target.closest('[data-stk-group-dim]') : null;
+        if (!btn) return;
+        const dim = btn.dataset.stkGroupDim === 'om' ? 'om' : 'nature';
+        if (dim === groupDim) return;
+        groupDim = dim;
+        groupDimEl.querySelectorAll('[data-stk-group-dim]').forEach((b) => {
+          b.setAttribute('aria-pressed', String(b.dataset.stkGroupDim === dim));
+        });
+        const series = normalizedSeries(summaryCache);
+        if (series.length) renderGroupChart(summaryCache, series);
       });
     }
 

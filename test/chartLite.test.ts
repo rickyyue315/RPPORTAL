@@ -13,6 +13,7 @@ interface ChartLiteApi {
   dateTicks: (minT: number, maxT: number, count?: number) => ChartTick[];
   buildPath: (points: ChartPoint[]) => string;
   splitIndex: (points: { t: number }[], splitT: number) => number;
+  barLabelIndices: (count: number, maxLabels?: number) => number[];
 }
 
 const ChartLite = (globalThis as unknown as { ChartLite: ChartLiteApi }).ChartLite;
@@ -20,9 +21,31 @@ const DAY = 86400000;
 const d = (iso: string) => Date.parse(`${iso}T00:00:00Z`);
 
 describe('chart-lite 純函數', () => {
-  it('掛上 globalThis.ChartLite 並提供 renderLine', () => {
+  it('掛上 globalThis.ChartLite 並提供 renderLine / renderBarGrid', () => {
     expect(ChartLite).toBeTruthy();
     expect(typeof (ChartLite as unknown as { renderLine: unknown }).renderLine).toBe('function');
+    expect(typeof (ChartLite as unknown as { renderBarGrid: unknown }).renderBarGrid).toBe('function');
+  });
+
+  describe('barLabelIndices（柱上標籤抽樣）', () => {
+    it('點數少於上限時全部標示', () => {
+      expect(ChartLite.barLabelIndices(0, 6)).toEqual([]);
+      expect(ChartLite.barLabelIndices(1, 6)).toEqual([0]);
+      expect(ChartLite.barLabelIndices(5, 6)).toEqual([0, 1, 2, 3, 4]);
+    });
+
+    it('點數多時隔開標示，但永遠包含第一根與最新一根', () => {
+      const labels = ChartLite.barLabelIndices(52, 6);
+      expect(labels[0]).toBe(0);
+      expect(labels[labels.length - 1]).toBe(51);
+      expect(labels.length).toBeLessThanOrEqual(6);
+      for (let i = 1; i < labels.length; i += 1) expect(labels[i]).toBeGreaterThan(labels[i - 1]!);
+    });
+
+    it('上限至少為 2，非法輸入不會爆', () => {
+      expect(ChartLite.barLabelIndices(10, 1).length).toBeLessThanOrEqual(2);
+      expect(ChartLite.barLabelIndices(Number.NaN, 6)).toEqual([]);
+    });
   });
 
   describe('toTime / fmtDay', () => {

@@ -400,6 +400,12 @@ body.drawer-open { overflow: hidden; }
   border-radius: 2px;
 }
 .stk-legend-item i.stk-legend-dash { border-top-style: dashed; }
+.stk-legend-item i.stk-legend-swatch {
+  width: 12px;
+  height: 12px;
+  border: 0;
+  border-radius: 3px;
+}
 
 /* ---------- 圖表本身（chart-lite.js） ---------- */
 .ct-svg { max-width: 100%; }
@@ -548,6 +554,7 @@ body.stk-modal-open { overflow: hidden; }
 
 @media (max-width: 768px) {
   .stk-chart { height: 180px; }
+  .ct-bar-plot { height: 140px; }
   .stk-kpi-value { font-size: 20px; }
   .stk-bar-row {
     grid-template-columns: 20px minmax(90px, 1fr) minmax(40px, 1fr) 58px;
@@ -577,6 +584,85 @@ body.stk-modal-open { overflow: hidden; }
 }
 @media (max-width: 768px) {
   .stk-range { width: 100%; justify-content: flex-start; }
+}
+
+/* 不良銷售 SKU 佔比走勢：Grand Total ＋ 各分組的分期小圖 */
+#stk_group_dashboard .card-header { flex-wrap: wrap; row-gap: 6px; }
+.stk-group-chart { min-height: 160px; }
+.stk-group-chart .ct-bar-grid {
+  display: grid;
+  /* 跟 Tableau 參考圖一樣最多 4 欄；OM 有 8 組時自然排成 4×2 */
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+}
+@media (max-width: 1100px) {
+  .stk-group-chart .ct-bar-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 640px) {
+  .stk-group-chart .ct-bar-grid { grid-template-columns: minmax(0, 1fr); }
+}
+.ct-bar-panel {
+  min-width: 0;
+  padding: 8px 8px 2px;
+  background: #fbfdff;
+  border: 1px solid #dbe7f3;
+  border-radius: 9px;
+}
+.ct-bar-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  min-height: 18px;
+}
+.ct-bar-title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  font-weight: 700;
+  color: #1f2d3d;
+}
+.ct-bar-latest {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 4px;
+  flex: 0 0 auto;
+  font-size: 12px;
+  font-weight: 700;
+  color: #0a3d69;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.ct-bar-delta {
+  font-size: 10.5px;
+  font-weight: 600;
+}
+.ct-bar-delta.is-worse { color: #c0392b; }
+.ct-bar-delta.is-better { color: #1e8449; }
+.ct-bar-delta.is-flat { color: #7a8894; }
+.ct-bar-plot {
+  position: relative;
+  height: 150px;
+  width: 100%;
+  min-width: 0;
+}
+.ct-bar-plot svg { display: block; }
+.ct-bar-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  min-height: 120px;
+  padding: 12px;
+  text-align: center;
+  font-size: 12.5px;
+  color: #7a8894;
+  background: #fafbfc;
+  border: 1px dashed #d7dee7;
+  border-radius: 8px;
+  box-sizing: border-box;
 }
 
 /* No. of RF SKU Dashboard：青色系與上方不良存貨區塊（佔比趨勢、每店明細）區分，但同屬存貨頁 */

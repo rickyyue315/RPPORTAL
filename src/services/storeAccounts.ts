@@ -1,6 +1,7 @@
 import { randomBytes } from 'node:crypto';
 import { query, withTransaction } from '../db/pool.js';
 import { normalizePortalUsername } from './portalAuth.js';
+import { getEffectiveOmBySite } from './effectiveOm.js';
 
 export interface StoreAccountSyncResult {
   created: Array<{ site_code: string; username: string }>;
@@ -95,7 +96,8 @@ export interface OmAccountSyncResult {
 }
 
 /**
- * Creates one OM account per distinct stores.om value.
+ * Creates one OM account per distinct OM value from the store master and the
+ * latest uploaded stock report (the report is the authority after a transfer).
  * Login password is PORTAL_OM_PASSWORD (default SASAOM178); the account hash
  * is deliberately unusable. Existing OM accounts are left untouched (including
  * deactivated ones, so an admin's revocation is respected). Removed OMs are
@@ -110,15 +112,22 @@ export async function syncOmPortalAccounts(createdBy: string): Promise<OmAccount
         WHERE BTRIM(COALESCE(om, '')) <> ''
         ORDER BY 1`,
     );
+    // 最新上載的存貨報表可能已把店舖轉給新 OM；一併建立這些 OM 帳戶。
+    const effectiveOm = await getEffectiveOmBySite();
+    const omNames = new Set(omRows.rows.map((row) => row.om).filter(Boolean));
+    for (const info of effectiveOm.values()) {
+      if (info.om) omNames.add(info.om);
+    }
+    const allOmNames = [...omNames].sort((a, b) => a.localeCompare(b, 'zh-Hant'));
     const existing = await client.query<{ id: string; username: string; role: string; active: boolean }>(
       "SELECT id, username, role, active FROM portal_users WHERE username = ANY($1::text[])",
-      [omRows.rows.map((row) => normalizePortalUsername(row.om))],
+      [allOmNames.map((om) => normalizePortalUsername(om))],
     );
     const byUsername = new Map(existing.rows.map((row) => [row.username, row]));
     const result: OmAccountSyncResult = { created: [], reactivated: [], unchanged: 0, skipped: [] };
 
-    for (const row of omRows.rows) {
-      const username = normalizePortalUsername(row.om);
+    for (const om of allOmNames) {
+      const username = normalizePortalUsername(om);
       if (!username) continue;
       const found = byUsername.get(username);
       if (found) {
@@ -138,7 +147,7 @@ export async function syncOmPortalAccounts(createdBy: string): Promise<OmAccount
          VALUES ($1, $2, 'om', NULL, 'unusable$om-portal', NULL, false, true, $3)
          ON CONFLICT (username) DO NOTHING
          RETURNING username`,
-        [username, row.om, createdBy],
+        [username, om, createdBy],
       );
       if (inserted.rows[0]) result.created.push(username);
       else result.skipped.push(username);

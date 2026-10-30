@@ -93,6 +93,20 @@ describe('static asset freshness', () => {
     expect(script).toContain('rf_sku_delta');
   });
 
+  it('wires the grouped SKU ratio trend into the admin stock page', () => {
+    const html = readFileSync(path.join(root, 'public', 'admin', 'index.html'), 'utf8');
+    const script = readFileSync(path.join(root, 'public', 'js', 'admin-stock.js'), 'utf8');
+    const chart = readFileSync(path.join(root, 'public', 'js', 'chart-lite.js'), 'utf8');
+    expect(html).toContain('id="stk_group_dashboard"');
+    expect(html).toContain('id="stk_group_chart"');
+    expect(html).toContain('data-stk-group-metric="sku"');
+    expect(html).toContain('data-stk-group-dim="nature"');
+    expect(script).toContain('renderGroupChart');
+    expect(script).toContain('group_trend');
+    expect(script).toContain('ovs_carry_ratio');
+    expect(chart).toContain('renderBarGrid');
+  });
+
   it('wires the designated SKU reply page, admin tab and direct link', () => {
     const page = readFileSync(path.join(root, 'public', 'portal', 'designated-sku.html'), 'utf8');
     const storeScript = readFileSync(path.join(root, 'public', 'portal', 'js', 'designated-sku.js'), 'utf8');

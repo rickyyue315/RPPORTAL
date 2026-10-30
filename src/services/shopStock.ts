@@ -6,6 +6,7 @@ import {
   type ShopStockParsed,
   type ShopStockParseSkipped,
 } from '../lib/shopStockXlsx.js';
+import { getEffectiveOmBySite } from './effectiveOm.js';
 
 /**
  * 每週店舖不良存貨 Dashboard 的 service 層。
@@ -604,6 +605,44 @@ export interface ShopStockSummary {
   kpi: ShopStockKpi | null;
   /** 最新一期的全公司加權比率（小數） */
   company_avg_ratio: number | null;
+  /** 同一批期的分組走勢（Shop Nature / OM），供後台小圖使用 */
+  group_trend: ShopStockGroupTrend;
+}
+
+/**
+ * 分組走勢的一點。兩個口徑同時提供，前端可以切換：
+ *   ratio            = Σexcess ÷ ΣSOH（金額）
+ *   ovs_carry_ratio  = Σ不良 SKU ÷ ΣSKU Carry（件數）
+ * 分母 <= 0 或全程缺值時回 null，不當 0。
+ */
+export interface ShopStockGroupPoint {
+  report_date: string;
+  report_kind: string;
+  store_count: number;
+  /** 納入金額比率計算的店數（SOH > 0） */
+  ratio_store_count: number;
+  /** 納入 SKU 比率計算的店數（SKU Carry > 0） */
+  sku_store_count: number;
+  total_excess: number | null;
+  total_soh: number | null;
+  ratio: number | null;
+  sku_count_0sale: number | null;
+  total_sku_carry: number | null;
+  ovs_carry_ratio: number | null;
+}
+
+export interface ShopStockGroupSeries {
+  /** 'total' / 'local' / 'mix' / 'tourist' / 'om:<name>' / 'unassigned' */
+  key: string;
+  label: string;
+  points: ShopStockGroupPoint[];
+}
+
+export interface ShopStockGroupTrend {
+  /** 全公司 Grand Total（不論分組欄是否缺值，合計仍以所有店計算） */
+  total: ShopStockGroupSeries;
+  nature: ShopStockGroupSeries[];
+  om: ShopStockGroupSeries[];
 }
 
 interface RawCompanyAgg {
@@ -725,13 +764,310 @@ async function loadCompanySeries(from?: string, to?: string): Promise<ShopStockS
   return points;
 }
 
+// ---------------------------------------------------------------------------
+// 分組走勢（Shop Nature / OM）
+//
+// 與全公司趨勢用同一套加權口徑：每組先加總分子、分母，再相除；
+// 不可對店舖比率取平均。所有期數都會保留，某組某期沒有店舖時回 null，
+// 前端畫成斷開的柱，不會把缺值當成 0%。
+// ---------------------------------------------------------------------------
+
+interface RawGroupRow {
+  site_code: string;
+  report_date: string;
+  report_kind: string;
+  shop_nature: string | null;
+  om: string | null;
+  sku_count_0sale: number | null;
+  excess_value_0sale: unknown;
+  shop_stock_value_cm: unknown;
+  sku_carry_count_text: unknown;
+}
+
+interface GroupAccumulator {
+  report_date: string;
+  report_kind: string;
+  store_count: number;
+  ratio_store_count: number;
+  sku_store_count: number;
+  excess: number;
+  soh: number;
+  sku_count: number;
+  carry: number;
+  has_excess: boolean;
+  has_soh: boolean;
+  has_sku_count: boolean;
+  has_carry: boolean;
+}
+
+interface GroupPeriod {
+  report_date: string;
+  report_kind: string;
+}
+
+const NATURE_ORDER = ['local', 'mix', 'tourist'] as const;
+
+/**
+ * 真實報表的 Shop Nature 是 Local / Mix / Tourist；部分舊檔用 Non Tourist /
+ * Mixed / 中文。全部歸一化，未知值保留原字串（不丟失資料）。
+ */
+function normalizeShopNature(value: string | null): { key: string; label: string } {
+  const raw = String(value ?? '').trim();
+  const normalized = raw.toLowerCase().replace(/[\s_-]+/g, ' ');
+  if (['local', 'non tourist', 'nontourist', 'resident', '民生區', '本地客'].includes(normalized)) {
+    return { key: 'local', label: '民生區' };
+  }
+  if (['mix', 'mixed', '混合區', '混合'].includes(normalized)) {
+    return { key: 'mix', label: '混合區' };
+  }
+  if (['tourist', '遊客區'].includes(normalized)) {
+    return { key: 'tourist', label: '遊客區' };
+  }
+  if (!raw) return { key: 'unassigned', label: '未填 Shop Nature' };
+  return { key: `nature:${raw}`, label: raw };
+}
+
+function normalizeOm(value: string | null): { key: string; label: string } {
+  const raw = String(value ?? '').trim();
+  if (!raw) return { key: 'unassigned', label: '未填 OM' };
+  return { key: `om:${raw}`, label: raw };
+}
+
+function emptyGroupAccumulator(period: GroupPeriod): GroupAccumulator {
+  return {
+    report_date: period.report_date,
+    report_kind: period.report_kind,
+    store_count: 0,
+    ratio_store_count: 0,
+    sku_store_count: 0,
+    excess: 0,
+    soh: 0,
+    sku_count: 0,
+    carry: 0,
+    has_excess: false,
+    has_soh: false,
+    has_sku_count: false,
+    has_carry: false,
+  };
+}
+
+function addGroupRow(acc: GroupAccumulator, row: RawGroupRow): void {
+  acc.store_count += 1;
+
+  // 金額比率：與 loadCompanySeries 一致，只計 SOH > 0 的店
+  const soh = toNumber(row.shop_stock_value_cm);
+  if (soh !== null && soh > 0) {
+    acc.ratio_store_count += 1;
+    acc.soh += soh;
+    acc.has_soh = true;
+    const excess = toNumber(row.excess_value_0sale);
+    if (excess !== null) {
+      acc.excess += excess;
+      acc.has_excess = true;
+    }
+  }
+
+  // 件數比率：分母用 SKU Carry（= RF + ND with Stock），分子包含 ND 貨
+  const carry = toSkuCount(row.sku_carry_count_text);
+  if (carry !== null && carry > 0) {
+    acc.sku_store_count += 1;
+    acc.carry += carry;
+    acc.has_carry = true;
+  }
+  const skuCount = toNumber(row.sku_count_0sale);
+  if (skuCount !== null) {
+    acc.sku_count += skuCount;
+    acc.has_sku_count = true;
+  }
+}
+
+function groupPointOf(
+  acc: GroupAccumulator | undefined,
+  period: GroupPeriod,
+): ShopStockGroupPoint {
+  if (!acc) {
+    return {
+      report_date: period.report_date,
+      report_kind: period.report_kind,
+      store_count: 0,
+      ratio_store_count: 0,
+      sku_store_count: 0,
+      total_excess: null,
+      total_soh: null,
+      ratio: null,
+      sku_count_0sale: null,
+      total_sku_carry: null,
+      ovs_carry_ratio: null,
+    };
+  }
+  return {
+    report_date: period.report_date,
+    report_kind: period.report_kind,
+    store_count: acc.store_count,
+    ratio_store_count: acc.ratio_store_count,
+    sku_store_count: acc.sku_store_count,
+    total_excess: acc.has_excess ? acc.excess : null,
+    total_soh: acc.has_soh ? acc.soh : null,
+    ratio: acc.has_soh ? acc.excess / acc.soh : null,
+    sku_count_0sale: acc.has_sku_count ? acc.sku_count : null,
+    total_sku_carry: acc.has_carry ? acc.carry : null,
+    // 與全公司 ovs_carry_ratio 保持一致：有 Carry 但分子全缺時，現行口徑為 0
+    ovs_carry_ratio: acc.has_carry ? acc.sku_count / acc.carry : null,
+  };
+}
+
+function buildGroupSeriesList(
+  byDate: Map<string, Map<string, GroupAccumulator>>,
+  labels: Map<string, string>,
+  periods: GroupPeriod[],
+  compare: (a: string, b: string) => number,
+): ShopStockGroupSeries[] {
+  return [...labels.keys()].sort(compare).map((key) => ({
+    key,
+    label: labels.get(key) ?? key,
+    points: periods.map((period) =>
+      groupPointOf(byDate.get(period.report_date)?.get(key), period),
+    ),
+  }));
+}
+
+function latestGroupMetric(
+  byDate: Map<string, Map<string, GroupAccumulator>>,
+  key: string,
+  periods: GroupPeriod[],
+  pick: (acc: GroupAccumulator) => number | null,
+): number {
+  for (let i = periods.length - 1; i >= 0; i -= 1) {
+    const acc = byDate.get(periods[i]!.report_date)?.get(key);
+    const value = acc ? pick(acc) : null;
+    if (value !== null) return value;
+  }
+  return -1;
+}
+
+async function loadGroupTrend(from?: string, to?: string): Promise<ShopStockGroupTrend> {
+  const rows = await query<RawGroupRow>(
+    `SELECT b.report_date::text AS report_date,
+            b.report_kind,
+            s.site_code,
+            s.shop_nature,
+            s.om,
+            s.sku_count_0sale,
+            s.excess_value_0sale,
+            s.shop_stock_value_cm,
+            s.payload->>'No. of SKU Carry' AS sku_carry_count_text
+       FROM shop_stock_batches b
+       JOIN shop_stock_snapshots s ON s.batch_id = b.id
+      WHERE ($1::date IS NULL OR b.report_date >= $1::date)
+        AND ($2::date IS NULL OR b.report_date <= $2::date)
+      ORDER BY b.report_date, s.site_code`,
+    [from ?? null, to ?? null],
+  );
+  const effectiveOm = await getEffectiveOmBySite();
+
+  const periods: GroupPeriod[] = [];
+  const periodSeen = new Set<string>();
+  const totalByDate = new Map<string, GroupAccumulator>();
+  const natureByDate = new Map<string, Map<string, GroupAccumulator>>();
+  const omByDate = new Map<string, Map<string, GroupAccumulator>>();
+  const natureLabels = new Map<string, string>();
+  const omLabels = new Map<string, string>();
+
+  for (const row of rows.rows) {
+    const period: GroupPeriod = {
+      report_date: toDateOnly(row.report_date),
+      report_kind: row.report_kind,
+    };
+    if (!periodSeen.has(period.report_date)) {
+      periodSeen.add(period.report_date);
+      periods.push(period);
+    }
+
+    let total = totalByDate.get(period.report_date);
+    if (!total) {
+      total = emptyGroupAccumulator(period);
+      totalByDate.set(period.report_date, total);
+    }
+    addGroupRow(total, row);
+
+    const nature = normalizeShopNature(row.shop_nature);
+    if (!natureLabels.has(nature.key)) natureLabels.set(nature.key, nature.label);
+    let natureMap = natureByDate.get(period.report_date);
+    if (!natureMap) {
+      natureMap = new Map();
+      natureByDate.set(period.report_date, natureMap);
+    }
+    let natureAcc = natureMap.get(nature.key);
+    if (!natureAcc) {
+      natureAcc = emptyGroupAccumulator(period);
+      natureMap.set(nature.key, natureAcc);
+    }
+    addGroupRow(natureAcc, row);
+
+    const om = normalizeOm(effectiveOm.get(row.site_code.toUpperCase())?.om ?? row.om);
+    if (!omLabels.has(om.key)) omLabels.set(om.key, om.label);
+    let omMap = omByDate.get(period.report_date);
+    if (!omMap) {
+      omMap = new Map();
+      omByDate.set(period.report_date, omMap);
+    }
+    let omAcc = omMap.get(om.key);
+    if (!omAcc) {
+      omAcc = emptyGroupAccumulator(period);
+      omMap.set(om.key, omAcc);
+    }
+    addGroupRow(omAcc, row);
+  }
+
+  const total: ShopStockGroupSeries = {
+    key: 'total',
+    label: 'Grand Total',
+    points: periods.map((period) => groupPointOf(totalByDate.get(period.report_date), period)),
+  };
+
+  const nature = buildGroupSeriesList(natureByDate, natureLabels, periods, (a, b) => {
+    const ai = (NATURE_ORDER as readonly string[]).indexOf(a);
+    const bi = (NATURE_ORDER as readonly string[]).indexOf(b);
+    if (ai !== -1 || bi !== -1) {
+      if (ai === -1) return 1;
+      if (bi === -1) return -1;
+      return ai - bi;
+    }
+    if (a === 'unassigned') return 1;
+    if (b === 'unassigned') return -1;
+    return String(natureLabels.get(a)).localeCompare(String(natureLabels.get(b)), 'zh-Hant');
+  });
+
+  // OM 以最新一期的 SKU Carry（再以 SOH）由大到小，較大的區放前面
+  const omLatestCarry = new Map<string, number>();
+  const omLatestSoh = new Map<string, number>();
+  for (const key of omLabels.keys()) {
+    omLatestCarry.set(key, latestGroupMetric(omByDate, key, periods, (acc) => (acc.has_carry ? acc.carry : null)));
+    omLatestSoh.set(key, latestGroupMetric(omByDate, key, periods, (acc) => (acc.has_soh ? acc.soh : null)));
+  }
+  const om = buildGroupSeriesList(omByDate, omLabels, periods, (a, b) => {
+    if (a === 'unassigned') return 1;
+    if (b === 'unassigned') return -1;
+    const carryDiff = (omLatestCarry.get(b) ?? -1) - (omLatestCarry.get(a) ?? -1);
+    if (carryDiff !== 0) return carryDiff;
+    const sohDiff = (omLatestSoh.get(b) ?? -1) - (omLatestSoh.get(a) ?? -1);
+    if (sohDiff !== 0) return sohDiff;
+    return String(omLabels.get(a)).localeCompare(String(omLabels.get(b)), 'zh-Hant');
+  });
+
+  return { total, nature, om };
+}
+
 export async function getShopStockSummary(
   opts: { from?: string; to?: string } = {},
 ): Promise<ShopStockSummary> {
-  const series = await loadCompanySeries(opts.from, opts.to);
+  const [series, groupTrend] = await Promise.all([
+    loadCompanySeries(opts.from, opts.to),
+    loadGroupTrend(opts.from, opts.to),
+  ]);
   const latest = series[series.length - 1];
   const previous = series[series.length - 2];
-  if (!latest) return { series, kpi: null, company_avg_ratio: null };
+  if (!latest) return { series, kpi: null, company_avg_ratio: null, group_trend: groupTrend };
   const kpi: ShopStockKpi = {
     report_date: latest.report_date,
     report_kind: latest.report_kind,
@@ -755,7 +1091,7 @@ export async function getShopStockSummary(
     wow_delta_pt_over2: deltaPt(latest.ratio_over2, previous?.ratio_over2 ?? null),
     wow_delta_pt_total: deltaPt(latest.ratio_total, previous?.ratio_total ?? null),
   };
-  return { series, kpi, company_avg_ratio: latest.ratio };
+  return { series, kpi, company_avg_ratio: latest.ratio, group_trend: groupTrend };
 }
 
 // ---------------------------------------------------------------------------
@@ -884,10 +1220,11 @@ export async function getShopStockWeek(reportDate: string): Promise<ShopStockWee
   if (!batchRow) return null;
 
   const prevDate = await previousReportDate(reportDate);
-  const [snapshots, prevSnapshots, firstSeenBySite] = await Promise.all([
+  const [snapshots, prevSnapshots, firstSeenBySite, effectiveOm] = await Promise.all([
     loadWeekSnapshots(reportDate),
     prevDate ? loadWeekSnapshots(prevDate) : Promise.resolve<ShopStockSnapshotRow[]>([]),
     loadFirstSeen(reportDate),
+    getEffectiveOmBySite(),
   ]);
   const prevBySite = new Map(prevSnapshots.map((row) => [row.site_code, row]));
   const thisDate = toDateOnly(batchRow.report_date);
@@ -915,6 +1252,8 @@ export async function getShopStockWeek(reportDate: string): Promise<ShopStockWee
           : null;
       return {
         ...row,
+        // 顯示／匯出用最新上載報表的 OM，歷史期數不會再顯示舊 OM
+        om: effectiveOm.get(row.site_code.toUpperCase())?.om ?? row.om,
         rank: null,
         prev_ratio: prev?.ratio ?? null,
         prev_rf_sku_count: prevRf,

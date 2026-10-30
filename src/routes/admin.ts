@@ -139,6 +139,7 @@ import {
   ShopStockImportError,
   type ShopStockWeek,
 } from '../services/shopStock.js';
+import { getEffectiveOmBySite } from '../services/effectiveOm.js';
 import {
   buildShopStockRfBuffer,
   buildShopStockTrendBuffer,
@@ -2777,10 +2778,14 @@ adminRouter.get(
       return;
     }
     const reasonLabels = (await listZeroSalesReasons(false)).map((r) => r.label);
+    const effectiveOmBySite = await getEffectiveOmBySite();
     const buffer = await buildZeroSalesExportBuffer(items.map((i) => ({
       site_code: i.site_code,
       sku: i.sku,
-      payload: i.payload,
+      payload: {
+        ...i.payload,
+        OM: effectiveOmBySite.get(i.site_code.toUpperCase())?.om ?? i.payload?.['OM'] ?? '',
+      },
       status: i.status,
       reason_code: i.reason_code,
       reason_label: i.reason_label,
@@ -2914,10 +2919,14 @@ adminRouter.get(
       return;
     }
     const reasonLabels = (await listZeroSalesReasons(false)).map((r) => r.label);
+    const effectiveOmBySite = await getEffectiveOmBySite();
     const buffer = await buildZeroSalesExportBuffer(items.map((i) => ({
       site_code: i.site_code,
       sku: i.sku,
-      payload: i.payload,
+      payload: {
+        ...i.payload,
+        OM: effectiveOmBySite.get(i.site_code.toUpperCase())?.om ?? i.payload?.['OM'] ?? '',
+      },
       status: i.status,
       reason_code: i.reason_code,
       reason_label: i.reason_label,
@@ -3357,6 +3366,12 @@ adminRouter.post(
             content_hash: result.contentHash,
           },
         });
+      }
+      // 新報表可能把店舖轉給新 OM；自動建立對應 OM 帳戶（不阻塞上載）。
+      try {
+        await syncOmPortalAccounts(req.adminUsername ?? 'system');
+      } catch (err) {
+        console.error('[stock] OM account sync failed', err);
       }
       res.status(result.replaced || result.noop ? 200 : 201).json({
         ok: true,

@@ -1,6 +1,7 @@
 import { query, withTransaction } from '../db/pool.js';
 import { toHKDateString, toHKString } from '../lib/time.js';
 import type { PoolClient } from 'pg';
+import { getEffectiveOmBySite } from './effectiveOm.js';
 
 export interface ZeroSalesBatchRow {
   id: string;
@@ -237,6 +238,7 @@ export interface ZeroSalesSummary {
  * 跨批次模式下 pending 只計仍開放且需要回覆的週次，已封存而未回覆的行另計 overdue；
  * 指定 batch_id 時則如實顯示該批次的 pending（供後台查歷史），overdue 固定為 0。
  * 「本週無須回覆」的批次：行數另計 no_reply，永不計入 pending / overdue，亦不計入回覆率分母。
+ * OM 匯總／下鑽以最新上載存貨報表的 OM 為準（未出現於報表的店舖 fallback stores.om）。
  */
 export async function getZeroSalesSummary(batchId?: string): Promise<ZeroSalesSummary> {
   const batchFilter = batchId ? 'AND i.batch_id = $1' : '';
@@ -250,6 +252,8 @@ export async function getZeroSalesSummary(batchId?: string): Promise<ZeroSalesSu
   // 無須回覆的行：不計入待辦 / 逾期 / 回覆率
   const noReplyFilter = 'EXISTS (SELECT 1 FROM zero_sales_batches nb WHERE nb.id = i.batch_id AND nb.reply_required = false)';
   const params: unknown[] = batchId ? [batchId] : [];
+  // 零銷售後台的 OM 分類跟隨最新上載存貨報表；唔再用歷史 stores.om。
+  const effectiveOmBySite = await getEffectiveOmBySite();
   const overall = await query<{
     batches: string;
     no_reply_batches: string;
@@ -324,21 +328,52 @@ export async function getZeroSalesSummary(batchId?: string): Promise<ZeroSalesSu
     params,
   );
 
-  const omRows = await query<{ om: string; stores_total: string; stores_pending: string; total: string; replied: string; pending: string }>(
-    `SELECT COALESCE(NULLIF(BTRIM(COALESCE(s.om, '')), ''), '（未設定）') AS om,
-            count(DISTINCT i.site_code)::text AS stores_total,
-            count(DISTINCT CASE WHEN i.status = 'pending' THEN i.site_code END)::text AS stores_pending,
+  const omRows = await query<{ site_code: string; total: string; replied: string; pending: string }>(
+    `SELECT i.site_code,
             count(*)::text AS total,
             count(*) FILTER (WHERE i.status = 'replied')::text AS replied,
             count(*) FILTER (WHERE i.status = 'pending')::text AS pending
        FROM zero_sales_items i
-       LEFT JOIN stores s ON s.site_code = i.site_code
       WHERE TRUE ${batchFilter} AND (${openFilter})
-      GROUP BY COALESCE(NULLIF(BTRIM(COALESCE(s.om, '')), ''), '（未設定）')
-     HAVING count(*) FILTER (WHERE i.status = 'pending') > 0
-      ORDER BY count(*) FILTER (WHERE i.status = 'pending') DESC, om`,
+      GROUP BY i.site_code`,
     params,
   );
+
+  const omAgg = new Map<string, {
+    om: string;
+    stores: Set<string>;
+    storesPending: Set<string>;
+    total: number;
+    replied: number;
+    pending: number;
+  }>();
+  for (const row of omRows.rows) {
+    const om = effectiveOmBySite.get(row.site_code.toUpperCase())?.om?.trim() || '（未設定）';
+    let agg = omAgg.get(om);
+    if (!agg) {
+      agg = { om, stores: new Set(), storesPending: new Set(), total: 0, replied: 0, pending: 0 };
+      omAgg.set(om, agg);
+    }
+    const total = Number(row.total ?? 0);
+    const replied = Number(row.replied ?? 0);
+    const pending = Number(row.pending ?? 0);
+    agg.stores.add(row.site_code);
+    if (pending > 0) agg.storesPending.add(row.site_code);
+    agg.total += total;
+    agg.replied += replied;
+    agg.pending += pending;
+  }
+  const pendingByOm = [...omAgg.values()]
+    .filter((agg) => agg.pending > 0)
+    .sort((a, b) => b.pending - a.pending || a.om.localeCompare(b.om, 'zh-Hant'))
+    .map((agg) => ({
+      om: agg.om,
+      stores_total: agg.stores.size,
+      stores_pending: agg.storesPending.size,
+      total: agg.total,
+      replied: agg.replied,
+      pending: agg.pending,
+    }));
 
   const latest = await query<{
     id: string;
@@ -414,19 +449,12 @@ export async function getZeroSalesSummary(batchId?: string): Promise<ZeroSalesSu
     pending_by_store: storeRows.rows.map((r) => ({
       site_code: r.site_code,
       shop: r.shop ?? '',
-      om: r.om ?? '',
+      om: effectiveOmBySite.get(r.site_code.toUpperCase())?.om ?? r.om ?? '',
       total: Number(r.total ?? 0),
       replied: Number(r.replied ?? 0),
       pending: Number(r.pending ?? 0),
     })),
-    pending_by_om: omRows.rows.map((r) => ({
-      om: r.om,
-      stores_total: Number(r.stores_total ?? 0),
-      stores_pending: Number(r.stores_pending ?? 0),
-      total: Number(r.total ?? 0),
-      replied: Number(r.replied ?? 0),
-      pending: Number(r.pending ?? 0),
-    })),
+    pending_by_om: pendingByOm,
   };
 }
 
@@ -453,40 +481,40 @@ export async function listZeroSalesPendingStores(filter: { batchId?: string; om?
   } else {
     where.push(`EXISTS (SELECT 1 FROM zero_sales_batches b WHERE b.id = i.batch_id AND b.closed_at IS NULL AND b.reply_required = true)`);
   }
-  const om = (filter.om ?? '').trim();
-  if (om) {
-    if (om === '（未設定）') {
-      where.push(`(s.om IS NULL OR BTRIM(COALESCE(s.om, '')) = '')`);
-    } else {
-      params.push(om);
-      where.push(`BTRIM(COALESCE(s.om, '')) = $${params.length}`);
-    }
-  }
   const whereSql = where.length ? `WHERE ${where.join(' AND ')}` : '';
-  const r = await query<{ site_code: string; shop: string; om: string; total: string; replied: string; pending: string }>(
-    `SELECT i.site_code,
-            COALESCE(MAX(s.shop), '') AS shop,
-            COALESCE(MAX(s.om), '') AS om,
-            COUNT(*)::text AS total,
-            COUNT(*) FILTER (WHERE i.status = 'replied')::text AS replied,
-            COUNT(*) FILTER (WHERE i.status = 'pending')::text AS pending
-       FROM zero_sales_items i
-       LEFT JOIN stores s ON s.site_code = i.site_code
-      ${whereSql}
-      GROUP BY i.site_code
-     HAVING COUNT(*) FILTER (WHERE i.status = 'pending') > 0
-      ORDER BY COUNT(*) FILTER (WHERE i.status = 'pending') DESC, i.site_code
-      LIMIT 1000`,
-    params,
-  );
-  return r.rows.map((row) => ({
-    site_code: row.site_code,
-    shop: row.shop ?? '',
-    om: row.om ?? '',
-    total: Number(row.total ?? 0),
-    replied: Number(row.replied ?? 0),
-    pending: Number(row.pending ?? 0),
-  }));
+  const [r, effectiveOmBySite] = await Promise.all([
+    query<{ site_code: string; shop: string; om: string; total: string; replied: string; pending: string }>(
+      `SELECT i.site_code,
+              COALESCE(MAX(s.shop), '') AS shop,
+              COALESCE(MAX(s.om), '') AS om,
+              COUNT(*)::text AS total,
+              COUNT(*) FILTER (WHERE i.status = 'replied')::text AS replied,
+              COUNT(*) FILTER (WHERE i.status = 'pending')::text AS pending
+         FROM zero_sales_items i
+         LEFT JOIN stores s ON s.site_code = i.site_code
+        ${whereSql}
+        GROUP BY i.site_code
+       HAVING COUNT(*) FILTER (WHERE i.status = 'pending') > 0
+        ORDER BY COUNT(*) FILTER (WHERE i.status = 'pending') DESC, i.site_code
+        LIMIT 1000`,
+      params,
+    ),
+    getEffectiveOmBySite(),
+  ]);
+  const om = (filter.om ?? '').trim();
+  return r.rows
+    .map((row) => ({
+      site_code: row.site_code,
+      shop: row.shop ?? '',
+      om: effectiveOmBySite.get(row.site_code.toUpperCase())?.om ?? row.om ?? '',
+      total: Number(row.total ?? 0),
+      replied: Number(row.replied ?? 0),
+      pending: Number(row.pending ?? 0),
+    }))
+    .filter((row) => {
+      if (!om) return true;
+      return om === '（未設定）' ? !row.om.trim() : row.om.trim() === om;
+    });
 }
 
 export interface ZeroSalesExportFilter {
@@ -839,7 +867,7 @@ async function attachZeroSalesHistory<T extends ZeroSalesItemRow>(items: T[]): P
 export interface ZeroSalesRepeatRow {
   site_code: string;
   shop: string;
-  /** 店舖所屬 OM（門店主檔未設定時為空字串） */
+  /** 店舖所屬 OM（以最新上載存貨報表為準；未設定時為空字串） */
   om: string;
   sku: string;
   brand: string;
@@ -929,10 +957,11 @@ export async function listZeroSalesRepeats(filter: ZeroSalesRepeatFilter = {}): 
       LIMIT ${limitParam}`,
     params,
   );
+  const effectiveOmBySite = await getEffectiveOmBySite();
   return r.rows.map((row) => ({
     site_code: row.site_code,
     shop: row.shop ?? '',
-    om: row.om ?? '',
+    om: effectiveOmBySite.get(row.site_code.toUpperCase())?.om ?? row.om ?? '',
     sku: row.sku,
     brand: row.brand ?? '',
     sku_desc: row.sku_desc ?? '',

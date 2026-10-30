@@ -366,7 +366,7 @@
               <select id="zs_stats_batch" class="form-select" style="max-width:300px" aria-label="統計範圍"><option value="">全部批次（跨批次）</option></select>
               <button class="btn btn-sm" id="btn_zs_stats_refresh">重新整理</button>
             </div>
-            <div class="hint">預設統計全部批次；選擇個別週次後只統計該批次，原因分佈及待回覆店舖（按 OM）會一併切換</div>
+            <div class="hint">預設統計全部批次；選擇個別週次後只統計該批次，原因分佈及待回覆店舖（按 OM，OM 以最後上載存貨報表為準）會一併切換</div>
             <div id="zs_stats_result" class="text-secondary small">捲動到此處自動載入…</div>
             <div class="row g-3 mt-1">
               <div class="col-md-6">
@@ -376,7 +376,7 @@
                 </div>
               </div>
               <div class="col-md-6">
-                <h5 class="text-secondary">待回覆店舖（按 OM，只計可回覆週次）</h5>
+                <h5 class="text-secondary">待回覆店舖（按 OM，只計可回覆週次；OM 以最後上載存貨報表為準）</h5>
                 <div class="table-responsive">
                   <table class="table table-vcenter"><thead><tr><th>OM</th><th>待回覆店數</th><th>未回覆行數</th><th>操作</th></tr></thead><tbody id="zs_om_stats_body"><tr><td colspan="4" class="text-center text-secondary">—</td></tr></tbody></table>
                 </div>
@@ -522,6 +522,35 @@
               <div class="stk-kpi"><div class="stk-kpi-value">—</div><div class="stk-kpi-label">載入中…</div></div>
             </div>
             <div id="stk_kpi_error"></div>
+          </div>
+        </div>
+
+        <div class="card mt-3" id="stk_group_dashboard">
+          <div class="card-header">
+            <h3 class="card-title">不良銷售 SKU 佔比走勢</h3>
+            <div class="card-actions d-flex flex-wrap gap-2 align-items-center justify-content-end ms-auto">
+              <div class="stk-range" id="stk_group_metric" role="group" aria-label="指標口徑">
+                <button class="btn btn-sm" type="button" data-stk-group-metric="sku" aria-pressed="true">不良 SKU ÷ SKU Carry</button>
+                <button class="btn btn-sm" type="button" data-stk-group-metric="value" aria-pressed="false">不良存貨值 ÷ 存貨值</button>
+              </div>
+              <div class="stk-range" id="stk_group_dim" role="group" aria-label="分組維度">
+                <button class="btn btn-sm" type="button" data-stk-group-dim="nature" aria-pressed="true">按 Shop Nature</button>
+                <button class="btn btn-sm" type="button" data-stk-group-dim="om" aria-pressed="false">按 OM</button>
+              </div>
+              <div class="stk-range" id="stk_group_range" role="group" aria-label="顯示期間">
+                <button class="btn btn-sm" type="button" data-stk-months="3">3 個月</button>
+                <button class="btn btn-sm" type="button" data-stk-months="6">6 個月</button>
+                <button class="btn btn-sm" type="button" data-stk-months="12" aria-pressed="true">12 個月</button>
+                <button class="btn btn-sm" type="button" data-stk-months="24">24 個月</button>
+              </div>
+            </div>
+          </div>
+          <div class="card-body">
+            <p class="text-secondary small">每張小圖一個分組，每根柱一個報表期；柱上百分比是該組的<b>加權比率（Σ分子 ÷ Σ分母）</b>，不是各店比率平均。<b>Grand Total</b> 與各分組用同一口徑；某期某組沒有資料時會留空，不會當成 0%。期間按鈕與下方「佔比趨勢」同步（3 / 6 / 12 / 24 個月）。</p>
+            <div class="stk-legend" id="stk_group_legend"></div>
+            <div class="stk-group-chart" id="stk_group_chart"></div>
+            <p class="text-secondary small mt-2 mb-0" id="stk_group_note"></p>
+            <div id="stk_group_error"></div>
           </div>
         </div>
 
@@ -869,7 +898,7 @@
             </div>
           </div>
           <div class="card-body collapse show" id="portal-users-collapse">
-            <p class="text-secondary small">Portal 帳戶（Store／Buyer／SCT／OM）以「使用者名稱（Site Code 或 OM 名稱）＋密碼」登入；登入連結會自動帶出使用者名稱。Store 可單間建立（選店舖）或按門店主檔同步；Buyer／SCT 帳戶在此建立；OM 帳戶由門店主檔的 OM 欄自動建立（OM 名稱＋OM 專用密碼）。管理員可啟用／停用／刪除帳戶或批量操作（先勾選再按鈕，表頭可全選）。尚有 SKU 分派的 Buyer 或有待審批的 SCT 不可停用或刪除。</p>
+            <p class="text-secondary small">Portal 帳戶（Store／Buyer／SCT／OM）以「使用者名稱（Site Code 或 OM 名稱）＋密碼」登入；登入連結會自動帶出使用者名稱。Store 可單間建立（選店舖）或按門店主檔同步；Buyer／SCT 帳戶在此建立；OM 帳戶由門店主檔或最新存貨報表的 OM 欄自動建立（OM 名稱＋OM 專用密碼）。管理員可啟用／停用／刪除帳戶或批量操作（先勾選再按鈕，表頭可全選）。尚有 SKU 分派的 Buyer 或有待審批的 SCT 不可停用或刪除。</p>
             <div class="d-flex gap-2 mb-3 flex-wrap">
               <div class="flex-grow-1" id="pu_username_wrap" style="min-width:200px">
                 <label class="form-label">使用者名稱（Buyer／SCT）</label>

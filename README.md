@@ -18,7 +18,8 @@ SASA RP Team 非正常補貨（NDRF）申報平台。申請端以「Site Code／
 - 90 日零銷售：每週派發每店 Top 10 零銷售 SKU 給店舖逐條回覆原因；新一週上載即自動封存舊週次。**支援「本週無須回覆」**（銷售繁忙期）：批次照樣派發（店舖仍看見本店 Top 10 清單可搜尋／匯出），但店舖不可回覆，亦不計入待回覆／逾期／回覆率；可隨時切回需要回覆
 - 後台導航收斂為 7 個分頁：總覽／申報清單／**匯出**（含匯出批次及重新下載）／零銷售／存貨 Dashboard／指定SKU回覆／**系統**（含帳戶與主檔、審批設定、系統工具）。合併頁面頂部有頁內分組導覽；舊連結 `?tab=batches|accounts|review` 及 `#sec-batches|sec-accounts|sec-review` 書籤會自動跳到對應分頁的分組，不會失效
 - 指定 SKU 回覆：批次可用**Excel 上載**或**人手輸入**建立（一個批次可含多間店舖 × 多個 SKU），系統按 Site Code 建立**事項**（同一店舖的多個 SKU 歸入同一事項）；店舖為每個 SKU 的各個貨品年期 (MMYY) 回覆可調撥件數，或標示「無可調撥」，一次過提交整份事項。每個事項有獨立事項編號、批次編號及直 link（只限涉及店舖，後端強制核對）。**截止日期及時間（香港時間）到點即自動截止**，管理員可延長期限、補加／修改 SKU、代店舖補錄或更正回覆（不佔店舖修改次數，會寫入審計日誌）
-- **OM（區域主管）Portal**（`/portal/om.html`）：OM 以自己名稱＋OM 專用密碼（`PORTAL_OM_PASSWORD`，預設 `SASAOM178`）登入，只會看到 `stores.om` 等於自己名稱的店舖。提供管轄店舖總覽（零銷售待回覆、指定 SKU 待回事項、最新不良存貨佔比及 SKU 比率）、零銷售逐 SKU 代覆、指定 SKU 事項代覆，以及 OM 合計／單店存貨走勢（不良存貨值佔比及不良存貨 SKU ÷ Carry SKU，均含全公司加權平均對比）；所有代覆寫入審計日誌，已封存的週次／事項不可代覆
+- **OM（區域主管）Portal**（`/portal/om.html`）：OM 以自己名稱＋OM 專用密碼（`PORTAL_OM_PASSWORD`，預設 `SASAOM178`）登入，只會看到最新上載存貨報表 OM 等於自己名稱的店舖（從未出現在報表的店舖 fallback 到 `stores.om`）。提供管轄店舖總覽（零銷售待回覆、指定 SKU 待回事項、最新不良存貨佔比及 SKU 比率）、零銷售逐 SKU 代覆、指定 SKU 事項代覆，以及 OM 合計／單店存貨走勢（不良存貨值佔比及不良存貨 SKU ÷ Carry SKU，均含全公司加權平均對比）；所有代覆寫入審計日誌，已封存的週次／事項不可代覆
+- **OM 歸屬自動更新**：存貨報表（I14 By Shop）的 OM 欄以「最後上載的報表」為準；店舖轉交新 OM 後，所有歷史期數會自動歸入最新 OM，不需逐期修改。OM Portal 的店舖範圍及存貨／零銷售／指定 SKU 畫面、後台存貨 Dashboard 的 OM Group、每期明細／匯出，以及零銷售後台的 OM 匯總／OM 下鑽／重複上榜均同步跟隨；上載新報表時會自動建立新 OM 帳戶
 - SAP 匯出只包含一般 NDRF，Urgent Order 使用獨立 6 欄匯出（Application No. | Site Code | SKU | QTY | Urgent Reason | Other Reason）；突發性銷售使用獨立 4 欄匯出（Application Date | Requested by | Shop Code | SKU）；匯出成功後鎖定該批申報，申請人不能再修改；匯出失敗不鎖定。管理員於 14:30 後開始匯出處理，期間 Urgent Order 申請人不可修改（查詢不受限）
 - Submission、version history 及 audit event 的 IP 按 `IP_RETENTION_DAYS` 自動匿名化；login attempts、import/export batches、expired sessions 及 rate-limit counters 按各自 retention 設定清理
 - 公開單筆及 Excel 提交使用 Idempotency-Key；網絡中斷或回應遺失時，店舖重試會取回原申請編號／原匯入批次，不會重複寫入；Urgent 網頁 1 至 5 SKU 批次使用同一 request key，重試會一次取回全部申請編號。匯入記錄由伺服器按 batch ID 重新產生，不再信任瀏覽器回傳整批資料
@@ -256,7 +257,14 @@ pg_restore --no-owner --no-privileges --clean --if-exists \
 
 ### 管理後台（第 5 個 tab「存貨 Dashboard」）
 
-**頁面版面（由上至下）**：上載 I14 報表 → 最新一期 KPI → **佔比趨勢（不良存貨 ÷ 店舖存貨）** → **每店明細（不良存貨）** → **No. of RF SKU Dashboard（自動補貨）** → 上載批次。佔比趨勢與每店明細放在前面，RF SKU 區塊放最後；每店明細的標題與欄位已註明**不良存貨**口徑（不良存貨值 / 不良存貨佔比 / 不良存貨 SKU ÷ 店內貨品），RF SKU 兩欄僅屬參考，明確標示不代表好壞。
+**頁面版面（由上至下）**：上載 I14 報表 → 最新一期 KPI → **不良銷售 SKU 佔比走勢（分組小圖）** → **佔比趨勢（不良存貨 ÷ 店舖存貨）** → **每店明細（不良存貨）** → **No. of RF SKU Dashboard（自動補貨）** → 上載批次。分組小圖與佔比趨勢放在前面，RF SKU 區塊放最後；每店明細的標題與欄位已註明**不良存貨**口徑（不良存貨值 / 不良存貨佔比 / 不良存貨 SKU ÷ 店內貨品），RF SKU 兩欄僅屬參考，明確標示不代表好壞。
+
+**不良銷售 SKU 佔比走勢（分組小圖）**：每張小圖一個分組（Grand Total ＋ 各 Shop Nature／OM），每根柱一個報表期，柱上顯示百分比；可切換兩種口徑：
+
+- **不良 SKU ÷ SKU Carry**（件數，預設）＝ `Σ No. of Overstock SKU (P90D 0 Sales)` ÷ `Σ No. of SKU Carry`。
+- **不良存貨值 ÷ 存貨值**（金額）＝ `Σ Excess Stock Value (P90D 0 Sales)` ÷ `Σ Shop Stock Value (CM)`。
+
+兩個口徑都是**組內加權**（先加總分子／分母再相除），不是各店比率平均。Shop Nature 會把報表原值 `Local`／`Non Tourist` 歸為「民生區」、`Mix` 歸為「混合區」、`Tourist` 歸為「遊客區」；未知值保留原字串，空白則歸「未填」。OM 以最新一期的 SKU Carry（再以 SOH）由大到小排列。某組某期沒有店舖時回 `null`，小圖留空，不會畫成 0%。顯示期間跟上方「3 / 6 / 12 / 24 個月」同步。
 
 1. 選報表日期（可從檔名 `25Oct2026` 類格式自動填入）、報表類型、備註，再選 `.xlsx` 上載。
 2. **同一日期重上 = 整批取代**：同一 transaction 內先 `DELETE FROM shop_stock_batches WHERE report_date = $1`（FK CASCADE 清走明細），再建立新批次（**新批次有新 id**，不會出現「同一 id 先後代表兩份檔案」）；audit 會記下舊 batch id、行數與 `content_hash`。內容完全相同（`content_hash` 一致）則視為重複上載，不做任何寫入。
@@ -308,7 +316,7 @@ pg_restore --no-owner --no-privileges --clean --if-exists \
 | GET | `/api/admin/stock/batches?page=&size=` | 批次列表（按 `report_date` 新到舊） |
 | PUT | `/api/admin/stock/batches/:id` | 改 `report_date` / `note` |
 | DELETE | `/api/admin/stock/batches/:id` | 刪除整批（回 `deleted_rows`、`deleted_stores`） |
-| GET | `/api/admin/stock/summary?from=&to=` | 趨勢序列 + 最新 KPI（加權比率、WoW 百分點） |
+| GET | `/api/admin/stock/summary?from=&to=` | 趨勢序列 + 最新 KPI（加權比率、WoW 百分點）＋ `group_trend`（Grand Total／Shop Nature／OM 的分組加權走勢） |
 | GET | `/api/admin/stock/summary/export?months=3\|6\|12\|24` | 匯出趨勢圖數字成 xlsx（3 張工作表；`months` 上限 24，預設 12） |
 | GET | `/api/admin/stock/weeks/:reportDate` | 某一期每店明細（含與上一期的百分點差、`rank`、`is_new`、`is_new_store`、`new_reason`） |
 | GET | `/api/admin/stock/weeks/:reportDate/export?q=&sort=&only=` | 該期每店明細匯出 xlsx（篩選／排序同畫面一致） |

@@ -10,7 +10,7 @@
  *  4. tooltip / 點按（pointer 事件），觸控目標由 CSS 保證 ≥20px。
  *
  * 對外 API：
- *   globalThis.ChartLite = { renderLine, clear, dateTicks, niceMax, scaleX, toTime, buildPath, splitIndex, fmtDay }
+ *   globalThis.ChartLite = { renderLine, renderBarGrid, clear, barLabelIndices, dateTicks, niceMax, scaleX, toTime, buildPath, splitIndex, fmtDay }
  *
  * renderLine(el, opts) 的 opts：
  *   series: [{ key, label, color, dashed, splitDate, colorBefore, points: [{ date:'YYYY-MM-DD', value:Number|null }] }]  // 最多 2 條
@@ -195,7 +195,7 @@
     }
   }
 
-  function startObserving(el, w, h) {
+  function startObserving(el, w, h, rerender) {
     if (typeof ResizeObserver === 'undefined' || !observers) return;
     stopObserving(el);
     let lastW = w;
@@ -207,10 +207,26 @@
       if (Math.abs(nextW - lastW) < 8 && Math.abs(nextH - lastH) < 8) return;
       lastW = nextW;
       lastH = nextH;
-      if (el.__ctOpts) renderLine(el, el.__ctOpts);
+      if (el.__ctOpts) (rerender || renderLine)(el, el.__ctOpts);
     });
     observers.set(el, ro);
     ro.observe(el);
+  }
+
+  /**
+   * 柱狀圖要顯示哪幾根柱的標籤：永遠包含第一根與最新一根，中間按需要隔開。
+   * 純函數，方便測試；count 為 0 時回空陣列。
+   */
+  function barLabelIndices(count, maxLabels) {
+    const n = Math.max(0, Math.floor(Number(count) || 0));
+    if (!n) return [];
+    const max = Math.max(2, Math.floor(Number(maxLabels) || 6));
+    if (n <= max) return Array.from({ length: n }, (_, i) => i);
+    const step = Math.ceil((n - 1) / (max - 1));
+    const out = [];
+    for (let i = 0; i < n; i += step) out.push(i);
+    if (out[out.length - 1] !== n - 1) out.push(n - 1);
+    return out;
   }
 
   /* ==================== 主渲染 ==================== */
@@ -449,9 +465,236 @@
     box.appendChild(svg);
     box.appendChild(tip);
 
-    startObserving(box, W, H);
+    startObserving(box, W, H, renderLine);
 
     return { width: W, height: H, yMax, minT, maxT, points: finite.length, empty: false };
+  }
+
+  /**
+   * 分期小圖（small multiples）：每個 spec 一張小圖，每期一根柱，柱上顯示百分比。
+   * 適合「Grand Total ＋ 各分組」一起看走勢，資料點多過標籤位時會自動抽樣標籤。
+   *
+   * opts:
+   *   series: [{ key, label, color, points:[{ date, value, tip }], latest, delta, deltaTone }]
+   *   height: Number            每張小圖的繪圖區高度（預設 150）
+   *   yFormat: (v) => String    y 軸文字
+   *   labelFormat: (v) => String 柱上文字（預設同 yFormat）
+   *   emptyText: String         完全沒有有效值時的整體空狀態
+   *   ariaLabel: String         SVG 無障礙描述前綴
+   *   maxBarLabels: Number      每張小圖最多顯示幾個柱標籤（會按闊度自動調整）
+   */
+  function renderBarGrid(el, opts) {
+    if (!el || typeof document === 'undefined') return null;
+    const o = opts || {};
+    el.__ctOpts = o;
+    stopObserving(el);
+    el.innerHTML = '';
+
+    const specs = (Array.isArray(o.series) ? o.series : []).filter(Boolean).map((spec, index) => {
+      const raw = Array.isArray(spec.points) ? spec.points : [];
+      const points = raw.map((p) => {
+        if (!p) return null;
+        const dateValue = p.date != null ? p.date : p.report_date;
+        const rawValue = p.value != null ? p.value : (p.ratio != null ? p.ratio : p.y);
+        const value = rawValue == null || rawValue === '' ? null : Number(rawValue);
+        const date = String(dateValue == null ? '' : dateValue);
+        return {
+          date,
+          value: Number.isFinite(value) ? value : null,
+          tip: p.tip == null ? '' : String(p.tip),
+        };
+      }).filter((p) => p && p.date);
+      return {
+        key: spec.key || `s${index}`,
+        label: spec.label || '',
+        color: spec.color || '#0f5c9c',
+        points,
+        latest: spec.latest || '',
+        latestTitle: spec.latestTitle || '',
+        delta: spec.delta || '',
+        deltaTone: spec.deltaTone || '',
+      };
+    });
+
+    const anyValue = specs.some((spec) => spec.points.some((p) => p.value !== null));
+    if (!anyValue) {
+      const empty = document.createElement('div');
+      empty.className = 'ct-empty';
+      empty.textContent = o.emptyText || '暫無數據';
+      el.appendChild(empty);
+      return null;
+    }
+
+    const grid = document.createElement('div');
+    grid.className = 'ct-bar-grid';
+    const H = Math.max(110, Math.round(o.height || 150));
+    const panels = specs.map((spec) => {
+      const panel = document.createElement('section');
+      panel.className = 'ct-bar-panel';
+
+      const head = document.createElement('div');
+      head.className = 'ct-bar-head';
+      const title = document.createElement('span');
+      title.className = 'ct-bar-title';
+      title.textContent = spec.label;
+      title.title = spec.label;
+      head.appendChild(title);
+
+      if (spec.latest || spec.delta) {
+        const latest = document.createElement('span');
+        latest.className = 'ct-bar-latest';
+        latest.textContent = spec.latest;
+        if (spec.latestTitle) latest.title = spec.latestTitle;
+        if (spec.delta) {
+          const delta = document.createElement('span');
+          delta.className = `ct-bar-delta${spec.deltaTone ? ` ${spec.deltaTone}` : ''}`;
+          delta.textContent = spec.delta;
+          latest.appendChild(delta);
+        }
+        head.appendChild(latest);
+      }
+
+      const plot = document.createElement('div');
+      plot.className = 'ct-bar-plot';
+      panel.appendChild(head);
+      panel.appendChild(plot);
+      grid.appendChild(panel);
+      return { spec, plot };
+    });
+    el.appendChild(grid);
+
+    panels.forEach(({ spec, plot }) => {
+      const fallbackW = Math.round((el.clientWidth || 960) / Math.max(1, specs.length));
+      drawBarPanel(plot, spec, Math.max(190, Math.round(plot.clientWidth || fallbackW || 240)), H, o);
+    });
+
+    startObserving(el, Math.round(el.clientWidth || 0), Math.round(el.clientHeight || 0), renderBarGrid);
+    return {
+      panels: specs.length,
+      points: specs.reduce((acc, spec) => acc + spec.points.filter((p) => p.value !== null).length, 0),
+      empty: false,
+    };
+  }
+
+  function drawBarPanel(plot, spec, W, H, opts) {
+    plot.innerHTML = '';
+    const finite = spec.points.filter((p) => p.value !== null);
+    if (!finite.length) {
+      const empty = document.createElement('div');
+      empty.className = 'ct-bar-empty';
+      empty.textContent = '此分組暫無數據';
+      plot.appendChild(empty);
+      return;
+    }
+
+    const padL = 34;
+    const padR = 4;
+    const padT = 18;
+    const padB = 18;
+    const innerW = Math.max(20, W - padL - padR);
+    const innerH = Math.max(30, H - padT - padB);
+    const maxV = finite.reduce((acc, p) => (p.value > acc ? p.value : acc), finite[0].value);
+    const yMax = maxV > 0 ? niceMax(maxV * 1.08, 3) : 0.01;
+    const baseY = padT + innerH;
+    const yScale = (v) => padT + (1 - (v / yMax)) * innerH;
+    const yLabel = (v) => (typeof opts.yFormat === 'function' ? opts.yFormat(v) : String(round(v, 2)));
+    const valueLabel = (v) => (typeof opts.labelFormat === 'function' ? opts.labelFormat(v) : yLabel(v));
+
+    const last = finite[finite.length - 1];
+    const autoLabel = `${spec.label}：共 ${finite.length} 期有效數據，最新 ${String(last.date).slice(0, 10)} 為 ${valueLabel(last.value)}`;
+    const svg = svgEl('svg', {
+      viewBox: `0 0 ${W} ${H}`,
+      width: W,
+      height: H,
+      role: 'img',
+      'aria-label': opts.ariaLabel ? `${opts.ariaLabel}｜${autoLabel}` : autoLabel,
+      class: 'ct-svg',
+    });
+    svg.style.display = 'block';
+    svg.style.width = '100%';
+    svg.style.height = '100%';
+    svg.style.overflow = 'visible';
+
+    // y 軸：只畫 0 與上限兩條線，小圖保持清爽
+    [[0, '#c9d8e6', null], [yMax, '#e8eef5', '4 3']].forEach(([value, color, dash]) => {
+      const y = round(yScale(value), 2);
+      svg.appendChild(svgEl('line', {
+        x1: padL, x2: padL + innerW, y1: y, y2: y,
+        stroke: color, 'stroke-width': 1, 'stroke-dasharray': dash,
+      }));
+      const label = svgEl('text', {
+        x: padL - 6, y: y + 3.5, 'text-anchor': 'end',
+        fill: '#7a8894', 'font-size': 9.5, 'font-family': 'inherit',
+      });
+      label.textContent = yLabel(value);
+      svg.appendChild(label);
+    });
+
+    const n = spec.points.length;
+    const slot = innerW / Math.max(1, n);
+    const barW = Math.max(1.5, Math.min(16, slot * 0.62));
+    const maxLabels = Math.max(
+      2,
+      Math.min(
+        8,
+        Math.floor(Number(opts.maxBarLabels) || Math.floor(innerW / 46)),
+      ),
+    );
+    const labelSet = new Set(barLabelIndices(n, maxLabels));
+
+    spec.points.forEach((p, i) => {
+      const cx = padL + slot * i + slot / 2;
+      const labelX = Math.max(padL + 10, Math.min(W - padR - 10, cx));
+
+      if (p.value !== null) {
+        const y = yScale(p.value);
+        const height = Math.max(p.value > 0 ? 1 : 0.75, baseY - y);
+        svg.appendChild(svgEl('rect', {
+          x: round(cx - barW / 2, 2),
+          y: round(baseY - height, 2),
+          width: round(barW, 2),
+          height: round(height, 2),
+          rx: Math.min(2, barW / 2),
+          fill: spec.color,
+          opacity: i === n - 1 ? 1 : 0.72,
+        }));
+
+        // 透明熱區比柱本身闊，滑鼠容易停留在很窄的週柱上
+        const hit = svgEl('rect', {
+          x: round(padL + slot * i, 2),
+          y: padT,
+          width: round(slot, 2),
+          height: innerH,
+          fill: 'transparent',
+        });
+        const tip = svgEl('title');
+        tip.textContent = `${String(p.date).slice(0, 10)}：${valueLabel(p.value)}${p.tip ? `（${p.tip}）` : ''}`;
+        hit.appendChild(tip);
+        svg.appendChild(hit);
+      }
+
+      if (!labelSet.has(i)) return;
+      const dateText = svgEl('text', {
+        x: round(labelX, 2), y: H - 4, 'text-anchor': 'middle',
+        fill: '#66727f', 'font-size': 9.5, 'font-family': 'inherit',
+      });
+      dateText.textContent = fmtDay(toTime(p.date), false) || String(p.date).slice(5, 10);
+      svg.appendChild(dateText);
+
+      const valueText = svgEl('text', {
+        x: round(labelX, 2),
+        y: p.value === null ? baseY - 4 : Math.max(10, yScale(p.value) - 4),
+        'text-anchor': 'middle',
+        fill: p.value === null ? '#a0aab4' : '#1f2d3d',
+        'font-size': 9.5,
+        'font-weight': 600,
+        'font-family': 'inherit',
+      });
+      valueText.textContent = p.value === null ? '—' : valueLabel(p.value);
+      svg.appendChild(valueText);
+    });
+
+    plot.appendChild(svg);
   }
 
   function escapeText(value) {
@@ -475,7 +718,9 @@
 
   const ChartLite = {
     renderLine,
+    renderBarGrid,
     clear,
+    barLabelIndices,
     dateTicks,
     niceMax,
     scaleX,

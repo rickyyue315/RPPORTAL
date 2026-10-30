@@ -9,8 +9,9 @@ import { setPoolForTesting } from '../src/db/pool.js';
 import { createApp } from '../src/app.js';
 import { replaceStores } from '../src/services/stores.js';
 import { syncOmPortalAccounts, syncStorePortalAccounts } from '../src/services/storeAccounts.js';
-import { createBatch as createZeroSalesBatch } from '../src/services/zeroSales.js';
+import { createBatch as createZeroSalesBatch, getZeroSalesSummary, listZeroSalesPendingStores } from '../src/services/zeroSales.js';
 import { createBatch as createDesignatedSkuBatch } from '../src/services/designatedSku.js';
+import { getShopStockSummary, getShopStockWeek } from '../src/services/shopStock.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const migrationsDir = path.join(__dirname, '..', 'src', 'db', 'migrations');
@@ -300,5 +301,86 @@ describe('OM portal', () => {
       .send({ reason_code: 'seasonal', reason_note: '' });
     expect(res.status).toBe(409);
     expect(res.body.code).toBe('BATCH_CLOSED');
+  });
+
+  it('uses the latest uploaded report OM for all historical periods and OM access', async () => {
+    const batch = await db.query<{ id: string }>(
+      `INSERT INTO shop_stock_batches (report_date, report_kind, week_label, row_count, store_count, content_hash, uploaded_by)
+       VALUES ('2026-11-01', 'weekly', '1Nov2026', 3, 3, 'om-stock-2', 'test')
+       RETURNING id`,
+    );
+    const batchId = batch.rows[0]!.id;
+    for (const row of [
+      { site: 'HA02', shop: '駱克', excess: 10, soh: 100, sku0: 1, rf: 8 },
+      { site: 'HA06', shop: '北角', excess: 20, soh: 100, sku0: 2, rf: 7 },
+      { site: 'HA19', shop: '康山', excess: 950, soh: 1000, sku0: 9, rf: 9 },
+    ]) {
+      await db.query(
+        `INSERT INTO shop_stock_snapshots
+           (batch_id, site_code, shop, om, sku_count_0sale, excess_value_0sale, shop_stock_value_cm, payload)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+        [
+          batchId,
+          row.site,
+          row.shop,
+          // HA19 / HA21 這類店舖在最新報表轉交 Queenie；HA02/HA06 仍屬 Ivy
+          row.site === 'HA19' ? 'Queenie' : 'Ivy',
+          row.sku0,
+          row.excess,
+          row.soh,
+          JSON.stringify({ 'No. of SKU Carry': '10', 'No. of RF SKU': String(row.rf) }),
+        ],
+      );
+    }
+
+    // 最新報表出現新 OM：同步後 Queenie 可登入並取得 HA19
+    await syncOmPortalAccounts('test');
+    const queenie = await omAgent('Queenie');
+    const qOverview = await queenie.get('/api/portal/om/overview');
+    expect(qOverview.status).toBe(200);
+    expect(qOverview.body.stores.map((s: { site_code: string }) => s.site_code)).toEqual(['HA19']);
+
+    // Violet 帳戶仍存在，但已不再管理 HA19
+    const violet = await omAgent('Violet');
+    const vOverview = await violet.get('/api/portal/om/overview');
+    expect(vOverview.body.stores).toHaveLength(0);
+
+    // 舊期數（2026-10-25）亦自動歸入最新報表的 Queenie，不再顯示 Violet
+    const summary = await getShopStockSummary();
+    const om = new Map(summary.group_trend.om.map((group) => [group.key, group]));
+    expect(om.has('om:Violet')).toBe(false);
+    expect(om.get('om:Queenie')!.points[0]!.ratio).toBeCloseTo(900 / 1000, 6);
+    expect(om.get('om:Queenie')!.points[1]!.ratio).toBeCloseTo(950 / 1000, 6);
+
+    const oldWeek = await getShopStockWeek('2026-10-25');
+    expect(oldWeek!.rows.find((row) => row.site_code === 'HA19')!.om).toBe('Queenie');
+  });
+
+  it('applies the latest stock report OM to the zero-sales OM summary and drill-down', async () => {
+    await createZeroSalesBatch({
+      weekLabel: '2026-W45-OM',
+      note: 'OM zero-sales reclassification',
+      rows: [
+        { siteCode: 'HA02', sku: '2000001', data: { Brand: 'B1' } },
+        { siteCode: 'HA06', sku: '2000002', data: { Brand: 'B1' } },
+        { siteCode: 'HA19', sku: '2000003', data: { Brand: 'B2' } },
+      ],
+      contentHash: `om-zero-${Date.now()}`,
+      createdBy: 'test',
+    });
+
+    const summary = await getZeroSalesSummary();
+    const byOm = new Map(summary.pending_by_om.map((row) => [row.om, row]));
+    expect(byOm.has('Queenie')).toBe(true);
+    expect(byOm.has('Violet')).toBe(false);
+    expect(byOm.get('Queenie')!.stores_pending).toBe(1);
+    expect(byOm.get('Queenie')!.pending).toBe(1);
+
+    const queenieStores = await listZeroSalesPendingStores({ om: 'Queenie' });
+    expect(queenieStores.map((row) => row.site_code)).toEqual(['HA19']);
+    expect(queenieStores[0]!.om).toBe('Queenie');
+
+    const violetStores = await listZeroSalesPendingStores({ om: 'Violet' });
+    expect(violetStores).toHaveLength(0);
   });
 });

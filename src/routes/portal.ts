@@ -92,7 +92,7 @@ import { omRouter } from './om.js';
 export const portalRouter = Router();
 
 // OM（區域主管）專用 API；與店舖 portal 共用 session / CSRF，但角色與
-// 資料範圍完全分開（只可存取 stores.om = 登入 OM 名稱的店舖）。
+// 資料範圍完全分開（只可存取最新存貨報表 OM = 登入 OM 名稱的店舖）。
 portalRouter.use('/om', omRouter);
 
 const upload = multer({

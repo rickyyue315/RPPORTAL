@@ -16,13 +16,15 @@ import {
   type MatterReplyItemInput,
 } from './designatedSku.js';
 import { getShopStockSummary } from './shopStock.js';
+import { getEffectiveOmBySite } from './effectiveOm.js';
 
 /**
  * OM（區域主管）Portal 的資料存取。
  *
- * 權限的唯一來源是登入 OM 的 username（= stores.om 大寫）。所有查詢都先
- * 取得該 OM 的 site_code 清單，再以 SQL `ANY($1)` 限定，**不接受前端傳入
- * 「哪個 OM」**。任何指定 site_code 的請求都會再核對一次擁有權。
+ * 權限的唯一來源是登入 OM 的 username（= 最新上載報表的 OM 大寫，無報表時
+ * fallback stores.om）。所有查詢都先取得該 OM 的 site_code 清單，再以 SQL
+ * `ANY($1)` 限定，**不接受前端傳入「哪個 OM」**。任何指定 site_code 的請求
+ * 都會再核對一次擁有權。
  */
 
 export class OmSiteAccessError extends Error {
@@ -44,20 +46,24 @@ export interface OmStoreRow {
 
 export async function listOmStores(username: string): Promise<OmStoreRow[]> {
   const key = username.trim().toUpperCase();
-  const r = await query<OmStoreRow>(
-    `SELECT site_code,
-            COALESCE(shop, '') AS shop,
-            COALESCE(regional, '') AS regional,
-            COALESCE(class1, '') AS class1,
-            COALESCE(class2, '') AS class2,
-            COALESCE(size, '') AS size,
-            COALESCE(type, '') AS type
-       FROM stores
-      WHERE UPPER(BTRIM(COALESCE(om, ''))) = $1
-      ORDER BY site_code`,
-    [key],
-  );
-  return r.rows;
+  const [r, effectiveOm] = await Promise.all([
+    query<OmStoreRow & { om: string }>(
+      `SELECT site_code,
+              COALESCE(shop, '') AS shop,
+              COALESCE(regional, '') AS regional,
+              COALESCE(class1, '') AS class1,
+              COALESCE(class2, '') AS class2,
+              COALESCE(size, '') AS size,
+              COALESCE(type, '') AS type,
+              BTRIM(COALESCE(om, '')) AS om
+         FROM stores
+        ORDER BY site_code`,
+    ),
+    getEffectiveOmBySite(),
+  ]);
+  return r.rows
+    .filter((store) => (effectiveOm.get(store.site_code.toUpperCase())?.om ?? store.om).trim().toUpperCase() === key)
+    .map(({ om: _om, ...store }) => store);
 }
 
 export async function getOmSiteCodes(username: string): Promise<string[]> {
@@ -65,14 +71,12 @@ export async function getOmSiteCodes(username: string): Promise<string[]> {
 }
 
 export async function assertOmSite(username: string, siteCode: string): Promise<void> {
-  const r = await query<{ ok: number }>(
-    `SELECT 1 AS ok
-       FROM stores
-      WHERE site_code = $1
-        AND UPPER(BTRIM(COALESCE(om, ''))) = $2`,
-    [siteCode.trim().toUpperCase(), username.trim().toUpperCase()],
-  );
-  if (!r.rows[0]) throw new OmSiteAccessError();
+  const key = siteCode.trim().toUpperCase();
+  const effectiveOm = await getEffectiveOmBySite();
+  const om = effectiveOm.get(key)?.om ?? '';
+  if (!om || om.trim().toUpperCase() !== username.trim().toUpperCase()) {
+    throw new OmSiteAccessError();
+  }
 }
 
 export interface OmOverview {

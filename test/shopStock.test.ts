@@ -465,6 +465,38 @@ describe('shopStock service', () => {
     expect(summary.kpi!.ovs_carry_ratio_wow_delta_pt).toBeNull();
   });
 
+  it('breaks the same weighted trend down by Shop Nature and OM', async () => {
+    const summary = await getShopStockSummary();
+    const total = summary.group_trend.total.points[0]!;
+    expect(total.report_date).toBe('2026-10-25');
+    expect(total.ratio).toBeCloseTo(0.04, 10);
+    expect(total.ovs_carry_ratio).toBeCloseTo(13 / 2850, 12);
+
+    // Nature：Local = HA02 + HC71（HC71 的 SOH = 0，只計 SKU 比率）
+    const nature = new Map(summary.group_trend.nature.map((group) => [group.key, group]));
+    expect([...nature.keys()]).toEqual(['local', 'tourist']);
+    const local = nature.get('local')!.points[0]!;
+    expect(local.total_soh).toBeCloseTo(1000000, 6);
+    expect(local.total_excess).toBeCloseTo(100000.25, 6);
+    expect(local.ratio).toBeCloseTo(0.10000025, 8);
+    expect(local.sku_count_0sale).toBe(6);
+    expect(local.total_sku_carry).toBe(2050);
+    expect(local.ovs_carry_ratio).toBeCloseTo(6 / 2050, 12);
+    // 門店比率平均會是 (0.1 + null) / 2；加權必須是 100000.25 / 1000000
+    expect(local.ratio).not.toBeCloseTo(0.05, 2);
+
+    const tourist = nature.get('tourist')!.points[0]!;
+    expect(tourist.ratio).toBeCloseTo(59999.75 / 3000000, 12);
+    expect(tourist.ovs_carry_ratio).toBeCloseTo(7 / 800, 12);
+
+    // OM：IVY = HA02 + HC71；WINDY = HD09；以最新 SKU Carry 由大到小
+    const om = new Map(summary.group_trend.om.map((group) => [group.key, group]));
+    expect([...om.keys()]).toEqual(['om:IVY', 'om:WINDY']);
+    expect(om.get('om:IVY')!.label).toBe('IVY');
+    expect(om.get('om:IVY')!.points[0]!.ovs_carry_ratio).toBeCloseTo(6 / 2050, 12);
+    expect(om.get('om:WINDY')!.points[0]!.ratio).toBeCloseTo(59999.75 / 3000000, 12);
+  });
+
   it('returns null (not 0) for a store whose stock value is 0', async () => {
     const view = await getShopStockForStore('HC71');
     expect(view.has_data).toBe(true);
@@ -541,6 +573,19 @@ describe('shopStock service', () => {
     expect(week2.ovs_carry_ratio).toBe(0);
     expect(summary.kpi!.ovs_carry_ratio).toBe(0);
     expect(summary.kpi!.ovs_carry_ratio_wow_delta_pt).toBeCloseTo((0 - 13 / 2850) * 100, 10);
+
+    // 第二期夾具沒有 Shop Nature / OM：分組走勢要保留該期為缺值（null），不可當 0%
+    const tourist = summary.group_trend.nature.find((group) => group.key === 'tourist')!;
+    expect(tourist.points[1]!.report_date).toBe('2026-11-01');
+    expect(tourist.points[1]!.store_count).toBe(0);
+    expect(tourist.points[1]!.ratio).toBeNull();
+    expect(tourist.points[1]!.ovs_carry_ratio).toBeNull();
+    // 第二期是最後上載的報表，但沒有 OM 欄值：以最新報表為準，
+    // 所有期數（包括第一期）都會歸入「未填 OM」，不再沿用舊 OM。
+    const unassigned = summary.group_trend.om.find((group) => group.key === 'unassigned')!;
+    expect(unassigned.points[0]!.store_count).toBe(3);
+    expect(unassigned.points[1]!.store_count).toBe(3);
+    expect(summary.group_trend.om.some((group) => group.key === 'om:IVY')).toBe(false);
 
     const week = await getShopStockWeek('2026-11-01');
     const ha02 = week!.rows.find((r) => r.site_code === 'HA02')!;
@@ -1095,6 +1140,14 @@ describe.skipIf(!config.adminPassword)('shopStock admin routes (logged in)', () 
     const summary = await request(app).get('/api/admin/stock/summary').set('Cookie', session.cookie);
     expect(summary.status).toBe(200);
     expect(Array.isArray(summary.body.series)).toBe(true);
+    const groupTrend = summary.body.group_trend as {
+      total: { points: unknown[] };
+      nature: unknown[];
+      om: unknown[];
+    };
+    expect(groupTrend.total.points.length).toBe(summary.body.series.length);
+    expect(groupTrend.nature.length).toBeGreaterThan(0);
+    expect(groupTrend.om.length).toBeGreaterThan(0);
 
     const week = await request(app)
       .get('/api/admin/stock/weeks/2027-03-07')

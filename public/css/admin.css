@@ -738,7 +738,19 @@ body.stk-modal-open { overflow: hidden; }
 #stk_mtd_share[hidden] { display: none !important; }
 
 /* 店舖佔比：按 Shop Nature 分組的柱狀排名（跟 Excel「店舖佔比」報表排版）
-   每組獨立縮放，柱頂百分比直排以免 26px 柱寬溢出；組與組之間豎向排列、組內橫向滾動。 */
+   每組獨立縮放，柱頂百分比直排以免 28px 柱寬溢出；組與組之間豎向排列、組內橫向滾動。 */
+.stk-share-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px 12px;
+  flex-wrap: wrap;
+  margin-bottom: 10px;
+}
+/* 四個分區按鈕：窄螢幕容許換行，不然會撐爆卡片 */
+.stk-share-filter {
+  margin: 0;
+  flex-wrap: wrap;
+}
 .stk-share { display: flex; flex-direction: column; gap: 14px; }
 .stk-share-group {
   padding: 10px 12px 6px;

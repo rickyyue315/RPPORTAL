@@ -119,6 +119,14 @@ describe('static asset freshness', () => {
     expect(script).toContain('renderMtdShare');
     expect(script).toContain('stk-share-col');
     expect(script).toContain('natureGroupKey');
+    // 分區篩選：全部／民生區／混合區／遊客區，預設全部
+    expect(html).toContain('id="stk_share_nature"');
+    expect(html).toContain('id="stk_share_body"');
+    expect(html).toContain('data-stk-share-nature="all"');
+    expect(html).toContain('data-stk-share-nature="local"');
+    expect(html).toContain('data-stk-share-nature="mix"');
+    expect(html).toContain('data-stk-share-nature="tourist"');
+    expect(script).toContain('applyShareNature');
   });
 
   it('wires the designated SKU reply page, admin tab and direct link', () => {

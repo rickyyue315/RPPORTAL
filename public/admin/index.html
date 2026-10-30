@@ -566,7 +566,18 @@
               <p class="text-secondary small mt-1 mb-2" id="stk_mtd_desc">以本月最新一期快照計（MTD）；每店比率 = 該店分子 ÷ 分母，<b>不是全公司加權</b>（全公司加權見上方 Grand Total）。新店／上期無數據不參與排名，但仍計入全公司合計。</p>
               <div id="stk_mtd_error"></div>
               <div id="stk_mtd_rank"><div class="text-secondary small">載入中…</div></div>
-              <div id="stk_mtd_share" hidden></div>
+              <div id="stk_mtd_share" hidden>
+                <div class="stk-share-toolbar">
+                  <div class="seg-switch stk-share-filter" id="stk_share_nature" role="group" aria-label="顯示分區">
+                    <button class="seg-switch-btn is-active" type="button" data-stk-share-nature="all" aria-pressed="true">全部</button>
+                    <button class="seg-switch-btn" type="button" data-stk-share-nature="local" aria-pressed="false">民生區</button>
+                    <button class="seg-switch-btn" type="button" data-stk-share-nature="mix" aria-pressed="false">混合區</button>
+                    <button class="seg-switch-btn" type="button" data-stk-share-nature="tourist" aria-pressed="false">遊客區</button>
+                  </div>
+                  <span class="text-secondary small" id="stk_share_note"></span>
+                </div>
+                <div id="stk_share_body"></div>
+              </div>
             </div>
           </div>
         </div>

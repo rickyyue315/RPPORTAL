@@ -39,6 +39,8 @@
   let mtdPeriodInfo = null;
   /** MTD 顯示方式：rank = 排行榜（Top 15 表格）；share = 店舖佔比（按 Shop Nature 分組的柱狀排名） */
   let mtdView = 'rank';
+  /** 店舖佔比只顯示邊個分區：all = 全部（預設）／local／mix／tourist；不寫 localStorage，每次載入都回到全部 */
+  let shareNature = 'all';
   let weekPage = 1;
   let autoDate = '';
 
@@ -859,7 +861,7 @@
   /* ---- 店舖佔比：按 Shop Nature 分組的柱狀排名（跟 Excel「店舖佔比」報表排版） ---- */
 
   const MTD_RANK_DESC = '以本月最新一期快照計（MTD）；每店比率 = 該店分子 ÷ 分母，<b>不是全公司加權</b>（全公司加權見上方 Grand Total）。新店／上期無數據不參與排名，但仍計入全公司合計。';
-  const MTD_SHARE_DESC = '以本月最新一期快照計（MTD）；按報表 Shop Nature（Local／Mix／Tourist）分成民生區／混合區／遊客區，每組內按該店比率由高至低排列，柱頂為百分比。<b>每組柱高獨立縮放</b>，跨組比較請看數字；斜紋柱為新店／上期無數據，仍列出但不宜直接比較。';
+  const MTD_SHARE_DESC = '以本月最新一期快照計（MTD）；按報表 Shop Nature（Local／Mix／Tourist）分成民生區／混合區／遊客區，可用上方按鈕只看其中一個分區（預設全部）。每組內按該店比率由高至低排列，柱頂為百分比。<b>每組柱高獨立縮放</b>，跨組比較請看數字；斜紋柱為新店／上期無數據，仍列出但不宜直接比較。';
   const MTD_SHARE_GROUPS = [
     { key: 'local', label: '民生區' },
     { key: 'mix', label: '混合區' },
@@ -877,6 +879,15 @@
     return `nature:${raw}`;
   }
 
+  /** 分區篩選按鈕的選中狀態（全部／民生區／混合區／遊客區） */
+  function applyShareNature() {
+    document.querySelectorAll('[data-stk-share-nature]').forEach((btn) => {
+      const active = btn.dataset.stkShareNature === shareNature;
+      btn.classList.toggle('is-active', active);
+      btn.setAttribute('aria-pressed', active ? 'true' : 'false');
+    });
+  }
+
   function applyMtdView() {
     const rank = $('stk_mtd_rank');
     const share = $('stk_mtd_share');
@@ -884,6 +895,7 @@
     if (rank) rank.hidden = mtdView !== 'rank';
     if (share) share.hidden = mtdView !== 'share';
     if (desc) desc.innerHTML = mtdView === 'share' ? MTD_SHARE_DESC : MTD_RANK_DESC;
+    applyShareNature();
     document.querySelectorAll('[data-stk-mtd-view]').forEach((btn) => {
       const active = btn.dataset.stkMtdView === mtdView;
       btn.classList.toggle('is-active', active);
@@ -905,14 +917,18 @@
   function renderMtdShare() {
     const wrap = $('stk_mtd_share');
     if (!wrap) return;
+    const body = $('stk_share_body');
+    const note = $('stk_share_note');
+    const target = body || wrap;
     const isSku = groupMetric === 'sku';
     const pick = isSku ? (row) => num(row.ovs_carry_ratio) : (row) => num(row.ratio);
     const numOf = isSku ? (row) => num(row.sku_count_0sale) : (row) => num(row.deadstock_value);
     const denOf = isSku ? (row) => num(row.sku_carry_count) : (row) => num(row.shop_stock_value);
     const rows = Array.isArray(mtdWeekRows) ? mtdWeekRows : [];
+    if (note) note.textContent = '';
 
     if (!mtdWeekDate || !rows.length) {
-      wrap.innerHTML = `<div class="text-secondary small">${mtdWeekDate
+      target.innerHTML = `<div class="text-secondary small">${mtdWeekDate
         ? '此期沒有店舖數據。'
         : '上載存貨報表後會顯示店舖佔比。'}</div>`;
       return;
@@ -924,23 +940,44 @@
       if (!buckets.has(key)) buckets.set(key, []);
       buckets.get(key).push(row);
     }
-    const groups = MTD_SHARE_GROUPS
+    const allGroups = MTD_SHARE_GROUPS
       .filter((def) => buckets.has(def.key))
       .map((def) => ({ ...def, rows: buckets.get(def.key) }));
     for (const [key, list] of buckets) {
       if (MTD_SHARE_GROUPS.some((def) => def.key === key)) continue;
-      groups.push({
+      allGroups.push({
         key,
         label: key === 'unassigned' ? '未填 Shop Nature' : String(list[0].shop_nature || '').trim(),
         rows: list,
       });
     }
 
+    // 「全部／民生區／混合區／遊客區」只影響顯示邊幾組；選中的組別不存在時退回全部並說明
+    const selected = MTD_SHARE_GROUPS.find((def) => def.key === shareNature);
+    let groups = allGroups;
+    if (selected) {
+      groups = allGroups.filter((group) => group.key === selected.key);
+      if (!groups.length) {
+        groups = allGroups;
+        if (note) note.textContent = `此期沒有${selected.label}店舖，已顯示全部分區。`;
+      }
+    }
+    if (note && !note.textContent) {
+      const storeCount = groups.reduce((sum, group) => sum + group.rows.length, 0);
+      note.textContent = selected
+        ? `${selected.label} · ${storeCount} 店`
+        : `全部分區 · ${storeCount} 店`;
+    }
+    if (!groups.length) {
+      target.innerHTML = '<div class="text-secondary small">此期沒有任何分區資料。</div>';
+      return;
+    }
+
     const alert = isSku ? OVS_CARRY_RATIO_ALERT : 0.1;
     const color = isSku ? COLOR_RF : COLOR_MAIN;
     const detailLabel = isSku ? '不良 SKU ÷ SKU Carry' : '不良存貨值 ÷ 店舖存貨值';
 
-    wrap.innerHTML = groups.map((group) => {
+    target.innerHTML = groups.map((group) => {
       const sorted = group.rows.slice().sort((a, b) => {
         const av = pick(a);
         const bv = pick(b);
@@ -1948,6 +1985,22 @@
         if (label && label.scrollIntoView) label.scrollIntoView({ behavior: 'smooth', block: 'center' });
       });
     });
+
+    // 店舖佔比：只顯示某一個分區（全部／民生區／混合區／遊客區），換組不用重新打 API
+    const shareFilter = $('stk_share_nature');
+    if (shareFilter) {
+      shareFilter.addEventListener('click', (e) => {
+        const btn = e.target instanceof Element ? e.target.closest('[data-stk-share-nature]') : null;
+        if (!btn) return;
+        const next = ['local', 'mix', 'tourist'].includes(btn.dataset.stkShareNature)
+          ? btn.dataset.stkShareNature
+          : 'all';
+        if (next === shareNature) return;
+        shareNature = next;
+        applyShareNature();
+        renderMtdShare();
+      });
+    }
 
     // MTD 顯示方式切換：排行榜（Top 15 表格）／店舖佔比（分區柱狀排名）
     const mtdSwitch = $('stk_mtd_switch');

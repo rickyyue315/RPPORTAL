@@ -155,6 +155,146 @@
 .dash-chart svg { display: block; width: 100%; height: 100%; max-width: 100%; }
 .dash-chart-note { margin: 8px 0 0; }
 
+/* ---------- 存貨走勢口徑切換（每週不良存貨佔比／SKU ÷ Carry SKU） ---------- */
+.om-metric-switch {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 4px 0 12px;
+}
+.om-metric-btn {
+  padding: 7px 16px;
+  border: 1px solid #d3e3f2;
+  border-radius: 999px;
+  background: #f4f9fd;
+  color: #0a3d69;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.4;
+  cursor: pointer;
+  transition: background .15s ease, border-color .15s ease, color .15s ease;
+}
+.om-metric-btn:hover { background: #e4f0fb; }
+.om-metric-btn:focus-visible {
+  outline: 2px solid rgba(15, 92, 156, .35);
+  outline-offset: 1px;
+}
+.om-metric-btn.is-active {
+  background: #0f5c9c;
+  border-color: #0f5c9c;
+  color: #fff;
+}
+
+/* ---------- 管轄店舖不良佔比排名（柱狀，只列自己 OM 的店） ---------- */
+.om-share-intro { margin: 0 0 10px; }
+.om-share { display: flex; flex-direction: column; gap: 14px; }
+.om-share-group {
+  padding: 10px 12px 6px;
+  border: 1px solid #e3eef8;
+  border-radius: 10px;
+  background: #fbfdff;
+}
+.om-share-head {
+  display: flex;
+  align-items: baseline;
+  gap: 6px 12px;
+  flex-wrap: wrap;
+  margin-bottom: 2px;
+}
+.om-share-name { font-size: 13.5px; font-weight: 700; color: #0a3d69; }
+.om-share-meta {
+  font-size: 11.5px;
+  color: #5a6a78;
+  font-variant-numeric: tabular-nums;
+}
+.om-share-meta--total { font-size: 12.5px; font-weight: 700; color: #0a3d69; }
+/* 頂部留白放柱頂百分比（直排最長 7 個字符），否則 overflow 會裁掉 */
+.om-share-scroll { overflow-x: auto; padding: 46px 0 4px; }
+/* 店少時柱身拉伸填滿（最多 56px），店多時保持 34px 並橫向滾動 */
+.om-share-plot {
+  display: flex;
+  align-items: flex-end;
+  gap: 4px;
+  width: 100%;
+  height: 196px;
+}
+.om-share-col {
+  flex: 1 0 34px;
+  max-width: 56px;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  padding: 0;
+  border: none;
+  background: none;
+  font-family: inherit;
+  line-height: 1;
+  cursor: pointer;
+}
+.om-share-plotarea {
+  position: relative;
+  flex: 1 1 auto;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  min-height: 0;
+}
+.om-share-bar { position: relative; display: block; width: 18px; border-radius: 2px 2px 0 0; }
+.om-share-tip {
+  position: absolute;
+  left: 50%;
+  bottom: 100%;
+  margin: 0 0 3px -5px;
+  writing-mode: vertical-rl;
+  font-size: 9.5px;
+  font-style: normal;
+  font-weight: 600;
+  color: #41505e;
+  white-space: nowrap;
+}
+.om-share-site {
+  flex: 0 0 13px;
+  height: 13px;
+  font-family: Consolas, "Courier New", monospace;
+  font-size: 9.5px;
+  letter-spacing: -0.2px;
+  line-height: 13px;
+  color: #41505e;
+  text-align: center;
+  overflow: hidden;
+}
+.om-share-shop {
+  flex: 0 0 58px;
+  align-self: center;
+  height: 58px;
+  overflow: hidden;
+  writing-mode: vertical-rl;
+  font-size: 10.5px;
+  line-height: 1.08;
+  color: #5a6a78;
+}
+.om-share-col:hover .om-share-bar { filter: brightness(1.12); }
+.om-share-col:hover .om-share-site,
+.om-share-col:hover .om-share-shop { color: #0f5c9c; }
+.om-share-col:focus-visible {
+  outline: 2px solid rgba(15, 92, 156, .4);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+/* 離群值截斷：柱高以次高值為滿格，超出者在柱頂畫白線提示實際比率更高 */
+.om-share-col.is-capped .om-share-bar::after {
+  content: "";
+  position: absolute;
+  left: -1px;
+  right: -1px;
+  top: 0;
+  height: 3px;
+  background: #fff;
+  box-shadow: 0 -1px 0 rgba(15, 92, 156, .45);
+}
+
 /* ---------- 圖表本身（chart-lite.js） ---------- */
 .ct-empty {
   display: flex;

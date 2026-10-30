@@ -234,19 +234,20 @@ describe('OM portal', () => {
     );
     const batchId = batch.rows[0]!.id;
     for (const row of [
-      { site: 'HA02', shop: '駱克', om: 'Ivy', excess: 10, soh: 100, sku0: 1, rf: 8 },
-      { site: 'HA06', shop: '北角', om: 'Ivy', excess: 20, soh: 100, sku0: 2, rf: 7 },
-      { site: 'HA19', shop: '康山', om: 'Violet', excess: 900, soh: 1000, sku0: 9, rf: 9 },
+      { site: 'HA02', shop: '駱克', om: 'Ivy', excess: 10, soh: 100, sku0: 1, rf: 8, nature: 'Non Tourist' },
+      { site: 'HA06', shop: '北角', om: 'Ivy', excess: 20, soh: 100, sku0: 2, rf: 7, nature: 'Mix' },
+      { site: 'HA19', shop: '康山', om: 'Violet', excess: 900, soh: 1000, sku0: 9, rf: 9, nature: 'Tourist' },
     ]) {
       await db.query(
         `INSERT INTO shop_stock_snapshots
-           (batch_id, site_code, shop, om, sku_count_0sale, excess_value_0sale, shop_stock_value_cm, payload)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+           (batch_id, site_code, shop, om, shop_nature, sku_count_0sale, excess_value_0sale, shop_stock_value_cm, payload)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
         [
           batchId,
           row.site,
           row.shop,
           row.om,
+          row.nature,
           row.sku0,
           row.excess,
           row.soh,
@@ -276,6 +277,9 @@ describe('OM portal', () => {
     expect(ha02.total_sku_carry).toBe(10);
     expect(ha02.rf_sku_count).toBe(8);
     expect(ha02.ovs_carry_ratio).toBeCloseTo(1 / 10, 6);
+    // 排名圖要靠 shop_nature 分區（民生區／混合區／遊客區）
+    expect(ha02.shop_nature).toBe('Non Tourist');
+    expect(res.body.stores.find((s: { site_code: string }) => s.site_code === 'HA06').shop_nature).toBe('Mix');
 
     const selected = await agent.get('/api/portal/om/stock?site_code=HA02');
     expect(selected.status).toBe(200);

@@ -205,8 +205,16 @@ describe('static asset freshness', () => {
     expect(page).toContain('id="panel_om_zero"');
     expect(page).toContain('id="panel_om_dsku"');
     expect(page).toContain('id="panel_om_stock"');
-    expect(page).toContain('id="om_sku_chart"');
-    expect(page).toContain('id="om_sku_note"');
+    // 兩個走勢圖已合併成一張卡，用按鈕切換口徑（不再是 om_sku_chart 獨立卡）
+    expect(page).toContain('id="om_stock_metric"');
+    expect(page).toContain('data-om-stock-metric="value"');
+    expect(page).toContain('data-om-stock-metric="sku"');
+    expect(page).not.toContain('id="om_sku_chart"');
+    // 管轄店舖不良佔比排名（只列自己 OM 的店）
+    expect(page).toContain('id="om_share_chart"');
+    expect(script).toContain('renderOmShare');
+    expect(script).toContain('data-om-stock-metric');
+    expect(script).toContain('setStockMetric');
     expect(page).toContain('不良 SKU / Carry SKU');
     expect(page).toContain('/portal/js/om.js');
     expect(page).toContain('/portal/js/om-designated-sku.js');

@@ -176,7 +176,7 @@
       <section id="panel_om_stock" role="tabpanel" aria-labelledby="tab_om_stock" tabindex="0" hidden>
         <div class="card dash-head-card">
           <h2>管轄店舖存貨走勢</h2>
-          <p class="dash-intro">OM 合計以管轄店舖加權計算，並與全公司加權平均比較。除了「不良存貨值 ÷ 店舖存貨值」，另設「不良存貨 SKU ÷ Carry SKU」走勢，方便了解存貨質素與 SKU 結構。可選擇單一店舖查看其走勢；只會顯示你管理範圍內的店舖。</p>
+          <p class="dash-intro">OM 合計以管轄店舖加權計算，並與全公司加權平均比較。走勢圖上方可用按鈕切換「不良存貨值 ÷ 店舖存貨值」或「不良存貨 SKU ÷ Carry SKU」，方便了解存貨質素與 SKU 結構；圖上每個數據點會直接標示數值。可選擇單一店舖查看其走勢；只會顯示你管理範圍內的店舖。</p>
           <div class="zs-toolbar" role="search">
             <div class="field">
               <label for="om_stock_site">顯示範圍</label>
@@ -195,8 +195,12 @@
 
         <div class="card dash-card" id="om_stock_chart_card">
           <div class="dash-card-head">
-            <h3>每週不良存貨佔比</h3>
+            <h3>存貨走勢</h3>
             <span class="hint" id="om_stock_period"></span>
+          </div>
+          <div class="om-metric-switch" id="om_stock_metric" role="group" aria-label="走勢口徑">
+            <button class="om-metric-btn is-active" type="button" data-om-stock-metric="value" aria-pressed="true">每週不良存貨佔比</button>
+            <button class="om-metric-btn" type="button" data-om-stock-metric="sku" aria-pressed="false">每週不良存貨 SKU ÷ Carry SKU</button>
           </div>
           <div class="dash-legend" id="om_stock_legend">
             <span class="dash-legend-item"><i class="dash-line dash-line--self" aria-hidden="true"></i><span id="om_stock_legend_self">OM 管轄合計</span></span>
@@ -206,17 +210,13 @@
           <p class="hint dash-chart-note" id="om_stock_note"></p>
         </div>
 
-        <div class="card dash-card" id="om_sku_chart_card">
+        <div class="card dash-card" id="om_share_card">
           <div class="dash-card-head">
-            <h3>每週不良存貨 SKU ÷ Carry SKU</h3>
-            <span class="hint" id="om_sku_period"></span>
+            <h3>管轄店舖不良佔比排名</h3>
+            <span class="hint" id="om_share_note"></span>
           </div>
-          <div class="dash-legend" id="om_sku_legend">
-            <span class="dash-legend-item"><i class="dash-line dash-line--self" aria-hidden="true"></i><span id="om_sku_legend_self">OM 管轄合計</span></span>
-            <span class="dash-legend-item"><i class="dash-line dash-line--company" aria-hidden="true"></i>全公司合計（加權）</span>
-          </div>
-          <div class="dash-chart" id="om_sku_chart"></div>
-          <p class="hint dash-chart-note" id="om_sku_note"></p>
+          <p class="hint om-share-intro">只列你管轄的店舖，按最新一期比率由高至低；每組柱高獨立縮放，跨組比較請看百分比數字。按任何一條柱可切換上方走勢圖到該店。</p>
+          <div id="om_share_chart"><div class="ct-empty">載入中…</div></div>
         </div>
 
         <div class="card">

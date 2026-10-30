@@ -261,7 +261,8 @@
 
     const padL = 46;
     const padR = 12;
-    const padT = 12;
+    // 顯示數值標籤時頂部要留位（最高點的標籤在點上方），否則會被裁掉
+    const padT = o.valueLabels ? 28 : 12;
     const padB = 24;
     const innerW = Math.max(40, W - padL - padR);
     const innerH = Math.max(40, H - padT - padB);
@@ -370,6 +371,41 @@
       }
       dots.push({ series: s, plotted });
     });
+
+    /* --- 數值標籤（opt-in）：第 1 條線標在點上方、第 2 條標在下方；
+       期數太密時用 barLabelIndices 抽樣（永遠保留最新一期），避免疊字。 --- */
+    if (o.valueLabels) {
+      const labelOf = typeof o.labelFormat === 'function' ? o.labelFormat : yFmt;
+      const perLabel = 44;
+      const maxLabels = Math.max(2, Math.floor(innerW / perLabel));
+      dots.forEach((entry, seriesIndex) => {
+        const plotted = entry.plotted;
+        if (!plotted.length) return;
+        const above = seriesIndex === 0;
+        const keep = new Set(barLabelIndices(plotted.length, maxLabels));
+        plotted.forEach((p, i) => {
+          if (!keep.has(i) || !Number.isFinite(p.y)) return;
+          // 首尾點改用 start／end 對齊，免得文字半截跑出繪圖區
+          const anchor = i === 0 ? 'start' : (i === plotted.length - 1 ? 'end' : 'middle');
+          const offsetX = i === 0 ? -2 : (i === plotted.length - 1 ? 2 : 0);
+          const label = svgEl('text', {
+            x: round(p.x + offsetX, 2),
+            y: round(p.y + (above ? -7 : 14), 2),
+            'text-anchor': anchor,
+            fill: entry.series.color,
+            'font-size': 9.5,
+            'font-weight': 600,
+            'font-family': 'inherit',
+            'paint-order': 'stroke',
+            stroke: '#fff',
+            'stroke-width': 2.5,
+            'stroke-linejoin': 'round',
+          });
+          label.textContent = labelOf(p.v);
+          svg.appendChild(label);
+        });
+      });
+    }
 
     /* --- tooltip 層 --- */
     const guide = svgEl('line', {

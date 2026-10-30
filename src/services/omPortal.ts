@@ -324,6 +324,8 @@ export interface OmStockSeriesPoint {
 export interface OmStockStoreRow {
   site_code: string;
   shop: string;
+  /** 報表 Shop Nature（Local / Non Tourist / Mix / Tourist）；該店未有任何快照時為 '' */
+  shop_nature: string;
   report_date: string | null;
   report_kind: string;
   ratio: number | null;
@@ -418,6 +420,7 @@ function skuCount(value: unknown): number | null {
 interface OmStockRawRow {
   site_code: string;
   shop: string;
+  shop_nature: string;
   report_date: string;
   report_kind: string;
   excess_value_0sale: unknown;
@@ -440,6 +443,7 @@ export async function getOmStockSummary(username: string, selectedSiteCode = '')
   const r = await query<OmStockRawRow>(
     `SELECT s.site_code,
             COALESCE(s.shop, '') AS shop,
+            COALESCE(s.shop_nature, '') AS shop_nature,
             b.report_date::text AS report_date,
             b.report_kind,
             s.excess_value_0sale,
@@ -458,6 +462,7 @@ export async function getOmStockSummary(username: string, selectedSiteCode = '')
     empty.stores = stores.map((s) => ({
       site_code: s.site_code,
       shop: s.shop,
+      shop_nature: '',
       report_date: null,
       report_kind: '',
       ratio: null,
@@ -573,6 +578,7 @@ export async function getOmStockSummary(username: string, selectedSiteCode = '')
       return {
         site_code: store.site_code,
         shop: store.shop,
+        shop_nature: '',
         report_date: null,
         report_kind: '',
         ratio: null,
@@ -595,6 +601,7 @@ export async function getOmStockSummary(username: string, selectedSiteCode = '')
     return {
       site_code: store.site_code,
       shop: store.shop,
+      shop_nature: latest.shop_nature,
       report_date: String(latest.report_date).slice(0, 10),
       report_kind: latest.report_kind,
       ratio: latestRatio,

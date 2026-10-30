@@ -206,6 +206,14 @@
   /* 共用格式化                                                          */
   /* ------------------------------------------------------------------ */
 
+  /** 不良 SKU 比率警示線（跟後台存貨頁一致：≥ 20% 標紅） */
+  const OVS_CARRY_RATIO_ALERT = 0.2;
+
+  /** 存貨走勢口徑：value = 不良存貨值 ÷ 店舖存貨值；sku = 不良 SKU ÷ Carry SKU */
+  let omStockMetric = 'value';
+  /** 最近一次 /stock 回應，切換口徑時重用，不用重新打 API */
+  let omStockData = null;
+
   function num(value) {
     if (value === null || value === undefined || value === '') return null;
     const n = Number(value);
@@ -691,6 +699,9 @@
       emptyText: opts.emptyText || '暫無數據',
       yFormat: (v) => `${(Number(v) * 100).toFixed(1)}%`,
       tipFormat: (v) => fmtRatio(v),
+      // 圖表直接標數值：兩條線分上下，期數太密時自動抽樣（永遠保留最新一期）
+      valueLabels: true,
+      labelFormat: (v) => `${(Number(v) * 100).toFixed(1)}%`,
       ariaLabel: `${opts.selfLabel || 'OM 管轄合計'}${opts.ariaLabel || '走勢'}，共 ${usable.length} 期`,
     });
     if (note) note.textContent = opts.noteText ? opts.noteText(usable) : '點或懸停圖表可查看該期數值。';
@@ -702,36 +713,42 @@
       : 'OM 管轄合計';
   }
 
+  /**
+   * 存貨走勢（單一圖卡）：value = 不良存貨值 ÷ 店舖存貨值；sku = 不良 SKU ÷ Carry SKU。
+   * 兩個口徑共用同一個容器，只切換 valueKey／說明，不重新打 API。
+   */
   function renderStockChart(data) {
     const selected = data.selected_store;
     const selfLabel = currentSelfLabel(data);
     if ($('om_stock_legend_self')) $('om_stock_legend_self').textContent = selfLabel;
+
+    const isSku = omStockMetric === 'sku';
+    const series = selected ? selected.series : data.series;
+
+    if (!isSku) {
+      renderRatioTrend({
+        elId: 'om_stock_chart',
+        periodId: 'om_stock_period',
+        noteId: 'om_stock_note',
+        valueKey: 'ratio',
+        series,
+        company: data.company_series || [],
+        selfLabel,
+        emptyText: '暫無可顯示的存貨走勢。',
+        ariaLabel: '不良存貨佔比趨勢',
+        noteText: () => '點或懸停圖表可查看該期數值；OM 合計以管轄店舖加權計算。',
+      });
+      return;
+    }
+
+    const company = (data.company_series || []).filter((row) => row.ovs_carry_ratio !== null);
+    const companyByDate = new Map((data.company_series || []).map((row) => [row.report_date, row.ovs_carry_ratio]));
     renderRatioTrend({
       elId: 'om_stock_chart',
       periodId: 'om_stock_period',
       noteId: 'om_stock_note',
-      valueKey: 'ratio',
-      series: selected ? selected.series : data.series,
-      company: data.company_series || [],
-      selfLabel,
-      emptyText: '暫無可顯示的存貨走勢。',
-      ariaLabel: '不良存貨佔比趨勢',
-      noteText: () => '點或懸停圖表可查看該期數值；OM 合計以管轄店舖加權計算。',
-    });
-  }
-
-  function renderSkuChart(data) {
-    const selected = data.selected_store;
-    const selfLabel = currentSelfLabel(data);
-    if ($('om_sku_legend_self')) $('om_sku_legend_self').textContent = selfLabel;
-    const company = (data.company_series || []).filter((row) => row.ovs_carry_ratio !== null);
-    const companyByDate = new Map((data.company_series || []).map((row) => [row.report_date, row.ovs_carry_ratio]));
-    renderRatioTrend({
-      elId: 'om_sku_chart',
-      periodId: 'om_sku_period',
-      noteId: 'om_sku_note',
       valueKey: 'ovs_carry_ratio',
-      series: selected ? selected.series : data.series,
+      series,
       company,
       selfLabel,
       emptyText: '暫無可顯示的 SKU 比率走勢。',
@@ -744,6 +761,149 @@
           (cmp === null || cmp === undefined ? '；全公司暫無對比。' : `；全公司 ${fmtRatio(cmp)}。`) +
           ' Carry SKU = No. of RF SKU + ND with Stock。';
       },
+    });
+  }
+
+  /* ---- 管轄店舖不良佔比排名（只列自己 OM 的店） ---- */
+
+  const OM_SHARE_GROUPS = [
+    { key: 'local', label: '民生區' },
+    { key: 'mix', label: '混合區' },
+    { key: 'tourist', label: '遊客區' },
+  ];
+
+  /** 報表 Shop Nature 歸一化（與後端 normalizeShopNature 同一套；未知值保留） */
+  function omNatureKey(value) {
+    const raw = String(value ?? '').trim();
+    const normalized = raw.toLowerCase().replace(/[\s_-]+/g, ' ');
+    if (['local', 'non tourist', 'nontourist', 'resident', '民生區', '本地客'].includes(normalized)) return 'local';
+    if (['mix', 'mixed', '混合區', '混合'].includes(normalized)) return 'mix';
+    if (['tourist', '遊客區'].includes(normalized)) return 'tourist';
+    if (!raw) return 'unassigned';
+    return `nature:${raw}`;
+  }
+
+  /**
+   * 每店一條柱，跟 admin「店舖佔比」同一套視覺：柱頂百分比、柱底店號＋店名。
+   * 全部店舖都列出（含缺值），缺值畫 2px 灰柱排最後，永不當 0%。
+   */
+  function renderOmShare(data) {
+    const wrap = $('om_share_chart');
+    const note = $('om_share_note');
+    if (!wrap) return;
+    const isSku = omStockMetric === 'sku';
+    const pick = isSku ? (row) => num(row.ovs_carry_ratio) : (row) => num(row.ratio);
+    const numOf = isSku ? (row) => num(row.sku_count_0sale) : (row) => num(row.total_excess);
+    const denOf = isSku ? (row) => num(row.total_sku_carry) : (row) => num(row.total_soh);
+    const rows = Array.isArray(data.stores) ? data.stores : [];
+    if (note) note.textContent = '';
+
+    if (!rows.length) {
+      wrap.innerHTML = '<div class="ct-empty">暫無可顯示的店舖排名。</div>';
+      return;
+    }
+
+    const buckets = new Map();
+    for (const row of rows) {
+      const key = omNatureKey(row.shop_nature ?? row.nature ?? '');
+      if (!buckets.has(key)) buckets.set(key, []);
+      buckets.get(key).push(row);
+    }
+    const groups = OM_SHARE_GROUPS
+      .filter((def) => buckets.has(def.key))
+      .map((def) => ({ ...def, rows: buckets.get(def.key) }));
+    for (const [key, list] of buckets) {
+      if (OM_SHARE_GROUPS.some((def) => def.key === key)) continue;
+      groups.push({ key, label: key === 'unassigned' ? '未填 Shop Nature' : String(list[0].shop_nature || '').trim(), rows: list });
+    }
+
+    const alert = isSku ? OVS_CARRY_RATIO_ALERT : 0.1;
+    const storeCount = rows.length;
+    const periodText = rows.map((row) => row.report_date).filter(Boolean).sort().pop() || '';
+    if (note) {
+      note.textContent = `${periodText ? `${fmtDate(periodText)} · ` : ''}${storeCount} 店`;
+    }
+
+    wrap.innerHTML = `<div class="om-share">${groups.map((group) => {
+      const sorted = group.rows.slice().sort((a, b) => {
+        const av = pick(a);
+        const bv = pick(b);
+        if (av === null && bv === null) return String(a.site_code || '').localeCompare(String(b.site_code || ''));
+        if (av === null) return 1;
+        if (bv === null) return -1;
+        if (bv !== av) return bv - av;
+        return String(a.site_code || '').localeCompare(String(b.site_code || ''));
+      });
+      const usable = sorted.filter((row) => pick(row) !== null);
+      const topValue = usable.length ? (pick(usable[0]) || 0) : 0;
+      const secondValue = usable.length > 1 ? (pick(usable[1]) || 0) : topValue;
+      const scaleMax = topValue > 0 && secondValue > 0 && topValue > secondValue * 1.6 ? secondValue : topValue;
+      const capped = scaleMax < topValue;
+
+      let numSum = 0;
+      let denSum = 0;
+      let hasNum = false;
+      let hasDen = false;
+      for (const row of group.rows) {
+        const n = numOf(row);
+        const d = denOf(row);
+        if (n !== null) { numSum += n; hasNum = true; }
+        if (d !== null && d > 0) { denSum += d; hasDen = true; }
+      }
+      const weighted = hasNum && hasDen && denSum > 0 ? numSum / denSum : null;
+
+      const cols = sorted.map((row) => {
+        const ratio = pick(row);
+        const n = numOf(row);
+        const d = denOf(row);
+        const heightStyle = ratio === null || scaleMax <= 0
+          ? '2px'
+          : `${Math.max(1.5, Math.min(100, (ratio / scaleMax) * 100)).toFixed(1)}%`;
+        const overflow = ratio !== null && capped && ratio > scaleMax * 1.02;
+        const barColor = ratio === null ? '#c8d3de' : ratio >= alert ? '#c0392b' : '#0f766e';
+        const site = String(row.site_code || '');
+        const fullName = String(row.shop || '').trim();
+        const tipParts = [
+          `${site} ${fullName}`.trim(),
+          ratio === null ? '比率缺值' : fmtRatio(ratio),
+          isSku ? `${n ?? '—'} ÷ ${d ?? '—'}` : `${fmtMoney(n)} ÷ ${fmtMoney(d)}`,
+          row.report_date ? fmtDate(row.report_date) : '',
+        ].filter(Boolean);
+        return `<button type="button" class="om-share-col${ratio === null ? ' is-missing' : ''}${overflow ? ' is-capped' : ''}"
+          data-om-share-site="${esc(site)}" title="${esc(tipParts.join('｜'))}" aria-label="${esc(tipParts.join('｜'))}">
+          <span class="om-share-plotarea">
+            <i class="om-share-bar" style="height:${heightStyle};background:${barColor}">${ratio === null ? '' : `<b class="om-share-tip">${fmtRatio(ratio)}</b>`}</i>
+          </span>
+          <span class="om-share-site">${esc(site)}</span>
+          <span class="om-share-shop" title="${esc(fullName)}">${esc(fullName.length > 16 ? `${fullName.slice(0, 16)}…` : fullName)}</span>
+        </button>`;
+      }).join('');
+
+      const metaBits = [
+        { text: `${group.rows.length} 店` },
+        weighted === null ? { text: '加權 —' } : { text: `加權 ${fmtRatio(weighted)}`, total: true },
+        ...(usable.length ? [{ text: `最高 ${fmtRatio(topValue)}` }] : []),
+        ...(capped ? [{ text: '最高柱截斷' }] : []),
+        ...(group.rows.length - usable.length ? [{ text: `${group.rows.length - usable.length} 間缺值` }] : []),
+      ];
+
+      return `<section class="om-share-group">
+        <div class="om-share-head">
+          <span class="om-share-name">${esc(group.label)}</span>
+          ${metaBits.map((item) => `<span class="om-share-meta${item.total ? ' om-share-meta--total' : ''}">${esc(item.text)}</span>`).join('')}
+        </div>
+        <div class="om-share-scroll"><div class="om-share-plot">${cols}</div></div>
+      </section>`;
+    }).join('')}</div>`;
+
+    // 按柱 = 把上方走勢圖切到該店（跟表格的店號連結同一行為）
+    wrap.querySelectorAll('[data-om-share-site]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const site = btn.dataset.omShareSite || '';
+        if (!site) return;
+        if ($('om_stock_site')) $('om_stock_site').value = site;
+        loadStock();
+      });
     });
   }
 
@@ -782,14 +942,30 @@
     const site = $('om_stock_site')?.value || '';
     try {
       const data = await omApi(`/api/portal/om/stock${site ? `?site_code=${encodeURIComponent(site)}` : ''}`);
+      omStockData = data;
       renderStockKpi(data);
       renderStockChart(data);
-      renderSkuChart(data);
+      renderOmShare(data);
       renderStockStores(data);
       showAlert($('om_stock_error'), '', '');
     } catch (err) {
       showAlert($('om_stock_error'), 'error', esc(err.message));
     }
+  }
+
+  /** 切換走勢口徑：兩個圖卡已合併，只重畫圖與排名，不重新打 API */
+  function setStockMetric(metric) {
+    const next = metric === 'sku' ? 'sku' : 'value';
+    if (next === omStockMetric) return;
+    omStockMetric = next;
+    document.querySelectorAll('[data-om-stock-metric]').forEach((btn) => {
+      const active = btn.dataset.omStockMetric === omStockMetric;
+      btn.classList.toggle('is-active', active);
+      btn.setAttribute('aria-pressed', active ? 'true' : 'false');
+    });
+    if (!omStockData) return;
+    renderStockChart(omStockData);
+    renderOmShare(omStockData);
   }
 
   /* ------------------------------------------------------------------ */
@@ -817,6 +993,11 @@
     $('om_zs_save')?.addEventListener('click', saveZeroReply);
     $('om_stock_refresh')?.addEventListener('click', () => loadStock());
     $('om_stock_site')?.addEventListener('change', () => loadStock());
+    $('om_stock_metric')?.addEventListener('click', (e) => {
+      const btn = e.target instanceof Element ? e.target.closest('[data-om-stock-metric]') : null;
+      if (!btn) return;
+      setStockMetric(btn.dataset.omStockMetric);
+    });
     bindTabs();
   }
 

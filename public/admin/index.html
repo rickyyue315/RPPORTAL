@@ -553,13 +553,20 @@
             <div id="stk_group_error"></div>
 
             <div class="stk-mtd-section" id="stk_mtd_section">
-              <div class="d-flex align-items-baseline gap-2 flex-wrap">
-                <h5 class="mb-0" id="stk_mtd_title">當月 MTD 不良 SKU 佔比排名</h5>
-                <span class="text-secondary small" id="stk_mtd_note">載入中…</span>
+              <div class="stk-mtd-head">
+                <div class="stk-mtd-heading">
+                  <h5 class="mb-0" id="stk_mtd_title">當月 MTD 不良 SKU 佔比排名</h5>
+                  <span class="text-secondary small" id="stk_mtd_note">載入中…</span>
+                </div>
+                <div class="seg-switch stk-mtd-switch" id="stk_mtd_switch" role="tablist" aria-label="排名顯示方式">
+                  <button class="seg-switch-btn is-active" type="button" role="tab" aria-selected="true" data-stk-mtd-view="rank">排行榜</button>
+                  <button class="seg-switch-btn" type="button" role="tab" aria-selected="false" data-stk-mtd-view="share">店舖佔比</button>
+                </div>
               </div>
-              <p class="text-secondary small mt-1 mb-2">以本月最新一期快照計（MTD）；每店比率 = 該店分子 ÷ 分母，<b>不是全公司加權</b>（全公司加權見上方 Grand Total）。新店／上期無數據不參與排名，但仍計入全公司合計。</p>
+              <p class="text-secondary small mt-1 mb-2" id="stk_mtd_desc">以本月最新一期快照計（MTD）；每店比率 = 該店分子 ÷ 分母，<b>不是全公司加權</b>（全公司加權見上方 Grand Total）。新店／上期無數據不參與排名，但仍計入全公司合計。</p>
               <div id="stk_mtd_error"></div>
               <div id="stk_mtd_rank"><div class="text-secondary small">載入中…</div></div>
+              <div id="stk_mtd_share" hidden></div>
             </div>
           </div>
         </div>

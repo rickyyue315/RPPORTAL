@@ -37,6 +37,8 @@
   let mtdWeekDate = '';
   let mtdWeekRows = [];
   let mtdPeriodInfo = null;
+  /** MTD 顯示方式：rank = 排行榜（Top 15 表格）；share = 店舖佔比（按 Shop Nature 分組的柱狀排名） */
+  let mtdView = 'rank';
   let weekPage = 1;
   let autoDate = '';
 
@@ -528,7 +530,7 @@
       setResult('stk_rf_error', 'info', '');
       renderKpi(data, series);
       renderGroupChart(data, series);
-      renderMtdRanking();
+      renderMtd();
       renderChart(data, series);
       renderRfDashboard(data, series);
       if (!selectedWeek) selectedWeek = series.length ? String(series[series.length - 1].report_date).slice(0, 10) : '';
@@ -854,26 +856,194 @@
     </div>`;
   }
 
+  /* ---- 店舖佔比：按 Shop Nature 分組的柱狀排名（跟 Excel「店舖佔比」報表排版） ---- */
+
+  const MTD_RANK_DESC = '以本月最新一期快照計（MTD）；每店比率 = 該店分子 ÷ 分母，<b>不是全公司加權</b>（全公司加權見上方 Grand Total）。新店／上期無數據不參與排名，但仍計入全公司合計。';
+  const MTD_SHARE_DESC = '以本月最新一期快照計（MTD）；按報表 Shop Nature（Local／Mix／Tourist）分成民生區／混合區／遊客區，每組內按該店比率由高至低排列，柱頂為百分比。<b>每組柱高獨立縮放</b>，跨組比較請看數字；斜紋柱為新店／上期無數據，仍列出但不宜直接比較。';
+  const MTD_SHARE_GROUPS = [
+    { key: 'local', label: '民生區' },
+    { key: 'mix', label: '混合區' },
+    { key: 'tourist', label: '遊客區' },
+  ];
+
+  /** 報表 Shop Nature 歸一化（與後端 normalizeShopNature 同一套；未知值保留，不會被靜默丟棄） */
+  function natureGroupKey(value) {
+    const raw = String(value ?? '').trim();
+    const normalized = raw.toLowerCase().replace(/[\s_-]+/g, ' ');
+    if (['local', 'non tourist', 'nontourist', 'resident', '民生區', '本地客'].includes(normalized)) return 'local';
+    if (['mix', 'mixed', '混合區', '混合'].includes(normalized)) return 'mix';
+    if (['tourist', '遊客區'].includes(normalized)) return 'tourist';
+    if (!raw) return 'unassigned';
+    return `nature:${raw}`;
+  }
+
+  function applyMtdView() {
+    const rank = $('stk_mtd_rank');
+    const share = $('stk_mtd_share');
+    const desc = $('stk_mtd_desc');
+    if (rank) rank.hidden = mtdView !== 'rank';
+    if (share) share.hidden = mtdView !== 'share';
+    if (desc) desc.innerHTML = mtdView === 'share' ? MTD_SHARE_DESC : MTD_RANK_DESC;
+    document.querySelectorAll('[data-stk-mtd-view]').forEach((btn) => {
+      const active = btn.dataset.stkMtdView === mtdView;
+      btn.classList.toggle('is-active', active);
+      btn.setAttribute('aria-selected', active ? 'true' : 'false');
+    });
+  }
+
+  /** 兩個 MTD 視圖一齊畫，最後只顯示 mtdView 揀嘅一個 */
+  function renderMtd() {
+    renderMtdRanking();
+    renderMtdShare();
+    applyMtdView();
+  }
+
+  /**
+   * 店舖佔比：每組列出「全部」店舖（跟報表），柱高以該組最高值為滿格。
+   * 缺值（無 SKU Carry／不良 SKU 數）排在每組最後並顯示「—」，不會當成 0% 參與比較。
+   */
+  function renderMtdShare() {
+    const wrap = $('stk_mtd_share');
+    if (!wrap) return;
+    const isSku = groupMetric === 'sku';
+    const pick = isSku ? (row) => num(row.ovs_carry_ratio) : (row) => num(row.ratio);
+    const numOf = isSku ? (row) => num(row.sku_count_0sale) : (row) => num(row.deadstock_value);
+    const denOf = isSku ? (row) => num(row.sku_carry_count) : (row) => num(row.shop_stock_value);
+    const rows = Array.isArray(mtdWeekRows) ? mtdWeekRows : [];
+
+    if (!mtdWeekDate || !rows.length) {
+      wrap.innerHTML = `<div class="text-secondary small">${mtdWeekDate
+        ? '此期沒有店舖數據。'
+        : '上載存貨報表後會顯示店舖佔比。'}</div>`;
+      return;
+    }
+
+    const buckets = new Map();
+    for (const row of rows) {
+      const key = natureGroupKey(row.shop_nature);
+      if (!buckets.has(key)) buckets.set(key, []);
+      buckets.get(key).push(row);
+    }
+    const groups = MTD_SHARE_GROUPS
+      .filter((def) => buckets.has(def.key))
+      .map((def) => ({ ...def, rows: buckets.get(def.key) }));
+    for (const [key, list] of buckets) {
+      if (MTD_SHARE_GROUPS.some((def) => def.key === key)) continue;
+      groups.push({
+        key,
+        label: key === 'unassigned' ? '未填 Shop Nature' : String(list[0].shop_nature || '').trim(),
+        rows: list,
+      });
+    }
+
+    const alert = isSku ? OVS_CARRY_RATIO_ALERT : 0.1;
+    const color = isSku ? COLOR_RF : COLOR_MAIN;
+    const detailLabel = isSku ? '不良 SKU ÷ SKU Carry' : '不良存貨值 ÷ 店舖存貨值';
+
+    wrap.innerHTML = groups.map((group) => {
+      const sorted = group.rows.slice().sort((a, b) => {
+        const av = pick(a);
+        const bv = pick(b);
+        if (av === null && bv === null) return String(a.site_code || '').localeCompare(String(b.site_code || ''));
+        if (av === null) return 1;
+        if (bv === null) return -1;
+        if (bv !== av) return bv - av;
+        return String(a.site_code || '').localeCompare(String(b.site_code || ''));
+      });
+      const usable = sorted.filter((row) => pick(row) !== null);
+      const topValue = usable.length ? (pick(usable[0]) || 0) : 0;
+      const secondValue = usable.length > 1 ? (pick(usable[1]) || 0) : topValue;
+      // 離群（最大 > 次大 × 1.6）時改以次大值為滿格：否則一間異常店會把同組其餘 40 間壓成貼底的矮柱。
+      // 柱高只影響視覺比例，柱頂數字仍是真實比率。
+      const scaleMax = topValue > 0 && secondValue > 0 && topValue > secondValue * 1.6
+        ? secondValue
+        : topValue;
+      const capped = scaleMax < topValue;
+
+      // 組加權 = Σ 分子 ÷ Σ 分母（缺值不當 0），呼應上方 Grand Total 的口徑
+      let numSum = 0;
+      let denSum = 0;
+      let hasNum = false;
+      let hasDen = false;
+      for (const row of group.rows) {
+        const n = numOf(row);
+        const d = denOf(row);
+        if (n !== null) { numSum += n; hasNum = true; }
+        if (d !== null && d > 0) { denSum += d; hasDen = true; }
+      }
+      const weighted = hasNum && hasDen ? numSum / denSum : null;
+      const newCount = group.rows.filter((row) => row.is_new).length;
+      const missingCount = group.rows.length - usable.length;
+
+      const cols = sorted.map((row) => {
+        const ratio = pick(row);
+        const n = numOf(row);
+        const d = denOf(row);
+        // 缺值不畫高度（留 2px 灰柱示意「有此店但無數據」），有效值最少 1.5% 讓 0% 仍可見
+        const heightStyle = ratio === null || scaleMax <= 0
+          ? '2px'
+          : `${Math.max(1.5, Math.min(100, (ratio / scaleMax) * 100)).toFixed(1)}%`;
+        const overflow = ratio !== null && capped && ratio > scaleMax * 1.02;
+        const barColor = ratio === null ? '#c8d3de' : ratio >= alert ? '#c0392b' : color;
+        const site = String(row.site_code || '');
+        const fullName = shopLabel(row);
+        const reason = row.new_reason === 'new_store' ? '新店（觀察期內）' : '上期無數據';
+        const tip = [
+          `${site} ${fullName}`.trim(),
+          ratio === null ? '比率缺值' : fmtRatio(ratio),
+          `${detailLabel}：${isSku ? `${fmtInt(n)} ÷ ${fmtInt(d)}` : `${fmtMoney(n)} ÷ ${fmtMoney(d)}`}`,
+          row.is_new ? `${reason}，不參與排行榜` : '',
+        ].filter(Boolean).join('｜');
+        return `<button type="button" class="stk-share-col${row.is_new ? ' is-new' : ''}${ratio === null ? ' is-missing' : ''}${overflow ? ' is-capped' : ''}"
+          data-stk-mtd-site="${escAttr(site)}" data-stk-mtd-date="${escAttr(mtdWeekDate)}"
+          title="${escAttr(tip)}" aria-label="${escAttr(tip)}">
+          <span class="stk-share-plotarea">
+            <i class="stk-share-bar" style="height:${heightStyle};background:${barColor}">${ratio === null ? '' : `<b class="stk-share-tip">${fmtRatio(ratio)}</b>`}</i>
+          </span>
+          <span class="stk-share-site">${esc(site)}</span>
+          <span class="stk-share-shop" title="${escAttr(fullName)}">${esc(shortShop(fullName))}</span>
+        </button>`;
+      }).join('');
+
+      const metaBits = [
+        { text: `${group.rows.length} 店` },
+        weighted === null ? { text: '加權 —' } : { text: `加權 ${fmtRatio(weighted)}`, total: true },
+        ...(usable.length ? [{ text: `最高 ${fmtRatio(topValue)}` }] : []),
+        ...(capped ? [{ text: '最高柱截斷' }] : []),
+        ...(newCount ? [{ text: `${newCount} 間新店` }] : []),
+        ...(missingCount ? [{ text: `${missingCount} 間缺值` }] : []),
+      ];
+
+      return `<section class="stk-share-group">
+        <div class="stk-share-head">
+          <span class="stk-share-group-name">${esc(group.label)}</span>
+          ${metaBits.map((item) => `<span class="stk-share-group-meta${item.total ? ' is-total' : ''}">${esc(item.text)}</span>`).join('')}
+        </div>
+        <div class="stk-share-scroll"><div class="stk-share-plot">${cols}</div></div>
+      </section>`;
+    }).join('') + `<p class="text-secondary small mt-2 mb-0">每組柱高獨立縮放（跨組比較請看百分比數字）；若某店遠高於同組，柱高改以次高值為滿格、超出者頂部加白線標示。斜紋柱為新店／上期無數據，仍列出但不宜直接比較。按一下任何一條柱可跳到該店明細。</p>`;
+  }
+
   async function loadMtdWeek() {
     const period = mtdPeriodOf(normalizedSeries(summaryCache));
     if (!period) {
       mtdWeekDate = '';
       mtdWeekRows = [];
       mtdPeriodInfo = null;
-      renderMtdRanking();
+      renderMtd();
       return;
     }
     mtdPeriodInfo = period;
 
     // 同一期已快取，或主明細剛好載入同一期：直接重用，避免重複 API 呼叫
     if (mtdWeekDate === period.date && mtdWeekRows.length) {
-      renderMtdRanking();
+      renderMtd();
       return;
     }
     if (selectedWeek === period.date && weekRows.length) {
       mtdWeekDate = period.date;
       mtdWeekRows = weekRows;
-      renderMtdRanking();
+      renderMtd();
       return;
     }
 
@@ -888,7 +1058,7 @@
       mtdWeekRows = [];
       setResult('stk_mtd_error', 'error', `未能載入當月排名：${err.message}`);
     }
-    renderMtdRanking();
+    renderMtd();
   }
 
   function renderChart(data, series) {
@@ -1645,7 +1815,7 @@
       if (mtdPeriodInfo && selectedWeek === mtdPeriodInfo.date) {
         mtdWeekDate = selectedWeek;
         mtdWeekRows = weekRows;
-        renderMtdRanking();
+        renderMtd();
       }
       renderWeekRows();
     } catch (err) {
@@ -1757,8 +1927,10 @@
     });
 
     // MTD 排名：按一下切到該期並只看該店（排名期可能同目前明細期不同）
-    const mtdRank = $('stk_mtd_rank');
-    if (mtdRank) {
+    // 排行榜與店舖佔比兩個視圖用同一組 data 屬性，行為一致
+    ['stk_mtd_rank', 'stk_mtd_share'].forEach((id) => {
+      const mtdRank = $(id);
+      if (!mtdRank) return;
       mtdRank.addEventListener('click', async (e) => {
         const target = e.target instanceof Element ? e.target.closest('[data-stk-mtd-site]') : null;
         if (!target) return;
@@ -1774,6 +1946,20 @@
         renderWeekRows();
         const label = $('stk_week_label');
         if (label && label.scrollIntoView) label.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      });
+    });
+
+    // MTD 顯示方式切換：排行榜（Top 15 表格）／店舖佔比（分區柱狀排名）
+    const mtdSwitch = $('stk_mtd_switch');
+    if (mtdSwitch) {
+      mtdSwitch.addEventListener('click', (e) => {
+        const btn = e.target instanceof Element ? e.target.closest('[data-stk-mtd-view]') : null;
+        if (!btn) return;
+        const next = btn.dataset.stkMtdView === 'share' ? 'share' : 'rank';
+        if (next === mtdView) return;
+        mtdView = next;
+        try { localStorage.setItem('ndrf_admin_stock_mtd_view', mtdView); } catch { /* 私隱模式不可寫，照用記憶體狀態 */ }
+        applyMtdView();
       });
     }
 
@@ -1845,7 +2031,7 @@
         });
         const series = normalizedSeries(summaryCache);
         if (series.length) renderGroupChart(summaryCache, series);
-        renderMtdRanking();
+        renderMtd();
       });
     }
 
@@ -1862,7 +2048,7 @@
         });
         const series = normalizedSeries(summaryCache);
         if (series.length) renderGroupChart(summaryCache, series);
-        renderMtdRanking();
+        renderMtd();
       });
     }
 
@@ -1900,6 +2086,11 @@
   function init() {
     const panel = $('panel-stock');
     if (!panel) return;
+    // 上次揀嘅 MTD 視圖（排行榜／店舖佔比）；讀不到就維持預設排行榜
+    try {
+      const saved = localStorage.getItem('ndrf_admin_stock_mtd_view');
+      if (saved === 'share' || saved === 'rank') mtdView = saved;
+    } catch { /* 私隱模式不可讀，用預設值 */ }
     bindEvents();
 
     // 供程式化刷新用；admin-ui 的「立即更新」只會呼叫 __zsRefresh（故意不改現有檔案）

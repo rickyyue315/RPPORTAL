@@ -719,6 +719,151 @@ body.stk-modal-open { overflow: hidden; }
   white-space: nowrap;
 }
 
+/* MTD 卡頭：標題與「排行榜／店舖佔比」切換同一行；沿用 .seg-switch 但去掉其下外距 */
+.stk-mtd-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 16px;
+  flex-wrap: wrap;
+}
+.stk-mtd-heading {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  flex-wrap: wrap;
+  min-width: 0;
+}
+.stk-mtd-switch { margin: 0; }
+#stk_mtd_share[hidden] { display: none !important; }
+
+/* 店舖佔比：按 Shop Nature 分組的柱狀排名（跟 Excel「店舖佔比」報表排版）
+   每組獨立縮放，柱頂百分比直排以免 26px 柱寬溢出；組與組之間豎向排列、組內橫向滾動。 */
+.stk-share { display: flex; flex-direction: column; gap: 14px; }
+.stk-share-group {
+  padding: 10px 12px 6px;
+  border: 1px solid #e3eef8;
+  border-radius: 10px;
+  background: #fbfdff;
+}
+.stk-share-head {
+  display: flex;
+  align-items: baseline;
+  gap: 6px 12px;
+  flex-wrap: wrap;
+  margin-bottom: 2px;
+}
+.stk-share-group-name {
+  font-size: 13.5px;
+  font-weight: 700;
+  color: #0a3d69;
+}
+.stk-share-group-meta {
+  font-size: 11.5px;
+  color: #5a6a78;
+  font-variant-numeric: tabular-nums;
+}
+.stk-share-group-meta.is-total {
+  font-size: 12.5px;
+  font-weight: 700;
+  color: #0a3d69;
+}
+/* 頂部留白放柱頂百分比（直排最長約 5 個字符 ≈ 48px），避免被 overflow 裁掉 */
+.stk-share-scroll { overflow-x: auto; padding: 50px 0 4px; }
+.stk-share-plot {
+  display: flex;
+  align-items: flex-end;
+  gap: 2px;
+  width: max-content;
+  height: 196px;
+}
+.stk-share-col {
+  flex: 0 0 28px;
+  width: 28px;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  padding: 0;
+  border: none;
+  background: none;
+  font-family: inherit;
+  line-height: 1;
+  cursor: pointer;
+}
+.stk-share-plotarea {
+  position: relative;
+  flex: 1 1 auto;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  min-height: 0;
+}
+.stk-share-bar {
+  position: relative;
+  display: block;
+  width: 14px;
+  border-radius: 2px 2px 0 0;
+}
+.stk-share-tip {
+  position: absolute;
+  left: 50%;
+  bottom: 100%;
+  margin: 0 0 3px -5px;
+  writing-mode: vertical-rl;
+  font-size: 9.5px;
+  font-style: normal;
+  font-weight: 600;
+  color: #41505e;
+  white-space: nowrap;
+}
+.stk-share-site {
+  flex: 0 0 13px;
+  height: 13px;
+  font-family: Consolas, "Courier New", monospace;
+  font-size: 9px;
+  letter-spacing: -0.2px;
+  line-height: 13px;
+  color: #41505e;
+  text-align: center;
+  overflow: hidden;
+}
+.stk-share-shop {
+  flex: 0 0 60px;
+  align-self: center;
+  height: 60px;
+  overflow: hidden;
+  writing-mode: vertical-rl;
+  font-size: 10.5px;
+  line-height: 1.15;
+  color: #5a6a78;
+}
+.stk-share-col:hover .stk-share-bar { filter: brightness(1.12); }
+.stk-share-col:hover .stk-share-site,
+.stk-share-col:hover .stk-share-shop { color: #0f5c9c; }
+.stk-share-col:focus-visible {
+  outline: 2px solid rgba(15, 92, 156, .4);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+/* 新店／上期無數據：斜紋疊在柱色上，仍可點進明細，但不參與排行榜名次 */
+.stk-share-col.is-new .stk-share-bar {
+  background-image: repeating-linear-gradient(45deg, rgba(255, 255, 255, .55) 0 3px, transparent 3px 6px);
+  outline: 1px dashed rgba(15, 92, 156, .4);
+  outline-offset: 1px;
+}
+/* 離群值截斷：柱高以次高值為滿格，超出者在柱頂畫白線＋虛線，提示實際比率更高 */
+.stk-share-col.is-capped .stk-share-bar::after {
+  content: "";
+  position: absolute;
+  left: -1px;
+  right: -1px;
+  top: 0;
+  height: 3px;
+  background: #fff;
+  box-shadow: 0 -1px 0 rgba(15, 92, 156, .45);
+}
+
 /* No. of RF SKU Dashboard：青色系與上方不良存貨區塊（佔比趨勢、每店明細）區分，但同屬存貨頁 */
 .stk-rf-kpi-grid { margin-bottom: 16px; }
 /* 卡頭淨係得標題同口徑切換（說明文字已搬落卡身，貼住佢描述嘅圖表）。

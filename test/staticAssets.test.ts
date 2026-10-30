@@ -111,6 +111,14 @@ describe('static asset freshness', () => {
     expect(script).toContain('renderMtdRanking');
     expect(script).toContain('loadMtdWeek');
     expect(script).toContain('店舖名稱');
+    // MTD「店舖佔比」視圖：按 Shop Nature 分組的柱狀排名，與排行榜共用同一期快照
+    expect(html).toContain('id="stk_mtd_share"');
+    expect(html).toContain('id="stk_mtd_switch"');
+    expect(html).toContain('data-stk-mtd-view="rank"');
+    expect(html).toContain('data-stk-mtd-view="share"');
+    expect(script).toContain('renderMtdShare');
+    expect(script).toContain('stk-share-col');
+    expect(script).toContain('natureGroupKey');
   });
 
   it('wires the designated SKU reply page, admin tab and direct link', () => {

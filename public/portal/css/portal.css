@@ -188,19 +188,41 @@
 
 /* ---------- 管轄店舖不良佔比排名（柱狀，只列自己 OM 的店） ---------- */
 .om-share-intro { margin: 0 0 10px; }
-.om-share { display: flex; flex-direction: column; gap: 14px; }
-.om-share-group {
-  padding: 10px 12px 6px;
+/* 跟 Excel「店舖佔比」一樣：民生區／混合區／遊客區橫向並排，組與組之間一條分隔線。
+   每組 flex-grow = 該組店數，所以三組柱寬一致；視窗太窄（每組不足 150px）自動換行變上下排。 */
+.om-share {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: stretch;
   border: 1px solid #e3eef8;
   border-radius: 10px;
   background: #fbfdff;
+  overflow: hidden;
+}
+.om-share-group {
+  flex: 1 1 0;
+  min-width: 150px;
+  padding: 10px 8px 6px;
+  border-left: 1px solid #e3eef8;
+}
+.om-share-group:first-child { border-left: none; }
+/* 窄螢幕不要出現「2 組一行、1 組掉下一行」的參差：直接改成上下排，分隔線轉為橫線 */
+@media (max-width: 720px) {
+  .om-share { flex-direction: column; }
+  .om-share-group {
+    border-left: none;
+    border-top: 1px solid #e3eef8;
+  }
+  .om-share-group:first-child { border-top: none; }
 }
 .om-share-head {
   display: flex;
   align-items: baseline;
-  gap: 6px 12px;
+  justify-content: center;
+  gap: 4px 10px;
   flex-wrap: wrap;
   margin-bottom: 2px;
+  text-align: center;
 }
 .om-share-name { font-size: 13.5px; font-weight: 700; color: #0a3d69; }
 .om-share-meta {
@@ -211,17 +233,19 @@
 .om-share-meta--total { font-size: 12.5px; font-weight: 700; color: #0a3d69; }
 /* 頂部留白放柱頂百分比（直排最長 7 個字符），否則 overflow 會裁掉 */
 .om-share-scroll { overflow-x: auto; padding: 46px 0 4px; }
-/* 店少時柱身拉伸填滿（最多 56px），店多時保持 34px 並橫向滾動 */
+/* 柱身按該組寬度等分（最多 48px），柱群置中；店太多時每根最少 22px 並橫向滾動 */
 .om-share-plot {
   display: flex;
   align-items: flex-end;
-  gap: 4px;
+  justify-content: center;
+  gap: 2px;
   width: 100%;
   height: 196px;
 }
 .om-share-col {
-  flex: 1 0 34px;
-  max-width: 56px;
+  flex: 1 1 0;
+  min-width: 22px;
+  max-width: 48px;
   height: 100%;
   display: flex;
   flex-direction: column;

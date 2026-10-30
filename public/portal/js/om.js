@@ -837,7 +837,8 @@
       const usable = sorted.filter((row) => pick(row) !== null);
       const topValue = usable.length ? (pick(usable[0]) || 0) : 0;
       const secondValue = usable.length > 1 ? (pick(usable[1]) || 0) : topValue;
-      const scaleMax = topValue > 0 && secondValue > 0 && topValue > secondValue * 1.6 ? secondValue : topValue;
+      // 門檻 2 倍：1.3–1.8 倍屬正常差距，硬截斷會令最高的兩根柱看起來一樣高
+      const scaleMax = topValue > 0 && secondValue > 0 && topValue > secondValue * 2 ? secondValue : topValue;
       const capped = scaleMax < topValue;
 
       let numSum = 0;
@@ -887,7 +888,8 @@
         ...(group.rows.length - usable.length ? [{ text: `${group.rows.length - usable.length} 間缺值` }] : []),
       ];
 
-      return `<section class="om-share-group">
+      // flex-grow = 該組店數 → 三組並排時每根柱寬一致（跟 Excel 店舖佔比一樣）
+      return `<section class="om-share-group" style="flex-grow:${group.rows.length}">
         <div class="om-share-head">
           <span class="om-share-name">${esc(group.label)}</span>
           ${metaBits.map((item) => `<span class="om-share-meta${item.total ? ' om-share-meta--total' : ''}">${esc(item.text)}</span>`).join('')}

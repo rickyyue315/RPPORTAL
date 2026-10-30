@@ -990,9 +990,10 @@
       const usable = sorted.filter((row) => pick(row) !== null);
       const topValue = usable.length ? (pick(usable[0]) || 0) : 0;
       const secondValue = usable.length > 1 ? (pick(usable[1]) || 0) : topValue;
-      // 離群（最大 > 次大 × 1.6）時改以次大值為滿格：否則一間異常店會把同組其餘 40 間壓成貼底的矮柱。
+      // 離群（最大 > 次大 × 2）時改以次大值為滿格：否則一間異常店會把同組其餘 40 間壓成貼底的矮柱。
+      // 門檻用 2 倍而非 1.6：1.3–1.8 倍屬正常差距，硬截斷會令最高的兩根柱看起來一樣高。
       // 柱高只影響視覺比例，柱頂數字仍是真實比率。
-      const scaleMax = topValue > 0 && secondValue > 0 && topValue > secondValue * 1.6
+      const scaleMax = topValue > 0 && secondValue > 0 && topValue > secondValue * 2
         ? secondValue
         : topValue;
       const capped = scaleMax < topValue;

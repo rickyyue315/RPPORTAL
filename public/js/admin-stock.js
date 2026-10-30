@@ -31,7 +31,7 @@
   let rfMetric = 'count';
   /** 分組小圖口徑：sku = 不良 SKU ÷ SKU Carry；value = 不良存貨值 ÷ 店舖存貨值 */
   let groupMetric = 'sku';
-  /** 分組小圖維度：nature = Shop Nature；om = 區域主管 */
+  /** 分組小圖維度：nature = Shop Nature；om = 營運經理 */
   let groupDim = 'nature';
   let weekPage = 1;
   let autoDate = '';

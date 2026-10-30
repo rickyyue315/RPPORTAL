@@ -1,5 +1,5 @@
 -- 032_om_portal.sql
--- OM（區域主管）Portal：
+-- OM（營運經理）Portal：
 --   * portal_users 新增 'om' 角色；OM 帳戶以「OM 名稱」作 username，site_code 為 NULL。
 --   * 執行期 OM 管理的店舖 = 最新上載存貨報表的 OM（無報表時 fallback stores.om）。
 --   * 登入密碼由環境變數 PORTAL_OM_PASSWORD 控制（預設 SASAOM178），

@@ -1,4 +1,4 @@
-/* OM（區域主管）Portal：登入、總覽、零銷售代覆、存貨走勢。
+/* OM（營運經理）Portal：登入、總覽、零銷售代覆、存貨走勢。
    指定 SKU 代覆在 om-designated-sku.js，透過 window.omApp 共用 API。 */
 (() => {
   'use strict';
@@ -82,7 +82,7 @@
 
   function setHeader(label) {
     const name = state.user ? (state.user.display_name || state.user.username) : '';
-    if ($('om_header')) $('om_header').textContent = `區域主管${name ? ` · ${name}` : ''} · ${label}`;
+    if ($('om_header')) $('om_header').textContent = `營運經理${name ? ` · ${name}` : ''} · ${label}`;
   }
 
   async function login(event) {

@@ -19,7 +19,7 @@ import { getShopStockSummary } from './shopStock.js';
 import { getEffectiveOmBySite } from './effectiveOm.js';
 
 /**
- * OM（區域主管）Portal 的資料存取。
+ * OM（營運經理）Portal 的資料存取。
  *
  * 權限的唯一來源是登入 OM 的 username（= 最新上載報表的 OM 大寫，無報表時
  * fallback stores.om）。所有查詢都先取得該 OM 的 site_code 清單，再以 SQL

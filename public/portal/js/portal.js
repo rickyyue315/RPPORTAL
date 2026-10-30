@@ -137,7 +137,7 @@
         <div class="btn-row" style="margin-top:16px">
           <button class="btn" type="button" id="site_gate_go">進入</button>
         </div>
-        <p class="hint" style="margin-top:14px;text-align:center">OM 區域主管請使用 <a href="/portal/om.html">OM 登入</a>（輸入 OM 名稱及 OM 專用密碼）。</p>
+        <p class="hint" style="margin-top:14px;text-align:center">OM 營運經理請使用 <a href="/portal/om.html">OM 登入</a>（輸入 OM 名稱及 OM 專用密碼）。</p>
       </div>`;
       document.body.appendChild(overlay);
       const input = overlay.querySelector('#site_gate_input');

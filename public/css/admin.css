@@ -719,6 +719,24 @@ body.stk-modal-open { overflow: hidden; }
   white-space: nowrap;
 }
 
+/* 排行榜篩選：OM／Shop Nature（沿用每店明細那套 Tabler 控件，只是收窄 label 間距） */
+.stk-mtd-filter {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 8px 12px;
+  margin-bottom: 10px;
+}
+.stk-mtd-filter > div { min-width: 150px; }
+/* 兩個下拉同寬（OM 選項字短、Shop Nature 字長，不設死寬度會一闊一窄） */
+.stk-mtd-filter select { width: 100%; }
+.stk-mtd-filter .form-label {
+  margin-bottom: 2px;
+  font-size: 12px;
+  color: #5a6a78;
+}
+.stk-mtd-filter #stk_rank_scope { padding-bottom: 6px; }
+
 /* MTD 卡頭：標題與「排行榜／店舖佔比」切換同一行；沿用 .seg-switch 但去掉其下外距 */
 .stk-mtd-head {
   display: flex;

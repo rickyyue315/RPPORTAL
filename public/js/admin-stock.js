@@ -41,6 +41,9 @@
   let mtdView = 'rank';
   /** 店舖佔比只顯示邊個分區：all = 全部（預設）／local／mix／tourist；不寫 localStorage，每次載入都回到全部 */
   let shareNature = 'all';
+  /** 排行榜篩選：OM 名（空 = 全部）／Shop Nature key（空 = 全部）；同樣不寫 localStorage */
+  let rankOm = '';
+  let rankNature = '';
   let weekPage = 1;
   let autoDate = '';
 
@@ -758,8 +761,35 @@
 
   /* ==================== 當月 MTD 每店排名 ==================== */
 
+  /** 排行榜篩選：OM 與 Shop Nature（空字串 = 全部）；只影響排行榜視圖，不影響店舖佔比 */
+  const MTD_NATURE_LABELS = { local: '民生區', mix: '混合區', tourist: '遊客區' };
+
+  /** 用該期資料重建 OM 下拉；選項沒變就不重寫 DOM，免得每次重畫都搶焦點 */
+  function syncRankOmOptions(rows) {
+    const sel = $('stk_rank_om');
+    if (!sel) return;
+    const oms = [...new Set(rows.map((row) => String(row.om || '').trim()).filter(Boolean))]
+      .sort((a, b) => a.localeCompare(b, 'en'));
+    if (!oms.includes(rankOm)) rankOm = '';
+    const signature = oms.join('\u0000');
+    if (sel.dataset.signature !== signature) {
+      sel.innerHTML = '<option value="">全部 OM</option>'
+        + oms.map((om) => `<option value="${escAttr(om)}">${esc(om)}</option>`).join('');
+      sel.dataset.signature = signature;
+    }
+    sel.value = rankOm;
+  }
+
+  function filterRankRows(rows) {
+    return rows.filter((row) => {
+      if (rankOm && String(row.om || '').trim() !== rankOm) return false;
+      if (rankNature && natureGroupKey(row.shop_nature) !== rankNature) return false;
+      return true;
+    });
+  }
+
   function renderMtdRanking() {
-    const wrap = $('stk_mtd_rank');
+    const wrap = $('stk_mtd_rank_body') || $('stk_mtd_rank');
     const title = $('stk_mtd_title');
     const note = $('stk_mtd_note');
     if (!wrap) return;
@@ -788,11 +818,28 @@
     }
     const pick = isSku ? (row) => num(row.ovs_carry_ratio) : (row) => num(row.ratio);
     const wowOf = isSku ? (row) => num(row.ovs_carry_delta_pt) : (row) => num(row.wow_delta_pt);
-    const rows = Array.isArray(mtdWeekRows) ? mtdWeekRows : [];
+    const allRows = Array.isArray(mtdWeekRows) ? mtdWeekRows : [];
+    syncRankOmOptions(allRows);
+    const rows = filterRankRows(allRows);
 
-    if (!rows.length) {
+    const scope = $('stk_rank_scope');
+    if (scope) {
+      const bits = [];
+      if (rankOm) bits.push(`OM ${rankOm}`);
+      if (rankNature) bits.push(MTD_NATURE_LABELS[rankNature] || rankNature);
+      scope.textContent = bits.length
+        ? `已篩選：${bits.join(' · ')}，${rows.length} / ${allRows.length} 店`
+        : `全部 ${allRows.length} 店`;
+    }
+
+    if (!allRows.length) {
       if (note) note.textContent = `${mtdWeekDate} · 此期沒有店舖數據`;
       wrap.innerHTML = '<div class="text-secondary small">此期沒有店舖數據。</div>';
+      return;
+    }
+    if (!rows.length) {
+      if (note) note.textContent = `${mtdWeekDate} · 篩選後沒有店舖`;
+      wrap.innerHTML = '<div class="text-secondary small">目前篩選沒有符合的店舖，請改選 OM 或 Shop Nature。</div>';
       return;
     }
 
@@ -805,11 +852,14 @@
       .slice(0, 15);
 
     const monthNote = period.is_current_month ? '' : `（本月尚未上載，顯示最新月份 ${period.month}）`;
+    const filterNote = (rankOm || rankNature) ? `（已篩選 ${rows.length} 店）` : '';
     if (note) {
-      note.textContent = `${mtdWeekDate}${monthNote} · ${ranked.length} 店入榜${excluded ? ` · 已排除 ${excluded} 間新店／上期無數據` : ''}`;
+      note.textContent = `${mtdWeekDate}${monthNote} · ${ranked.length} 店入榜${filterNote}${excluded ? ` · 已排除 ${excluded} 間新店／上期無數據` : ''}`;
     }
     if (!ranked.length) {
-      wrap.innerHTML = '<div class="text-secondary small">此期沒有可參與排名的店舖（全部為新店，或比率缺值）。</div>';
+      wrap.innerHTML = `<div class="text-secondary small">${rows.length
+        ? '此期沒有可參與排名的店舖（全部為新店，或比率缺值）。'
+        : '目前篩選沒有符合的店舖。'}</div>`;
       return;
     }
 
@@ -2000,6 +2050,22 @@
         shareNature = next;
         applyShareNature();
         renderMtdShare();
+      });
+    }
+
+    // 排行榜篩選：OM／Shop Nature（只重畫排行表，不重新打 API）
+    const rankOmEl = $('stk_rank_om');
+    if (rankOmEl) {
+      rankOmEl.addEventListener('change', () => {
+        rankOm = String(rankOmEl.value || '');
+        renderMtdRanking();
+      });
+    }
+    const rankNatureEl = $('stk_rank_nature');
+    if (rankNatureEl) {
+      rankNatureEl.addEventListener('change', () => {
+        rankNature = String(rankNatureEl.value || '');
+        renderMtdRanking();
       });
     }
 

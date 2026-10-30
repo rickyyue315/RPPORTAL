@@ -127,6 +127,13 @@ describe('static asset freshness', () => {
     expect(html).toContain('data-stk-share-nature="mix"');
     expect(html).toContain('data-stk-share-nature="tourist"');
     expect(script).toContain('applyShareNature');
+    // 排行榜篩選：OM／Shop Nature（預設全部）；表格本體要獨立容器，否則重畫會洗掉篩選列
+    expect(html).toContain('id="stk_mtd_rank_body"');
+    expect(html).toContain('id="stk_rank_om"');
+    expect(html).toContain('id="stk_rank_nature"');
+    expect(html).toContain('id="stk_rank_scope"');
+    expect(script).toContain('filterRankRows');
+    expect(script).toContain('syncRankOmOptions');
   });
 
   it('wires the designated SKU reply page, admin tab and direct link', () => {

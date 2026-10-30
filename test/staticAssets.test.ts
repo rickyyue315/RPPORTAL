@@ -105,6 +105,12 @@ describe('static asset freshness', () => {
     expect(script).toContain('group_trend');
     expect(script).toContain('ovs_carry_ratio');
     expect(chart).toContain('renderBarGrid');
+    // MTD 每店排名：要有獨立容器、店名欄及載入函式
+    expect(html).toContain('id="stk_mtd_rank"');
+    expect(html).toContain('id="stk_mtd_title"');
+    expect(script).toContain('renderMtdRanking');
+    expect(script).toContain('loadMtdWeek');
+    expect(script).toContain('店舖名稱');
   });
 
   it('wires the designated SKU reply page, admin tab and direct link', () => {

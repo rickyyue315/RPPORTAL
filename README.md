@@ -264,7 +264,9 @@ pg_restore --no-owner --no-privileges --clean --if-exists \
 - **不良 SKU ÷ SKU Carry**（件數，預設）＝ `Σ No. of Overstock SKU (P90D 0 Sales)` ÷ `Σ No. of SKU Carry`。
 - **不良存貨值 ÷ 存貨值**（金額）＝ `Σ Excess Stock Value (P90D 0 Sales)` ÷ `Σ Shop Stock Value (CM)`。
 
-兩個口徑都是**組內加權**（先加總分子／分母再相除），不是各店比率平均。Shop Nature 會把報表原值 `Local`／`Non Tourist` 歸為「民生區」、`Mix` 歸為「混合區」、`Tourist` 歸為「遊客區」；未知值保留原字串，空白則歸「未填」。OM 以最新一期的 SKU Carry（再以 SOH）由大到小排列。某組某期沒有店舖時回 `null`，小圖留空，不會畫成 0%。顯示期間跟上方「3 / 6 / 12 / 24 個月」同步。
+兩個口徑都是**組內加權**（先加總分子／分母再相除），不是各店比率平均。Shop Nature 會把報表原值 `Local`／`Non Tourist` 歸為「民生區」、`Mix` 歸為「混合區」、`Tourist` 歸為「遊客區」；未知值保留原字串，空白則歸「未填」。OM 以最新一期的 SKU Carry（再以 SOH）由大到小排列。某組某期沒有店舖時回 `null`，小圖留空，不會畫成 0%。顯示期間按鈕與下方「佔比趨勢」雙向同步（3 / 6 / 12 / 24 個月）。
+
+**當月（MTD）每店排名**：同一張卡下方另有 Top 15 排名表，跟隨上面的口徑切換（不良 SKU 佔比／不良存貨值佔比），顯示 **Site、完整店舖名稱、OM、Shop Nature、比率、分子 ÷ 分母、與上期百分點**。MTD 的定義是**香港時區當前月份內最新一期快照**；本月尚未上載時回落最新資料月份，並在標題／說明標明月份。排名用每店自己的比率（不是全公司加權），新店／上期無數據與原有 Top 15 同一套規則排除，但仍計入全公司合計與走勢。按排名任何一行會切到該 MTD 期並在下方每店明細只顯示該店。
 
 1. 選報表日期（可從檔名 `25Oct2026` 類格式自動填入）、報表類型、備註，再選 `.xlsx` 上載。
 2. **同一日期重上 = 整批取代**：同一 transaction 內先 `DELETE FROM shop_stock_batches WHERE report_date = $1`（FK CASCADE 清走明細），再建立新批次（**新批次有新 id**，不會出現「同一 id 先後代表兩份檔案」）；audit 會記下舊 batch id、行數與 `content_hash`。內容完全相同（`content_hash` 一致）則視為重複上載，不做任何寫入。
@@ -318,7 +320,7 @@ pg_restore --no-owner --no-privileges --clean --if-exists \
 | DELETE | `/api/admin/stock/batches/:id` | 刪除整批（回 `deleted_rows`、`deleted_stores`） |
 | GET | `/api/admin/stock/summary?from=&to=` | 趨勢序列 + 最新 KPI（加權比率、WoW 百分點）＋ `group_trend`（Grand Total／Shop Nature／OM 的分組加權走勢） |
 | GET | `/api/admin/stock/summary/export?months=3\|6\|12\|24` | 匯出趨勢圖數字成 xlsx（3 張工作表；`months` 上限 24，預設 12） |
-| GET | `/api/admin/stock/weeks/:reportDate` | 某一期每店明細（含與上一期的百分點差、`rank`、`is_new`、`is_new_store`、`new_reason`） |
+| GET | `/api/admin/stock/weeks/:reportDate` | 某一期每店明細（含與上一期的百分點差 `delta_pt`／`ovs_carry_delta_pt`、`rank`、`is_new`、`is_new_store`、`new_reason`） |
 | GET | `/api/admin/stock/weeks/:reportDate/export?q=&sort=&only=` | 該期每店明細匯出 xlsx（篩選／排序同畫面一致） |
 | GET | `/api/admin/stock/rf/export?months=3\|6\|12\|24&report_date=` | RF SKU Dashboard 匯出 xlsx（走勢＋兩張排名；`report_date` 指定排名期別，預設最新一期） |
 

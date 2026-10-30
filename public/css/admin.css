@@ -665,6 +665,60 @@ body.stk-modal-open { overflow: hidden; }
   box-sizing: border-box;
 }
 
+/* 當月 MTD 每店排名（走勢卡下方） */
+.stk-mtd-section {
+  margin-top: 18px;
+  padding-top: 14px;
+  border-top: 1px solid #e3eef8;
+}
+.stk-mtd-wrap { max-height: 560px; overflow-y: auto; }
+.stk-mtd-table { width: 100%; margin-bottom: 0; }
+.stk-mtd-table th,
+.stk-mtd-table td { padding: 7px 10px; }
+.stk-mtd-table th:nth-child(1) { width: 40px; }
+.stk-mtd-table th:nth-child(2) { width: 72px; }
+.stk-mtd-table th:nth-child(3) { min-width: 220px; }
+.stk-mtd-table th:nth-child(4) { width: 90px; }
+.stk-mtd-table th:nth-child(5) { width: 105px; }
+.stk-mtd-table th:nth-child(6) { width: 112px; }
+.stk-mtd-table th:nth-child(7) { width: 175px; }
+.stk-mtd-table th:nth-child(8) { width: 92px; }
+.stk-mtd-table thead th {
+  white-space: nowrap;
+  font-size: 12.5px;
+  text-align: left;
+  background: #eef2f6;
+}
+.stk-mtd-table tbody td { vertical-align: middle; font-variant-numeric: tabular-nums; }
+.stk-mtd-table .stk-mtd-site {
+  font-family: Consolas, "Courier New", monospace;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.stk-mtd-table .stk-mtd-shop { min-width: 150px; }
+.stk-mtd-table .stk-mtd-meta {
+  color: #5a6a78;
+  font-size: 12px;
+  white-space: nowrap;
+}
+.stk-mtd-row { cursor: pointer; }
+.stk-mtd-row:hover td { background: #f2f7fd; }
+.stk-mtd-ratio { font-weight: 700; }
+.stk-mtd-track {
+  display: block;
+  height: 5px;
+  margin-top: 3px;
+  border-radius: 999px;
+  background: #eef2f6;
+  overflow: hidden;
+}
+.stk-mtd-track i { display: block; height: 100%; border-radius: 999px; }
+.stk-mtd-detail {
+  font-size: 11.5px;
+  color: #66727f;
+  white-space: nowrap;
+}
+
 /* No. of RF SKU Dashboard：青色系與上方不良存貨區塊（佔比趨勢、每店明細）區分，但同屬存貨頁 */
 .stk-rf-kpi-grid { margin-bottom: 16px; }
 /* 卡頭淨係得標題同口徑切換（說明文字已搬落卡身，貼住佢描述嘅圖表）。

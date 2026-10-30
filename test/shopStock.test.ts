@@ -543,6 +543,8 @@ describe('shopStock service', () => {
     expect(week!.rows[0]!.prev_rf_sku_count).toBeNull();
     expect(week!.rows[0]!.rf_sku_delta).toBeNull();
     expect(week!.rows[0]!.ovs_carry_ratio).toBeCloseTo(5 / 2000, 12);
+    expect(week!.rows[0]!.prev_ovs_carry_ratio).toBeNull();
+    expect(week!.rows[0]!.ovs_carry_delta_pt).toBeNull();
     expect(week!.rows.find((r) => r.site_code === 'HC71')!.rf_sku_count).toBeNull();
     // HC71 無 RF 數，但有 SKU Carry（50）→ 1/50，唔再因為缺 RF 而係 null
     expect(week!.rows.find((r) => r.site_code === 'HC71')!.ovs_carry_ratio).toBeCloseTo(1 / 50, 12);
@@ -593,9 +595,14 @@ describe('shopStock service', () => {
     expect(ha02.delta_pt).toBeCloseTo((0.2 - 0.10000025) * 100, 6);
     expect(ha02.prev_rf_sku_count).toBe(1234);
     expect(ha02.rf_sku_delta).toBe(-34);
+    // 第二期缺 Overstock SKU 欄 → 每店 SKU 比率為 null（缺值不當 0），與上期的差額亦為 null
+    expect(ha02.prev_ovs_carry_ratio).toBeCloseTo(5 / 2000, 12);
+    expect(ha02.ovs_carry_delta_pt).toBeNull();
     const hd09 = week!.rows.find((r) => r.site_code === 'HD09')!;
     expect(hd09.prev_rf_sku_count).toBe(567);
     expect(hd09.rf_sku_delta).toBe(33);
+    expect(hd09.prev_ovs_carry_ratio).toBeCloseTo(7 / 800, 12);
+    expect(hd09.ovs_carry_delta_pt).toBeNull();
     expect(week!.totals.total_rf_sku).toBe(1800);
     expect(week!.totals.rf_store_count).toBe(3);
     expect(week!.totals.rf_sku_delta).toBe(-1);

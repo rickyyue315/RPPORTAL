@@ -33,6 +33,10 @@
   let groupMetric = 'sku';
   /** 分組小圖維度：nature = Shop Nature；om = 營運經理 */
   let groupDim = 'nature';
+  /** 當月（MTD）每店排名：另外快取該期明細，避免使用者切換舊批次時排名跟著跳 */
+  let mtdWeekDate = '';
+  let mtdWeekRows = [];
+  let mtdPeriodInfo = null;
   let weekPage = 1;
   let autoDate = '';
 
@@ -207,6 +211,42 @@
     const mm = String(target.getUTCMonth() + 1).padStart(2, '0');
     const dd = String(target.getUTCDate()).padStart(2, '0');
     return `${target.getUTCFullYear()}-${mm}-${dd}`;
+  }
+
+  /** 香港時區的當前月份 'YYYY-MM'（後台使用者多數在 HK；失敗時回落 UTC） */
+  function hkMonthNow() {
+    try {
+      const parts = new Intl.DateTimeFormat('en', {
+        timeZone: 'Asia/Hong_Kong',
+        year: 'numeric',
+        month: '2-digit',
+      }).formatToParts(new Date());
+      const year = parts.find((part) => part.type === 'year')?.value;
+      const month = parts.find((part) => part.type === 'month')?.value;
+      if (year && month) return `${year}-${month}`;
+    } catch {
+      /* 舊瀏覽器沒有 formatToParts，下面用 UTC 月份 */
+    }
+    return new Date().toISOString().slice(0, 7);
+  }
+
+  /**
+   * MTD 期別：優先用「香港當前月份」內最新一期；本月未上載時回落最新資料月份，
+   * 並由 UI 標明是「最新月份」而非當月。
+   */
+  function mtdPeriodOf(series) {
+    const dates = [...new Set((Array.isArray(series) ? series : [])
+      .map((row) => String((row && row.report_date) || '').slice(0, 10))
+      .filter(Boolean))].sort();
+    if (!dates.length) return null;
+    const currentMonth = hkMonthNow();
+    const inMonth = dates.filter((date) => date.slice(0, 7) === currentMonth);
+    const date = inMonth.length ? inMonth[inMonth.length - 1] : dates[dates.length - 1];
+    return {
+      date,
+      month: date.slice(0, 7),
+      is_current_month: date.slice(0, 7) === currentMonth,
+    };
   }
 
   /** 不參與排名的標記：新店（觀察期內）／上期無數據 */
@@ -488,6 +528,7 @@
       setResult('stk_rf_error', 'info', '');
       renderKpi(data, series);
       renderGroupChart(data, series);
+      renderMtdRanking();
       renderChart(data, series);
       renderRfDashboard(data, series);
       if (!selectedWeek) selectedWeek = series.length ? String(series[series.length - 1].report_date).slice(0, 10) : '';
@@ -496,6 +537,11 @@
       if (note) note.textContent = '載入失敗';
       setResult('stk_kpi_error', 'error', `未能載入存貨摘要：${err.message}`);
       setResult('stk_group_error', 'error', `未能載入分組走勢：${err.message}`);
+      setResult('stk_mtd_error', 'error', `未能載入當月排名：${err.message}`);
+      const mtdRank = $('stk_mtd_rank');
+      if (mtdRank) mtdRank.innerHTML = '<div class="text-secondary small">未能載入當月排名。</div>';
+      const mtdNote = $('stk_mtd_note');
+      if (mtdNote) mtdNote.textContent = '載入失敗';
       setResult('stk_chart_error', 'error', err.message);
       setResult('stk_rf_error', 'error', `未能載入 RF SKU 摘要：${err.message}`);
       const groupChart = $('stk_group_chart');
@@ -704,6 +750,145 @@
         : '';
       note.textContent = `${omSource}Grand Total ＋ ${groups.length} 個 ${groupLabel}；每組先加總分子／分母再相除（加權），不是各店比率平均。某組某期沒有店舖時會留空，不會當成 0%。`;
     }
+  }
+
+  /* ==================== 當月 MTD 每店排名 ==================== */
+
+  function renderMtdRanking() {
+    const wrap = $('stk_mtd_rank');
+    const title = $('stk_mtd_title');
+    const note = $('stk_mtd_note');
+    if (!wrap) return;
+    setResult('stk_mtd_error', 'info', '');
+
+    const isSku = groupMetric === 'sku';
+    const metricLabel = isSku ? '不良 SKU 佔比' : '不良存貨值佔比';
+    if (title) title.textContent = `當月 MTD ${metricLabel}排名`;
+
+    if (!mtdWeekDate) {
+      const hasSeries = normalizedSeries(summaryCache).length > 0;
+      if (note) note.textContent = hasSeries ? '載入 MTD 排名…' : '尚未有存貨報表';
+      wrap.innerHTML = `<div class="text-secondary small">${hasSeries ? '載入 MTD 排名…' : '上載存貨報表後會顯示當月排名。'}</div>`;
+      return;
+    }
+
+    const period = mtdPeriodInfo || {
+      date: mtdWeekDate,
+      month: mtdWeekDate.slice(0, 7),
+      is_current_month: true,
+    };
+    if (title) {
+      title.textContent = period.is_current_month
+        ? `當月 MTD ${metricLabel}排名`
+        : `最新月份 MTD ${metricLabel}排名（${period.month}）`;
+    }
+    const pick = isSku ? (row) => num(row.ovs_carry_ratio) : (row) => num(row.ratio);
+    const wowOf = isSku ? (row) => num(row.ovs_carry_delta_pt) : (row) => num(row.wow_delta_pt);
+    const rows = Array.isArray(mtdWeekRows) ? mtdWeekRows : [];
+
+    if (!rows.length) {
+      if (note) note.textContent = `${mtdWeekDate} · 此期沒有店舖數據`;
+      wrap.innerHTML = '<div class="text-secondary small">此期沒有店舖數據。</div>';
+      return;
+    }
+
+    // 與原有 Top 15 同一套新店規則：新店／上期無數據不排名，但仍計入全公司合計
+    const excluded = rows.filter((row) => row.is_new).length;
+    const ranked = rows
+      .filter((row) => !row.is_new && pick(row) !== null)
+      .sort((a, b) => (pick(b) || 0) - (pick(a) || 0)
+        || String(a.site_code || '').localeCompare(String(b.site_code || '')))
+      .slice(0, 15);
+
+    const monthNote = period.is_current_month ? '' : `（本月尚未上載，顯示最新月份 ${period.month}）`;
+    if (note) {
+      note.textContent = `${mtdWeekDate}${monthNote} · ${ranked.length} 店入榜${excluded ? ` · 已排除 ${excluded} 間新店／上期無數據` : ''}`;
+    }
+    if (!ranked.length) {
+      wrap.innerHTML = '<div class="text-secondary small">此期沒有可參與排名的店舖（全部為新店，或比率缺值）。</div>';
+      return;
+    }
+
+    const max = pick(ranked[0]) || 1;
+    const alert = isSku ? OVS_CARRY_RATIO_ALERT : 0.1;
+    const color = isSku ? COLOR_RF : COLOR_MAIN;
+    const detailLabel = isSku ? '不良 SKU ÷ SKU Carry' : '不良存貨值 ÷ 店舖存貨值';
+
+    wrap.innerHTML = `<div class="table-responsive stk-mtd-wrap">
+      <table class="table table-vcenter table-hover card-table stk-mtd-table">
+        <thead><tr>
+          <th scope="col">#</th>
+          <th scope="col">Site</th>
+          <th scope="col">店舖名稱</th>
+          <th scope="col">OM</th>
+          <th scope="col">Shop Nature</th>
+          <th scope="col" class="text-end">${metricLabel}</th>
+          <th scope="col" class="text-end">${detailLabel}</th>
+          <th scope="col" class="text-end">與上期</th>
+        </tr></thead>
+        <tbody>
+          ${ranked.map((row, index) => {
+            const ratio = pick(row) || 0;
+            const wow = wowOf(row);
+            const width = Math.max(2, Math.min(100, (ratio / max) * 100));
+            const barColor = ratio >= alert ? '#c0392b' : color;
+            const detail = isSku
+              ? `${fmtInt(row.sku_count_0sale)} ÷ ${fmtInt(row.sku_carry_count)}`
+              : `${fmtMoney(row.deadstock_value)} ÷ ${fmtMoney(row.shop_stock_value)}`;
+            return `<tr class="stk-mtd-row" data-stk-mtd-site="${escAttr(row.site_code || '')}" data-stk-mtd-date="${escAttr(mtdWeekDate)}" title="按一下查看 ${escAttr(row.site_code || '')} 的明細">
+              <td class="text-secondary">${index + 1}</td>
+              <td class="stk-mtd-site">${esc(row.site_code || '')}</td>
+              <td class="stk-mtd-shop">${esc(shopLabel(row))}</td>
+              <td class="stk-mtd-meta">${esc(row.om || '—')}</td>
+              <td class="stk-mtd-meta" title="${escAttr(natureTitle(row.shop_nature))}">${esc(row.shop_nature || '—')}</td>
+              <td class="text-end">
+                <div class="stk-mtd-ratio ${ratio >= alert ? 'text-danger' : ''}">${fmtRatio(ratio)}</div>
+                <span class="stk-mtd-track"><i style="width:${width.toFixed(1)}%;background:${barColor}"></i></span>
+              </td>
+              <td class="text-end stk-mtd-detail">${detail}</td>
+              <td class="text-end ${wowClass(wow)}">${wow === null ? '—' : `${wowArrow(wow)}${fmtPt(wow)}`}</td>
+            </tr>`;
+          }).join('')}
+        </tbody>
+      </table>
+    </div>`;
+  }
+
+  async function loadMtdWeek() {
+    const period = mtdPeriodOf(normalizedSeries(summaryCache));
+    if (!period) {
+      mtdWeekDate = '';
+      mtdWeekRows = [];
+      mtdPeriodInfo = null;
+      renderMtdRanking();
+      return;
+    }
+    mtdPeriodInfo = period;
+
+    // 同一期已快取，或主明細剛好載入同一期：直接重用，避免重複 API 呼叫
+    if (mtdWeekDate === period.date && mtdWeekRows.length) {
+      renderMtdRanking();
+      return;
+    }
+    if (selectedWeek === period.date && weekRows.length) {
+      mtdWeekDate = period.date;
+      mtdWeekRows = weekRows;
+      renderMtdRanking();
+      return;
+    }
+
+    setResult('stk_mtd_error', 'info', '');
+    try {
+      const data = (await aFetch(`/api/admin/stock/weeks/${encodeURIComponent(period.date)}`)) || {};
+      mtdWeekDate = String(data.report_date || period.date).slice(0, 10);
+      mtdWeekRows = Array.isArray(data.rows) ? data.rows : [];
+      weekGraceDays = num(data.new_store_grace_days) ?? weekGraceDays;
+    } catch (err) {
+      mtdWeekDate = period.date;
+      mtdWeekRows = [];
+      setResult('stk_mtd_error', 'error', `未能載入當月排名：${err.message}`);
+    }
+    renderMtdRanking();
   }
 
   function renderChart(data, series) {
@@ -1457,6 +1642,11 @@
       renderTop15();
       renderTop15Rf(selectedWeek);
       renderTop15OvsCarry(selectedWeek);
+      if (mtdPeriodInfo && selectedWeek === mtdPeriodInfo.date) {
+        mtdWeekDate = selectedWeek;
+        mtdWeekRows = weekRows;
+        renderMtdRanking();
+      }
       renderWeekRows();
     } catch (err) {
       weekRows = [];
@@ -1475,12 +1665,17 @@
   /* ==================== 總刷新 ==================== */
 
   async function refreshAll() {
+    // 每次刷新都重新取 MTD 明細；若主明細剛好是 MTD 期，loadMtdWeek 會直接重用
+    mtdWeekDate = '';
+    mtdWeekRows = [];
+    mtdPeriodInfo = null;
     await loadSummary();
     if (!selectedWeek) {
       const last = latestPoint();
       selectedWeek = last ? String(last.report_date).slice(0, 10) : '';
     }
     await Promise.all([loadBatches(), loadWeek(selectedWeek)]);
+    await loadMtdWeek();
   }
 
   /* ==================== 事件綁定（只綁一次） ==================== */
@@ -1561,6 +1756,27 @@
       });
     });
 
+    // MTD 排名：按一下切到該期並只看該店（排名期可能同目前明細期不同）
+    const mtdRank = $('stk_mtd_rank');
+    if (mtdRank) {
+      mtdRank.addEventListener('click', async (e) => {
+        const target = e.target instanceof Element ? e.target.closest('[data-stk-mtd-site]') : null;
+        if (!target) return;
+        const date = String(target.dataset.stkMtdDate || mtdWeekDate || '').slice(0, 10);
+        const site = String(target.dataset.stkMtdSite || '');
+        if (date && date !== selectedWeek) {
+          selectedWeek = date;
+          await loadWeek(date);
+        }
+        const q = $('stk_q');
+        if (q) q.value = site;
+        weekPage = 1;
+        renderWeekRows();
+        const label = $('stk_week_label');
+        if (label && label.scrollIntoView) label.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      });
+    }
+
     // 匯出目前顯示期間的趨勢數字（Excel；不會改任何資料）
     const exportBtn = $('btn_stk_export');
     if (exportBtn) exportBtn.addEventListener('click', downloadTrendExport);
@@ -1629,6 +1845,7 @@
         });
         const series = normalizedSeries(summaryCache);
         if (series.length) renderGroupChart(summaryCache, series);
+        renderMtdRanking();
       });
     }
 
@@ -1645,6 +1862,7 @@
         });
         const series = normalizedSeries(summaryCache);
         if (series.length) renderGroupChart(summaryCache, series);
+        renderMtdRanking();
       });
     }
 

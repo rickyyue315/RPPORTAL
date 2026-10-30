@@ -1101,11 +1101,15 @@ export async function getShopStockSummary(
 export interface ShopStockWeekRow extends ShopStockSnapshotRow {
   rank: number | null;
   prev_ratio: number | null;
+  /** 上一期的「不良存貨 SKU 佔店內貨品比率」；上期沒有此店／缺值時為 null */
+  prev_ovs_carry_ratio: number | null;
   prev_rf_sku_count: number | null;
   /** 本店 RF SKU 數與上一期的絕對增減 */
   rf_sku_delta: number | null;
-  /** 與上一期的百分點差 */
+  /** 與上一期的百分點差（金額比率） */
   delta_pt: number | null;
+  /** 與上一期的百分點差（SKU 比率） */
+  ovs_carry_delta_pt: number | null;
   /**
    * 不參與排名。來源有兩個：
    *   1. 報表 `Shop Type` 標示 NEW STORE（權威，只有一期資料時仍有效）
@@ -1233,6 +1237,8 @@ export async function getShopStockWeek(reportDate: string): Promise<ShopStockWee
     .map((row) => {
       const prev = prevBySite.get(row.site_code);
       const delta = deltaPt(row.ratio, prev?.ratio ?? null);
+      const prevOvsCarry = prev?.ovs_carry_ratio ?? null;
+      const ovsCarryDelta = deltaPt(row.ovs_carry_ratio, prevOvsCarry);
       const prevRf = prev?.rf_sku_count ?? null;
       const rfDelta = row.rf_sku_count !== null && prevRf !== null
         ? row.rf_sku_count - prevRf
@@ -1256,9 +1262,11 @@ export async function getShopStockWeek(reportDate: string): Promise<ShopStockWee
         om: effectiveOm.get(row.site_code.toUpperCase())?.om ?? row.om,
         rank: null,
         prev_ratio: prev?.ratio ?? null,
+        prev_ovs_carry_ratio: prevOvsCarry,
         prev_rf_sku_count: prevRf,
         rf_sku_delta: rfDelta,
         delta_pt: delta,
+        ovs_carry_delta_pt: ovsCarryDelta,
         is_new: reason !== null,
         is_new_store: flagged,
         new_reason: reason,

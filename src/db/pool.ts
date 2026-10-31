@@ -10,6 +10,19 @@ let pool: pg.Pool = new Pool({
   connectionTimeoutMillis: 5000,
 });
 
+/**
+ * An idle client emits 'error' whenever PostgreSQL closes its connection
+ * underneath us — a server restart (e.g. upgrading the Railway image), a
+ * failover, or an idle timeout enforced by the server. Node turns an
+ * unhandled 'error' event into an uncaught exception, so without this
+ * listener the whole portal would go down together with the database
+ * instead of simply reconnecting. The pool discards the broken client and
+ * opens a fresh connection on the next query.
+ */
+pool.on('error', (err) => {
+  console.error('[db] idle client error', err);
+});
+
 /** For tests only: swap in an in-memory / custom pool. */
 export function setPoolForTesting(customPool: pg.Pool): void {
   pool = customPool;

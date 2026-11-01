@@ -654,10 +654,12 @@
     const period = $(opts.periodId);
     if (!el) return;
     const series = opts.series || [];
+    const omSeries = opts.omSeries || [];
     const company = opts.company || [];
+    const isStore = omSeries.length > 0;
     const usable = series.filter((row) => row[opts.valueKey] !== null);
     const companyUsable = company.filter((row) => row[opts.valueKey] !== null);
-    const labelRows = [...series, ...company].filter((row) => row[opts.valueKey] !== null);
+    const labelRows = [...series, ...omSeries, ...company].filter((row) => row[opts.valueKey] !== null);
     const showLabel = globalThis.ChartLite?.weeklyLabelVisibility?.(labelRows) || (() => true);
     if (period) period.textContent = '';
     if (note) note.textContent = '';
@@ -680,11 +682,13 @@
     if (period) {
       period.textContent = `${fmtDate(usable[0].report_date)} 至 ${fmtDate(usable[usable.length - 1].report_date)}，共 ${usable.length} 期`;
     }
+    // 三線模式：藍線 = OM 合計、灰虛線 = 全公司、綠線 = 所選店舖（畫最後，壓在最上）
+    const omLabel = isStore ? 'OM 管轄合計' : (opts.selfLabel || 'OM 管轄合計');
     const chartSeries = [{
-      key: 'self',
-      label: opts.selfLabel || 'OM 管轄合計',
+      key: isStore ? 'om' : 'self',
+      label: omLabel,
       color: '#0f5c9c',
-      points: series.map((row) => ({
+      points: (isStore ? omSeries : series).map((row) => ({
         date: row.report_date,
         value: row[opts.valueKey],
         showLabel: showLabel(row),
@@ -703,25 +707,37 @@
         })),
       });
     }
+    if (isStore) {
+      chartSeries.push({
+        key: 'store',
+        label: opts.selfLabel || '所選店舖',
+        color: '#0f766e',
+        points: series.map((row) => ({
+          date: row.report_date,
+          value: row[opts.valueKey],
+          showLabel: showLabel(row),
+        })),
+      });
+    }
     chartApi.renderLine(el, {
       series: chartSeries,
       height: 260,
       emptyText: opts.emptyText || '暫無數據',
       yFormat: (v) => `${(Number(v) * 100).toFixed(1)}%`,
       tipFormat: (v) => fmtRatio(v),
-      // 圖表直接標數值：兩條線分上下，期數太密時自動抽樣（永遠保留最新一期）
+      // 三線模式只標 OM 合計／全公司兩條參考線；所選店舖（綠線）用 tooltip 看數值
       valueLabels: true,
+      labelSeries: isStore ? [0, 1] : undefined,
       labelFormat: (v) => `${(Number(v) * 100).toFixed(1)}%`,
-      ariaLabel: `${opts.selfLabel || 'OM 管轄合計'}${opts.ariaLabel || '走勢'}，共 ${usable.length} 期`,
+      ariaLabel: `${opts.selfLabel || 'OM 管轄合計'}${isStore ? '、OM 管轄合計、全公司合計' : ''}${opts.ariaLabel || '走勢'}，共 ${usable.length} 期`,
     });
     if (note) {
       const noteText = opts.noteText ? opts.noteText(usable) : '點或懸停圖表可查看該期數值。';
-      const hiddenWeekly = [...series, ...company].some(
+      const storeNote = isStore ? ' 綠線為所選店舖，藍線為 OM 管轄合計，虛線為全公司加權。' : '';
+      const hiddenWeekly = [...series, ...omSeries, ...company].some(
         (row) => row[opts.valueKey] !== null && row.report_kind === 'weekly' && !showLabel(row),
       );
-      note.textContent = hiddenWeekly
-        ? `${noteText} 同一月份已有月結時，月結前的週更點不標數值（hover 仍可查看）。`
-        : noteText;
+      note.textContent = `${noteText}${storeNote}${hiddenWeekly ? ' 同一月份已有月結時，月結前的週更點不標數值（hover 仍可查看）。' : ''}`;
     }
   }
 
@@ -738,10 +754,15 @@
   function renderStockChart(data) {
     const selected = data.selected_store;
     const selfLabel = currentSelfLabel(data);
-    if ($('om_stock_legend_self')) $('om_stock_legend_self').textContent = selfLabel;
+    const storeLegend = $('om_stock_legend_store');
+    const storeLegendLabel = $('om_stock_legend_store_label');
+    if (storeLegend) storeLegend.hidden = !selected;
+    if (selected && storeLegendLabel) storeLegendLabel.textContent = selfLabel;
+    if ($('om_stock_legend_self')) $('om_stock_legend_self').textContent = 'OM 管轄合計';
 
     const isSku = omStockMetric === 'sku';
     const series = selected ? selected.series : data.series;
+    const omSeries = selected ? data.series : [];
 
     if (!isSku) {
       renderRatioTrend({
@@ -750,6 +771,7 @@
         noteId: 'om_stock_note',
         valueKey: 'ratio',
         series,
+        omSeries,
         company: data.company_series || [],
         selfLabel,
         emptyText: '暫無可顯示的存貨走勢。',
@@ -767,6 +789,7 @@
       noteId: 'om_stock_note',
       valueKey: 'ovs_carry_ratio',
       series,
+      omSeries,
       company,
       selfLabel,
       emptyText: '暫無可顯示的 SKU 比率走勢。',

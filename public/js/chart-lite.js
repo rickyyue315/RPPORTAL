@@ -13,12 +13,14 @@
  *   globalThis.ChartLite = { renderLine, renderBarGrid, clear, barLabelIndices, weeklyLabelVisibility, dateTicks, niceMax, scaleX, toTime, buildPath, splitIndex, fmtDay }
  *
  * renderLine(el, opts) 的 opts：
- *   series: [{ key, label, color, dashed, splitDate, colorBefore, points: [{ date:'YYYY-MM-DD', value:Number|null, showLabel?:Boolean }] }]  // 最多 2 條
+ *   series: [{ key, label, color, dashed, splitDate, colorBefore, points: [{ date:'YYYY-MM-DD', value:Number|null, showLabel?:Boolean }] }]  // 最多 3 條
  *            splitDate 之前的點改用 colorBefore 畫（同一條線分兩段，用於「去年」等舊資料）
  *            showLabel: false 只隱藏該點的數值標籤，圓點與 tooltip 照舊
  *   height: Number           容器的 clientHeight 為 0 時使用的像素高（預設 220）
  *   yFormat: (v) => String    y 軸刻度文字
  *   tipFormat: (v) => String  tooltip 數值文字（預設同 yFormat）
+ *   valueLabels: Boolean      是否在資料點直接標示數值（預設 false）
+ *   labelSeries: [Number]     只標示指定 series 的數值（預設全部；三線圖可設 [0,1] 只標首兩條）
  *   emptyText: String        完全沒有有效點時顯示的文字
  *   ariaLabel: String        SVG 的無障礙描述（預設自動生成）
  *   maxPoints: Number        超過此點數不畫圓點（預設 24）
@@ -278,7 +280,7 @@
     stopObserving(el);
     el.innerHTML = '';
 
-    const specs = (Array.isArray(o.series) ? o.series : []).filter(Boolean).slice(0, 2)
+    const specs = (Array.isArray(o.series) ? o.series : []).filter(Boolean).slice(0, 3)
       .map((spec, i) => normalizeSeries(spec, i));
     const finite = [];
     specs.forEach((s) => s.points.forEach((p) => { if (p.v !== null) finite.push(p); }));
@@ -420,6 +422,8 @@
       const perLabel = 44;
       const maxLabels = Math.max(2, Math.floor(innerW / perLabel));
       dots.forEach((entry, seriesIndex) => {
+        // 三線圖可只標首兩條，第三條（所選店舖）留 tooltip
+        if (Array.isArray(o.labelSeries) && !o.labelSeries.includes(seriesIndex)) return;
         const plotted = entry.plotted;
         if (!plotted.length) return;
         const above = seriesIndex === 0;

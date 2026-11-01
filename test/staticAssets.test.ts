@@ -238,6 +238,11 @@ describe('static asset freshness', () => {
     // 同一月份有月結時，週更點只留 tooltip、不畫數值標籤；月結後未有新月結的週更照標
     expect(script).toContain('weeklyLabelVisibility');
     expect(script).toContain('showLabel');
+    // 選店舖時三線：所選店舖（綠）、OM 合計（藍）、全公司（虛線）；legend 加權 tooltip
+    expect(page).toContain('id="om_stock_legend_store"');
+    expect(page).toContain('Σ分子 ÷ Σ分母，不是各店平均');
+    expect(script).toContain('omSeries');
+    expect(script).toContain('labelSeries: isStore ? [0, 1] : undefined');
     expect(page).toContain('不良 SKU / Carry SKU');
     expect(page).toContain('/portal/js/om.js');
     expect(page).toContain('/portal/js/om-designated-sku.js');

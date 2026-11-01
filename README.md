@@ -284,6 +284,7 @@ pg_restore --no-owner --no-privileges --clean --if-exists \
 7. **趨勢圖顯示期間**：後台可切 **3 / 6 / 12 / 24 個月**，預設 12，**上限 24**；店舖端固定 12 個月。
    資料永久保留（每期 93 行、約 100KB，5 年約 25MB），切換只影響畫幾多點，不會刪任何資料。
    選 24 個月時，**12 個月之前那一段（去年）用淺灰藍 `#b9c6d4` 畫**，最近 12 個月維持主色 `#0f5c9c`，圖例分開標示；分段點同時屬於兩段，線不會斷開。
+7b. **自選店舖比較**：佔比趨勢卡右上角有「店舖」下拉，預設「全公司（加權）」；揀單一店舖後，實線是該店佔比、灰色虛線是全公司加權平均。選項由門店主檔 `GET /api/admin/stores` 提供；單店序列由 `GET /api/admin/stock/stores/:siteCode/summary`（admin 只讀）回傳，內含該店 `series` 及 `company_series`，不會洩漏其他店。店舖模式下的匯出按鈕會標明「匯出全公司 Excel」（暫未支援單店匯出）。
 8. **匯出 Excel（報告／PPT 用）**：趨勢圖右上角「匯出 Excel」把**目前顯示期間**的數字匯出成三個工作表 ——
    `佔比趨勢`（一期一列：期別、週次、報表類型、店數、計入比率店數、Σ店舖存貨值、Σ不良存貨值、佔比、較上期 pp、>2 期與合計口徑、0 Sale SKU 數、RF SKU 合計／資料店數／較上期、不良存貨SKU÷RF）、
    `PPT 圖表用`（只有「期別 / 不良存貨佔比」兩欄，插入折線圖即用）、`匯出說明`（口徑、範圍、產生時間）。
@@ -321,6 +322,7 @@ pg_restore --no-owner --no-privileges --clean --if-exists \
 | PUT | `/api/admin/stock/batches/:id` | 改 `report_date` / `note` |
 | DELETE | `/api/admin/stock/batches/:id` | 刪除整批（回 `deleted_rows`、`deleted_stores`） |
 | GET | `/api/admin/stock/summary?from=&to=` | 趨勢序列 + 最新 KPI（加權比率、WoW 百分點）＋ `group_trend`（舊分組加權走勢，保留 API 相容；前端已不再顯示） |
+| GET | `/api/admin/stock/stores/:siteCode/summary` | 自選店舖走勢（該店 `series` ＋ 全公司 `company_series`）；只讀、需 admin |
 | GET | `/api/admin/stock/summary/export?months=3\|6\|12\|24` | 匯出趨勢圖數字成 xlsx（3 張工作表；`months` 上限 24，預設 12） |
 | GET | `/api/admin/stock/weeks/:reportDate` | 某一期每店明細（含與上一期的百分點差 `delta_pt`／`ovs_carry_delta_pt`、`rank`、`is_new`、`is_new_store`、`new_reason`） |
 | GET | `/api/admin/stock/weeks/:reportDate/export?q=&sort=&only=` | 該期每店明細匯出 xlsx（篩選／排序同畫面一致） |

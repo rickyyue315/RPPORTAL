@@ -912,6 +912,7 @@ describe('shopStock routes', () => {
     for (const url of [
       '/api/admin/stock/summary',
       '/api/admin/stock/summary/export?months=12',
+      '/api/admin/stock/stores/HA02/summary',
       '/api/admin/stock/weeks/2026-10-25',
       '/api/admin/stock/weeks/2026-10-25/export',
       '/api/admin/stock/rf/export?months=12',
@@ -1181,6 +1182,20 @@ describe.skipIf(!config.adminPassword)('shopStock admin routes (logged in)', () 
       .get('/api/admin/stock/weeks/2019-01-06')
       .set('Cookie', session.cookie);
     expect(missing.status).toBe(404);
+  });
+
+  it('serves one store trend to an admin for the chart selector', async () => {
+    const res = await request(app)
+      .get('/api/admin/stock/stores/ha02/summary')
+      .set('Cookie', session.cookie);
+    expect(res.status).toBe(200);
+    expect(res.body.site_code).toBe('HA02');
+    expect(res.body.has_data).toBe(true);
+    expect(Array.isArray(res.body.series)).toBe(true);
+    expect(res.body.series.length).toBeGreaterThan(0);
+    expect(Array.isArray(res.body.company_series)).toBe(true);
+    // 單店 response 只應有自己店號，不應洩漏其他店
+    expect(JSON.stringify(res.body)).not.toContain('HD09');
   });
 
   it('deletes a batch through the route and reports the deleted counts', async () => {

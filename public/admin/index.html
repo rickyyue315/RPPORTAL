@@ -585,6 +585,12 @@
           <div class="card-header">
             <h3 class="card-title">佔比趨勢（不良存貨 ÷ 店舖存貨）</h3>
             <div class="card-actions d-flex flex-wrap gap-2 align-items-center">
+              <div class="d-flex align-items-center gap-2">
+                <label class="text-secondary small mb-0 text-nowrap" for="stk_chart_store">店舖</label>
+                <select id="stk_chart_store" class="form-select form-select-sm" style="min-width:210px" aria-label="選擇走勢圖店舖">
+                  <option value="">全公司（加權）</option>
+                </select>
+              </div>
               <button class="btn btn-sm btn-primary" id="btn_stk_export" type="button" title="匯出目前顯示期間的完整數字（Excel）">匯出 Excel</button>
               <div class="stk-range" id="stk_range" role="group" aria-label="顯示期間">
                 <button class="btn btn-sm" type="button" data-stk-months="3">3 個月</button>

@@ -108,6 +108,10 @@ describe('static asset freshness', () => {
     // MTD 每店排名：要有獨立容器、店名欄及載入函式
     expect(html).toContain('id="stk_mtd_rank"');
     expect(html).toContain('id="stk_mtd_title"');
+    // 佔比趨勢可自選店舖（全公司 / 單店）
+    expect(html).toContain('id="stk_chart_store"');
+    expect(script).toContain('loadChartStoreView');
+    expect(script).toContain('/api/admin/stock/stores/');
     expect(script).toContain('renderMtdRanking');
     expect(script).toContain('loadMtdWeek');
     expect(script).toContain('店舖名稱');

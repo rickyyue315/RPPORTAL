@@ -129,6 +129,7 @@ import {
 } from '../services/zeroSales.js';
 import {
   deleteShopStockBatch,
+  getShopStockForStore,
   getShopStockSummary,
   getShopStockWeek,
   listShopStockBatches,
@@ -3556,6 +3557,22 @@ adminRouter.get(
     }
     const summary = await getShopStockSummary({ from: parsed.data.from, to: parsed.data.to });
     res.json({ ok: true, ...summary });
+  }),
+);
+
+/** GET /api/admin/stock/stores/:siteCode/summary — 自選店舖走勢（admin 用；只讀） */
+adminRouter.get(
+  '/stock/stores/:siteCode/summary',
+  requireAdmin,
+  adminActionLimiter,
+  asyncHandler(async (req: Request, res: Response) => {
+    const siteCode = normalizeSiteCode(req.params.siteCode);
+    if (!siteCode) {
+      res.status(400).json({ error: 'Site Code 無效' });
+      return;
+    }
+    const view = await getShopStockForStore(siteCode);
+    res.json({ ok: true, ...view });
   }),
 );
 

@@ -27,6 +27,11 @@
   let weekGraceDays = 90;
   /** 趨勢圖顯示期間（月）：3 / 6 / 12 / 24，預設 12；資料永久保留，只影響畫幾多 */
   let chartMonths = 12;
+  /** 佔比趨勢卡的自選店舖：空字串 = 全公司；view = 該店 series + company_series */
+  let chartStoreSite = '';
+  let chartStoreView = null;
+  let chartStoreRequestSeq = 0;
+  let chartStoreOptionsLoaded = false;
   /** RF 走勢圖口徑：count = RF SKU 數；ratio = 不良存貨 SKU 佔店內貨品比率 */
   let rfMetric = 'count';
   /** MTD 排名／店舖佔比口徑：sku = 不良 SKU ÷ SKU Carry；value = 不良存貨值 ÷ 店舖存貨值 */
@@ -534,6 +539,8 @@
       renderKpi(data, series);
       renderMtd();
       renderChart(data, series);
+      void loadChartStoreOptions();
+      if (chartStoreSite) void loadChartStoreView(chartStoreSite);
       renderRfDashboard(data, series);
       if (!selectedWeek) selectedWeek = series.length ? String(series[series.length - 1].report_date).slice(0, 10) : '';
     } catch (err) {
@@ -1000,7 +1007,7 @@
     renderMtd();
   }
 
-  function renderChart(data, series) {
+  function renderCompanyChart(data, series) {
     const el = $('stk_chart');
     const legend = $('stk_legend');
     const chartNote = $('stk_chart_note');
@@ -1096,6 +1103,190 @@
         ? `注意：有 ${gaps} 期店舖存貨值為 0（除零），該期不會連線（缺值斷線，不會當成 0%）。`
         : '點或懸停圖表可看該期數值；虛線為全公司平均參考，不屬於任何一期。';
     }
+    updateChartExportState();
+  }
+
+  /* ==================== 佔比趨勢：自選店舖 ==================== */
+
+  function chartStoreLabel(site) {
+    const sel = $('stk_chart_store');
+    if (!sel || !site) return site;
+    const option = [...sel.options].find((opt) => opt.value === site);
+    return option ? option.textContent : site;
+  }
+
+  function updateChartExportState() {
+    const btn = $('btn_stk_export');
+    if (!btn) return;
+    if (chartStoreSite) {
+      btn.textContent = '匯出全公司 Excel';
+      btn.title = '店舖走勢暫未支援匯出；此按鈕仍然匯出全公司佔比趨勢';
+    } else {
+      btn.textContent = '匯出 Excel';
+      btn.title = '匯出目前顯示期間的完整數字（Excel）';
+    }
+  }
+
+  async function loadChartStoreOptions() {
+    const sel = $('stk_chart_store');
+    if (!sel || chartStoreOptionsLoaded) return;
+    chartStoreOptionsLoaded = true;
+    try {
+      const data = (await aFetch('/api/admin/stores')) || {};
+      const stores = (Array.isArray(data.stores) ? data.stores : [])
+        .filter((store) => store && store.site_code)
+        .slice()
+        .sort((a, b) => String(a.site_code).localeCompare(String(b.site_code)));
+      const current = sel.value;
+      sel.innerHTML = '<option value="">全公司（加權）</option>' + stores.map((store) => {
+        const label = `${store.site_code}${store.shop ? ` — ${store.shop}` : ''}`;
+        return `<option value="${escAttr(store.site_code)}">${esc(label)}</option>`;
+      }).join('');
+      sel.value = stores.some((store) => store.site_code === current) ? current : '';
+    } catch {
+      chartStoreOptionsLoaded = false;
+    }
+  }
+
+  async function loadChartStoreView(site) {
+    const next = String(site || '');
+    chartStoreSite = next;
+    chartStoreView = null;
+    const seq = ++chartStoreRequestSeq;
+    const note = $('stk_chart_note');
+    if (!next) {
+      renderChart(summaryCache, normalizedSeries(summaryCache));
+      return;
+    }
+    if (note) note.textContent = '載入店舖走勢…';
+    try {
+      const data = (await aFetch(`/api/admin/stock/stores/${encodeURIComponent(next)}/summary`)) || {};
+      if (seq !== chartStoreRequestSeq || chartStoreSite !== next) return;
+      chartStoreView = data;
+      renderChart(summaryCache, normalizedSeries(summaryCache));
+    } catch (err) {
+      if (seq !== chartStoreRequestSeq || chartStoreSite !== next) return;
+      renderChart(summaryCache, normalizedSeries(summaryCache));
+      setResult('stk_chart_error', 'error', `未能載入 ${next} 的走勢：${err.message}`);
+    }
+  }
+
+  function renderChart(data, series) {
+    if (chartStoreSite) {
+      renderStoreChart(data, series);
+      return;
+    }
+    renderCompanyChart(data, series);
+  }
+
+  function renderStoreChart(data, series) {
+    const el = $('stk_chart');
+    const legend = $('stk_legend');
+    const chartNote = $('stk_chart_note');
+    if (!el) return;
+    setResult('stk_chart_error', 'info', '');
+    if (chartNote) chartNote.textContent = '';
+
+    const store = chartStoreView;
+    const storeRows = store && Array.isArray(store.series) ? store.series : [];
+    const companyRows = store && Array.isArray(store.company_series) && store.company_series.length
+      ? store.company_series
+      : series;
+
+    const allDates = [...storeRows, ...companyRows]
+      .map((row) => String(row.report_date || '').slice(0, 10))
+      .filter(Boolean)
+      .sort();
+    const latestDate = allDates.length ? allDates[allDates.length - 1] : '';
+    const cutoff = latestDate ? monthsBefore(latestDate, chartMonths) : '';
+    const visibleStore = cutoff
+      ? storeRows.filter((row) => String(row.report_date || '').slice(0, 10) >= cutoff)
+      : storeRows;
+    const visibleCompany = cutoff
+      ? companyRows.filter((row) => String(row.report_date || '').slice(0, 10) >= cutoff)
+      : companyRows;
+
+    const storePoints = visibleStore.map((row) => ({
+      date: row.report_date,
+      value: num(row.ratio),
+    }));
+    const companyPoints = visibleCompany.map((row) => ({
+      date: row.report_date,
+      value: num(row.ratio),
+    }));
+    const storeUsable = storePoints.filter((point) => point.value !== null);
+    const companyUsable = companyPoints.filter((point) => point.value !== null);
+    const yearCutoff = chartMonths > 12 ? monthsBefore(latestDate, 12) : '';
+    const hasYearPart = !!yearCutoff
+      && storePoints.some((point) => String(point.date || '').slice(0, 10) < yearCutoff);
+    const chartApi = globalThis.ChartLite;
+    const storeLabel = chartStoreLabel(chartStoreSite) || chartStoreSite || '所選店舖';
+
+    if (!storeUsable.length && !companyUsable.length) {
+      if (chartApi) chartApi.clear(el); else el.innerHTML = '';
+      if (legend) legend.innerHTML = '';
+      el.innerHTML = `<div class="ct-empty">${chartStoreSite} 在所選期間沒有存貨數據，全公司趨勢亦沒有可顯示的期數。</div>`;
+      updateChartExportState();
+      return;
+    }
+
+    if (legend) {
+      const parts = [];
+      if (storeUsable.length) {
+        parts.push(`<span class="stk-legend-item"><i style="background:${COLOR_MAIN}"></i>${esc(storeLabel)}</span>`);
+      }
+      if (hasYearPart) {
+        parts.push(`<span class="stk-legend-item"><i style="background:${COLOR_BEFORE}"></i>12 個月前（去年）</span>`);
+      }
+      if (companyUsable.length) {
+        parts.push(`<span class="stk-legend-item"><i class="stk-legend-dash" style="border-color:${COLOR_REF}"></i>全公司平均（加權）</span>`);
+      }
+      legend.innerHTML = parts.join('');
+    }
+
+    if (!chartApi) {
+      el.innerHTML = '<div class="ct-empty">圖表元件未載入（/js/chart-lite.js），請重新整理頁面。</div>';
+      updateChartExportState();
+      return;
+    }
+
+    const chartSeries = [{
+      key: 'store',
+      label: storeLabel,
+      color: COLOR_MAIN,
+      splitDate: hasYearPart ? yearCutoff : '',
+      colorBefore: COLOR_BEFORE,
+      points: storePoints,
+    }];
+    if (companyUsable.length) {
+      chartSeries.push({
+        key: 'company',
+        label: '全公司平均（加權）',
+        color: COLOR_REF,
+        dashed: true,
+        points: companyPoints,
+      });
+    }
+
+    chartApi.renderLine(el, {
+      series: chartSeries,
+      height: 220,
+      emptyText: '暫無佔比數據',
+      yFormat: (v) => `${(Number(v) * 100).toFixed(1)}%`,
+      tipFormat: (v) => fmtRatio(v),
+      ariaLabel: `${storeLabel} 與全公司不良存貨佔比趨勢`,
+    });
+
+    const gaps = storePoints.length - storeUsable.length;
+    const notes = [];
+    if (!storeUsable.length) {
+      notes.push('此店在所選期間沒有有效佔比，圖中只顯示全公司加權平均。');
+    } else if (gaps) {
+      notes.push(`此店有 ${gaps} 期店舖存貨值為 0（除零），該期斷線，不會當成 0%。`);
+    }
+    notes.push('點或懸停圖表可看該期數值；虛線為全公司加權平均，不屬於任何一期。');
+    if (chartNote) chartNote.textContent = notes.join(' ');
+    updateChartExportState();
   }
 
   /* ==================== No. of RF SKU Dashboard ==================== */
@@ -1945,6 +2136,14 @@
     // RF SKU Dashboard 匯出（走勢 + 兩張排名）
     const rfExportBtn = $('btn_stk_rf_export');
     if (rfExportBtn) rfExportBtn.addEventListener('click', downloadRfExport);
+
+    // 佔比趨勢：自選店舖（全公司 / 單店；單店仍以全公司加權線作對照）
+    const chartStoreEl = $('stk_chart_store');
+    if (chartStoreEl) {
+      chartStoreEl.addEventListener('change', () => {
+        loadChartStoreView(chartStoreEl.value);
+      });
+    }
 
     // 趨勢圖顯示期間（3 / 6 / 12 / 24 個月；只影響下方佔比趨勢與 RF 線圖，資料本身永久保留）
     const rangeEls = [$('stk_range')].filter(Boolean);

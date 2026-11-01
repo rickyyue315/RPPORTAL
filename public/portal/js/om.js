@@ -522,7 +522,7 @@
         <div>${items.length} 個 SKU｜${replied} 已回覆（${rate}%）${batch && batch.is_archived ? '｜此週次已封存，只供查閱' : ''}</div>`;
     }
     if (!items.length) {
-      list.innerHTML = '<div class="empty" style="padding:36px 16px">沒有符合條件的零銷售資料。試下轉狀態、店舖或清空搜尋字。</div>';
+      list.innerHTML = '<div class="empty" style="padding:36px 16px">沒有符合條件的零銷售資料。試下轉狀態、店舖或清除搜尋字。</div>';
       if ($('om_zs_count')) $('om_zs_count').textContent = '';
       return;
     }

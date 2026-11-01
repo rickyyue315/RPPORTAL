@@ -69,7 +69,7 @@
         <div>共 ${matters.length} 個事項（${totalSku} 個 SKU）｜<b class="${pendingMatters ? 'ds-pending-count' : ''}">${pendingMatters} 個事項未回覆</b></div>`;
     }
     if (!rows.length) {
-      list.innerHTML = `<div class="empty" style="padding:36px 16px">${matters.length ? '沒有符合條件的事項 — 試下轉狀態、店舖或清空搜尋字。' : '目前沒有指定 SKU 事項。'}</div>`;
+      list.innerHTML = `<div class="empty" style="padding:36px 16px">${matters.length ? '沒有符合條件的事項 — 試下轉狀態、店舖或清除搜尋字。' : '目前沒有指定 SKU 事項。'}</div>`;
       return;
     }
     list.innerHTML = rows.map((matter) => {
@@ -361,7 +361,7 @@
       if (qty > MAX_QTY) throw new Error(`SKU ${sku}：年期 ${year} 的件數不可超過 ${MAX_QTY}`);
       out.push({ year_code: year, qty });
     }
-    if (!out.length) throw new Error(`SKU ${sku}：請填寫至少一個年期，或勾選「無可調撥件數」`);
+    if (!out.length) throw new Error(`SKU ${sku}：請填寫至少一個年期，或選取「無可調撥件數」`);
     return out;
   }
 

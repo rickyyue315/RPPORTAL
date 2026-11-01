@@ -258,7 +258,7 @@
       return hay.includes(q);
     }).sort((a, b) => (a.status === 'pending' ? 0 : 1) - (b.status === 'pending' ? 0 : 1));
     if (!filtered.length) {
-      $('zs_list').innerHTML = `<div class="empty" style="padding:36px 16px">${archived ? '此週次沒有符合條件的歷史紀錄。' : (noReply ? '此週次沒有符合條件的 SKU — 試下清空搜尋字。' : '暫無指定 SKU — 試下轉「狀態」或清空搜尋字。')}</div>`;
+      $('zs_list').innerHTML = `<div class="empty" style="padding:36px 16px">${archived ? '此週次沒有符合條件的歷史紀錄。' : (noReply ? '此週次沒有符合條件的 SKU — 試下清除搜尋字。' : '暫無指定 SKU — 試下轉「狀態」或清除搜尋字。')}</div>`;
       const c0 = document.getElementById('zs_count');
       if (c0) c0.textContent = '';
       return;
@@ -298,7 +298,7 @@
           : '';
         repeatCell = `<span class="badge-repeat">第${rc}次上榜</span>` +
           (prev ? `<div class="hint">${p.escapeHtml(prev)}${prevNote}</div>` : '') + notImproved +
-          // 上次已回覆 → 開啟回覆彈窗時自動帶入上次內容（按鍵在彈窗內可重設）
+          // 上次已回覆 → 開啟回覆彈出視窗時自動帶入上次內容（按鍵在彈出視窗內可重設）
           (it.prev_status === 'replied' && !archived && !rowNoReply && !locked && !auto ? '<div class="hint">回覆時會自動帶入上次內容</div>' : '');
       }
       const rowClass = archived ? 'zs-archived' : (isRepeat(it) ? 'zs-repeat' : '');
@@ -348,7 +348,7 @@
     if (match) sel.value = match.value;
     $('reply_note').value = it.prev_reason_note || '';
     if (opts.silent) {
-      // 開啟彈窗時自動帶入：只更新歷史提示，不使用紅色／藍色錯誤區
+      // 開啟彈出視窗時自動帶入：只更新歷史提示，不使用紅色／藍色錯誤區
       const histEl = $('reply_history');
       if (histEl) {
         histEl.textContent += match
@@ -426,7 +426,7 @@
     }
     $('reply_reason').value = it.reason_code || (reasons[0] && reasons[0].code) || '';
     $('reply_note').value = it.reason_note || '';
-    // 未自動套用的 pending 重複 SKU：開啟彈窗時先自動帶入上次回覆，店舖確認後再儲存
+    // 未自動套用的 pending 重複 SKU：開啟彈出視窗時先自動帶入上次回覆，店舖確認後再儲存
     if (!auto && it.status === 'pending' && canFillPrev) fillFromPrev(it, { silent: true });
     p.showAlert($('reply_error'), '', '');
     $('reply_dialog').showModal();
@@ -446,7 +446,7 @@
       await loadBatches(true);
       await loadList();
     } catch (err) {
-      // 週次在開啟彈窗後被新批次封存 / 被設為無須回覆：關窗、重新載入並顯示原因
+      // 週次在開啟彈出視窗後被新批次封存 / 被設為無須回覆：關窗、重新載入並顯示原因
       if (err.status === 409 && (err.data?.code === 'BATCH_CLOSED' || err.data?.code === 'REPLY_NOT_REQUIRED')) {
         $('reply_dialog').close();
         await loadBatches(true);

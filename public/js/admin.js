@@ -198,7 +198,7 @@
       const status = s.locked
         ? `<span class="status-badge locked">已鎖定</span>`
         : s.workflow
-          ? workflowBadge(s.workflow.status) + (s.workflow.auto_approved_at ? ` <span class="status-badge received" title="Buyer 逾期未回覆，系統默認同意（${escapeHtml(s.workflow.auto_approved_at)}）">SLA 自動批准</span>` : '')
+          ? workflowBadge(s.workflow.status) + (s.workflow.auto_approved_at ? ` <span class="status-badge received" title="Buyer 逾期未回覆，系統視作同意（${escapeHtml(s.workflow.auto_approved_at)}）">SLA 自動批准</span>` : '')
           : `<span class="status-badge received">已收件</span>`;
       tr.innerHTML = `
         <td class="cell-appno">${escapeHtml(s.application_no)}<button type="button" class="btn-copy-appno" data-copy="${escapeHtml(s.application_no)}" title="複製申請編號">複製</button></td>
@@ -857,10 +857,10 @@
       let status;
       let action;
       if (batch.archive_available) {
-        status = `<span class="status-badge received">已保存至 ${escapeHtml(batch.archive_expires_at || '三個月')}</span><div class="hint">${formatFileSize(batch.archive_file_size)}</div>`;
+        status = `<span class="status-badge received">已儲存至 ${escapeHtml(batch.archive_expires_at || '三個月')}</span><div class="hint">${formatFileSize(batch.archive_file_size)}</div>`;
         action = `<button class="btn ghost btn-download-export" data-id="${escapeHtml(batch.id)}" data-filename="${escapeHtml(batch.filename)}" data-label="重新下載">重新下載</button>`;
       } else if (batch.archive_expired) {
-        status = '<span class="status-badge locked">已過保存期限</span>';
+        status = '<span class="status-badge locked">已過保留期限</span>';
         action = '<span class="hint">檔案已清理</span>';
       } else {
         status = '<span class="status-badge received">舊批次</span><div class="hint">按申報資料重建</div>';
@@ -892,7 +892,7 @@
         unit: '個批次',
       });
       const usage = data.archive_usage || { bytes: 0, files: 0, retention_days: 90 };
-      $('export_archive_usage').textContent = `目前保存 ${usage.files} 個正式匯出檔案，共 ${formatFileSize(usage.bytes)}；保存期限 ${usage.retention_days} 日。`;
+      $('export_archive_usage').textContent = `目前儲存 ${usage.files} 個正式匯出檔案，共 ${formatFileSize(usage.bytes)}；保留期限 ${usage.retention_days} 日。`;
     } catch (err) {
       showAlert($('export_history_info'), 'error', escapeHtml(err.message));
     }
@@ -1145,7 +1145,7 @@
       <div class="datagrid-item"><div class="datagrid-title">審批回合</div><div class="datagrid-content">${wf.review_round}</div></div>
       ${wf.rejected_at ? `<div class="datagrid-item"><div class="datagrid-title">拒絕時間</div><div class="datagrid-content">${escapeHtml(wf.rejected_at)}</div></div>` : ''}
       ${wf.review_remark ? `<div class="datagrid-item"><div class="datagrid-title">Review Remark</div><div class="datagrid-content">${escapeHtml(wf.review_remark)}</div></div>` : ''}
-      ${wf.auto_approved_at ? `<div class="datagrid-item"><div class="datagrid-title">SLA 自動批准時間</div><div class="datagrid-content">${escapeHtml(wf.auto_approved_at)}（Buyer 逾期未回覆，默認同意）</div></div>` : ''}`;
+      ${wf.auto_approved_at ? `<div class="datagrid-item"><div class="datagrid-title">SLA 自動批准時間</div><div class="datagrid-content">${escapeHtml(wf.auto_approved_at)}（Buyer 逾期未回覆，視作同意）</div></div>` : ''}`;
     const events = data.reviewEvents || [];
     $('workflow_events').innerHTML = events.length
       ? '<table class="table table-vcenter"><thead><tr><th>時間</th><th>事件</th><th>回合</th><th>操作者</th><th>詳情</th></tr></thead><tbody>'
@@ -1281,13 +1281,13 @@
   async function bulkPortalUsers(action, label) {
     const ids = selectedPortalUserIds();
     if (!ids.length) {
-      showAlert($('portal_users_result'), 'error', '請先勾選至少一個帳戶。');
+      showAlert($('portal_users_result'), 'error', '請先選取至少一個帳戶。');
       return;
     }
-    if (!window.confirm(`確定要為已勾選的 ${ids.length} 個帳戶批量「${label}」嗎？${action === 'delete' ? '刪除後不可還原。' : ''}`)) return;
+    if (!window.confirm(`確定要為已選取的 ${ids.length} 個帳戶一次過「${label}」嗎？${action === 'delete' ? '刪除後不可還原。' : ''}`)) return;
     try {
       const data = await adminFetch('/api/admin/portal/users/bulk', { method: 'POST', body: JSON.stringify({ ids, action }) });
-      let msg = `批量「${escapeHtml(data.label)}」完成：成功 ${data.succeeded}、失敗 ${data.failed}。`;
+      let msg = `一次過「${escapeHtml(data.label)}」完成：成功 ${data.succeeded}、失敗 ${data.failed}。`;
       const failures = (data.results || []).filter((r) => !r.ok);
       if (failures.length) {
         msg += '<ul>' + failures.map((r) => `<li><b>${escapeHtml(r.username || r.id)}</b>：${escapeHtml(r.error || '失敗')}</li>`).join('') + '</ul>';
@@ -1644,7 +1644,7 @@
   $('btn_review_pending_export').addEventListener('click', downloadReviewPending);
   $('btn_review_pending_refresh').addEventListener('click', loadReviewPending);
   async function runAutoApprove() {
-    const ok = window.confirm('確認立即執行「Buyer 逾期自動批准」？\n\n規則：ND 申請超過 ' + (globalThis.NDRF_OPTIONS?.autoApproveDays ?? 7) + ' 日 Buyer 未有回覆，系統會視為默認同意（Accept），並在審批時間線註明「Buyer 未有回復，默認同意」。\n已匯出、已鎖定或已有決定的申請不會被影響。');
+    const ok = window.confirm('確認立即執行「Buyer 逾期自動批准」？\n\n規則：ND 申請超過 ' + (globalThis.NDRF_OPTIONS?.autoApproveDays ?? 7) + ' 日 Buyer 未有回覆，系統會視作同意（Accept），並在審批時間線註明「Buyer 未有回復，視作同意」。\n已匯出、已鎖定或已有決定的申請不會被影響。');
     if (!ok) return;
     const btn = $('btn_auto_approve');
     btn.disabled = true;
@@ -1658,7 +1658,7 @@
       showAlert($('review_pending_result'), 'error', escapeHtml(err.message));
     } finally {
       btn.disabled = false;
-      btn.textContent = '執行逾期自動批准（Buyer 7 日未回覆 → 默認同意）';
+      btn.textContent = '執行逾期自動批准（Buyer 7 日未回覆 → 視作同意）';
     }
   }
 

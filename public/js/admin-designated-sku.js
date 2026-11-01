@@ -453,7 +453,7 @@
     }
   }
 
-  /** 舊版 admin.css 未載入新規則時，仍確保彈窗置中顯示 */
+  /** 舊版 admin.css 未載入新規則時，仍確保彈出視窗置中顯示 */
   function applyModalFallback(overlay) {
     overlay.style.position = 'fixed';
     overlay.style.inset = '0';
@@ -664,7 +664,7 @@
           if (qty > 9999) throw new Error(`SKU ${sku}：年期 ${year} 的件數不可超過 9999`);
           lines.push({ year_code: year, qty });
         }
-        if (!lines.length) throw new Error(`SKU ${sku}：請填寫至少一個年期，或勾選「無可調撥件數」`);
+        if (!lines.length) throw new Error(`SKU ${sku}：請填寫至少一個年期，或選取「無可調撥件數」`);
         return { item_id: section.dataset.item, lines, note, no_transfer: false };
       });
     };
@@ -834,7 +834,7 @@
       if (data.batchId) await openBatch(data.batchId, { silent: true });
     } catch (err) {
       if (err.status === 409 && err.data?.code === 'DUPLICATE_FILE') {
-        res.innerHTML = alertHtml('warning', `${esc(err.message)}<div class="small mt-1">如確定要重新派發，請勾選「相同清單已建立過仍要重新派發」再試。</div>`);
+        res.innerHTML = alertHtml('warning', `${esc(err.message)}<div class="small mt-1">如確定要重新派發，請選取「相同清單已建立過仍要重新派發」再試。</div>`);
         $('dsku_manual_force').checked = true;
       } else {
         const list = (err.data?.errors || []).slice(0, 12)
@@ -1017,7 +1017,7 @@
       if (data.batchId) await openBatch(data.batchId, { silent: true });
     } catch (err) {
       if (err.status === 409 && err.data?.code === 'DUPLICATE_FILE') {
-        res.innerHTML = alertHtml('warning', `${esc(err.message)}<div class="small mt-1">如確定要重新派發，請勾選「仍要重新上載」再試。</div>`);
+        res.innerHTML = alertHtml('warning', `${esc(err.message)}<div class="small mt-1">如確定要重新派發，請選取「仍要重新上載」再試。</div>`);
         $('dsku_force').checked = true;
       } else {
         const list = (err.data?.errors || []).slice(0, 12)

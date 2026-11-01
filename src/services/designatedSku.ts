@@ -655,7 +655,7 @@ export interface SubmitMatterReplyInput {
 
 function normalizeLines(raw: Array<{ year_code?: unknown; qty?: unknown }>): DesignatedSkuReplyLine[] {
   if (!Array.isArray(raw) || raw.length === 0) {
-    throw new DesignatedSkuError('請為每個 SKU 填寫至少一個年期及可調撥件數，或勾選「無可調撥」');
+    throw new DesignatedSkuError('請為每個 SKU 填寫至少一個年期及可調撥件數，或選取「無可調撥」');
   }
   if (raw.length > DESIGNATED_SKU_MAX_LINES) {
     throw new DesignatedSkuError(`每個 SKU 最多只可填寫 ${DESIGNATED_SKU_MAX_LINES} 個年期`);
@@ -698,7 +698,7 @@ function validateItemReplies(
 ): NormalizedItemReply[] {
   const byId = new Map(dbItems.map((it) => [it.id, it]));
   if (submitted.length !== byId.size) {
-    throw new DesignatedSkuError('請為事項內每個 SKU 填寫回覆，或勾選「無可調撥」');
+    throw new DesignatedSkuError('請為事項內每個 SKU 填寫回覆，或選取「無可調撥」');
   }
   const seen = new Set<string>();
   const out: NormalizedItemReply[] = [];
@@ -1082,7 +1082,7 @@ export async function addItem(
 export interface UpdateDesignatedSkuItemInput {
   batchId: string;
   itemId: string;
-  /** 有提供才更新；設為 null 代表清空存貨（不當 0） */
+  /** 有提供才更新；設為 null 代表清除存貨（不當 0） */
   siteCode?: string;
   sku?: string;
   hierarchy?: string;

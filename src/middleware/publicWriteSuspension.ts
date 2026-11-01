@@ -2,7 +2,7 @@ import type { NextFunction, Request, Response } from 'express';
 import { config } from '../config.js';
 
 export const PUBLIC_WRITE_SUSPENDED_CODE = 'PUBLIC_WRITES_SUSPENDED';
-export const PUBLIC_WRITE_SUSPENDED_MESSAGE = '此平台已暫停提交、修改及 Excel 批量上載服務，謝謝。';
+export const PUBLIC_WRITE_SUSPENDED_MESSAGE = '此平台已暫停提交、修改及 Excel 一次過上載服務，謝謝。';
 
 export type PublicWriteSuspensionSettings = Readonly<{
   enabled: boolean;

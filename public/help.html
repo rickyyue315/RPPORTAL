@@ -44,11 +44,11 @@
       <a href="#designated-sku">2. 指定SKU回覆<small>一個事項多個 SKU，按年期填可調撥件數</small></a>
       <a href="#stock-trend">3. 存貨走勢<small>自己店舖的不良存貨比率與趨勢</small></a>
       <a href="#normal">4. 一般申報<small>進入 Store Portal，ND／RF 申報（暫停）</small></a>
-      <a href="#excel">5. Excel 批量<small>進入後一次上載多筆（暫停）</small></a>
+      <a href="#excel">5. Excel 一次過上載<small>進入後可一次提交多筆（暫停）</small></a>
       <a href="#portal-status">6. 申請進度<small>查看審批狀態及結果</small></a>
       <a href="#urgent">7. Urgent Order<small>緊急補貨申報（暫停）</small></a>
       <a href="#sales">8. 突發性銷售申報<small>只填 Site Code 及 SKU（暫停）</small></a>
-      <a href="#return">9. 行貨退貨報數<small>申請退行貨及 Excel 批量（暫停）</small></a>
+      <a href="#return">9. 行貨退貨報數<small>申請退行貨及 Excel 一次過上載（暫停）</small></a>
       <a href="#lookup">10. 查詢／修改<small>Urgent／銷售／退貨</small></a>
       <a href="#reviewer">11. Buyer／SCT 審批<small>審批工作檯操作</small></a>
     </nav>
@@ -246,7 +246,7 @@
             <path d="M418 112 L442 112" fill="none" stroke="#888780" stroke-width="1.5" marker-end="url(#ds-arrow-1)"/>
 
             <rect x="24" y="196" width="632" height="44" rx="8" fill="#FAEEDA" stroke="#EF9F27" stroke-width="0.5"/>
-            <text class="ts" x="40" y="212" fill="#633806">一張卡＝一個事項。卡內每個 SKU 都要填年期或勾「無可調撥」；</text>
+            <text class="ts" x="40" y="212" fill="#633806">一張卡＝一個事項。卡內每個 SKU 都要填年期或選「無可調撥」；</text>
             <text class="ts" x="40" y="230" fill="#633806">全部 SKU 都答完，事項才會變成「已回覆」。</text>
           </svg>
         </div>
@@ -271,7 +271,7 @@
         </div>
         <div>
           <h3><span class="help-step-number">2</span>先讀卡上的三件事</h3>
-          <p>卡頂左邊是<b>狀態</b>（未回覆／已回覆／未回覆 · 已過截止／已回覆 · 已截止）與<b>事項編號</b>（例 <b>DSKU-261026-0001-03</b>），右邊是按鈕（回覆／修改回覆／查看回覆）；下面依次是<b>主題</b>、SKU 數、批次、<b>截止時間（香港時間）</b>及參考編號。卡內每個 SKU 一行，右邊顯示存貨與你已填的年期（例 <b>0827 × 1</b>）；未填寫會寫「未回覆」，勾了無可調撥會寫「無可調撥」。</p>
+          <p>卡頂左邊是<b>狀態</b>（未回覆／已回覆／未回覆 · 已過截止／已回覆 · 已截止）與<b>事項編號</b>（例 <b>DSKU-261026-0001-03</b>），右邊是按鈕（回覆／修改回覆／查看回覆）；下面依次是<b>主題</b>、SKU 數、批次、<b>截止時間（香港時間）</b>及參考編號。卡內每個 SKU 一行，右邊顯示存貨與你已填的年期（例 <b>0827 × 1</b>）；未填寫會寫「未回覆」，選取了無可調撥會寫「無可調撥」。</p>
           <p>上方工具列可切換<b>狀態篩選</b>（全部／未回覆／已回覆），或搜尋<b>事項編號、SKU、主題</b>。</p>
         </div>
       </div>
@@ -283,7 +283,7 @@
         </div>
         <div>
           <h3><span class="help-step-number">3</span>為每個 SKU 填年期與件數</h3>
-          <p>按「<b>回覆</b>」開啟彈窗，每個 SKU 一節：</p>
+          <p>按「<b>回覆</b>」開啟彈出視窗，每個 SKU 一節：</p>
           <ul>
             <li>年期寫 4 位 <b>MMYY</b>，月份在前：<b>0827</b> 即 2027 年 8 月。輸入 <b>8/27</b> 或 <b>827</b> 會自動轉成 <b>0827</b>；月份只接受 01–12。</li>
             <li>同一 SKU 有多個年期，按「<b>＋ 新增年期</b>」加一行；<b>同一個年期不可出現兩次</b>，重複請合併為一行。</li>
@@ -296,11 +296,11 @@
       <div class="help-step">
         <div class="help-placeholder">
           <strong>無可調撥 ≠ 未回覆</strong>
-          <span>勾「此 SKU 無可調撥件數」才算答完</span>
+          <span>選「此 SKU 無可調撥件數」才算答完</span>
         </div>
         <div>
-          <h3><span class="help-step-number">4</span>沒有可調撥的 SKU 要明確勾選</h3>
-          <p>某個 SKU 完全沒有可調撥存貨，請勾選「<b>此 SKU 無可調撥件數</b>」——年期輸入會收起，該 SKU 顯示「無可調撥」、合計 0 件。<b>勾選與留空不同</b>：只有填了年期或勾了無可調撥，該 SKU 才算回覆；留空仍然是「未回覆」，整個事項亦不會完成。勾錯了可以取消勾選再填。</p>
+          <h3><span class="help-step-number">4</span>沒有可調撥的 SKU 要明確選取</h3>
+          <p>某個 SKU 完全沒有可調撥存貨，請選取「<b>此 SKU 無可調撥件數</b>」——年期輸入會收起，該 SKU 顯示「無可調撥」、合計 0 件。<b>選取與留空不同</b>：只有填了年期或選取了無可調撥，該 SKU 才算回覆；留空仍然是「未回覆」，整個事項亦不會完成。選錯了可以取消選取再填。</p>
         </div>
       </div>
 
@@ -311,18 +311,18 @@
         </div>
         <div>
           <h3><span class="help-step-number">5</span>儲存回覆，截止前可再改</h3>
-          <p>彈窗底部顯示「<b>N 個 SKU｜合計 X 件</b>」；按「<b>儲存回覆</b>」，整份事項一次過提交。成功後狀態變「<b>已回覆</b>」，按鈕變「<b>修改回覆</b>」。<b>截止前可以無限次修改</b>，每次儲存都會記錄提交時間與次數，所以不必一次填到完美。</p>
+          <p>彈出視窗底部顯示「<b>N 個 SKU｜合計 X 件</b>」；按「<b>儲存回覆</b>」，整份事項一次過提交。成功後狀態變「<b>已回覆</b>」，按鈕變「<b>修改回覆</b>」。<b>截止前可以無限次修改</b>，每次儲存都會記錄提交時間與次數，所以不必一次填到完美。</p>
         </div>
       </div>
 
       <div class="help-step">
         <div class="help-placeholder">
           <strong>已截止＝只可查看</strong>
-          <span>彈窗標題會寫「事項回覆（已截止）」</span>
+          <span>彈出視窗標題會寫「事項回覆（已截止）」</span>
         </div>
         <div>
           <h3><span class="help-step-number">6</span>過了截止時間之後</h3>
-          <p>到達截止時間（香港時間）即<b>自動鎖定</b>，彈窗標題變成「<b>事項回覆（已截止）</b>」，沒有儲存按鈕，只可查看；未回覆的 SKU 會標示「<b>店舖未提交回覆（已截止）</b>」。逾期未回覆的事項<b>不會</b>計入導覽列的待回覆數字。<br>需要補交或更正，請<b>聯絡 RP Team</b>：他們可以在後台代填，或延長截止時間後讓你自行補交。</p>
+          <p>到達截止時間（香港時間）即<b>自動鎖定</b>，彈出視窗標題變成「<b>事項回覆（已截止）</b>」，沒有儲存按鈕，只可查看；未回覆的 SKU 會標示「<b>店舖未提交回覆（已截止）</b>」。逾期未回覆的事項<b>不會</b>計入導覽列的待回覆數字。<br>需要補交或更正，請<b>聯絡 RP Team</b>：他們可以在後台代填，或延長截止時間後讓你自行補交。</p>
         </div>
       </div>
 
@@ -341,7 +341,7 @@
         </div>
         <div class="help-rule">
           <strong>未提交的 SKU 會拖住整個事項</strong>
-          <p>事項狀態由 SKU 推導：只要有一個 SKU 既沒填年期、又沒勾無可調撥，整張卡仍然是「未回覆」。</p>
+          <p>事項狀態由 SKU 推導：只要有一個 SKU 既沒填年期、又沒選無可調撥，整張卡仍然是「未回覆」。</p>
         </div>
       </div>
 
@@ -477,8 +477,8 @@
     </section>
 
     <section class="card help-section" id="excel" aria-labelledby="excel-title">
-      <h2 id="excel-title">5. Excel 批量上載（暫停）</h2>
-      <p class="help-section-intro">進入 Store Portal 後，可在「Excel 批量上載」一次提交多筆申報。請不要更改工作表名稱及第一行欄名。</p>
+      <h2 id="excel-title">5. Excel 一次過上載（暫停）</h2>
+      <p class="help-section-intro">進入 Store Portal 後，可在「Excel 一次過上載」一次提交多筆申報。請不要更改工作表名稱及第一行欄名。</p>
       <div class="help-step">
         <img src="/images/help/excel.svg" alt="下載 Excel 模板、填寫資料並上載的示意圖" width="640" height="360" loading="lazy" decoding="async">
         <div>
@@ -491,7 +491,7 @@
         <div>
           <h3><span class="help-step-number">2</span>上載並核對結果</h3>
           <p>將檔案拖到上載框，或按一下選擇檔案，再按「上載並匯入」。系統會先完整檢查整份檔案；如有任何錯誤，整份檔案都不會寫入。成功後可下載匯入記錄 Excel，內含每筆申請編號。</p>
-          <div class="help-note">Excel 批量上載的欄位規則與單筆申報相同：ND 要填 ND Code；RF 要填大於 0 的 Safety stock，指定店舖轉 RF 要填 Remark。</div>
+          <div class="help-note">Excel 一次過上載的欄位規則與單筆申報相同：ND 要填 ND Code；RF 要填大於 0 的 Safety stock，指定店舖轉 RF 要填 Remark。</div>
         </div>
       </div>
     </section>
@@ -519,7 +519,7 @@
         <div>
           <h3><span class="help-step-number">2</span>重新申請須知</h3>
           <p>同一 Site Code + SKU + RP Type 已有<b>未匯出、未鎖定</b>的有效申請時，不可重複提交。申請被拒絕後，同一組合需等待 <b>30 日冷卻期</b>方可重新申請（冷卻期以拒絕時間起計）。申請被管理員匯出後會鎖定，不可再修改。</p>
-          <div class="help-note"><b>公司規定：</b>Buyer 須於 <b>7 日內</b>完成審批；若 7 日內未有回覆，系統會視為<b>默認同意（自動批准）</b>，並於審批時間線註明「Buyer 未有回復，默認同意」，交由管理員跟進。自動批准的申請與一般批准一樣可被匯出。</div>
+          <div class="help-note"><b>公司規定：</b>Buyer 須於 <b>7 日內</b>完成審批；若 7 日內未有回覆，系統會<b>視作同意（自動批准）</b>，並於審批時間線註明「Buyer 未有回復，視作同意」，交由管理員跟進。自動批准的申請與一般批准一樣可被匯出。</div>
         </div>
       </div>
     </section>
@@ -537,7 +537,7 @@
       <div class="help-step">
         <img src="/images/help/urgent-excel.svg" alt="Urgent Order Excel 模板及上載的示意圖" width="640" height="360" loading="lazy" decoding="async">
         <div>
-          <h3><span class="help-step-number">2</span>預覽後一次提交，或使用 Excel 批量上載</h3>
+          <h3><span class="help-step-number">2</span>預覽後一次提交，或使用 Excel 一次過上載</h3>
           <p>網頁申報按「預覽」後確認提交，所有 SKU 一次收件，每個 SKU 會取得<b>獨立申請編號</b>；同一批有任何一組資料錯誤，整批都不會提交。多筆申報亦可下載 Urgent Order 模板，上載前保持工作表及欄名不變。每日香港時間 14:30 後暫停收單，請於翌日 14:30 前提交。</p>
           <div class="help-note">Urgent Order 有提交時間限制，必須 14:30 前提交。</div>
         </div>
@@ -555,9 +555,9 @@
         </div>
       </div>
       <div class="help-step">
-        <img src="/images/help/excel-upload.svg" alt="下載突發性銷售申報模板並批量上載的示意圖" width="640" height="360" loading="lazy" decoding="async">
+        <img src="/images/help/excel-upload.svg" alt="下載突發性銷售申報模板並一次過上載的示意圖" width="640" height="360" loading="lazy" decoding="async">
         <div>
-          <h3><span class="help-step-number">2</span>預覽提交或使用 Excel 批量上載</h3>
+          <h3><span class="help-step-number">2</span>預覽提交或使用 Excel 一次過上載</h3>
           <p>單筆申報按「預覽」後確認提交；多筆申報可下載獨立模板，在 <b>突發性銷售申報</b> 工作表填寫 <b>Site Code</b>、<b>SKU</b> 兩欄。整份檔案會先完整驗證，任何錯誤都不會寫入；成功後可下載按店舖分頁的匯入記錄。</p>
           <div class="help-note">突發性銷售申報沒有提交時間限制，任何時間都可提交。</div>
         </div>
@@ -602,7 +602,7 @@
       <div class="help-step">
         <img src="/images/help/return-excel.svg" alt="下載行貨退貨 Excel 模板、填寫及上載的示意圖" width="640" height="360" loading="lazy" decoding="async">
         <div>
-          <h3><span class="help-step-number">4</span>使用 Excel 批量上載</h3>
+          <h3><span class="help-step-number">4</span>使用 Excel 一次過上載</h3>
           <p>在「行貨退貨報數」頁下載模板。工作表名稱及第一行欄名不可更改；每一行代表一個 SKU 申請，欄位依次為 <b>Site Code、SKU、QTY、REASON、確認人姓名、確認人電話</b>。</p>
           <p>完成後將 `.xlsx` 檔案拖到上載框或按一下選擇檔案，再按「上載並匯入」。系統會先完整驗證整份檔案，任何一行有錯誤時整份檔案都不會寫入。成功後可下載按店舖分頁的匯入記錄。</p>
         </div>

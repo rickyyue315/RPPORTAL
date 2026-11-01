@@ -1078,7 +1078,7 @@ export async function listPendingReviewSummary(): Promise<PendingReviewSummary> 
     total_pending_skus: new Set(items.map((row) => row.sku)).size,
   };
 }
-export const AUTO_APPROVE_REMARK = 'Buyer 未有回復，默認同意';
+export const AUTO_APPROVE_REMARK = 'Buyer 未有回復，視作同意';
 
 export interface BuyerAutoApproveResult {
   approved: number;
@@ -1089,7 +1089,7 @@ export interface BuyerAutoApproveResult {
  * Company SLA rule: pending ND submissions whose Buyer has not replied within
  * `ndrfAutoApproveDays` are auto-approved (default agreement). Each approval
  * writes an immutable `auto_accept` review event (actor_role = system) with the
- * remark "Buyer 未有回復，默認同意" and marks `auto_approved_at` so Admin can
+ * remark "Buyer 未有回復，視作同意" and marks `auto_approved_at` so Admin can
  * follow up. Rows that already have a decision for the round are never touched.
  */
 export async function runBuyerAutoApproveJob(): Promise<BuyerAutoApproveResult> {

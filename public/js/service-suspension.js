@@ -10,12 +10,12 @@
     return Boolean(cfg.enabled) && Number.isFinite(suspendAt) && Date.now() >= suspendAt;
   }
 
-  const MESSAGE = '此平台申報服務已暫停，提交／修改／預覽／批量上載功能已停用，謝謝。';
+  const MESSAGE = '此平台申報服務已暫停，提交／修改／預覽／一次過上載功能已停用，謝謝。';
   const BTN_SELECTOR = '#btn_submit, #btn_preview, #btn_confirm, #btn_save, #btn_import';
 
   let blockInstalled = false;
   function suspend() {
-    // 直接隱藏按鈕，比只 disable 更徹底，頁面 scripts 之後無法再重新啟用／點擊。
+    // 直接隱藏按鈕，比只 disable 更徹底，頁面 scripts 之後無法再重新啟用／點按。
     document.querySelectorAll(BTN_SELECTOR).forEach((btn) => {
       btn.disabled = true;
       btn.style.display = 'none';

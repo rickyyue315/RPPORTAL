@@ -16,7 +16,7 @@
   const tabs = Array.from(document.querySelectorAll('[role="tab"][data-panel]'));
   if (!tabs.length) return;
 
-  /** 存貨走勢是「新功能」提示：只要不是當前頁就一直脈動，切走會再亮起來 */
+  /** 存貨走勢是「新功能」提示：只要不是目前頁就一直脈動，切走會再亮起來 */
   const accentTab = document.querySelector('[role="tab"].portal-tab--accent');
   if (accentTab) accentTab.classList.add('is-pulsing');
 

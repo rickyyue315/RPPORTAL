@@ -110,7 +110,7 @@
     const rows = filteredMatters();
     if (!rows.length) {
       const any = matters.length > 0;
-      list.innerHTML = `<div class="empty" style="padding:36px 16px">${any ? '沒有符合條件的事項 — 試下轉「狀態」或清空搜尋字。' : '目前沒有指定 SKU 事項。有新事項時會在這裡顯示。'}</div>`;
+      list.innerHTML = `<div class="empty" style="padding:36px 16px">${any ? '沒有符合條件的事項 — 試下轉「狀態」或清除搜尋字。' : '目前沒有指定 SKU 事項。有新事項時會在這裡顯示。'}</div>`;
       return;
     }
     list.innerHTML = rows.map((matter) => {
@@ -145,7 +145,7 @@
     });
   }
 
-  /* ---------------- 回覆彈窗（多個 SKU） ---------------- */
+  /* ---------------- 回覆彈出視窗（多個 SKU） ---------------- */
 
   function addLine(wrap, line = {}) {
     if (wrap.querySelectorAll('[data-line]').length >= MAX_LINES) return;
@@ -371,7 +371,7 @@
       if (qty > MAX_QTY) throw new Error(`SKU ${sku}：年期 ${year} 的件數不可超過 ${MAX_QTY}`);
       out.push({ year_code: year, qty });
     }
-    if (!out.length) throw new Error(`SKU ${sku}：請填寫至少一個年期，或勾選「無可調撥件數」`);
+    if (!out.length) throw new Error(`SKU ${sku}：請填寫至少一個年期，或選取「無可調撥件數」`);
     return out;
   }
 

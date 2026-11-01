@@ -313,7 +313,7 @@
       body.querySelectorAll('[data-zs-item-del]').forEach((btn) => {
         btn.addEventListener('click', () => deleteItem(currentBatch, btn.dataset.zsItemDel, btn.dataset.site || '', btn.dataset.sku || '', btn));
       });
-      // 彈窗儲存後重載：焦點回到同一列的編輯按鈕，頁面不跳動
+      // 彈出視窗儲存後重載：焦點回到同一列的編輯按鈕，頁面不跳動
       if (opts.preserveFocusId) {
         const back = body.querySelector(`[data-zs-item-edit="${opts.preserveFocusId}"]`);
         if (back) back.focus({ preventScroll: true });
@@ -717,7 +717,7 @@
     }
   }
 
-  /** 重複上榜區塊預設收起：收起時不載入（省版面及請求），已展開才同步刷新 */
+  /** 重複上榜區塊預設收起：收起時不載入（省版面及請求），已展開才同步重新整理 */
   function refreshRepeatsIfOpen() {
     const wrap = $('zs_repeat_collapse');
     if (wrap && wrap.classList.contains('show')) {
@@ -765,7 +765,7 @@
     }
   }
 
-  /* 彈窗共用：鎖住背景捲動、ESC/點背景關閉、關閉後回到觸發按鈕 ---- */
+  /* 彈出視窗共用：鎖住背景捲動、ESC/點背景關閉、關閉後回到觸發按鈕 ---- */
   function lockBodyScroll() {
     document.body.classList.add('zs-modal-open');
   }
@@ -775,7 +775,7 @@
     }
   }
 
-  /* 關鍵定位改用 inline style：即使瀏覽器拿著舊版 admin.css，彈窗仍會
+  /* 關鍵定位改用 inline style：即使瀏覽器拿著舊版 admin.css，彈出視窗仍會
      置中顯示，不會變成全幅區塊貼在頁尾。完整美化仍由 admin.css 提供。 */
   function applyModalFallback(overlay) {
     overlay.style.position = 'fixed';
@@ -844,7 +844,7 @@
     }
   }
 
-  /** 「本週無須回覆」彈窗：確認切換並可填寫給店舖的說明。回傳 { notice } 或 null（取消）。 */
+  /** 「本週無須回覆」彈出視窗：確認切換並可填寫給店舖的說明。回傳 { notice } 或 null（取消）。 */
   function askNoReplySetting({ weekLabel, turningOff, notice }) {
     return new Promise((resolve) => {
       const overlay = document.createElement('div');
@@ -1161,7 +1161,7 @@
   function init() {
     if (!$('zs_batches_body')) return;
     $('btn_zs_upload').addEventListener('click', upload);
-    // 「本週無須回覆」勾選時才顯示給店舖的說明欄
+    // 「本週無須回覆」選取時才顯示給店舖的說明欄
     const nrUpload = $('zs_no_reply_upload');
     if (nrUpload) {
       const syncNoReply = () => {
@@ -1255,7 +1255,7 @@
       loadReasons();
       loadSummary();
     };
-    // 供頂部「立即更新」一併刷新（重複上榜收起時不載入）
+    // 供頂部「立即更新」一併重新整理（重複上榜收起時不載入）
     globalThis.__zsRefresh = () => { started = true; loadBatches(); loadReasons(); loadSummary(); refreshRepeatsIfOpen(); };
     const anchor = $('zs_card') || $('zs_batches_body');
     if (!('IntersectionObserver' in window)) { start(); return; }
@@ -1335,7 +1335,7 @@
     }
   }
 
-  /* 回覆原因選項的編輯彈窗（原 inline 填表會跳去最底，改為彈窗原地處理） ---- */
+  /* 回覆原因選項的編輯彈出視窗（原 inline 填表會跳去最底，改為彈出視窗原地處理） ---- */
   function openReasonEditOverlay(row, triggerBtn) {
     const overlay = document.createElement('div');
     overlay.id = 'zs_reason_edit_overlay';

@@ -286,7 +286,7 @@
       x.addEventListener('click', () => {
         el.value = '';
         if (id === 'f_from' || id === 'f_to') {
-          // 日期清空後不自動填今日，直接查詢
+          // 日期清除後不自動填今日，直接查詢
         }
         document.querySelectorAll('#filter_presets .preset-btn').forEach((b) => b.classList.remove('active'));
         $('btn_filter')?.click();

@@ -1526,7 +1526,7 @@ adminRouter.get(
     if (batch.file_data && expiresAt !== null && expiresAt > Date.now()) {
       buffer = Buffer.from(batch.file_data);
     } else if (batch.archive_exists) {
-      res.status(410).json({ error: '此匯出檔案已超過三個月保存期限' });
+      res.status(410).json({ error: '此匯出檔案已超過三個月保留期限' });
       return;
     } else {
       // Batches created before archive migration have metadata and locked rows,
@@ -1941,7 +1941,7 @@ adminRouter.post(
   asyncHandler(async (req: Request, res: Response) => {
     const parsed = portalUsersBulkSchema.safeParse(req.body);
     if (!parsed.success) {
-      res.status(400).json({ error: parsed.error.issues[0]?.message ?? '批量操作無效' });
+      res.status(400).json({ error: parsed.error.issues[0]?.message ?? '操作無效' });
       return;
     }
     const actionLabels = { activate: '啟用', deactivate: '停用', delete: '刪除' } as const;
@@ -3889,7 +3889,7 @@ adminRouter.post(
       const existing = await findDesignatedSkuBatchByHash(parsed.contentHash ?? '');
       if (existing) {
         res.status(409).json({
-          error: `此檔案已於 ${existing.created_at} 上載（批次 ${existing.batch_code}），如要重新派發請勾選「仍要重新上載」`,
+          error: `此檔案已於 ${existing.created_at} 上載（批次 ${existing.batch_code}），如要重新派發請選取「仍要重新上載」`,
           code: 'DUPLICATE_FILE',
           existing,
         });
@@ -4062,7 +4062,7 @@ adminRouter.post(
       const existing = await findDesignatedSkuBatchByHash(fingerprint);
       if (existing) {
         res.status(409).json({
-          error: `相同清單已於 ${existing.created_at} 建立（批次 ${existing.batch_code}），如要重新派發請勾選「仍要重新派發」`,
+          error: `相同清單已於 ${existing.created_at} 建立（批次 ${existing.batch_code}），如要重新派發請選取「仍要重新派發」`,
           code: 'DUPLICATE_FILE',
           existing,
         });

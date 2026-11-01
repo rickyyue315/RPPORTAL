@@ -155,7 +155,7 @@
     try {
       const data = await api('/api/public/sales/import', { method: 'POST', headers: { 'Idempotency-Key': importKey }, body: formData });
       let html = `<div class="alert success"><b>${escapeHtml(data.message)}</b>（總行數：${data.totalRows}）</div>`;
-      html += '<div class="alert warning" style="margin:12px 0"><b>⚠️ 請務必抄低／下載保存以下「申請編號」</b> — 之後如需修改，必須於「<a href="/lookup.html">查詢／修改</a>」頁輸入「<b>申請編號 + Site Code</b>」先搵得返紀錄。<b>冇編號就無法自行修改</b>，請即按「下載匯入記錄 Excel」備存（匯出後鎖定，不能再改）。</div>';
+      html += '<div class="alert warning" style="margin:12px 0"><b>⚠️ 請務必抄低／下載存檔以下「申請編號」</b> — 之後如需修改，必須於「<a href="/lookup.html">查詢／修改</a>」頁輸入「<b>申請編號 + Site Code</b>」先搵得返紀錄。<b>冇編號就無法自行修改</b>，請即按「下載匯入記錄 Excel」備存（匯出後鎖定，不能再改）。</div>';
       html += '<table><thead><tr><th>Excel 行</th><th>申請編號</th><th>Site Code</th><th>SKU</th><th>已收件時間</th></tr></thead><tbody>';
       data.rows.forEach((row) => {
         html += `<tr><td>${row.row}</td><td class="cell-appno">${escapeHtml(row.application_no)}</td><td>${escapeHtml(row.site_code)}</td><td>${escapeHtml(row.sku)}</td><td>${escapeHtml(row.submitted_at)}</td></tr>`;

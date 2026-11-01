@@ -529,7 +529,7 @@ export async function buildZeroSalesBuyerFollowupExportBuffer(
   sheet.getColumn(8).numFmt = '0%';
   sheet.autoFilter = { from: { row: 1, column: 1 }, to: { row: rows.length + 1, column: headers.length } };
   sheet.views = [{ state: 'frozen', ySplit: 1 }];
-  // 打印一頁橫向設定：方便直接列印交 Buyer
+  // 列印一頁橫向設定：方便直接列印交 Buyer
   sheet.pageSetup = { orientation: 'landscape', fitToPage: true, fitToWidth: 1, fitToHeight: 0, paperSize: 9 };
   const widthsTotal = widths.reduce((acc, w) => acc + w, 0);
   appendNoteBlock(sheet, rows.length + 3, [

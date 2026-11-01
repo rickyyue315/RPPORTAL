@@ -5,15 +5,15 @@ SASA RP Team 非正常補貨（NDRF）申報平台。申請端以「Site Code／
 ## 功能
 
 - 公開單筆申報（Site Code + SKU + RP Type 必填，Site Code 驗證門店主檔；RP Type 為 RF 時必須填寫 Safety stock（大於 0）及指定店舖的 Remark，為 ND 時必須填寫 ND Code）
-- 公開 Excel 批量上載（固定模板 `RP Team` 工作表，整檔驗證，錯誤不寫入任何行；上載成功後可下載匯入記錄 Excel，按店舖分頁）
-- Urgent Order 申報（`/urgent.html`）：網頁申報可一次填寫 1 至 5 個 SKU（`Site Code` 只填一次，每個 SKU 各填 SKU、QTY（1 至 1000 的整數）及 Urgent Reason（指定原因選項，選擇「9. 其他」時必須填寫 Other Reason）），整批 transaction 提交、任何一行錯誤整批拒絕；每個 SKU 各取得一個 `URGENT-...` 申請編號並獨立查詢／修改。另提供獨立 5 欄 Excel 批量上載（上載成功後同樣可下載匯入記錄 Excel，按店舖分頁）
-- 突發性銷售申報（`/sales.html`）：只填 Site Code 及 SKU，單筆提交或獨立 2 欄 Excel 批量上載（工作表 `突發性銷售申報`）；沒有提交時間限制，成功後可下載按店舖分頁的匯入記錄
-- 行貨退貨報數（`/return.html`）：填寫 Site Code、SKU、QTY（1 至 9999）、指定退貨原因、確認人姓名及電話；公開單筆或獨立 Excel 批量上載，按外部 `return-schedule.json` 的店舖申請窗口收單，同一窗口同一 Site Code + SKU 只可申請一次
-- Urgent Order 提交時段為每日 00:00 至 14:30（香港時間）：14:30 後單筆提交及 Excel 批量上載均會被拒絕（管理後台不受限），翌日 14:30 前恢復；狀態可經 `GET /api/public/urgent/window` 查詢
+- 公開 Excel 一次過上載（固定模板 `RP Team` 工作表，整檔驗證，錯誤不寫入任何行；上載成功後可下載匯入記錄 Excel，按店舖分頁）
+- Urgent Order 申報（`/urgent.html`）：網頁申報可一次填寫 1 至 5 個 SKU（`Site Code` 只填一次，每個 SKU 各填 SKU、QTY（1 至 1000 的整數）及 Urgent Reason（指定原因選項，選擇「9. 其他」時必須填寫 Other Reason）），整批 transaction 提交、任何一行錯誤整批拒絕；每個 SKU 各取得一個 `URGENT-...` 申請編號並獨立查詢／修改。另提供獨立 5 欄 Excel 一次過上載（上載成功後同樣可下載匯入記錄 Excel，按店舖分頁）
+- 突發性銷售申報（`/sales.html`）：只填 Site Code 及 SKU，單筆提交或獨立 2 欄 Excel 一次過上載（工作表 `突發性銷售申報`）；沒有提交時間限制，成功後可下載按店舖分頁的匯入記錄
+- 行貨退貨報數（`/return.html`）：填寫 Site Code、SKU、QTY（1 至 9999）、指定退貨原因、確認人姓名及電話；公開單筆或獨立 Excel 一次過上載，按外部 `return-schedule.json` 的店舖申請窗口收單，同一窗口同一 Site Code + SKU 只可申請一次
+- Urgent Order 提交時段為每日 00:00 至 14:30（香港時間）：14:30 後單筆提交及 Excel 一次過上載均會被拒絕（管理後台不受限），翌日 14:30 前恢復；狀態可經 `GET /api/public/urgent/window` 查詢
 - Urgent Order 申請編號使用 `URGENT-...` 前綴；超出 1000 件的需求改以電郵向相關 Buyer 申請，不在平台處理
 - 申請編號 + Site Code 查詢／修改（匯出前可修改，每次修改新增不可變版本；Urgent Order 查詢不限時，修改限每日 14:30 前；突發性銷售申報查詢及修改均不限時）；忘記申請編號的恢復清單另外需要 Recovery Code（每組 OM 獨立，於管理後台設定；另有全平台 master code）
 - 同一 Site Code + SKU 於同一日（香港日期）只可申報一次；一般 NDRF、Urgent 與突發性銷售分開計算。被拒時可用查詢／修改更正，翌日可重新申報；管理後台操作不受此限
-- 管理後台：清單篩選（含申報類型；日期預設今日）、詳情編輯、版本歷史、模板下載、批量匯入、SAP 9 欄匯出、獨立 Urgent 匯出、獨立突發性銷售匯出、完整審計報表、門店主檔管理；概覽及清單每分鐘自動刷新
+- 管理後台：清單篩選（含申報類型；日期預設今日）、詳情編輯、版本歷史、模板下載、一次過匯入、SAP 9 欄匯出、獨立 Urgent 匯出、獨立突發性銷售匯出、完整審計報表、門店主檔管理；概覽及清單每分鐘自動重新整理
 - 管理後台另提供行貨退貨報數清單、詳情編輯及 Buyer 8 欄 Excel 預覽／匯出鎖定；系統不記錄 Buyer 審批結果或退貨 NO.
 - 90 日零銷售：每週派發每店 Top 10 零銷售 SKU 給店舖逐條回覆原因；新一週上載即自動封存舊週次。**支援「本週無須回覆」**（銷售繁忙期）：批次照樣派發（店舖仍看見本店 Top 10 清單可搜尋／匯出），但店舖不可回覆，亦不計入待回覆／逾期／回覆率；可隨時切回需要回覆
 - 後台導航收斂為 7 個分頁：總覽／申報清單／**匯出**（含匯出批次及重新下載）／零銷售／存貨 Dashboard／指定SKU回覆／**系統**（含帳戶與主檔、審批設定、系統工具）。合併頁面頂部有頁內分組導覽；舊連結 `?tab=batches|accounts|review` 及 `#sec-batches|sec-accounts|sec-review` 書籤會自動跳到對應分頁的分組，不會失效
@@ -132,8 +132,8 @@ railway config apply  # 確認後建立 Web + PostgreSQL
 | `IP_RETENTION_DAYS` | `365` |
 | `MAX_UPLOAD_MB` | `5` |
 | `MAX_IMPORT_ROWS` | `1000` |
-| `EXPORT_FILE_RETENTION_DAYS` | `90`（正式匯出 Excel 保存期限） |
-| `AUDIT_RETENTION_DAYS` | `730`（Audit event 保存日數） |
+| `EXPORT_FILE_RETENTION_DAYS` | `90`（正式匯出 Excel 保留期限） |
+| `AUDIT_RETENTION_DAYS` | `730`（Audit event 保留日數） |
 | `LOGIN_ATTEMPT_RETENTION_DAYS` | `90` |
 | `IMPORT_BATCH_RETENTION_DAYS` | `730` |
 | `EXPORT_BATCH_RETENTION_DAYS` | `730` |
@@ -194,7 +194,7 @@ pg_restore --no-owner --no-privileges --clean --if-exists \
 - `import_batches`：Excel 匯入批次、伺服器匯入記錄、申報類型及重試鍵
 - `idempotency_key`：單筆及 Excel 重試對應鍵，避免提交成功但 HTTP 回應遺失時重複寫入
 - `export_batches`：SAP／Urgent／銷售／退貨匯出批次（建立即鎖定該批申報）
-- `export_batch_files`：正式匯出 Excel 原檔，保存 90 日後自動清理；`export_batches` metadata 按 `EXPORT_BATCH_RETENTION_DAYS` 清理
+- `export_batch_files`：正式匯出 Excel 原檔，儲存 90 日後自動清理；`export_batches` metadata 按 `EXPORT_BATCH_RETENTION_DAYS` 清理
 - `admin_sessions`：管理員登入 session（token 以 SHA-256 hash 儲存，過期自動清理）
 - `admin_login_attempts`：登入嘗試紀錄（失敗鎖定用）
 - `om_recovery_codes`：每組 OM（及 master）嘅「搵返申請編號」Recovery Code；`code` 明文（僅管理後台顯示原碼）＋ `code_hash`（SHA-256，公開查詢常數時間比對用），管理後台設定（migration 012/013）
@@ -222,7 +222,7 @@ pg_restore --no-owner --no-privileges --clean --if-exists \
 - Urgent Order 的 QTY 必須為 1 至 1000 的整數；網頁單筆／1 至 5 SKU 批次、Excel 模板、申請人修改及管理員修改共用相同驗證規則。網頁批次以單一 transaction 提交，任何一行失敗整批 rollback；每個 SKU 各產生一個申請編號。Urgent Order 必須選擇指定原因（1 至 9）；選擇「9. 其他」時必須填寫 Other Reason，其他選項不得填寫補充原因。
 - Urgent Order Excel 模板使用獨立 `Urgent Order` 工作表（欄位：Site Code、SKU、QTY、Urgent Reason、Other Reason），與 Page 1 的 `RP Team` 9 欄模板完全分開。舊版 3 欄模板不再接受，避免產生無原因的申報。
 - 突發性銷售申報 Excel 模板使用獨立 `突發性銷售申報` 工作表（欄位：Site Code、SKU），只接受這兩個欄名；同一日同一 Site Code + SKU 在同一申報類型內只能提交一次，一般／Urgent／突發性銷售三種類型互不阻擋。
-- Excel 批量上載只接受 Excel 活頁簿 `.xlsx` 格式，支援 Excel 2007 或更新版本（包括 Excel 2019、Excel 2021、Excel 2024 及 Microsoft 365）；舊式 `.xls` 檔案請先另存為 `.xlsx`。`.xlsx` 是檔案格式，不是特定 Excel 版本名稱。
+- Excel 一次過上載只接受 Excel 活頁簿 `.xlsx` 格式，支援 Excel 2007 或更新版本（包括 Excel 2019、Excel 2021、Excel 2024 及 Microsoft 365）；舊式 `.xls` 檔案請先另存為 `.xlsx`。`.xlsx` 是檔案格式，不是特定 Excel 版本名稱。
 - 舊有（加入原因欄位前）的 Urgent Order 原因欄位為空，可於管理後台編輯時補回；匯出時空白原因會以空白顯示。
 - 上載檔內的 `Application Date` 及 `Requested by` 不可信，系統一律以伺服器值及 Site Code 產生值覆蓋。
 - Admin 編輯一般 NDRF 若令申請由非 Pending（如 Ready for RP）重新進入 Pending 審批，系統會自動開啟新審批回合（`review_round + 1`、重設 `round_started_at`、清除舊 Review Remark 並記錄一條 override 事件），確保同一回合不會已有決定、Buyer SLA 時鐘由新回合重新起算。
@@ -235,7 +235,7 @@ pg_restore --no-owner --no-privileges --clean --if-exists \
 
 旺季／大檔期店舖忙於銷售時，RP Team 可以把某一週設為**無須回覆**：批次照樣派發，店舖仍看到本店 **Top 10** 零銷售 SKU 清單（可搜尋、可匯出 Excel），但不需要逐條回覆。
 
-- **開關位置**：後台「零銷售」分頁 → 批次列表每列的「**設定無須回覆**」／「**恢復需要回覆**」（只限未封存的週次）；上載新批次時亦可直接勾選「本週無須回覆」並填寫給店舖的說明（`reply_notice`，空白時店舖頁用預設文案）。
+- **開關位置**：後台「零銷售」分頁 → 批次列表每列的「**設定無須回覆**」／「**恢復需要回覆**」（只限未封存的週次）；上載新批次時亦可直接選取「本週無須回覆」並填寫給店舖的說明（`reply_notice`，空白時店舖頁用預設文案）。
 - **資料模型**：`zero_sales_batches.reply_required`（預設 `true`）＋ `reply_notice`。migration `031_zero_sales_no_reply.sql`。
 - **狀態定義**（勿混淆）：
   - `closed_at IS NULL` = 未封存；`closed_at` 非 NULL = 已封存（只供查閱）。
@@ -356,7 +356,7 @@ RP Team 指定個別 SKU 要求店舖回報「每個貨品年期可調撥幾件�
 - **一個事項 = 一批次內同一店舖**（`designated_sku_matters`）。同一份 Excel 內，同一 Site Code 的多個 SKU 會歸入同一個事項；不同店舖各自一個事項。
 - 事項編號：`<batch_code>-NN`（例 `DSKU-261026-0001-03`，`NN` 為該批次內店舖序號）。店舖、管理員日後都用這個編號查閱及直 link。
 - 事項內每個 SKU 一行（`designated_sku_items`），各有自己的回覆明細：一個**貨品年期 (MMYY)** 一行 + 可調撥件數（`designated_sku_reply_lines`）。同一 SKU 有多個年期可分多行。
-- 店舖可為某個 SKU 勾選**「無可調撥件數」**（`no_transfer = true`），與「未回覆」區分；事項要**全部 SKU 已回覆或標示無可調撥**才算完成（狀態由 SKU 狀態推導，不另存欄位）。
+- 店舖可為某個 SKU 選取**「無可調撥件數」**（`no_transfer = true`），與「未回覆」區分；事項要**全部 SKU 已回覆或標示無可調撥**才算完成（狀態由 SKU 狀態推導，不另存欄位）。
 - 驗證：年期必須 4 位 `MMYY`（月份 01–12；亦接受 `8/27`、`827`）；同一 SKU 不可重複年期；件數為 1–9999 整數；**每個 SKU 的合計不可多於該 SKU 存貨**（存貨留空／非數字時不設上限，但不會當 0）。允許少於存貨（部分可調撥）。
 - 存貨欄 `stock_qty` 可為 `NULL`（缺值／非數字），**不代表 0**；匯入時會產生 warning，事項照樣建立。
 - 截止時間 `due_at`（`TIMESTAMPTZ`）：前台以**香港時間**輸入及顯示（例 `2026-11-10 18:00`），DB 存 UTC 時刻。**`is_open` 一律由 `closed_at IS NULL AND (due_at IS NULL OR due_at > now())` 推導** —— 過期即視為截止，店舖提交回 `409 MATTER_CLOSED`，但無需任何排程。管理員仍可代回覆；重開舊批次時若 `due_at` 已過，畫面會提示要先延長期限。
@@ -368,10 +368,10 @@ RP Team 指定個別 SKU 要求店舖回報「每個貨品年期可調撥幾件�
    - **人手輸入**：直接逐行填 Site / SKU / 描述 / 存貨，可「＋新增一行」，或按「從 Excel 貼上」把多行（Tab 分隔）一次貼入；存貨留空代表「未提供」。
 1. 填**事項主題**（必填）、事項類型、可選的**截止日期及時間**（`datetime-local`，香港時間）、**參考編號**、**事項說明**、**內部備註**。後三者與截止時間屬**預留欄位：空白時店舖端／明細自動隱藏**，將來新增事項類型毋須改 schema（另有 `settings JSONB`）。
 2. Excel 欄位對應（可容忍欄名大小寫／空白差異）：`Site`（或 Site Code）＋ `Article`（或 SKU）必填，另有 `Product Hierarchy`、`Article Long Text (60 Chars)`、`SaSa Net Stock`；最後兩欄「店舖回覆可調撥件數 / 貨品年期 (MMYY)」由店舖填寫，上載時可留空。原始整列會存 `payload`。
-3. `Total`／頁腳列會靜靜剔除；Site 不存在的行、檔案內重複（Site + SKU）會擋下整批（回傳逐行錯誤）。同一檔案再上載會回 `409 DUPLICATE_FILE`，需勾選「仍要重新上載」才可重新派發。
+3. `Total`／頁腳列會靜靜剔除；Site 不存在的行、檔案內重複（Site + SKU）會擋下整批（回傳逐行錯誤）。同一檔案再上載會回 `409 DUPLICATE_FILE`，需選取「仍要重新上載」才可重新派發。
 4. 批次列表顯示**事項數 / SKU 行數 / 店數 / 已回覆 / 未回覆**，可**封存**（店舖只可查閱，提交回 `409 MATTER_CLOSED`）、**重開**（讓店舖補答）、**刪除**（連回覆紀錄）。
 5. 批次明細**一個事項一行**，列出該事項內每個 SKU、存貨、年期回覆／無可調撥／未回覆；可按 Site／狀態篩選，逐個事項**複製直 link**，或一次複製全部未回覆事項的直 link（Site / 事項編號 / 網址，方便貼 WhatsApp 或 email）。
-6. **管理員代店舖回覆**：未回覆的事項按「代回覆」補錄（常見：店舖截單後 email 補交），已回覆的按「編輯回覆」更正該事項內所有 SKU 的年期／件數。管理員操作**不受封存限制**、**不佔用店舖修改次數**；代填的 SKU 會將回覆人記為「管理員代填（帳號）」、`reply_count = 1`，編輯既有回覆則保留店舖原本的回覆人、時間及次數。每次修改另記錄 `admin_edited_at` / `admin_edited_by`（畫面顯示「管理員 X 於 Y 修改」），並寫入審計日誌 `designated_sku_reply_admin_edited`；店舖之後再自行提交時會清空該標記。
+6. **管理員代店舖回覆**：未回覆的事項按「代回覆」補錄（常見：店舖截單後 email 補交），已回覆的按「編輯回覆」更正該事項內所有 SKU 的年期／件數。管理員操作**不受封存限制**、**不佔用店舖修改次數**；代填的 SKU 會將回覆人記為「管理員代填（帳號）」、`reply_count = 1`，編輯既有回覆則保留店舖原本的回覆人、時間及次數。每次修改另記錄 `admin_edited_at` / `admin_edited_by`（畫面顯示「管理員 X 於 Y 修改」），並寫入審計日誌 `designated_sku_reply_admin_edited`；店舖之後再自行提交時會清除該標記。
 7. **補加／修改 SKU**（明細頁）：每個 SKU 有「編輯」「移除」；頂部「＋加入 SKU」可在既有批次補加（新店會自動建立事項）。可改 Site Code（等於把 SKU 搬到該店的事項，舊事項空了自動移除）、SKU 編號、描述、存貨。**新存貨不可低於已回覆合計**（否則要先更正回覆）；批次封存後需先「重開」才可增刪改。
 8. **編輯批次資料**：可隨時改事項主題、**截止日期及時間**、參考編號、說明、內部備註；延長截止後店舖可繼續回覆（清除截止時間 = 無限期，直至手動封存）。
 9. 匯出 Excel 三張工作表：`事項回覆`（每個 SKU 一行：事項編號、批次、主題、Site、SKU、存貨、事項狀態、SKU 狀態、無可調撥、回覆合計、年期明細、備註、回覆人、時間、提交次數、管理員修改）、`年期明細`（每個年期一行）、`未回覆事項`（只列未回覆的 SKU）。
@@ -380,12 +380,12 @@ RP Team 指定個別 SKU 要求店舖回報「每個貨品年期可調撥幾件�
 
 - 入口：`/portal/designated-sku.html`；零銷售頁導覽列有「指定SKU回覆」連結及待回覆事項數字，頁頂亦有提示橫幅。
 - **圖文使用說明：`/help.html#designated-sku`（第 2 章）**，店舖端頁腳亦有連結。新增或調整 `help.html` 章節時，要同步 TOC、章節編號，以及內文「第 N 章」的交叉引用與 `/help.html#…` 外部連結。
-- **一張卡 = 一個事項**，卡內列出該事項所有 SKU；店舖在**同一個彈窗**內逐個 SKU 填年期（可「新增年期」），或勾選「此 SKU 無可調撥件數」，一次過提交整份事項。
+- **一張卡 = 一個事項**，卡內列出該事項所有 SKU；店舖在**同一個彈出視窗**內逐個 SKU 填年期（可「新增年期」），或選取「此 SKU 無可調撥件數」，一次過提交整份事項。
 - **只會顯示屬於登入 Site Code 的事項**；`site_code` 一律取自 portal session，不接受 query／body 傳入。
 - **直 link**：`/portal/designated-sku.html?matter=<事項編號>`（舊 `?task=` 會自動轉換）。未登入會先過 Site Code + 密碼閘；登入後自動開啟該事項。若事項不屬於該店舖，API 回 `403 MATTER_FORBIDDEN`；不存在回 `404`。
 - **截止時間以香港時間顯示**（例 `2026-11-10 18:00`）；時間一到，事項變唯讀並標示「已過截止」，提交回 `409 MATTER_CLOSED`。逾期事項不會計入導覽列待回覆數字。
 - 回覆後仍可在事項截止前修改；每次儲存會遞增每個 SKU 的 `reply_count` 並寫入 audit event `designated_sku_replied`。
-- 事項已封存時彈窗變唯讀（顯示「已截止」，不可再提交）。
+- 事項已封存時彈出視窗變唯讀（顯示「已截止」，不可再提交）。
 
 ### API
 

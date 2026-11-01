@@ -220,7 +220,7 @@
     return `${target.getUTCFullYear()}-${mm}-${dd}`;
   }
 
-  /** 香港時區的當前月份 'YYYY-MM'（後台使用者多數在 HK；失敗時回落 UTC） */
+  /** 香港時區的目前月份 'YYYY-MM'（後台使用者多數在 HK；失敗時回落 UTC） */
   function hkMonthNow() {
     try {
       const parts = new Intl.DateTimeFormat('en', {
@@ -238,7 +238,7 @@
   }
 
   /**
-   * MTD 期別：優先用「香港當前月份」內最新一期；本月未上載時回落最新資料月份，
+   * MTD 期別：優先用「香港目前月份」內最新一期；本月未上載時回落最新資料月份，
    * 並由 UI 標明是「最新月份」而非當月。
    */
   function mtdPeriodOf(series) {
@@ -288,7 +288,7 @@
     return 'alert-info';
   }
 
-  /* ==================== 彈窗（自行管理，不碰現有 #export_confirm_overlay） ==================== */
+  /* ==================== 彈出視窗（自行管理，不碰現有 #export_confirm_overlay） ==================== */
 
   function applyModalFallback(overlay) {
     overlay.style.position = 'fixed';
@@ -314,7 +314,7 @@
   }
 
   /**
-   * 通用彈窗。onOk 回傳 false 表示「留在彈窗」（例如日期衝突），其餘值代表完成。
+   * 通用彈出視窗。onOk 回傳 false 表示「留在彈出視窗」（例如日期衝突），其餘值代表完成。
    * 沒有 onOk = 純確認（true / null）。
    */
   function openDialog({ title, bodyHtml, okLabel = '確認', cancelLabel = '取消', danger = false, onOk }) {
@@ -1920,10 +1920,10 @@
     }
   }
 
-  /* ==================== 總刷新 ==================== */
+  /* ==================== 全面重新整理 ==================== */
 
   async function refreshAll() {
-    // 每次刷新都重新取 MTD 明細；若主明細剛好是 MTD 期，loadMtdWeek 會直接重用
+    // 每次重新整理都重新取 MTD 明細；若主明細剛好是 MTD 期，loadMtdWeek 會直接重用
     mtdWeekDate = '';
     mtdWeekRows = [];
     mtdPeriodInfo = null;
@@ -2213,7 +2213,7 @@
     } catch { /* 私隱模式不可讀，用預設值 */ }
     bindEvents();
 
-    // 供程式化刷新用；admin-ui 的「立即更新」只會呼叫 __zsRefresh（故意不改現有檔案）
+    // 供程式呼叫重新整理用；admin-ui 的「立即更新」只會呼叫 __zsRefresh（故意不改現有檔案）
     globalThis.__stkRefresh = () => {
       if (!started) { start(); return; }
       refreshAll();

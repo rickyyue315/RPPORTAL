@@ -312,7 +312,7 @@
   /* ---------- 啟動 ---------- */
 
   const standalone = !$('panel_stock');
-  // 合併頁的登出由 zero-sales.js 綁定；避免同一下點擊觸發兩次
+  // 合併頁的登出由 zero-sales.js 綁定；避免同一下點按觸發兩次
   const logout = $('logout_link');
   if (logout && standalone) logout.addEventListener('click', (e) => { e.preventDefault(); p.logout(); });
 

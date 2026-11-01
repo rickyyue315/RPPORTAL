@@ -755,6 +755,39 @@ body.stk-modal-open { overflow: hidden; }
   margin: 0;
   flex-wrap: wrap;
 }
+/* 「全部」時只保留各 Shop Nature 摘要，棒圖本身唔再分組 */
+.stk-share-summary {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+  gap: 8px;
+  margin: 0 0 10px;
+}
+.stk-share-summary-item {
+  display: flex;
+  align-items: baseline;
+  gap: 4px 10px;
+  flex-wrap: wrap;
+  padding: 8px 12px;
+  border: 1px solid #e3eef8;
+  border-radius: 8px;
+  background: #f8fbfe;
+}
+.stk-share-summary-name {
+  font-size: 13px;
+  font-weight: 700;
+  color: #0a3d69;
+}
+.stk-share-summary-meta {
+  font-size: 11.5px;
+  color: #5a6a78;
+  font-variant-numeric: tabular-nums;
+}
+.stk-share-summary-meta.is-total {
+  font-size: 12.5px;
+  font-weight: 700;
+  color: #0a3d69;
+  cursor: help;
+}
 .stk-share {
   display: flex;
   flex-direction: row;
@@ -813,6 +846,7 @@ body.stk-modal-open { overflow: hidden; }
   font-size: 12.5px;
   font-weight: 700;
   color: #0a3d69;
+  cursor: help;
 }
 /* 頂部留白放柱頂百分比（直排最長約 5 個字符 ≈ 48px），避免被 overflow 裁掉 */
 .stk-share-plot-wrap { padding: 50px 0 4px; }

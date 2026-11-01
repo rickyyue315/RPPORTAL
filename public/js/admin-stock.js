@@ -767,7 +767,7 @@
   /* ---- 店舖佔比：按 Shop Nature 分組的柱狀排名（OM 式三組並排、整張圖橫向滑動） ---- */
 
   const MTD_RANK_DESC = '以本月最新一期快照計（MTD）；每店比率 = 該店分子 ÷ 分母，<b>不是全公司加權</b>（全公司加權見上方 KPI）。新店／上期無數據不參與排名，但仍計入全公司合計。';
-  const MTD_SHARE_DESC = '以本月最新一期快照計（MTD）；按報表 Shop Nature（Local／Mix／Tourist）分成民生區／混合區／遊客區，各組橫向並排，可用分區按鈕只看其中一個分區（預設全部）。每組內按該店比率由高至低排列，柱頂為百分比；整張圖可橫向滑動睇全部店舖。<b>每組柱高獨立縮放</b>，跨組比較請看數字；斜紋柱為新店／上期無數據，仍列出但不宜直接比較。';
+  const MTD_SHARE_DESC = '以本月最新一期快照計（MTD）；按報表 Shop Nature（Local／Mix／Tourist）分成民生區／混合區／遊客區。「全部」時上方顯示三組的店數／加權／最高摘要，下面用一條連續棒圖列出全部店舖（按比率由高至低、共用同一比例尺），可用分區按鈕只看其中一組。柱頂為百分比，整張圖可橫向滑動睇全部店舖；斜紋柱為新店／上期無數據，仍列出但不宜直接比較。';
   const MTD_SHARE_GROUPS = [
     { key: 'local', label: '民生區' },
     { key: 'mix', label: '混合區' },
@@ -858,23 +858,11 @@
       });
     }
 
-    // 「全部／民生區／混合區／遊客區」只影響顯示邊幾組；選中的組別不存在時退回全部並說明
     const selected = MTD_SHARE_GROUPS.find((def) => def.key === shareNature);
-    let groups = allGroups;
-    if (selected) {
-      groups = allGroups.filter((group) => group.key === selected.key);
-      if (!groups.length) {
-        groups = allGroups;
-        if (note) note.textContent = `此期沒有${selected.label}店舖，已顯示全部分區。`;
-      }
-    }
-    if (note && !note.textContent) {
-      const storeCount = groups.reduce((sum, group) => sum + group.rows.length, 0);
-      const scrollHint = groups.length > 1 ? ' · 左右滑動' : '';
-      note.textContent = (selected
-        ? `${selected.label} · ${storeCount} 店`
-        : `全部分區 · ${storeCount} 店`) + scrollHint;
-    }
+    const selectedExists = !!selected && allGroups.some((group) => group.key === selected.key);
+    const groups = selectedExists
+      ? allGroups.filter((group) => group.key === selected.key)
+      : allGroups;
     if (!groups.length) {
       target.innerHTML = '<div class="text-secondary small">此期沒有任何分區資料。</div>';
       return;
@@ -884,29 +872,36 @@
     const color = isSku ? COLOR_RF : COLOR_MAIN;
     const detailLabel = isSku ? '不良 SKU ÷ SKU Carry' : '不良存貨值 ÷ 店舖存貨值';
 
-    const plotNote = '每組柱高獨立縮放（跨組比較請看百分比數字）；按 Shop Nature 分組並排，橫向滑動睇全部店舖。若某店遠高於同組，柱高改以次高值為滿格、超出者頂部加白線標示。斜紋柱為新店／上期無數據，仍列出但不宜直接比較。按一下任何一條柱可跳到該店明細。';
-    target.innerHTML = `<div class="stk-share" role="region" aria-label="店舖佔比，按 Shop Nature 分組" tabindex="0">${groups.map((group) => {
-      const sorted = group.rows.slice().sort((a, b) => {
-        const av = pick(a);
-        const bv = pick(b);
-        if (av === null && bv === null) return String(a.site_code || '').localeCompare(String(b.site_code || ''));
-        if (av === null) return 1;
-        if (bv === null) return -1;
-        if (bv !== av) return bv - av;
-        return String(a.site_code || '').localeCompare(String(b.site_code || ''));
-      });
+    const sortRows = (list) => list.slice().sort((a, b) => {
+      const av = pick(a);
+      const bv = pick(b);
+      if (av === null && bv === null) return String(a.site_code || '').localeCompare(String(b.site_code || ''));
+      if (av === null) return 1;
+      if (bv === null) return -1;
+      if (bv !== av) return bv - av;
+      return String(a.site_code || '').localeCompare(String(b.site_code || ''));
+    });
+
+    const shareNatureLabel = (row) => {
+      const key = natureGroupKey(row.shop_nature);
+      const def = MTD_SHARE_GROUPS.find((group) => group.key === key);
+      if (def) return def.label;
+      if (key === 'unassigned') return '未填 Shop Nature';
+      return String(row.shop_nature || '').trim() || '未填 Shop Nature';
+    };
+
+    const statsFor = (group) => {
+      const sorted = sortRows(group.rows);
       const usable = sorted.filter((row) => pick(row) !== null);
       const topValue = usable.length ? (pick(usable[0]) || 0) : 0;
       const secondValue = usable.length > 1 ? (pick(usable[1]) || 0) : topValue;
-      // 離群（最大 > 次大 × 2）時改以次大值為滿格：否則一間異常店會把同組其餘 40 間壓成貼底的矮柱。
-      // 門檻用 2 倍而非 1.6：1.3–1.8 倍屬正常差距，硬截斷會令最高的兩根柱看起來一樣高。
-      // 柱高只影響視覺比例，柱頂數字仍是真實比率。
+      // 離群（最大 > 次大 × 2）時改用次大值做滿格：否則一間異常店會把其餘店壓成貼底矮柱。
       const scaleMax = topValue > 0 && secondValue > 0 && topValue > secondValue * 2
         ? secondValue
         : topValue;
       const capped = scaleMax < topValue;
 
-      // 組加權 = Σ 分子 ÷ Σ 分母（缺值不當 0），呼應上方 Grand Total 的口徑
+      // 組加權 = Σ 分子 ÷ Σ 分母（缺值不當 0）
       let numSum = 0;
       let denSum = 0;
       let hasNum = false;
@@ -917,57 +912,120 @@
         if (n !== null) { numSum += n; hasNum = true; }
         if (d !== null && d > 0) { denSum += d; hasDen = true; }
       }
-      const weighted = hasNum && hasDen ? numSum / denSum : null;
-      const newCount = group.rows.filter((row) => row.is_new).length;
-      const missingCount = group.rows.length - usable.length;
+      return {
+        group,
+        sorted,
+        usable,
+        topValue,
+        scaleMax,
+        capped,
+        weighted: hasNum && hasDen ? numSum / denSum : null,
+        newCount: group.rows.filter((row) => row.is_new).length,
+        missingCount: group.rows.length - usable.length,
+      };
+    };
 
-      const cols = sorted.map((row) => {
-        const ratio = pick(row);
-        const n = numOf(row);
-        const d = denOf(row);
-        // 缺值不畫高度（留 2px 灰柱示意「有此店但無數據」），有效值最少 1.5% 讓 0% 仍可見
-        const heightStyle = ratio === null || scaleMax <= 0
-          ? '2px'
-          : `${Math.max(1.5, Math.min(100, (ratio / scaleMax) * 100)).toFixed(1)}%`;
-        const overflow = ratio !== null && capped && ratio > scaleMax * 1.02;
-        const barColor = ratio === null ? '#c8d3de' : ratio >= alert ? '#c0392b' : color;
-        const site = String(row.site_code || '');
-        const fullName = shopLabel(row);
-        const reason = row.new_reason === 'new_store' ? '新店（觀察期內）' : '上期無數據';
-        const tip = [
-          `${site} ${fullName}`.trim(),
-          ratio === null ? '比率缺值' : fmtRatio(ratio),
-          `${detailLabel}：${isSku ? `${fmtInt(n)} ÷ ${fmtInt(d)}` : `${fmtMoney(n)} ÷ ${fmtMoney(d)}`}`,
-          row.is_new ? `${reason}，不參與排行榜` : '',
-        ].filter(Boolean).join('｜');
-        return `<button type="button" class="stk-share-col${row.is_new ? ' is-new' : ''}${ratio === null ? ' is-missing' : ''}${overflow ? ' is-capped' : ''}"
-          data-stk-mtd-site="${escAttr(site)}" data-stk-mtd-date="${escAttr(mtdWeekDate)}"
-          title="${escAttr(tip)}" aria-label="${escAttr(tip)}">
-          <span class="stk-share-plotarea">
-            <i class="stk-share-bar" style="height:${heightStyle};background:${barColor}">${ratio === null ? '' : `<b class="stk-share-tip">${fmtRatio(ratio)}</b>`}</i>
-          </span>
-          <span class="stk-share-site">${esc(site)}</span>
-          <span class="stk-share-shop" title="${escAttr(fullName)}">${esc(shortShop(fullName))}</span>
-        </button>`;
-      }).join('');
+    const colHtml = (row, scaleMax, capped) => {
+      const ratio = pick(row);
+      const n = numOf(row);
+      const d = denOf(row);
+      // 缺值留 2px 灰柱示意「有此店但無數據」，有效值最少 1.5% 讓 0% 仍可見
+      const heightStyle = ratio === null || scaleMax <= 0
+        ? '2px'
+        : `${Math.max(1.5, Math.min(100, (ratio / scaleMax) * 100)).toFixed(1)}%`;
+      const overflow = ratio !== null && capped && ratio > scaleMax * 1.02;
+      const barColor = ratio === null ? '#c8d3de' : ratio >= alert ? '#c0392b' : color;
+      const site = String(row.site_code || '');
+      const fullName = shopLabel(row);
+      const reason = row.new_reason === 'new_store' ? '新店（觀察期內）' : '上期無數據';
+      const tip = [
+        `${site} ${fullName}`.trim(),
+        `Shop Nature：${shareNatureLabel(row)}`,
+        ratio === null ? '比率缺值' : fmtRatio(ratio),
+        `${detailLabel}：${isSku ? `${fmtInt(n)} ÷ ${fmtInt(d)}` : `${fmtMoney(n)} ÷ ${fmtMoney(d)}`}`,
+        row.is_new ? `${reason}，不參與排行榜` : '',
+      ].filter(Boolean).join('｜');
+      return `<button type="button" class="stk-share-col${row.is_new ? ' is-new' : ''}${ratio === null ? ' is-missing' : ''}${overflow ? ' is-capped' : ''}"
+        data-stk-mtd-site="${escAttr(site)}" data-stk-mtd-date="${escAttr(mtdWeekDate)}"
+        title="${escAttr(tip)}" aria-label="${escAttr(tip)}">
+        <span class="stk-share-plotarea">
+          <i class="stk-share-bar" style="height:${heightStyle};background:${barColor}">${ratio === null ? '' : `<b class="stk-share-tip">${fmtRatio(ratio)}</b>`}</i>
+        </span>
+        <span class="stk-share-site">${esc(site)}</span>
+        <span class="stk-share-shop" title="${escAttr(fullName)}">${esc(shortShop(fullName))}</span>
+      </button>`;
+    };
 
+    const groupStats = allGroups.map(statsFor);
+
+    const summaryHtml = (stats) => `<div class="stk-share-summary-item" role="listitem">
+      <span class="stk-share-summary-name">${esc(stats.group.label)}</span>
+      <span class="stk-share-summary-meta">${esc(`${stats.group.rows.length} 店`)}</span>
+      <span class="stk-share-summary-meta is-total" title="Σ分子 ÷ Σ分母，不是各店平均">${esc(stats.weighted === null ? '加權 —' : `加權 ${fmtRatio(stats.weighted)}`)}</span>
+      <span class="stk-share-summary-meta">${esc(stats.usable.length ? `最高 ${fmtRatio(stats.topValue)}` : '最高 —')}</span>
+    </div>`;
+
+    let chartHtml = '';
+    if (selectedExists) {
+      const stats = groupStats.find((item) => item.group.key === groups[0].key);
+      const cols = stats.sorted.map((row) => colHtml(row, stats.scaleMax, stats.capped)).join('');
+      const weightedTitle = 'Σ分子 ÷ Σ分母，不是各店平均';
       const metaBits = [
-        { text: `${group.rows.length} 店` },
-        weighted === null ? { text: '加權 —' } : { text: `加權 ${fmtRatio(weighted)}`, total: true },
-        ...(usable.length ? [{ text: `最高 ${fmtRatio(topValue)}` }] : []),
-        ...(capped ? [{ text: '最高柱截斷' }] : []),
-        ...(newCount ? [{ text: `${newCount} 間新店` }] : []),
-        ...(missingCount ? [{ text: `${missingCount} 間缺值` }] : []),
+        { text: `${stats.group.rows.length} 店` },
+        stats.weighted === null
+          ? { text: '加權 —', title: weightedTitle }
+          : { text: `加權 ${fmtRatio(stats.weighted)}`, total: true, title: weightedTitle },
+        ...(stats.usable.length ? [{ text: `最高 ${fmtRatio(stats.topValue)}` }] : []),
+        ...(stats.capped ? [{ text: '最高柱截斷' }] : []),
+        ...(stats.newCount ? [{ text: `${stats.newCount} 間新店` }] : []),
+        ...(stats.missingCount ? [{ text: `${stats.missingCount} 間缺值` }] : []),
       ];
+      chartHtml = `<div class="stk-share" role="region" aria-label="店舖佔比，${esc(stats.group.label)}" tabindex="0">
+        <section class="stk-share-group" style="flex-grow:1">
+          <div class="stk-share-head">
+            <span class="stk-share-group-name">${esc(stats.group.label)}</span>
+            ${metaBits.map((item) => `<span class="stk-share-group-meta${item.total ? ' is-total' : ''}"${item.title ? ` title="${escAttr(item.title)}"` : ''}>${esc(item.text)}</span>`).join('')}
+          </div>
+          <div class="stk-share-plot-wrap"><div class="stk-share-plot">${cols}</div></div>
+        </section>
+      </div>`;
+    } else {
+      // 全部：一條連續棒圖（全體按比率排序），上方只保留三個分區摘要
+      const allSorted = sortRows(groups.flatMap((group) => group.rows));
+      const allUsable = allSorted.filter((row) => pick(row) !== null);
+      const topValue = allUsable.length ? (pick(allUsable[0]) || 0) : 0;
+      const secondValue = allUsable.length > 1 ? (pick(allUsable[1]) || 0) : topValue;
+      const scaleMax = topValue > 0 && secondValue > 0 && topValue > secondValue * 2
+        ? secondValue
+        : topValue;
+      const capped = scaleMax < topValue;
+      const cols = allSorted.map((row) => colHtml(row, scaleMax, capped)).join('');
+      chartHtml = `<div class="stk-share-summary" role="list" aria-label="各 Shop Nature 摘要">
+        ${groupStats.map(summaryHtml).join('')}
+      </div>
+      <div class="stk-share" role="region" aria-label="店舖佔比，全部店舖按比率排序" tabindex="0">
+        <section class="stk-share-group" style="flex-grow:1">
+          <div class="stk-share-plot-wrap"><div class="stk-share-plot">${cols}</div></div>
+        </section>
+      </div>`;
+    }
 
-      return `<section class="stk-share-group" style="flex-grow:${groups.length > 1 ? group.rows.length : 1}">
-        <div class="stk-share-head">
-          <span class="stk-share-group-name">${esc(group.label)}</span>
-          ${metaBits.map((item) => `<span class="stk-share-group-meta${item.total ? ' is-total' : ''}">${esc(item.text)}</span>`).join('')}
-        </div>
-        <div class="stk-share-plot-wrap"><div class="stk-share-plot">${cols}</div></div>
-      </section>`;
-    }).join('')}</div><p class="text-secondary small mt-2 mb-0">${plotNote}</p>`;
+    if (selected && !selectedExists && note) {
+      note.textContent = `此期沒有${selected.label}店舖，已顯示全部分區。`;
+    }
+    if (note && !note.textContent) {
+      const storeCount = groups.reduce((sum, group) => sum + group.rows.length, 0);
+      const scrollHint = (!selectedExists || storeCount > 25) ? ' · 左右滑動' : '';
+      note.textContent = (selectedExists
+        ? `${groups[0].label} · ${storeCount} 店`
+        : `全部分區 · ${storeCount} 店`) + scrollHint;
+    }
+
+    const plotNote = selectedExists
+      ? '此分區柱高獨立縮放；若某店遠高於同組，柱高改以次高值為滿格、超出者頂部加白線標示。斜紋柱為新店／上期無數據，仍列出但不宜直接比較。按一下任何一條柱可跳到該店明細。'
+      : '全部店舖按比率由高至低排，柱高共用同一比例尺；上方顯示各 Shop Nature 的店數／加權／最高。若某店遠高於全體，柱高改以次高值為滿格、超出者頂部加白線標示。斜紋柱為新店／上期無數據，仍列出但不宜直接比較。按一下任何一條柱可跳到該店明細。';
+
+    target.innerHTML = `${chartHtml}<p class="text-secondary small mt-2 mb-0">${plotNote}</p>`;
   }
 
   async function loadMtdWeek() {

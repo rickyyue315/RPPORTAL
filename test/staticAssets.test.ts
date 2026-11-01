@@ -228,6 +228,9 @@ describe('static asset freshness', () => {
     expect(script).toContain('renderOmShare');
     expect(script).toContain('data-om-stock-metric');
     expect(script).toContain('setStockMetric');
+    // 同一月份有月結時，週更點只留 tooltip、不畫數值標籤；月結後未有新月結的週更照標
+    expect(script).toContain('weeklyLabelVisibility');
+    expect(script).toContain('showLabel');
     expect(page).toContain('不良 SKU / Carry SKU');
     expect(page).toContain('/portal/js/om.js');
     expect(page).toContain('/portal/js/om-designated-sku.js');

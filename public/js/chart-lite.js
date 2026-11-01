@@ -10,11 +10,12 @@
  *  4. tooltip / 點按（pointer 事件），觸控目標由 CSS 保證 ≥20px。
  *
  * 對外 API：
- *   globalThis.ChartLite = { renderLine, renderBarGrid, clear, barLabelIndices, dateTicks, niceMax, scaleX, toTime, buildPath, splitIndex, fmtDay }
+ *   globalThis.ChartLite = { renderLine, renderBarGrid, clear, barLabelIndices, weeklyLabelVisibility, dateTicks, niceMax, scaleX, toTime, buildPath, splitIndex, fmtDay }
  *
  * renderLine(el, opts) 的 opts：
- *   series: [{ key, label, color, dashed, splitDate, colorBefore, points: [{ date:'YYYY-MM-DD', value:Number|null }] }]  // 最多 2 條
+ *   series: [{ key, label, color, dashed, splitDate, colorBefore, points: [{ date:'YYYY-MM-DD', value:Number|null, showLabel?:Boolean }] }]  // 最多 2 條
  *            splitDate 之前的點改用 colorBefore 畫（同一條線分兩段，用於「去年」等舊資料）
+ *            showLabel: false 只隱藏該點的數值標籤，圓點與 tooltip 照舊
  *   height: Number           容器的 clientHeight 為 0 時使用的像素高（預設 220）
  *   yFormat: (v) => String    y 軸刻度文字
  *   tipFormat: (v) => String  tooltip 數值文字（預設同 yFormat）
@@ -160,7 +161,12 @@
       const value = p.value != null ? p.value : (p.ratio != null ? p.ratio : p.y);
       const t = toTime(dateValue);
       const v = value == null || value === '' ? NaN : Number(value);
-      return { t, v: Number.isFinite(v) ? v : null };
+      return {
+        t,
+        v: Number.isFinite(v) ? v : null,
+        // 逐點開關：false = 唔畫數值標籤，但圓點、tooltip 照舊
+        showLabel: p.showLabel !== false,
+      };
     }).filter((p) => p && Number.isFinite(p.t))
       .sort((a, b) => a.t - b.t);
     return {
@@ -237,6 +243,30 @@
       max -= 1;
     }
     return [0, n - 1];
+  }
+
+  /**
+   * 月結／週更數值標籤規則（pure function）：
+   *   同一月份有月結時，該月「月結之前」嘅週更點唔標數值；
+   *   月結之後（未有新月結）嘅週更照標；月結本身永遠照標。
+   * 回傳 predicate(row)，row 需有 report_date / report_kind。
+   */
+  function weeklyLabelVisibility(rows) {
+    const monthEndByMonth = new Map();
+    for (const row of Array.isArray(rows) ? rows : []) {
+      if (!row || row.report_kind !== 'month_end') continue;
+      const date = String(row.report_date || '').slice(0, 10);
+      if (!date) continue;
+      const month = date.slice(0, 7);
+      const current = monthEndByMonth.get(month);
+      if (!current || date > current) monthEndByMonth.set(month, date);
+    }
+    return (row) => {
+      if (!row || row.report_kind !== 'weekly') return true;
+      const date = String(row.report_date || '').slice(0, 10);
+      const monthEnd = monthEndByMonth.get(date.slice(0, 7));
+      return !monthEnd || date > monthEnd;
+    };
   }
 
   /* ==================== 主渲染 ==================== */
@@ -341,6 +371,7 @@
         y: p.v === null ? NaN : yScale(p.v),
         t: p.t,
         v: p.v,
+        showLabel: p.showLabel,
       }));
       const hasSplit = Number.isFinite(s.splitT);
       const k = hasSplit ? splitIndex(plotted, s.splitT) : -1;
@@ -392,12 +423,20 @@
         const plotted = entry.plotted;
         if (!plotted.length) return;
         const above = seriesIndex === 0;
-        const keep = new Set(barLabelIndices(plotted.length, maxLabels));
+        // 只喺「有數值兼且准許標示」嘅點入面抽樣，避免 hidden 點白佔標籤位
+        const candidates = [];
+        plotted.forEach((p, i) => {
+          if (Number.isFinite(p.y) && p.showLabel !== false) candidates.push(i);
+        });
+        if (!candidates.length) return;
+        const keep = new Set(barLabelIndices(candidates.length, maxLabels).map((pos) => candidates[pos]));
+        const firstVisible = candidates[0];
+        const lastVisible = candidates[candidates.length - 1];
         plotted.forEach((p, i) => {
           if (!keep.has(i) || !Number.isFinite(p.y)) return;
-          // 首尾點改用 start／end 對齊，免得文字半截跑出繪圖區
-          const anchor = i === 0 ? 'start' : (i === plotted.length - 1 ? 'end' : 'middle');
-          const offsetX = i === 0 ? -2 : (i === plotted.length - 1 ? 2 : 0);
+          // 首尾「有標籤」嘅點改用 start／end 對齊，免得文字半截跑出繪圖區
+          const anchor = i === firstVisible ? 'start' : (i === lastVisible ? 'end' : 'middle');
+          const offsetX = i === firstVisible ? -2 : (i === lastVisible ? 2 : 0);
           const label = svgEl('text', {
             x: round(p.x + offsetX, 2),
             y: round(p.y + (above ? -7 : 14), 2),
@@ -767,6 +806,7 @@
     renderBarGrid,
     clear,
     barLabelIndices,
+    weeklyLabelVisibility,
     dateTicks,
     niceMax,
     scaleX,

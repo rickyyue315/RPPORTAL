@@ -657,6 +657,8 @@
     const company = opts.company || [];
     const usable = series.filter((row) => row[opts.valueKey] !== null);
     const companyUsable = company.filter((row) => row[opts.valueKey] !== null);
+    const labelRows = [...series, ...company].filter((row) => row[opts.valueKey] !== null);
+    const showLabel = globalThis.ChartLite?.weeklyLabelVisibility?.(labelRows) || (() => true);
     if (period) period.textContent = '';
     if (note) note.textContent = '';
     if (!usable.length) {
@@ -682,7 +684,11 @@
       key: 'self',
       label: opts.selfLabel || 'OM 管轄合計',
       color: '#0f5c9c',
-      points: series.map((row) => ({ date: row.report_date, value: row[opts.valueKey] })),
+      points: series.map((row) => ({
+        date: row.report_date,
+        value: row[opts.valueKey],
+        showLabel: showLabel(row),
+      })),
     }];
     if (companyUsable.length) {
       chartSeries.push({
@@ -690,7 +696,11 @@
         label: '全公司合計（加權）',
         color: '#94a3b8',
         dashed: true,
-        points: companyUsable.map((row) => ({ date: row.report_date, value: row[opts.valueKey] })),
+        points: companyUsable.map((row) => ({
+          date: row.report_date,
+          value: row[opts.valueKey],
+          showLabel: showLabel(row),
+        })),
       });
     }
     chartApi.renderLine(el, {
@@ -704,7 +714,15 @@
       labelFormat: (v) => `${(Number(v) * 100).toFixed(1)}%`,
       ariaLabel: `${opts.selfLabel || 'OM 管轄合計'}${opts.ariaLabel || '走勢'}，共 ${usable.length} 期`,
     });
-    if (note) note.textContent = opts.noteText ? opts.noteText(usable) : '點或懸停圖表可查看該期數值。';
+    if (note) {
+      const noteText = opts.noteText ? opts.noteText(usable) : '點或懸停圖表可查看該期數值。';
+      const hiddenWeekly = [...series, ...company].some(
+        (row) => row[opts.valueKey] !== null && row.report_kind === 'weekly' && !showLabel(row),
+      );
+      note.textContent = hiddenWeekly
+        ? `${noteText} 同一月份已有月結時，月結前的週更點不標數值（hover 仍可查看）。`
+        : noteText;
+    }
   }
 
   function currentSelfLabel(data) {

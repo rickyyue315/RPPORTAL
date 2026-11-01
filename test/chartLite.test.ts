@@ -14,6 +14,9 @@ interface ChartLiteApi {
   buildPath: (points: ChartPoint[]) => string;
   splitIndex: (points: { t: number }[], splitT: number) => number;
   barLabelIndices: (count: number, maxLabels?: number) => number[];
+  weeklyLabelVisibility: (
+    rows: { report_date: string; report_kind: string }[]
+  ) => (row: { report_date: string; report_kind: string }) => boolean;
 }
 
 const ChartLite = (globalThis as unknown as { ChartLite: ChartLiteApi }).ChartLite;
@@ -54,6 +57,64 @@ describe('chart-lite 純函數', () => {
     it('上限至少為 2，非法輸入不會爆', () => {
       expect(ChartLite.barLabelIndices(10, 1).length).toBeLessThanOrEqual(2);
       expect(ChartLite.barLabelIndices(Number.NaN, 6)).toEqual([]);
+    });
+  });
+
+  describe('weeklyLabelVisibility（月結／週更數值標籤）', () => {
+    it('同一月份有月結時，之前的週更不標；月結及之後未有新月結的週更照標', () => {
+      const rows = [
+        { report_date: '2026-09-30', report_kind: 'month_end' },
+        { report_date: '2026-10-10', report_kind: 'weekly' },
+        { report_date: '2026-10-24', report_kind: 'weekly' },
+        { report_date: '2026-10-31', report_kind: 'month_end' },
+        { report_date: '2026-11-07', report_kind: 'weekly' },
+        { report_date: '2026-11-14', report_kind: 'weekly' },
+      ];
+      const show = ChartLite.weeklyLabelVisibility(rows);
+      expect(show(rows[0]!)).toBe(true); // 月結永遠標
+      expect(show(rows[1]!)).toBe(false); // 月結前的週更
+      expect(show(rows[2]!)).toBe(false);
+      expect(show(rows[3]!)).toBe(true); // 月結本身
+      expect(show(rows[4]!)).toBe(true); // 11 月未有月結
+      expect(show(rows[5]!)).toBe(true);
+    });
+
+    it('該月份沒有月結時，週更照標', () => {
+      const rows = [
+        { report_date: '2026-10-10', report_kind: 'weekly' },
+        { report_date: '2026-10-17', report_kind: 'weekly' },
+      ];
+      const show = ChartLite.weeklyLabelVisibility(rows);
+      expect(show(rows[0]!)).toBe(true);
+      expect(show(rows[1]!)).toBe(true);
+    });
+
+    it('月結之後同月出現的週更照標；ad_hoc 不受影響', () => {
+      const rows = [
+        { report_date: '2026-10-15', report_kind: 'month_end' },
+        { report_date: '2026-10-22', report_kind: 'weekly' },
+        { report_date: '2026-10-29', report_kind: 'ad_hoc' },
+      ];
+      const show = ChartLite.weeklyLabelVisibility(rows);
+      expect(show(rows[1]!)).toBe(true); // 10-15 月結之後，未有更後月結
+      expect(show(rows[2]!)).toBe(true); // 非週更
+    });
+
+    it('同月有更後月結時，之前週更由新一個月結代表', () => {
+      const rows = [
+        { report_date: '2026-10-15', report_kind: 'month_end' },
+        { report_date: '2026-10-22', report_kind: 'weekly' },
+        { report_date: '2026-10-30', report_kind: 'month_end' },
+        { report_date: '2026-10-31', report_kind: 'weekly' },
+      ];
+      const show = ChartLite.weeklyLabelVisibility(rows);
+      expect(show(rows[1]!)).toBe(false); // 10-30 月結之前的週更
+      expect(show(rows[3]!)).toBe(true); // 10-30 月結之後的週更
+    });
+
+    it('空資料時全部照標，不會爆', () => {
+      const show = ChartLite.weeklyLabelVisibility([]);
+      expect(show({ report_date: '2026-10-10', report_kind: 'weekly' })).toBe(true);
     });
   });
 

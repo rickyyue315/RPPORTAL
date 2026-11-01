@@ -271,6 +271,7 @@ describe('OM portal', () => {
     expect(res.body.series[0].ovs_carry_ratio).toBeCloseTo(3 / 20, 6);
     expect(res.body.company_series[0].total_sku_carry).toBe(30);
     expect(res.body.company_series[0].ovs_carry_ratio).toBeCloseTo(12 / 30, 6);
+    expect(res.body.company_series[0].report_kind).toBe('weekly');
 
     const ha02 = res.body.stores.find((s: { site_code: string }) => s.site_code === 'HA02');
     expect(ha02.sku_count_0sale).toBe(1);

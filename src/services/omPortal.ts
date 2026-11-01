@@ -360,6 +360,7 @@ export interface OmStockKpi {
 
 export interface OmStockCompanySeriesPoint {
   report_date: string;
+  report_kind: string;
   ratio: number | null;
   wow_delta_pt: number | null;
   sku_count_0sale: number | null;
@@ -545,6 +546,7 @@ export async function getOmStockSummary(username: string, selectedSiteCode = '')
   const company = await getShopStockSummary();
   const company_series: OmStockCompanySeriesPoint[] = company.series.map((point) => ({
     report_date: point.report_date,
+    report_kind: point.report_kind,
     ratio: point.ratio,
     wow_delta_pt: point.wow_delta_pt,
     sku_count_0sale: point.sku_count_0sale,

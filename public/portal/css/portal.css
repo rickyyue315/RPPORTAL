@@ -153,7 +153,7 @@
   max-height: 320px;
 }
 .dash-chart svg { display: block; width: 100%; height: 100%; max-width: 100%; }
-.dash-chart-note { margin: 8px 0 0; }
+.dash-chart-note { margin: 12px 0 0; line-height: 1.5; }
 
 /* ---------- 存貨走勢口徑切換（每週不良存貨佔比／SKU ÷ Carry SKU） ---------- */
 .om-metric-switch {

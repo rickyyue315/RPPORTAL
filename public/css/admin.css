@@ -755,8 +755,8 @@ body.stk-modal-open { overflow: hidden; }
 .stk-mtd-switch { margin: 0; }
 #stk_mtd_share[hidden] { display: none !important; }
 
-/* 店舖佔比：按 Shop Nature 分組的柱狀排名（跟 Excel「店舖佔比」報表排版）
-   每組獨立縮放，柱頂百分比直排以免 28px 柱寬溢出；組與組之間豎向排列、組內橫向滾動。 */
+/* 店舖佔比：按 Shop Nature 分組的柱狀排名（OM 式三組並排）
+   每組獨立縮放，柱頂百分比直排以免 28px 柱寬溢出；三組橫向並排，整張圖橫向滑動睇全部店舖。 */
 .stk-share-toolbar {
   display: flex;
   align-items: center;
@@ -769,19 +769,49 @@ body.stk-modal-open { overflow: hidden; }
   margin: 0;
   flex-wrap: wrap;
 }
-.stk-share { display: flex; flex-direction: column; gap: 14px; }
-.stk-share-group {
-  padding: 10px 12px 6px;
+.stk-share {
+  display: flex;
+  flex-direction: row;
+  flex-wrap: nowrap;
+  align-items: stretch;
+  width: 100%;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  scrollbar-width: thin;
   border: 1px solid #e3eef8;
   border-radius: 10px;
   background: #fbfdff;
 }
+.stk-share:focus-visible {
+  outline: 2px solid rgba(15, 92, 156, .4);
+  outline-offset: 2px;
+}
+.stk-share::-webkit-scrollbar { height: 10px; }
+.stk-share::-webkit-scrollbar-track { background: #eef4fa; border-radius: 999px; }
+.stk-share::-webkit-scrollbar-thumb {
+  background: #c3d2e0;
+  border: 2px solid #eef4fa;
+  border-radius: 999px;
+}
+.stk-share::-webkit-scrollbar-thumb:hover { background: #9fb4c8; }
+.stk-share-group {
+  /* flex-grow 由 JS 按該組店數寫入；內容太闊時不縮，交由外層橫向滑動 */
+  flex: 1 0 auto;
+  padding: 10px 12px 6px;
+  border: none;
+  border-left: 1px solid #e3eef8;
+  border-radius: 0;
+  background: transparent;
+}
+.stk-share-group:first-child { border-left: none; }
 .stk-share-head {
   display: flex;
   align-items: baseline;
+  justify-content: center;
   gap: 6px 12px;
   flex-wrap: wrap;
   margin-bottom: 2px;
+  text-align: center;
 }
 .stk-share-group-name {
   font-size: 13.5px;
@@ -799,13 +829,14 @@ body.stk-modal-open { overflow: hidden; }
   color: #0a3d69;
 }
 /* 頂部留白放柱頂百分比（直排最長約 5 個字符 ≈ 48px），避免被 overflow 裁掉 */
-.stk-share-scroll { overflow-x: auto; padding: 50px 0 4px; }
+.stk-share-plot-wrap { padding: 50px 0 4px; }
 .stk-share-plot {
   display: flex;
   align-items: flex-end;
   gap: 2px;
   width: max-content;
   height: 196px;
+  margin: 0 auto;
 }
 .stk-share-col {
   flex: 0 0 28px;

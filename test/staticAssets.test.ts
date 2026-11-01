@@ -127,6 +127,12 @@ describe('static asset freshness', () => {
     expect(html).toContain('data-stk-share-nature="mix"');
     expect(html).toContain('data-stk-share-nature="tourist"');
     expect(script).toContain('applyShareNature');
+    // OM 式整合：三組 Nature 並排在同一張圖，外層橫向滑動（不再分開三張卡）
+    expect(script).toContain('class="stk-share" role="region"');
+    expect(script).toContain('橫向滑動睇全部店舖');
+    const adminCss = readFileSync(path.join(root, 'public', 'css', 'admin.css'), 'utf8');
+    expect(adminCss).toContain('flex-wrap: nowrap');
+    expect(adminCss).toContain('scrollbar-width: thin');
     // 排行榜篩選：OM／Shop Nature（預設全部）；表格本體要獨立容器，否則重畫會洗掉篩選列
     expect(html).toContain('id="stk_mtd_rank_body"');
     expect(html).toContain('id="stk_rank_om"');

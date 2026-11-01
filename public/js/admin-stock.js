@@ -908,10 +908,10 @@
     </div>`;
   }
 
-  /* ---- 店舖佔比：按 Shop Nature 分組的柱狀排名（跟 Excel「店舖佔比」報表排版） ---- */
+  /* ---- 店舖佔比：按 Shop Nature 分組的柱狀排名（OM 式三組並排、整張圖橫向滑動） ---- */
 
   const MTD_RANK_DESC = '以本月最新一期快照計（MTD）；每店比率 = 該店分子 ÷ 分母，<b>不是全公司加權</b>（全公司加權見上方 Grand Total）。新店／上期無數據不參與排名，但仍計入全公司合計。';
-  const MTD_SHARE_DESC = '以本月最新一期快照計（MTD）；按報表 Shop Nature（Local／Mix／Tourist）分成民生區／混合區／遊客區，可用上方按鈕只看其中一個分區（預設全部）。每組內按該店比率由高至低排列，柱頂為百分比。<b>每組柱高獨立縮放</b>，跨組比較請看數字；斜紋柱為新店／上期無數據，仍列出但不宜直接比較。';
+  const MTD_SHARE_DESC = '以本月最新一期快照計（MTD）；按報表 Shop Nature（Local／Mix／Tourist）分成民生區／混合區／遊客區，各組橫向並排，可用上方按鈕只看其中一個分區（預設全部）。每組內按該店比率由高至低排列，柱頂為百分比；整張圖可橫向滑動睇全部店舖。<b>每組柱高獨立縮放</b>，跨組比較請看數字；斜紋柱為新店／上期無數據，仍列出但不宜直接比較。';
   const MTD_SHARE_GROUPS = [
     { key: 'local', label: '民生區' },
     { key: 'mix', label: '混合區' },
@@ -1014,9 +1014,10 @@
     }
     if (note && !note.textContent) {
       const storeCount = groups.reduce((sum, group) => sum + group.rows.length, 0);
-      note.textContent = selected
+      const scrollHint = groups.length > 1 ? ' · 左右滑動' : '';
+      note.textContent = (selected
         ? `${selected.label} · ${storeCount} 店`
-        : `全部分區 · ${storeCount} 店`;
+        : `全部分區 · ${storeCount} 店`) + scrollHint;
     }
     if (!groups.length) {
       target.innerHTML = '<div class="text-secondary small">此期沒有任何分區資料。</div>';
@@ -1027,7 +1028,8 @@
     const color = isSku ? COLOR_RF : COLOR_MAIN;
     const detailLabel = isSku ? '不良 SKU ÷ SKU Carry' : '不良存貨值 ÷ 店舖存貨值';
 
-    target.innerHTML = groups.map((group) => {
+    const plotNote = '每組柱高獨立縮放（跨組比較請看百分比數字）；按 Shop Nature 分組並排，橫向滑動睇全部店舖。若某店遠高於同組，柱高改以次高值為滿格、超出者頂部加白線標示。斜紋柱為新店／上期無數據，仍列出但不宜直接比較。按一下任何一條柱可跳到該店明細。';
+    target.innerHTML = `<div class="stk-share" role="region" aria-label="店舖佔比，按 Shop Nature 分組" tabindex="0">${groups.map((group) => {
       const sorted = group.rows.slice().sort((a, b) => {
         const av = pick(a);
         const bv = pick(b);
@@ -1102,14 +1104,14 @@
         ...(missingCount ? [{ text: `${missingCount} 間缺值` }] : []),
       ];
 
-      return `<section class="stk-share-group">
+      return `<section class="stk-share-group" style="flex-grow:${groups.length > 1 ? group.rows.length : 1}">
         <div class="stk-share-head">
           <span class="stk-share-group-name">${esc(group.label)}</span>
           ${metaBits.map((item) => `<span class="stk-share-group-meta${item.total ? ' is-total' : ''}">${esc(item.text)}</span>`).join('')}
         </div>
-        <div class="stk-share-scroll"><div class="stk-share-plot">${cols}</div></div>
+        <div class="stk-share-plot-wrap"><div class="stk-share-plot">${cols}</div></div>
       </section>`;
-    }).join('') + `<p class="text-secondary small mt-2 mb-0">每組柱高獨立縮放（跨組比較請看百分比數字）；若某店遠高於同組，柱高改以次高值為滿格、超出者頂部加白線標示。斜紋柱為新店／上期無數據，仍列出但不宜直接比較。按一下任何一條柱可跳到該店明細。</p>`;
+    }).join('')}</div><p class="text-secondary small mt-2 mb-0">${plotNote}</p>`;
   }
 
   async function loadMtdWeek() {

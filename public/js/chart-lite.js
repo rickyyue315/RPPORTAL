@@ -220,13 +220,23 @@
   function barLabelIndices(count, maxLabels) {
     const n = Math.max(0, Math.floor(Number(count) || 0));
     if (!n) return [];
-    const max = Math.max(2, Math.floor(Number(maxLabels) || 6));
+    let max = Math.max(2, Math.floor(Number(maxLabels) || 6));
     if (n <= max) return Array.from({ length: n }, (_, i) => i);
-    const step = Math.ceil((n - 1) / (max - 1));
-    const out = [];
-    for (let i = 0; i < n; i += step) out.push(i);
-    if (out[out.length - 1] !== n - 1) out.push(n - 1);
-    return out;
+    // 由標籤上限逐步收窄，確保除首尾外，每個標籤至少隔一個資料點。
+    // 舊版用固定 step 再補最後一點，會出現「尾二」與「最新」貼在一起（百分比疊字）。
+    while (max > 2) {
+      const step = (n - 1) / (max - 1);
+      const out = [];
+      for (let i = 0; i < max; i += 1) out.push(Math.round(i * step));
+      const unique = [...new Set(out)];
+      const minGap = unique.slice(1).reduce(
+        (gap, value, i) => Math.min(gap, value - unique[i]),
+        Infinity,
+      );
+      if (unique[unique.length - 1] === n - 1 && minGap >= 2) return unique;
+      max -= 1;
+    }
+    return [0, n - 1];
   }
 
   /* ==================== 主渲染 ==================== */

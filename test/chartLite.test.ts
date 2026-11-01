@@ -42,6 +42,15 @@ describe('chart-lite 純函數', () => {
       for (let i = 1; i < labels.length; i += 1) expect(labels[i]).toBeGreaterThan(labels[i - 1]!);
     });
 
+    it('標籤之間至少隔一個資料點，避免尾二與最新一點疊字', () => {
+      const labels = ChartLite.barLabelIndices(14, 8);
+      expect(labels[0]).toBe(0);
+      expect(labels[labels.length - 1]).toBe(13);
+      for (let i = 1; i < labels.length; i += 1) {
+        expect(labels[i]! - labels[i - 1]!).toBeGreaterThanOrEqual(2);
+      }
+    });
+
     it('上限至少為 2，非法輸入不會爆', () => {
       expect(ChartLite.barLabelIndices(10, 1).length).toBeLessThanOrEqual(2);
       expect(ChartLite.barLabelIndices(Number.NaN, 6)).toEqual([]);

@@ -526,46 +526,27 @@
         </div>
 
         <div class="card mt-3" id="stk_group_dashboard">
-          <div class="card-header">
-            <h3 class="card-title">不良銷售 SKU 佔比走勢</h3>
-            <div class="card-actions d-flex flex-wrap gap-2 align-items-center justify-content-end ms-auto">
-              <div class="stk-range" id="stk_group_metric" role="group" aria-label="指標口徑">
-                <button class="btn btn-sm" type="button" data-stk-group-metric="sku" aria-pressed="true">不良 SKU ÷ SKU Carry</button>
-                <button class="btn btn-sm" type="button" data-stk-group-metric="value" aria-pressed="false">不良存貨值 ÷ 存貨值</button>
-              </div>
-              <div class="stk-range" id="stk_group_dim" role="group" aria-label="分組維度">
-                <button class="btn btn-sm" type="button" data-stk-group-dim="nature" aria-pressed="true">按 Shop Nature</button>
-                <button class="btn btn-sm" type="button" data-stk-group-dim="om" aria-pressed="false">按 OM</button>
-              </div>
-              <div class="stk-range" id="stk_group_range" role="group" aria-label="顯示期間">
-                <button class="btn btn-sm" type="button" data-stk-months="3">3 個月</button>
-                <button class="btn btn-sm" type="button" data-stk-months="6">6 個月</button>
-                <button class="btn btn-sm" type="button" data-stk-months="12" aria-pressed="true">12 個月</button>
-                <button class="btn btn-sm" type="button" data-stk-months="24">24 個月</button>
-              </div>
-            </div>
-          </div>
           <div class="card-body">
-            <p class="text-secondary small">每張小圖一個分組，每根柱一個報表期；柱上百分比是該組的<b>加權比率（Σ分子 ÷ Σ分母）</b>，不是各店比率平均。<b>Grand Total</b> 與各分組用同一口徑；某期某組沒有資料時會留空，不會當成 0%。期間按鈕與下方「佔比趨勢」同步（3 / 6 / 12 / 24 個月）。</p>
-            <div class="stk-legend" id="stk_group_legend"></div>
-            <div class="stk-group-chart" id="stk_group_chart"></div>
-            <p class="text-secondary small mt-2 mb-0" id="stk_group_note"></p>
-            <div id="stk_group_error"></div>
-
             <div class="stk-mtd-section" id="stk_mtd_section">
               <div class="stk-mtd-head">
                 <div class="stk-mtd-heading">
-                  <h5 class="mb-0" id="stk_mtd_title">當月 MTD 不良 SKU 佔比排名</h5>
+                  <h3 class="card-title mb-0" id="stk_mtd_title">最新月份 MTD 不良 SKU 佔比排名</h3>
                   <span class="text-secondary small" id="stk_mtd_note">載入中…</span>
                 </div>
-                <div class="seg-switch stk-mtd-switch" id="stk_mtd_switch" role="tablist" aria-label="排名顯示方式">
-                  <button class="seg-switch-btn is-active" type="button" role="tab" aria-selected="true" data-stk-mtd-view="rank">排行榜</button>
-                  <button class="seg-switch-btn" type="button" role="tab" aria-selected="false" data-stk-mtd-view="share">店舖佔比</button>
+                <div class="d-flex align-items-center gap-2 flex-wrap justify-content-end ms-auto">
+                  <div class="stk-range" id="stk_group_metric" role="group" aria-label="指標口徑">
+                    <button class="btn btn-sm" type="button" data-stk-group-metric="sku" aria-pressed="true">不良 SKU ÷ SKU Carry</button>
+                    <button class="btn btn-sm" type="button" data-stk-group-metric="value" aria-pressed="false">不良存貨值 ÷ 存貨值</button>
+                  </div>
+                  <div class="seg-switch stk-mtd-switch" id="stk_mtd_switch" role="tablist" aria-label="排名顯示方式">
+                    <button class="seg-switch-btn" type="button" role="tab" aria-selected="false" data-stk-mtd-view="rank">排行榜</button>
+                    <button class="seg-switch-btn is-active" type="button" role="tab" aria-selected="true" data-stk-mtd-view="share">店舖佔比</button>
+                  </div>
                 </div>
               </div>
-              <p class="text-secondary small mt-1 mb-2" id="stk_mtd_desc">以本月最新一期快照計（MTD）；每店比率 = 該店分子 ÷ 分母，<b>不是全公司加權</b>（全公司加權見上方 Grand Total）。新店／上期無數據不參與排名，但仍計入全公司合計。</p>
+              <p class="text-secondary small mt-1 mb-2" id="stk_mtd_desc">以本月最新一期快照計（MTD）；按報表 Shop Nature（Local／Mix／Tourist）分成民生區／混合區／遊客區，各組橫向並排，可用分區按鈕只看其中一個分區（預設全部）。每組內按該店比率由高至低排列，柱頂為百分比；整張圖可橫向滑動睇全部店舖。<b>每組柱高獨立縮放</b>，跨組比較請看數字；斜紋柱為新店／上期無數據，仍列出但不宜直接比較。</p>
               <div id="stk_mtd_error"></div>
-              <div id="stk_mtd_rank">
+              <div id="stk_mtd_rank" hidden>
                 <div class="stk-mtd-filter">
                   <div>
                     <label class="form-label" for="stk_rank_om">OM</label>
@@ -584,7 +565,7 @@
                 </div>
                 <div id="stk_mtd_rank_body"><div class="text-secondary small">載入中…</div></div>
               </div>
-              <div id="stk_mtd_share" hidden>
+              <div id="stk_mtd_share">
                 <div class="stk-share-toolbar">
                   <div class="seg-switch stk-share-filter" id="stk_share_nature" role="group" aria-label="顯示分區">
                     <button class="seg-switch-btn is-active" type="button" data-stk-share-nature="all" aria-pressed="true">全部</button>
@@ -594,7 +575,7 @@
                   </div>
                   <span class="text-secondary small" id="stk_share_note"></span>
                 </div>
-                <div id="stk_share_body"></div>
+                <div id="stk_share_body"><div class="text-secondary small">載入中…</div></div>
               </div>
             </div>
           </div>

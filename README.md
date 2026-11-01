@@ -257,18 +257,18 @@ pg_restore --no-owner --no-privileges --clean --if-exists \
 
 ### 管理後台（第 5 個 tab「存貨 Dashboard」）
 
-**頁面版面（由上至下）**：上載 I14 報表 → 最新一期 KPI → **不良銷售 SKU 佔比走勢（分組小圖）** → **佔比趨勢（不良存貨 ÷ 店舖存貨）** → **每店明細（不良存貨）** → **No. of RF SKU Dashboard（自動補貨）** → 上載批次。分組小圖與佔比趨勢放在前面，RF SKU 區塊放最後；每店明細的標題與欄位已註明**不良存貨**口徑（不良存貨值 / 不良存貨佔比 / 不良存貨 SKU ÷ 店內貨品），RF SKU 兩欄僅屬參考，明確標示不代表好壞。
+**頁面版面（由上至下）**：上載 I14 報表 → 最新一期 KPI → **最新月份 MTD 不良 SKU 佔比排名（排行榜／店舖佔比）** → **佔比趨勢（不良存貨 ÷ 店舖存貨）** → **每店明細（不良存貨）** → **No. of RF SKU Dashboard（自動補貨）** → 上載批次。原本的 Grand Total＋Shop Nature／OM 分組走勢小圖已由 MTD 每店排名直接取代；每店明細的標題與欄位已註明**不良存貨**口徑（不良存貨值 / 不良存貨佔比 / 不良存貨 SKU ÷ 店內貨品），RF SKU 兩欄僅屬參考，明確標示不代表好壞。
 
-**不良銷售 SKU 佔比走勢（分組小圖）**：每張小圖一個分組（Grand Total ＋ 各 Shop Nature／OM），每根柱一個報表期，柱上顯示百分比；可切換兩種口徑：
+**最新月份 MTD 不良 SKU 佔比排名（取代舊分組小圖）**：卡面直接顯示最新月份（本月尚未上載時回落最新資料月份）的每店排名，口徑可用上方按鈕切換：
 
 - **不良 SKU ÷ SKU Carry**（件數，預設）＝ `Σ No. of Overstock SKU (P90D 0 Sales)` ÷ `Σ No. of SKU Carry`。
 - **不良存貨值 ÷ 存貨值**（金額）＝ `Σ Excess Stock Value (P90D 0 Sales)` ÷ `Σ Shop Stock Value (CM)`。
 
-兩個口徑都是**組內加權**（先加總分子／分母再相除），不是各店比率平均。Shop Nature 會把報表原值 `Local`／`Non Tourist` 歸為「民生區」、`Mix` 歸為「混合區」、`Tourist` 歸為「遊客區」；未知值保留原字串，空白則歸「未填」。OM 以最新一期的 SKU Carry（再以 SOH）由大到小排列。某組某期沒有店舖時回 `null`，小圖留空，不會畫成 0%。顯示期間按鈕與下方「佔比趨勢」雙向同步（3 / 6 / 12 / 24 個月）。
+每店比率用該店自己的分子 ÷ 分母（不是全公司加權）；全公司加權見上方「最新一期 KPI」。Shop Nature 會把報表原值 `Local`／`Non Tourist` 歸為「民生區」、`Mix` 歸為「混合區」、`Tourist` 歸為「遊客區」；未知值保留原字串，空白則歸「未填」。
 
-**當月（MTD）每店排名**：同一張卡下方另有 Top 15 排名表，跟隨上面的口徑切換（不良 SKU 佔比／不良存貨值佔比），顯示 **Site、完整店舖名稱、OM、Shop Nature、比率、分子 ÷ 分母、與上期百分點**。表格上方有 **OM**（選項由該期資料自動產生）與 **Shop Nature**（全部／民生區／混合區／遊客區）兩個篩選，右邊即時顯示「已篩選：OM HIPPO，22 / 94 店」；兩者預設全部、不寫 localStorage，只影響排行榜（店舖佔比的篩選是另一組按鈕）。MTD 的定義是**香港時區當前月份內最新一期快照**；本月尚未上載時回落最新資料月份，並在標題／說明標明月份。排名用每店自己的比率（不是全公司加權），新店／上期無數據與原有 Top 15 同一套規則排除，但仍計入全公司合計與走勢。按排名任何一行會切到該 MTD 期並在下方每店明細只顯示該店。
+**當月（MTD）每店排名**：卡面右上角可切換「排行榜／店舖佔比」；排行榜視圖顯示 Top 15 排名表，跟隨上方口徑切換（不良 SKU 佔比／不良存貨值佔比），顯示 **Site、完整店舖名稱、OM、Shop Nature、比率、分子 ÷ 分母、與上期百分點**。表格上方有 **OM**（選項由該期資料自動產生）與 **Shop Nature**（全部／民生區／混合區／遊客區）兩個篩選，右邊即時顯示「已篩選：OM HIPPO，22 / 94 店」；兩者預設全部、不寫 localStorage，只影響排行榜（店舖佔比的篩選是另一組按鈕）。MTD 的定義是**香港時區當前月份內最新一期快照**；本月尚未上載時回落最新資料月份，並在標題／說明標明月份。排名用每店自己的比率（不是全公司加權），新店／上期無數據與原有 Top 15 同一套規則排除，但仍計入全公司合計與走勢。按排名任何一行會切到該 MTD 期並在下方每店明細只顯示該店。
 
-**店舖佔比（MTD 的另一個視圖）**：同一張卡的右上角可切換「排行榜／店舖佔比」（`#stk_mtd_switch`，選擇會記在 `localStorage.ndrf_admin_stock_mtd_view`）。店舖佔比照 Excel「店舖佔比」報表排版：按 Shop Nature 分成**民生區（Local／Non Tourist）／混合區（Mix）／遊客區（Tourist）**並**橫向並排**（整張圖可橫向滑動睇全部店舖），每組列出**全部店舖**（不篩 Top 15），組內按比率由高至低排，柱頂顯示百分比、柱底顯示店號與店名，組標題顯示店數、**組加權比率**（Σ 分子 ÷ Σ 分母）與最高值。視圖頂部另有 **全部／民生區／混合區／遊客區** 四個按鈕（`#stk_share_nature`），可只看其中一個分區，預設全部；選中的分區該期沒有店舖時退回全部並在旁邊說明。此選擇不寫入 localStorage，每次開頁都回到「全部」。每組柱高獨立縮放，跨組比較只看數字；若某店遠高於同組（最大 > 次大 × 2），柱高改以次高值為滿格、超出的柱頂加白線標示（避免一間離群店把同組其餘店壓成貼底矮柱，柱頂數字仍是真值）。新店／上期無數據以斜紋顯示並排在百分比序列中，缺 SKU Carry／不良 SKU 數的店排最後、畫 2px 灰柱，兩者都不當 0% 參與比較。按任何一條柱與排行榜同一行為：切到該 MTD 期並在每店明細只顯示該店。
+**店舖佔比（MTD 的另一個視圖）**：同一張卡的右上角可切換「排行榜／店舖佔比」（`#stk_mtd_switch`，選擇會記在 `localStorage.ndrf_admin_stock_mtd_view_v2`）。店舖佔比照 Excel「店舖佔比」報表排版：按 Shop Nature 分成**民生區（Local／Non Tourist）／混合區（Mix）／遊客區（Tourist）**並**橫向並排**（整張圖可橫向滑動睇全部店舖），每組列出**全部店舖**（不篩 Top 15），組內按比率由高至低排，柱頂顯示百分比、柱底顯示店號與店名，組標題顯示店數、**組加權比率**（Σ 分子 ÷ Σ 分母）與最高值。視圖頂部另有 **全部／民生區／混合區／遊客區** 四個按鈕（`#stk_share_nature`），可只看其中一個分區，預設全部；選中的分區該期沒有店舖時退回全部並在旁邊說明。此選擇不寫入 localStorage，每次開頁都回到「全部」。每組柱高獨立縮放，跨組比較只看數字；若某店遠高於同組（最大 > 次大 × 2），柱高改以次高值為滿格、超出的柱頂加白線標示（避免一間離群店把同組其餘店壓成貼底矮柱，柱頂數字仍是真值）。新店／上期無數據以斜紋顯示並排在百分比序列中，缺 SKU Carry／不良 SKU 數的店排最後、畫 2px 灰柱，兩者都不當 0% 參與比較。按任何一條柱與排行榜同一行為：切到該 MTD 期並在每店明細只顯示該店。
 
 1. 選報表日期（可從檔名 `25Oct2026` 類格式自動填入）、報表類型、備註，再選 `.xlsx` 上載。
 2. **同一日期重上 = 整批取代**：同一 transaction 內先 `DELETE FROM shop_stock_batches WHERE report_date = $1`（FK CASCADE 清走明細），再建立新批次（**新批次有新 id**，不會出現「同一 id 先後代表兩份檔案」）；audit 會記下舊 batch id、行數與 `content_hash`。內容完全相同（`content_hash` 一致）則視為重複上載，不做任何寫入。
@@ -320,7 +320,7 @@ pg_restore --no-owner --no-privileges --clean --if-exists \
 | GET | `/api/admin/stock/batches?page=&size=` | 批次列表（按 `report_date` 新到舊） |
 | PUT | `/api/admin/stock/batches/:id` | 改 `report_date` / `note` |
 | DELETE | `/api/admin/stock/batches/:id` | 刪除整批（回 `deleted_rows`、`deleted_stores`） |
-| GET | `/api/admin/stock/summary?from=&to=` | 趨勢序列 + 最新 KPI（加權比率、WoW 百分點）＋ `group_trend`（Grand Total／Shop Nature／OM 的分組加權走勢） |
+| GET | `/api/admin/stock/summary?from=&to=` | 趨勢序列 + 最新 KPI（加權比率、WoW 百分點）＋ `group_trend`（舊分組加權走勢，保留 API 相容；前端已不再顯示） |
 | GET | `/api/admin/stock/summary/export?months=3\|6\|12\|24` | 匯出趨勢圖數字成 xlsx（3 張工作表；`months` 上限 24，預設 12） |
 | GET | `/api/admin/stock/weeks/:reportDate` | 某一期每店明細（含與上一期的百分點差 `delta_pt`／`ovs_carry_delta_pt`、`rank`、`is_new`、`is_new_store`、`new_reason`） |
 | GET | `/api/admin/stock/weeks/:reportDate/export?q=&sort=&only=` | 該期每店明細匯出 xlsx（篩選／排序同畫面一致） |

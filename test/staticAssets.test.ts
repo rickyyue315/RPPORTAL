@@ -93,18 +93,18 @@ describe('static asset freshness', () => {
     expect(script).toContain('rf_sku_delta');
   });
 
-  it('wires the grouped SKU ratio trend into the admin stock page', () => {
+  it('wires the latest-month MTD shop ranking in place of the grouped trend', () => {
     const html = readFileSync(path.join(root, 'public', 'admin', 'index.html'), 'utf8');
     const script = readFileSync(path.join(root, 'public', 'js', 'admin-stock.js'), 'utf8');
-    const chart = readFileSync(path.join(root, 'public', 'js', 'chart-lite.js'), 'utf8');
     expect(html).toContain('id="stk_group_dashboard"');
-    expect(html).toContain('id="stk_group_chart"');
+    expect(html).toContain('id="stk_mtd_section"');
     expect(html).toContain('data-stk-group-metric="sku"');
-    expect(html).toContain('data-stk-group-dim="nature"');
-    expect(script).toContain('renderGroupChart');
-    expect(script).toContain('group_trend');
+    // 舊分組小圖已移除，MTD 排名直接成為卡面內容
+    expect(html).not.toContain('id="stk_group_chart"');
+    expect(html).not.toContain('data-stk-group-dim');
+    expect(script).not.toContain('renderGroupChart');
+    expect(script).not.toContain('group_trend');
     expect(script).toContain('ovs_carry_ratio');
-    expect(chart).toContain('renderBarGrid');
     // MTD 每店排名：要有獨立容器、店名欄及載入函式
     expect(html).toContain('id="stk_mtd_rank"');
     expect(html).toContain('id="stk_mtd_title"');

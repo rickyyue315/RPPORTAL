@@ -328,5 +328,21 @@ describe('static asset freshness', () => {
     // 查詢／修改頁不再整體封鎖；非退貨單由 lookup.js 自行攔截
     expect(lookupPage).not.toContain('/js/service-suspension.js');
     expect(read('public/js/lookup.js')).toContain('suspendedFor(s.submission_type)');
+
+    // 導覽不可再把「查詢／修改」標成暫停：查詢一直可用，退貨單更可在窗口內修改
+    for (const page of ['public/lookup.html', 'public/help.html', 'public/index.html', 'public/return.html']) {
+      const html = read(page);
+      expect(html, page).toMatch(/<a href="\/lookup\.html"[^>]*>查詢／修改<\/a>/);
+      expect(html, page).not.toMatch(/<a href="\/lookup\.html"[^>]*nav-paused/);
+    }
+
+    // 教學頁要同步：退貨章節不再寫暫停，並補上「現時修改安排」
+    const helpPage = read('public/help.html');
+    expect(helpPage).toContain('<h2 id="return-title">9. 行貨退貨報數</h2>');
+    expect(helpPage).toContain('現時修改安排');
+    expect(helpPage).toContain('行貨退貨已重新開放');
+    // 其餘服務的導覽仍要標示暫停，避免店舖誤以為可以提交
+    expect(read('public/urgent.html')).toContain('Urgent · 暫停');
+    expect(read('public/sales.html')).toContain('突發性銷售 · 暫停');
   });
 });

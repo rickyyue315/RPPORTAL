@@ -10,6 +10,8 @@ export interface Store {
   size: string;
   om: string;
   type: string;
+  /** 「需特別關注」標記；空白代表未標記。來自 CSV 第 9 欄（可選）。 */
+  attention: string;
 }
 
 export function normalizeSiteCode(raw: string | null | undefined): string {
@@ -112,8 +114,13 @@ function parseCsv(text: string): ParsedCsv {
   return { rows };
 }
 
+/** 門店主檔模板的固定 8 欄；第 9 欄「需特別關注」為選填（2026-11-02 起）。 */
+const STORE_HEADERS = ['Site', 'Shop', 'Regional', 'Class 1', 'Class 2', 'Size', 'OM', 'Type'] as const;
+export const ATTENTION_HEADER = '需特別關注';
+
 /**
- * Parses a stores CSV. Expects header: Site,Shop,Regional,Class 1,Class 2,Size,OM,Type.
+ * Parses a stores CSV. Expects header: Site,Shop,Regional,Class 1,Class 2,Size,OM,Type
+ * plus the optional 9th column 需特別關注 (blank = not flagged).
  * Returns { ok, stores?, errors? }. Validates Site Code uniqueness.
  */
 /** Decode CSV files exported by Excel (UTF-8, UTF-16 and Big5 when available). */
@@ -144,16 +151,20 @@ export function parseStoresCsv(content: string): {
   const rows = (parsedCsv.rows ?? []).filter((r) => r.some((c) => c.trim() !== ''));
   if (rows.length < 2) return { ok: false, errors: ['CSV 沒有資料列'] };
 
-  const expected = ['Site', 'Shop', 'Regional', 'Class 1', 'Class 2', 'Size', 'OM', 'Type'];
   const header = rows[0]!.map((h, index) => (index === 0 ? h.replace(/^\uFEFF/, '') : h).trim());
-  const missing = expected.filter((h) => !header.includes(h));
+  const missing = STORE_HEADERS.filter((h) => !header.includes(h));
   if (missing.length > 0) {
     return { ok: false, errors: [`CSV 欄名缺少: ${missing.join(', ')}`] };
   }
+  const hasAttention = header.includes(ATTENTION_HEADER);
+  const expected: string[] = hasAttention ? [...STORE_HEADERS, ATTENTION_HEADER] : [...STORE_HEADERS];
   const duplicateHeaders = header.filter((h, index) => header.indexOf(h) !== index);
   const extraHeaders = header.filter((h) => !expected.includes(h));
   if (header.length !== expected.length || duplicateHeaders.length > 0 || extraHeaders.length > 0) {
-    return { ok: false, errors: ['CSV 欄名有重複或額外欄位，必須與模板完全一致'] };
+    return {
+      ok: false,
+      errors: [`CSV 欄名有重複或額外欄位，必須與模板一致（8 欄，或加第 9 欄「${ATTENTION_HEADER}」）`],
+    };
   }
 
   const idx = (name: string) => header.indexOf(name);
@@ -193,6 +204,7 @@ export function parseStoresCsv(content: string): {
       size: (cells[idx('Size')] ?? '').trim(),
       om: (cells[idx('OM')] ?? '').trim(),
       type: (cells[idx('Type')] ?? '').trim(),
+      attention: hasAttention ? (cells[idx(ATTENTION_HEADER)] ?? '').trim() : '',
     });
   }
 
@@ -203,15 +215,16 @@ export function parseStoresCsv(content: string): {
 /**
  * Replaces the store master with upserts instead of delete/reinsert so that
  * submissions, portal accounts and routing settings that reference Site Codes
- * are never destroyed. Removed Site Codes simply disappear from the master.
+ * are never destroyed. Site Codes missing from the uploaded file are reported
+ * back (they stay in the table, so history and logins keep working).
  */
-export async function replaceStores(stores: Store[]): Promise<number> {
+export async function replaceStores(stores: Store[]): Promise<{ count: number; removed: string[] }> {
   return withTransaction(async (client) => {
     let count = 0;
     for (const s of stores) {
       await client.query(
-        `INSERT INTO stores (site_code, shop, regional, class1, class2, size, om, type)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+        `INSERT INTO stores (site_code, shop, regional, class1, class2, size, om, type, attention)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
          ON CONFLICT (site_code) DO UPDATE SET
            shop = EXCLUDED.shop,
            regional = EXCLUDED.regional,
@@ -220,12 +233,28 @@ export async function replaceStores(stores: Store[]): Promise<number> {
            size = EXCLUDED.size,
            om = EXCLUDED.om,
            type = EXCLUDED.type,
+           attention = EXCLUDED.attention,
            updated_at = now()`,
-        [s.site_code, s.shop, s.regional, s.class1, s.class2, s.size, s.om, s.type],
+        [
+          s.site_code,
+          s.shop,
+          s.regional,
+          s.class1,
+          s.class2,
+          s.size,
+          s.om,
+          s.type,
+          s.attention ?? '',
+        ],
       );
       count++;
     }
-    return count;
+    const keep = stores.map((s) => s.site_code);
+    const stale = await client.query<{ site_code: string }>(
+      'SELECT site_code FROM stores WHERE NOT (site_code = ANY($1::text[])) ORDER BY site_code',
+      [keep],
+    );
+    return { count, removed: stale.rows.map((r) => r.site_code) };
   });
 }
 
@@ -235,5 +264,6 @@ export async function seedStoresFromFile(filePath: string): Promise<number> {
   if (!parsed.ok || !parsed.stores) {
     throw new Error(`門店主檔載入失敗: ${parsed.errors?.join('; ') ?? 'unknown'}`);
   }
-  return replaceStores(parsed.stores);
+  const result = await replaceStores(parsed.stores);
+  return result.count;
 }

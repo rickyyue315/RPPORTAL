@@ -106,7 +106,7 @@ describe('creating a single Store account', () => {
     const res = await createStoreAccount({
       site_code: 'zz10',
       shop_name: '新店十',
-      store_fields: { regional: 'HK', class1: 'B', class2: 'B2', size: 'S', om: 'Ivy', type: 'T' },
+      store_fields: { regional: 'HK', class1: 'B', class2: 'B2', size: 'S', om: 'Ivy', type: 'T', attention: '需特別關注' },
     });
     expect(res.status).toBe(201);
     const store = await db.query<Record<string, string>>('SELECT * FROM stores WHERE site_code = $1', ['ZZ10']);
@@ -118,13 +118,14 @@ describe('creating a single Store account', () => {
       size: 'S',
       om: 'Ivy',
       type: 'T',
+      attention: '需特別關注',
     });
   });
 
   it('stores blank master columns as empty strings, like a CSV with empty cells', async () => {
     await createStoreAccount({ site_code: 'ZZ11' });
     const store = await db.query<Record<string, string>>('SELECT * FROM stores WHERE site_code = $1', ['ZZ11']);
-    expect(store.rows[0]).toMatchObject({ regional: '', class1: '', class2: '', size: '', om: '', type: '' });
+    expect(store.rows[0]).toMatchObject({ regional: '', class1: '', class2: '', size: '', om: '', type: '', attention: '' });
   });
 
   it('lets the new account log in with the shared portal password', async () => {

@@ -68,6 +68,34 @@ describe('stores master (integration)', () => {
     expect(store?.regional).toBe('HK');
     expect(await getStore('ha02')).not.toBeNull();
   });
+
+  it('persists the 需特別關注 flag and reports site codes missing from the upload', async () => {
+    const first = parseStoresCsv(
+      [
+        'Site,Shop,Regional,Class 1,Class 2,Size,OM,Type,需特別關注',
+        'HA19,康山,HK,B,B2,S,Queenie,T,需特別關注',
+        'HA02,駱克,HK,B,B2,S,Ivy,T,',
+        'HA99,測試店,HK,B,B2,S,Ivy,T,',
+      ].join('\n'),
+    );
+    expect(first.ok).toBe(true);
+    await replaceStores(first.stores!);
+    expect((await getStore('HA19'))?.attention).toBe('需特別關注');
+    expect((await getStore('HA02'))?.attention).toBe('');
+
+    const second = parseStoresCsv(
+      [
+        'Site,Shop,Regional,Class 1,Class 2,Size,OM,Type,需特別關注',
+        'HA19,康山,HK,B,B2,S,Queenie,T,需特別關注',
+        'HA02,駱克,HK,B,B2,S,Ivy,T,',
+      ].join('\n'),
+    );
+    const result = await replaceStores(second.stores!);
+    expect(result.count).toBe(2);
+    // 不在檔案內的 Site Code 只作提示，不會被刪除（帳戶與歷史紀錄仍要保留）。
+    expect(result.removed).toContain('HA99');
+    expect(await getStore('HA99')).not.toBeNull();
+  });
 });
 
 describe('shared rate-limit store (integration)', () => {

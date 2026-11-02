@@ -772,7 +772,14 @@
   async function loadStoreCount() {
     try {
       const data = await adminFetch('/api/admin/stores');
-      $('store_count').textContent = `目前共有 ${data.stores.length} 間門店。`;
+      const stores = data.stores || [];
+      const flagged = stores.filter((s) => String(s.attention || '').trim() !== '');
+      let text = `目前共有 ${stores.length} 間門店。`;
+      if (flagged.length) {
+        text += `其中 ${flagged.length} 間標記「需特別關注」：`;
+        text += flagged.map((s) => (s.shop ? `${s.site_code} ${s.shop}` : s.site_code)).join('、');
+      }
+      $('store_count').textContent = text;
     } catch {}
   }
 
@@ -948,7 +955,12 @@
     fd.append('file', pendingStoreFile);
     try {
       const data = await adminFetch('/api/admin/stores', { method: 'PUT', body: fd });
-      showAlert($('store_result'), 'success', `門店主檔已更新，共 ${data.count} 筆。`);
+      let msg = `門店主檔已更新，共 ${data.count} 筆。`;
+      const removed = Array.isArray(data.removed) ? data.removed : [];
+      if (removed.length) {
+        msg += `<br>以下 Site Code 不在今次檔案內（帳戶與歷史紀錄仍保留，未會自動刪除）：${removed.map((c) => escapeHtml(c)).join('、')}`;
+      }
+      showAlert($('store_result'), removed.length ? 'warning' : 'success', msg);
       $('store_label').textContent = '拖曳 stores CSV 檔案到此處，或按一下選擇檔案';
       pendingStoreFile = null;
       loadStoreCount();
@@ -1736,6 +1748,7 @@
     ['pu_store_size', 'size'],
     ['pu_store_om', 'om'],
     ['pu_store_type', 'type'],
+    ['pu_store_attention', 'attention'],
   ];
   let puFieldsFromMaster = '';
 
@@ -1827,6 +1840,7 @@
             size: field('pu_store_size'),
             om: field('pu_store_om'),
             type: field('pu_store_type'),
+            attention: field('pu_store_attention'),
           };
         }
         const data = await adminFetch('/api/admin/portal/users', {

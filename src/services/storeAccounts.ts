@@ -182,7 +182,7 @@ export class StoreAccountError extends Error {}
 /** Site Code 只由英文字母、數字及連字號組成（現有店舖全部為 4 位，例如 HA02）。 */
 const SITE_CODE_PATTERN = /^[A-Z0-9][A-Z0-9-]{1,19}$/;
 
-/** 門店主檔 CSV 除 Site／Shop 以外的欄位（Regional、Class 1、Class 2、Size、OM、Type）。 */
+/** 門店主檔 CSV 除 Site／Shop 以外的欄位（Regional、Class 1、Class 2、Size、OM、Type、需特別關注）。 */
 export interface StoreMasterFields {
   regional?: string;
   class1?: string;
@@ -190,6 +190,7 @@ export interface StoreMasterFields {
   size?: string;
   om?: string;
   type?: string;
+  attention?: string;
 }
 
 /** Creates (or re-activates) a single Store account from the store master.
@@ -221,8 +222,8 @@ export async function createSingleStoreAccount(input: {
       const text = (value?: string) => (value ?? '').trim();
       const fields = input.fields ?? {};
       const inserted = await client.query<{ site_code: string; shop: string }>(
-        `INSERT INTO stores (site_code, shop, regional, class1, class2, size, om, type)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+        `INSERT INTO stores (site_code, shop, regional, class1, class2, size, om, type, attention)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
          ON CONFLICT (site_code) DO NOTHING
          RETURNING site_code, shop`,
         [
@@ -234,6 +235,7 @@ export async function createSingleStoreAccount(input: {
           text(fields.size),
           text(fields.om),
           text(fields.type),
+          text(fields.attention),
         ],
       );
       row = inserted.rows[0];

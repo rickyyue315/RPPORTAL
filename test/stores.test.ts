@@ -66,6 +66,38 @@ describe('parseStoresCsv', () => {
     expect(malformed.ok).toBe(false);
     expect(malformed.errors?.[0]).toContain('額外內容');
   });
+
+  it('accepts the optional 需特別關注 column and keeps blank as empty', () => {
+    const withAttention = [
+      'Site,Shop,Regional,Class 1,Class 2,Size,OM,Type,需特別關注',
+      'HA19,康山,HK,B,B2,S,Queenie,T,需特別關注',
+      'HA02,駱克,HK,B,B2,S,Ivy,T,',
+    ].join('\n');
+    const result = parseStoresCsv(withAttention);
+    expect(result.ok).toBe(true);
+    expect(result.stores![0].attention).toBe('需特別關注');
+    expect(result.stores![1].attention).toBe('');
+  });
+
+  it('defaults attention to empty for the 8-column template', () => {
+    const result = parseStoresCsv(valid);
+    expect(result.ok).toBe(true);
+    expect(result.stores!.every((s) => s.attention === '')).toBe(true);
+  });
+
+  it('still rejects a 10th column and short rows under the 9-column header', () => {
+    const tenth = parseStoresCsv(
+      'Site,Shop,Regional,Class 1,Class 2,Size,OM,Type,需特別關注,備註\nHA02,駱克,HK,B,B2,S,Ivy,T,,x',
+    );
+    expect(tenth.ok).toBe(false);
+    expect(tenth.errors?.[0]).toContain('額外');
+
+    const shortRow = parseStoresCsv(
+      'Site,Shop,Regional,Class 1,Class 2,Size,OM,Type,需特別關注\nHA02,駱克,HK,B,B2,S,Ivy,T',
+    );
+    expect(shortRow.ok).toBe(false);
+    expect(shortRow.errors?.[0]).toContain('欄數');
+  });
 });
 
 describe('decodeStoresCsvBuffer', () => {

@@ -1663,16 +1663,23 @@ adminRouter.put(
       res.status(400).json({ error: '門店主檔無效', errors: parsed.errors ?? [] });
       return;
     }
-    const count = await replaceStores(parsed.stores);
+    const replaced = await replaceStores(parsed.stores);
+    const count = replaced.count;
     const omAccounts = await syncOmPortalAccounts(req.adminUsername!);
     await writeAuditEvent({
       eventType: 'store_master_updated',
       actorRole: 'admin',
       actor: req.adminUsername,
       ip: getClientIp(req),
-      metadata: { filename: file.originalname, count, om_accounts_created: omAccounts.created.length },
+      metadata: {
+        filename: file.originalname,
+        count,
+        om_accounts_created: omAccounts.created.length,
+        attention_count: parsed.stores.filter((s) => (s.attention ?? '').trim() !== '').length,
+        missing_from_file: replaced.removed,
+      },
     });
-    res.json({ ok: true, count, om_accounts: omAccounts });
+    res.json({ ok: true, count, om_accounts: omAccounts, removed: replaced.removed });
   }),
 );
 
@@ -2035,6 +2042,8 @@ const storeMasterFieldsSchema = z.object({
   size: z.string().trim().max(50).optional().default(''),
   om: z.string().trim().max(200).optional().default(''),
   type: z.string().trim().max(50).optional().default(''),
+  /** 需特別關注標記；空白代表不標記。 */
+  attention: z.string().trim().max(50).optional().default(''),
 });
 
 const portalUserCreateSchema = z.object({

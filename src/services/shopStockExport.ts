@@ -107,7 +107,7 @@ export interface ShopStockTrendExportInput {
 
 export async function buildShopStockTrendBuffer(input: ShopStockTrendExportInput): Promise<Buffer> {
   const workbook = new ExcelJS.Workbook();
-  workbook.creator = 'NDRF Portal';
+  workbook.creator = 'RP Connect';
   workbook.created = new Date();
 
   /* ---------- 1. 佔比趨勢（完整數字） ---------- */
@@ -330,7 +330,7 @@ export interface ShopStockWeekExportInput {
 /** 每店明細的 Excel：工作表「每店明細」＋「匯出說明」 */
 export async function buildShopStockWeekBuffer(input: ShopStockWeekExportInput): Promise<Buffer> {
   const workbook = new ExcelJS.Workbook();
-  workbook.creator = 'NDRF Portal';
+  workbook.creator = 'RP Connect';
   workbook.created = new Date();
 
   const detail = workbook.addWorksheet('每店明細');
@@ -476,7 +476,7 @@ export interface ShopStockRfExportInput {
 /** RF SKU Dashboard 的 Excel：走勢 + 兩張店舖排名 + 匯出說明 */
 export async function buildShopStockRfBuffer(input: ShopStockRfExportInput): Promise<Buffer> {
   const workbook = new ExcelJS.Workbook();
-  workbook.creator = 'NDRF Portal';
+  workbook.creator = 'RP Connect';
   workbook.created = new Date();
 
   /* ---------- 1. RF SKU 走勢 ---------- */
@@ -639,7 +639,7 @@ export interface ShopStockStoreExportInput {
 /** 店舖端匯出：只含自己店舖的數字 + 全公司加權平均（不洩漏其他店） */
 export async function buildShopStockStoreBuffer(input: ShopStockStoreExportInput): Promise<Buffer> {
   const workbook = new ExcelJS.Workbook();
-  workbook.creator = 'NDRF Portal';
+  workbook.creator = 'RP Connect';
   workbook.created = new Date();
 
   const companyByDate = new Map(input.view.company_series.map((p) => [p.report_date, p.ratio]));
@@ -676,7 +676,7 @@ export async function buildShopStockStoreBuffer(input: ShopStockStoreExportInput
   styleHeaderRow(info, 2);
   const kpi = input.view.kpi;
   const infoRows: Array<[string, string | number | null]> = [
-    ['畫面', 'Store Portal → 存貨走勢'],
+    ['畫面', 'RP 連繫網 → 存貨走勢'],
     ['店舖', input.view.site_code],
     ['期數', input.view.series.length],
     ['最新一期', kpi ? `${kpi.report_date}（${shopStockKindLabel(kpi.report_kind)}）` : '—'],

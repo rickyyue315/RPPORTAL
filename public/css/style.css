@@ -108,6 +108,15 @@ a:hover {
   letter-spacing: 0.2px;
   white-space: nowrap;
 }
+/* 品牌中文名：緊接主名 RP Connect 之後，細一級、不換行 */
+.brand-cn {
+  margin-left: 8px;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 1px;
+  opacity: 0.82;
+  white-space: nowrap;
+}
 .topbar .subtitle {
   font-size: 13px;
   opacity: 0.88;

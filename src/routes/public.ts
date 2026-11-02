@@ -361,7 +361,7 @@ publicRouter.post(
   publicSubmitLimiter,
   asyncHandler(async (_req: Request, res: Response) => {
     res.status(410).json({
-      error: '一般 NDRF 申報已改為網上帳戶申請，請登入 Store Portal 提交',
+      error: '一般 NDRF 申報已改為網上帳戶申請，請登入 RP 連繫網 提交',
       code: 'NORMAL_NDRF_REQUIRES_PORTAL',
     });
   }),
@@ -1508,7 +1508,7 @@ publicRouter.post(
   upload.single('file'),
   asyncHandler(async (_req: Request, res: Response) => {
     res.status(410).json({
-      error: '一般 NDRF Excel 上載已改為網上帳戶申請，請登入 Store Portal 上載',
+      error: '一般 NDRF Excel 上載已改為網上帳戶申請，請登入 RP 連繫網 上載',
       code: 'NORMAL_NDRF_REQUIRES_PORTAL',
     });
   }),
@@ -1520,7 +1520,7 @@ publicRouter.get(
   excelExportLimiter,
   asyncHandler(async (_req: Request, res: Response) => {
     res.status(410).json({
-      error: '一般 NDRF 匯入記錄已移至 Store Portal，請登入後下載',
+      error: '一般 NDRF 匯入記錄已移至 RP 連繫網，請登入後下載',
       code: 'NORMAL_NDRF_REQUIRES_PORTAL',
     });
   }),
@@ -1531,7 +1531,7 @@ publicRouter.post(
   excelExportLimiter,
   asyncHandler(async (_req: Request, res: Response) => {
     res.status(410).json({
-      error: '一般 NDRF 匯入記錄已移至 Store Portal，請登入後下載',
+      error: '一般 NDRF 匯入記錄已移至 RP 連繫網，請登入後下載',
       code: 'NORMAL_NDRF_REQUIRES_PORTAL',
     });
   }),
@@ -1568,7 +1568,7 @@ publicRouter.get(
         ip: getClientIp(req),
         metadata: { found: true, submission_type: 'normal', blocked: true },
       });
-      res.status(403).json({ error: '一般 NDRF 請登入 Store Portal 查詢', code: 'NORMAL_NDRF_REQUIRES_PORTAL' });
+      res.status(403).json({ error: '一般 NDRF 請登入 RP 連繫網 查詢', code: 'NORMAL_NDRF_REQUIRES_PORTAL' });
       return;
     }
 
@@ -1929,7 +1929,7 @@ publicRouter.post(
     }
 
     if (existing.submission_type === 'normal') {
-      res.status(403).json({ error: '一般 NDRF 修改已移至 Store Portal（受審批流程管理）', code: 'NORMAL_NDRF_REQUIRES_PORTAL' });
+      res.status(403).json({ error: '一般 NDRF 修改已移至 RP 連繫網（受審批流程管理）', code: 'NORMAL_NDRF_REQUIRES_PORTAL' });
       return;
     }
 

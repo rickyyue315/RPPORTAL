@@ -1412,7 +1412,7 @@
       .join(' ');
     return [
       `${head} 主管/文員 您好：`.trim(),
-      'NDRF Portal 已為貴店設定專屬登入密碼，所有店舖不再共用同一組密碼，詳情如下：',
+      'RP 連繫網（RP Connect）已為貴店設定專屬登入密碼，所有店舖不再共用同一組密碼，詳情如下：',
       `帳號：${user.username}`,
       `密碼：${password}`,
       `登入網址：${puLoginUrl(user)}`,
@@ -1426,7 +1426,7 @@
       // OM 可以代店舖回覆，權限比店舖帳戶大，所以文案特別註明不可轉發。
       return [
         `${name} 您好，`,
-        'NDRF Portal 已為您設定專屬登入帳號，詳情如下：',
+        'RP 連繫網（RP Connect）已為您設定專屬登入帳號，詳情如下：',
         `帳號：${user.username}`,
         `密碼：${password}`,
         `登入網址：${puLoginUrl(user)}`,
@@ -1669,7 +1669,7 @@
   /** mailto 只編碼主旨與內文；地址本身要原樣，`%40` 會令部分郵件程式拒絕開啟。 */
   function puMailtoUrl(user, password) {
     return 'mailto:' + (puContactEmail(user) || '') +
-      '?subject=' + encodeURIComponent('NDRF Portal 專屬登入密碼') +
+      '?subject=' + encodeURIComponent('RP 連繫網 專屬登入密碼') +
       '&body=' + encodeURIComponent(puMailText(user, password));
   }
 

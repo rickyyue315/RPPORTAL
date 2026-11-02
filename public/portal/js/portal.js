@@ -127,7 +127,7 @@
       overlay.id = 'site_gate';
       overlay.style.cssText = 'position:fixed;inset:0;background:rgba(255,255,255,.96);z-index:9999;display:flex;align-items:center;justify-content:center;padding:16px;';
       overlay.innerHTML = `<div class="portal-login-card" style="margin:0">
-        <h1>NDRF Store Portal</h1>
+        <h1>RP Connect<span class="brand-cn">RP 連繫網</span></h1>
         <p class="hint">請輸入你店舖嘅 Site Code（例如 HA02）及密碼（由 RP Team 提供）。輸入一次後此裝置會自動記住。</p>
         <div id="site_gate_error"></div>
         <label for="site_gate_input">Site Code</label>

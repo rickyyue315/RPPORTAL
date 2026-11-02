@@ -1,6 +1,6 @@
-# NDRF 申報平台
+# RP Connect（RP 連繫網）— 店舖申報平台
 
-SASA RP Team 非正常補貨（NDRF）申報平台。申請端以「Site Code／使用者名稱＋密碼」進入，管理端需密碼登入，部署於 Railway（Web/API 服務 + PostgreSQL），以 Dockerfile 建置，並附 Railway Infrastructure as Code 設定。
+SASA RP Team 的店舖申報與回覆平台。主名 **RP Connect**，中文名 **RP 連繫網**，副名 **RP 連繫網申報平台**；一般非正常補貨（NDRF）申報只是其中一個模組。申請端以「Site Code／使用者名稱＋密碼」進入，管理端需密碼登入，部署於 Railway（Web/API 服務 + PostgreSQL），以 Dockerfile 建置，並附 Railway Infrastructure as Code 設定。
 
 ## 功能
 
@@ -148,7 +148,7 @@ railway config apply  # 確認後建立 Web + PostgreSQL
 | `CORS_ORIGINS` | 留空（同源）或填允許來源，逗號分隔 |
 | `PUBLIC_WRITE_SUSPENSION_ENABLED` | `true` 暫停公開提交／修改／Excel 匯入；重新開通時設 `false` |
 | `PUBLIC_WRITE_SUSPENSION_AT` | 暫停生效時間（預設 `2026-08-11T23:59:59+08:00`） |
-| `NORMAL_NDRF_PORTAL_ENABLED` | `true` 開放一般 NDRF Portal 新提交；Admin 管理及匯出不受影響 |
+| `NORMAL_NDRF_PORTAL_ENABLED` | `true` 開放一般 NDRF 申報新提交；Admin 管理及匯出不受影響 |
 | `NDRF_REJECT_COOLDOWN_HOURS` | Reject 後重新申請冷卻時數（預設 `720`） |
 | `NDRF_AUTO_APPROVE_ENABLED` | Buyer SLA 逾期自動批准開關（預設 `true`） |
 | `NDRF_AUTO_APPROVE_DAYS` | Buyer 審批日數（預設 `7`） |

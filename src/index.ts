@@ -1,10 +1,11 @@
 import { createApp } from './app.js';
+import { existsSync } from 'node:fs';
 import { config } from './config.js';
 import { migrate } from './db/migrate.js';
 import { pool, waitForDatabase, withAdvisoryLock } from './db/pool.js';
 import { writeAuditEvent } from './lib/audit.js';
 import { countRecoveryCodes } from './lib/recovery.js';
-import { seedStoresFromFile, countStores } from './services/stores.js';
+import { syncStoresFromFile } from './services/stores.js';
 import { syncOmPortalAccounts } from './services/storeAccounts.js';
 import { cleanupExpiredExportFiles } from './services/exportFiles.js';
 import { cleanupRetentionData } from './services/retention.js';
@@ -45,6 +46,33 @@ async function runMaintenanceCleanup(): Promise<void> {
   }
 }
 
+/**
+ * 內建的 stores-template.csv 就是門店主檔的真相來源。
+ * 舊版只在「stores 表為空」時才 seed，所以主檔改動永遠到不了正式資料庫
+ * （新店如 HBB2 一直唔出現，除非有人手動上載 CSV）。現在每次啟動都 upsert
+ * 一次：只新增／更新，不會刪除任何店舖，部署就等於發佈主檔。
+ */
+async function syncStoreMasterOnBoot(): Promise<void> {
+  if (!config.storesMasterSyncOnBoot) {
+    console.log('[boot] store master sync disabled (STORES_MASTER_SYNC_ON_BOOT=false)');
+    return;
+  }
+  const csvPath = config.storesCsvPath;
+  if (!existsSync(csvPath)) {
+    console.warn(`[boot] 找不到門店主檔 ${csvPath} — 沿用資料庫現有主檔`);
+    return;
+  }
+  try {
+    const result = await syncStoresFromFile(csvPath);
+    let line = `[boot] store master synced: ${result.count} stores`;
+    if (result.added.length) line += `, new ${result.added.length} (${result.added.join(', ')})`;
+    if (result.removed.length) line += `, not in file ${result.removed.length} (${result.removed.join(', ')})`;
+    console.log(line);
+  } catch (err) {
+    console.error('[boot] store master sync failed — 沿用資料庫現有主檔', err);
+  }
+}
+
 async function main(): Promise<void> {
   console.log(`[boot] NDRF Portal (${config.env})`);
 
@@ -60,13 +88,7 @@ async function main(): Promise<void> {
     console.warn('[boot] 未設定任何 Recovery Code（om_recovery_codes 表為空）— 公開申請編號恢復功能將回 503');
   }
 
-  const storeCount = await countStores();
-  if (storeCount === 0) {
-    const csvPath = config.storesCsvPath;
-    console.log(`[boot] stores master empty, seeding from ${csvPath}`);
-    const seeded = await seedStoresFromFile(csvPath);
-    console.log(`[boot] seeded ${seeded} stores`);
-  }
+  await syncStoreMasterOnBoot();
 
   // Ensure one OM account per stores.om value (migration seeds existing data;
   // this covers a fresh database and any OM added while the app was running).

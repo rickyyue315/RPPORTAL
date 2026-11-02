@@ -78,7 +78,15 @@ import {
   parseUrgentImportWorkbook,
   EXCEL_UPLOAD_EXTENSION_ERROR,
 } from '../lib/excelImport.js';
-import { getStore, normalizeSiteCode, parseStoresCsv, decodeStoresCsvBuffer, replaceStores, listStores } from '../services/stores.js';
+import {
+  getStore,
+  normalizeSiteCode,
+  parseStoresCsv,
+  decodeStoresCsvBuffer,
+  replaceStores,
+  syncStoresFromFile,
+  listStores,
+} from '../services/stores.js';
 import { MASTER_RECOVERY_OM, setRecoveryCode, deleteRecoveryCode } from '../lib/recovery.js';
 import { toHKString, toHKDateString, hkTodayForDateColumn, monthsBeforeDateOnly } from '../lib/time.js';
 import { generateApplicationNo } from '../lib/applicationNo.js';
@@ -1674,12 +1682,40 @@ adminRouter.put(
       metadata: {
         filename: file.originalname,
         count,
+        added: replaced.added,
         om_accounts_created: omAccounts.created.length,
         attention_count: parsed.stores.filter((s) => (s.attention ?? '').trim() !== '').length,
         missing_from_file: replaced.removed,
       },
     });
-    res.json({ ok: true, count, om_accounts: omAccounts, removed: replaced.removed });
+    res.json({ ok: true, count, added: replaced.added, om_accounts: omAccounts, removed: replaced.removed });
+  }),
+);
+
+/**
+ * POST /api/admin/stores/sync-master — re-apply the bundled stores-template.csv.
+ * 後台改唔到 repo，但可以叫伺服器重新讀內建主檔；唔需要準備 CSV 都可以補回
+ * 漏咗嘅新店（例如 HBB2）。同樣只 upsert，不會刪除任何店舖。
+ */
+adminRouter.post(
+  '/stores/sync-master',
+  requireAdmin,
+  adminActionLimiter,
+  asyncHandler(async (req: Request, res: Response) => {
+    const result = await syncStoresFromFile(config.storesCsvPath);
+    await writeAuditEvent({
+      eventType: 'store_master_synced',
+      actorRole: 'admin',
+      actor: req.adminUsername,
+      ip: getClientIp(req),
+      metadata: {
+        source: 'bundled_template',
+        count: result.count,
+        added: result.added,
+        missing_from_file: result.removed,
+      },
+    });
+    res.json({ ok: true, count: result.count, added: result.added, removed: result.removed });
   }),
 );
 

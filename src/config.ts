@@ -103,6 +103,9 @@ export const config = {
   returnSchedulePath: process.env.RETURN_SCHEDULE_PATH ?? path.join(__dirname, '..', 'return-schedule.json'),
   returnEnforcementStart: process.env.RETURN_ENFORCEMENT_START ?? '2026-08-01',
   storesCsvPath: process.env.STORES_CSV_PATH ?? path.join(__dirname, '..', 'stores-template.csv'),
+  // 每次啟動都把內建 stores-template.csv upsert 入資料庫（不刪除任何店舖）。
+  // 關掉之後，主檔只會經後台上載／「重新同步內建主檔」更新。
+  storesMasterSyncOnBoot: bool('STORES_MASTER_SYNC_ON_BOOT', true),
   corsOrigins: (process.env.CORS_ORIGINS ?? '').split(',').map((s) => s.trim()).filter(Boolean),
   // General NDRF portal (Store/Buyer/SCT accounts) cutover switch. Only affects
   // new Store web submit/import; Admin management, review, export and override

@@ -1089,7 +1089,11 @@
             <div class="form-control d-flex align-items-center justify-content-center py-4 text-secondary mt-2" id="store_drop" style="border-style:dashed;cursor:pointer">
               <span id="store_label">拖曳 stores CSV 檔案到此處，或按一下選擇檔案</span><input type="file" id="store_input" accept=".csv" style="display:none">
             </div>
-            <div class="mt-3"><button class="btn btn-primary" id="btn_store">上載並取代門店主檔</button></div>
+            <div class="d-flex gap-2 mt-3 flex-wrap align-items-center">
+              <button class="btn btn-primary" id="btn_store">上載並取代門店主檔</button>
+              <button class="btn btn-outline-secondary" id="btn_store_master_sync">重新同步內建主檔</button>
+            </div>
+            <div class="text-secondary small mt-2">「重新同步內建主檔」會重新讀取伺服器隨程式附帶的 stores-template.csv，補回程式更新後新增的店舖（只新增／更新，不會刪除任何店舖）。</div>
             <div id="store_result" class="mt-2"></div>
           </div>
         </div>

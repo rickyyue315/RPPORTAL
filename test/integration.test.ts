@@ -96,6 +96,27 @@ describe('stores master (integration)', () => {
     expect(result.removed).toContain('HA99');
     expect(await getStore('HA99')).not.toBeNull();
   });
+
+  it('reports site codes that the store master did not have before', async () => {
+    // 舊版只在 stores 表為空時才 seed，所以模板新增的店（如 HBB2）永遠入唔到
+    // 正式資料庫。同步結果要講清楚邊幾間係「今次新增」，後台／啟動日誌才睇得到。
+    const first = parseStoresCsv(
+      ['Site,Shop,Regional,Class 1,Class 2,Size,OM,Type', 'HT01,測試一號店,HK,B,B2,S,Ivy,T'].join('\n'),
+    );
+    expect((await replaceStores(first.stores!)).added).toContain('HT01');
+
+    const second = parseStoresCsv(
+      [
+        'Site,Shop,Regional,Class 1,Class 2,Size,OM,Type',
+        'HT01,測試一號店,HK,B,B2,S,Ivy,T',
+        'HBB2,佐敦337,HK,C,C2,S,Violet,T',
+      ].join('\n'),
+    );
+    const result = await replaceStores(second.stores!);
+    expect(result.added).toEqual(['HBB2']);
+    expect(result.added).not.toContain('HT01');
+    expect((await getStore('HBB2'))?.shop).toBe('佐敦337');
+  });
 });
 
 describe('shared rate-limit store (integration)', () => {

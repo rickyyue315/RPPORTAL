@@ -345,3 +345,26 @@ describe('static asset freshness', () => {
     expect(read('public/portal/js/om.js')).toContain("const pass = ($('om_login_pass')?.value || '').trim();");
   });
 });
+
+describe('門店主檔同步入口', () => {
+  const read = (file: string) => readFileSync(path.join(root, file), 'utf8');
+
+  it('keeps the bundled-template sync button wired to its endpoint', () => {
+    // 主檔改動只 commit 到 repo、唔上載 CSV 時，DB 會停留在舊版（HBB2 就係咁
+    // 消失了 34 日）。除了啟動同步，後台亦要有手動入口；HTML 與 JS 要同步。
+    // id 必須同「按門店主檔同步 Store 帳戶」(btn_store_sync) 分開：
+    // $() 只會取第一個同名元素，重複 id 會令其中一粒按鈕永遠無反應。
+    const html = read('public/admin/index.html');
+    expect(html.match(/id="btn_store_master_sync"/g) ?? []).toHaveLength(1);
+    expect(read('public/js/admin.js')).toContain("$('btn_store_master_sync').addEventListener");
+    expect(read('public/js/admin.js')).toContain("'/api/admin/stores/sync-master'");
+  });
+
+  it('syncs the bundled store master on boot instead of only seeding an empty table', () => {
+    const entry = read('src/index.ts');
+    expect(entry).toContain('syncStoreMasterOnBoot');
+    expect(entry).toContain('storesMasterSyncOnBoot');
+    expect(entry).not.toContain('stores master empty');
+    expect(read('src/config.ts')).toContain("bool('STORES_MASTER_SYNC_ON_BOOT', true)");
+  });
+});

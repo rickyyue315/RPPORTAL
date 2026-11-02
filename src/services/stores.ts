@@ -212,14 +212,28 @@ export function parseStoresCsv(content: string): {
   if (stores.length === 0) return { ok: false, errors: ['CSV 沒有有效門店'] };
   return { ok: true, stores };
 }
+export interface StoreSyncResult {
+  /** 今次寫入（upsert）的門店數。 */
+  count: number;
+  /** 資料庫本來沒有、今次新增的 Site Code。 */
+  added: string[];
+  /** 資料庫有、但今次檔案沒有的 Site Code（只提示，不會刪除）。 */
+  removed: string[];
+}
+
 /**
  * Replaces the store master with upserts instead of delete/reinsert so that
  * submissions, portal accounts and routing settings that reference Site Codes
  * are never destroyed. Site Codes missing from the uploaded file are reported
  * back (they stay in the table, so history and logins keep working).
  */
-export async function replaceStores(stores: Store[]): Promise<{ count: number; removed: string[] }> {
+export async function replaceStores(stores: Store[]): Promise<StoreSyncResult> {
   return withTransaction(async (client) => {
+    const existing = await client.query<{ site_code: string }>('SELECT site_code FROM stores');
+    const known = new Set(existing.rows.map((row) => row.site_code));
+    const keep = new Set(stores.map((s) => s.site_code));
+    const added = stores.map((s) => s.site_code).filter((code) => !known.has(code)).sort();
+    const removed = [...known].filter((code) => !keep.has(code)).sort();
     let count = 0;
     for (const s of stores) {
       await client.query(
@@ -249,21 +263,22 @@ export async function replaceStores(stores: Store[]): Promise<{ count: number; r
       );
       count++;
     }
-    const keep = stores.map((s) => s.site_code);
-    const stale = await client.query<{ site_code: string }>(
-      'SELECT site_code FROM stores WHERE NOT (site_code = ANY($1::text[])) ORDER BY site_code',
-      [keep],
-    );
-    return { count, removed: stale.rows.map((r) => r.site_code) };
+    return { count, added, removed };
   });
 }
 
-export async function seedStoresFromFile(filePath: string): Promise<number> {
-  const content = await readFile(filePath, 'utf8');
+/**
+ * Reads a stores CSV and applies it to the stores table.
+ * Used by the boot-time sync, the admin "重新同步內建主檔" action and the
+ * `npm run seed:stores` script.
+ */
+export async function syncStoresFromFile(filePath: string): Promise<StoreSyncResult> {
+  // 用 decodeStoresCsvBuffer 而唔係 readFile('utf8')：主檔有機會由 Excel 另存，
+  // 變成 UTF-16 或 Big5，直接當 UTF-8 讀會靜靜亂碼（站名變問號）。
+  const content = decodeStoresCsvBuffer(await readFile(filePath));
   const parsed = parseStoresCsv(content);
   if (!parsed.ok || !parsed.stores) {
     throw new Error(`門店主檔載入失敗: ${parsed.errors?.join('; ') ?? 'unknown'}`);
   }
-  const result = await replaceStores(parsed.stores);
-  return result.count;
+  return replaceStores(parsed.stores);
 }

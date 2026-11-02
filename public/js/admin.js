@@ -956,11 +956,15 @@
     try {
       const data = await adminFetch('/api/admin/stores', { method: 'PUT', body: fd });
       let msg = `門店主檔已更新，共 ${data.count} 筆。`;
+      const added = Array.isArray(data.added) ? data.added : [];
+      if (added.length) {
+        msg += `<br>新增 ${added.length} 間：${added.map((c) => escapeHtml(c)).join('、')}`;
+      }
       const removed = Array.isArray(data.removed) ? data.removed : [];
       if (removed.length) {
         msg += `<br>以下 Site Code 不在今次檔案內（帳戶與歷史紀錄仍保留，未會自動刪除）：${removed.map((c) => escapeHtml(c)).join('、')}`;
       }
-      showAlert($('store_result'), removed.length ? 'warning' : 'success', msg);
+      showAlert($('store_result'), added.length || removed.length ? 'warning' : 'success', msg);
       $('store_label').textContent = '拖曳 stores CSV 檔案到此處，或按一下選擇檔案';
       pendingStoreFile = null;
       loadStoreCount();
@@ -970,6 +974,32 @@
       showAlert($('store_result'), 'error', msg);
     } finally {
       btn.disabled = false;
+    }
+  });
+
+  $('btn_store_master_sync').addEventListener('click', async () => {
+    if (!confirm('重新讀取伺服器內建的 stores-template.csv？\n只會新增／更新店舖，不會刪除任何店舖。')) return;
+    const btn = $('btn_store_master_sync');
+    btn.disabled = true;
+    btn.textContent = '同步中…';
+    try {
+      const data = await adminFetch('/api/admin/stores/sync-master', { method: 'POST', body: JSON.stringify({}) });
+      let msg = `已由內建主檔同步，合共 ${data.count} 筆。`;
+      const added = Array.isArray(data.added) ? data.added : [];
+      msg += added.length
+        ? `<br>新增 ${added.length} 間：${added.map((c) => escapeHtml(c)).join('、')}`
+        : '<br>沒有新增店舖（主檔已是最新）。';
+      const removed = Array.isArray(data.removed) ? data.removed : [];
+      if (removed.length) {
+        msg += `<br>下列 Site Code 在資料庫但不在內建模板（保留不動）：${removed.map((c) => escapeHtml(c)).join('、')}`;
+      }
+      showAlert($('store_result'), added.length ? 'success' : '', msg);
+      loadStoreCount();
+    } catch (err) {
+      showAlert($('store_result'), 'error', escapeHtml(err.message));
+    } finally {
+      btn.disabled = false;
+      btn.textContent = '重新同步內建主檔';
     }
   });
 

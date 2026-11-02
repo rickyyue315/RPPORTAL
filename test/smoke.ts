@@ -26,7 +26,7 @@ const { fileURLToPath } = await import('node:url');
 const { default: ExcelJS } = await import('exceljs');
 const { TEMPLATE_COLUMNS, RP_TEAM_SHEET, RETURN_COLUMNS, RETURN_SHEET } = await import('../src/lib/fields.js');
 const { setPoolForTesting } = await import('../src/db/pool.js');
-const { seedStoresFromFile } = await import('../src/services/stores.js');
+const { syncStoresFromFile } = await import('../src/services/stores.js');
 const { createApp } = await import('../src/app.js');
 const { listMigrationFiles } = await import('./migrateTest.js');
 
@@ -67,7 +67,7 @@ await db.query(
 
 // Seed stores from the CSV.
 const csvPath = path.join(root, 'stores-template.csv');
-await seedStoresFromFile(csvPath);
+await syncStoresFromFile(csvPath);
 console.log('[smoke] stores seeded');
 
 // Seed a Store portal account and a small SKU Master so the portal flow works.

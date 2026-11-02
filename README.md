@@ -59,7 +59,7 @@ npm run dev
 - 管理後台：<http://localhost:3000/admin/login.html>（需登入，成功後進入 `/admin/index.html`）
 - OM 營運經理：<http://localhost:3000/portal/om.html>（OM 名稱＋`PORTAL_OM_PASSWORD`，預設 `SASAOM178`）
 
-首次啟動時若 `stores` 主檔為空，會自動載入 `stores-template.csv`（預設路徑可由 `STORES_CSV_PATH` 覆寫）。
+每次啟動都會讀 `stores-template.csv` 並 upsert 入 `stores`（預設路徑可由 `STORES_CSV_PATH` 覆寫）：只新增／更新店舖，不會刪除，所以改主檔後 push 部署就等於發佈——新店（例如 HBB2）不會再因為「資料表非空」而被跳過。`STORES_MASTER_SYNC_ON_BOOT=false` 可關掉，改為只在後台上載 CSV 或按「重新同步內建主檔」。
 
 ## 測試
 
@@ -139,6 +139,8 @@ railway config apply  # 確認後建立 Web + PostgreSQL
 | `EXPORT_BATCH_RETENTION_DAYS` | `730` |
 | `RETURN_SCHEDULE_PATH` | `./return-schedule.json` |
 | `RETURN_ENFORCEMENT_START` | `2026-08-01` |
+| `STORES_CSV_PATH` | 門店主檔位置（預設 `./stores-template.csv`，Dockerfile 會一併複製） |
+| `STORES_MASTER_SYNC_ON_BOOT` | `true` 每次啟動把內建門店主檔 upsert 入資料庫（只新增／更新，不刪除）；設 `false` 則只靠後台上載／「重新同步內建主檔」 |
 | `CORS_ORIGINS` | 留空（同源）或填允許來源，逗號分隔 |
 | `PUBLIC_WRITE_SUSPENSION_ENABLED` | `true` 暫停公開提交／修改／Excel 匯入；重新開通時設 `false` |
 | `PUBLIC_WRITE_SUSPENSION_AT` | 暫停生效時間（預設 `2026-08-11T23:59:59+08:00`） |
@@ -157,7 +159,7 @@ railway config apply  # 確認後建立 Web + PostgreSQL
 ### 部署行為
 
 - 容器啟動時會先等待 PostgreSQL 可用（最多 `DB_STARTUP_RETRIES × DB_STARTUP_RETRY_MS`），再自動執行 migration；migration 使用 PostgreSQL advisory lock，多個 replica 同時啟動也安全。
-- 門店主檔為空時會自動載入內建 `stores-template.csv`。
+- 每次啟動都會把內建 `stores-template.csv` upsert 入門店主檔（只新增／更新，不刪除）；主檔改動跟程式一齊部署即可生效。
 - 匯出 Excel 原檔存於 PostgreSQL（`export_batch_files`），不依賴 Railway volume；容器重啟或重新部署不會遺失。
 - 應用程式處理 `SIGTERM`，並在 `SHUTDOWN_TIMEOUT_MS` 內完成關閉；配合 Railway draining 可減少部署期間中斷。
 - 健康檢查路徑：`/health`（會檢查資料庫，正常回 `200`，資料庫不可用回 `503`）。

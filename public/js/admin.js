@@ -1206,11 +1206,17 @@
    * 自訂網域，而不是 window.location.origin。
    */
   const PU_PUBLIC_ORIGIN = 'https://rpportal.bestohoh.com';
+  /** 後備網址：自訂網域／DNS 出問題時仍可登入。 */
+  const PU_BACKUP_ORIGIN = 'https://rpportal-production.up.railway.app';
 
-  function puLoginUrl(user) {
+  function puLoginPath(user) {
     return user.role === 'om'
-      ? `${PU_PUBLIC_ORIGIN}/portal/om.html?user=${encodeURIComponent(user.username)}`
-      : `${PU_PUBLIC_ORIGIN}/portal/?user=${encodeURIComponent(user.username)}`;
+      ? `/portal/om.html?user=${encodeURIComponent(user.username)}`
+      : `/portal/?user=${encodeURIComponent(user.username)}`;
+  }
+
+  function puLoginUrl(user, origin = PU_PUBLIC_ORIGIN) {
+    return `${origin}${puLoginPath(user)}`;
   }
 
   function puWhatsAppText(user, password) {
@@ -1223,6 +1229,7 @@
         `帳號：${user.username}`,
         `密碼：${password}`,
         `登入網址：${puLoginUrl(user)}`,
+        `後備網址：${puLoginUrl(user, PU_BACKUP_ORIGIN)}`,
         '此密碼只供您本人使用，因為可以代舖回覆，請勿轉發。如無法登入，請與我們聯絡。',
       ].join('\r\n');
     }
@@ -1233,6 +1240,7 @@
       `帳號：${user.username}`,
       `密碼：${password}`,
       `登入網址：${puLoginUrl(user)}`,
+      `後備網址：${puLoginUrl(user, PU_BACKUP_ORIGIN)}`,
       '',
       '此密碼只供您本人使用，請勿轉發。如無法登入，請與我們聯絡。',
     ].join('\r\n');
@@ -1256,6 +1264,7 @@
       `帳號：${user.username}`,
       `密碼：${password}`,
       `登入網址：${puLoginUrl(user)}`,
+      `後備網址：${puLoginUrl(user, PU_BACKUP_ORIGIN)}`,
       '',
       '此密碼只供貴店使用，請勿轉發。如無法登入，請回覆此郵件與我們聯絡。',
     ].join('\r\n');

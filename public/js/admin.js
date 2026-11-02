@@ -1280,10 +1280,14 @@
       ? `<div class="small text-secondary">已通知 ${escapeHtml(user.password_notified_at)}</div>`
       : `<div class="small text-secondary">未通知</div>
         <button class="btn ghost btn-sm btn-pu-notified-row" data-id="${user.id}">標記已通知</button>`;
+    const mailButton = puContactEmail(user)
+      ? `<button class="btn ghost btn-sm btn-pu-mail-row" data-id="${user.id}">開啟郵件</button>`
+      : '';
     return `<span class="pu-pw" data-id="${user.id}">••••••••</span>
       <button class="btn ghost btn-sm btn-pu-pw-toggle" data-id="${user.id}">顯示</button>
       <button class="btn ghost btn-sm btn-pu-pw-copy" data-id="${user.id}">複製</button>
       <button class="btn ghost btn-sm btn-pu-wa-row" data-id="${user.id}">WhatsApp</button>
+      ${mailButton}
       ${notified}`;
   }
 
@@ -1369,6 +1373,29 @@
           window.open(puWhatsAppUrl(user, password), '_blank', 'noopener');
         });
       });
+      tbody.querySelectorAll('.btn-pu-mail-row').forEach((btn) => {
+        btn.addEventListener('click', async () => {
+          const user = data.users.find((entry) => entry.id === btn.dataset.id);
+          const password = puPasswordCache.get(btn.dataset.id) || '';
+          const email = user ? puContactEmail(user) : null;
+          if (!user || !password || !email) {
+            showAlert($('portal_users_result'), 'danger', '此帳戶未有可顯示的密碼，請先生成。');
+            return;
+          }
+          // 先複製全文：沒有預設郵件程式的電腦，mailto 會靜靜失效。
+          const copied = await puCopyText(puMailText(user, password));
+          const link = document.createElement('a');
+          link.href = puMailtoUrl(user, password);
+          link.rel = 'noopener';
+          link.style.display = 'none';
+          document.body.appendChild(link);
+          link.click();
+          link.remove();
+          showAlert($('portal_users_result'), 'success', copied
+            ? `已嘗試開啟郵件程式（${email}）。如沒有彈出，郵件全文已複製，貼到任何郵箱即可寄出。`
+            : `已嘗試開啟郵件程式（${email}）。`);
+        });
+      });
       tbody.querySelectorAll('.btn-pu-notified-row').forEach((btn) => {
         btn.addEventListener('click', async () => {
           const ok = await markPuNotified(btn.dataset.id);
@@ -1449,9 +1476,16 @@
     el.innerHTML = `<div class="alert ${type} mb-2">${escapeHtml(message)}</div>`;
   }
 
+  /** 店舖聯絡電郵：優先用 API 回傳值，否則由 Site Code 推導（與後端規則一致）。 */
+  function puContactEmail(user) {
+    if (user.contact_email) return user.contact_email;
+    if (user.role === 'store' && user.site_code) return `${String(user.site_code).toLowerCase()}@sasa.com`;
+    return null;
+  }
+
   /** mailto 只編碼主旨與內文；地址本身要原樣，`%40` 會令部分郵件程式拒絕開啟。 */
   function puMailtoUrl(user, password) {
-    return 'mailto:' + (user.contact_email || '') +
+    return 'mailto:' + (puContactEmail(user) || '') +
       '?subject=' + encodeURIComponent('NDRF Portal 專屬登入密碼') +
       '&body=' + encodeURIComponent(puMailText(user, password));
   }
@@ -1472,7 +1506,7 @@
         <td>
           <a class="btn ghost btn-sm" href="${escapeHtml(puWhatsAppUrl(item, item.password))}" target="_blank" rel="noopener">開啟 WhatsApp</a>
           <button class="btn ghost btn-sm btn-pu-wa" data-idx="${idx}">複製文案</button>
-          ${item.role === 'store' && item.contact_email ? `<button class="btn ghost btn-sm btn-pu-mail" data-idx="${idx}">開啟郵件</button>` : ''}
+          ${puContactEmail(item) ? `<button class="btn ghost btn-sm btn-pu-mail" data-idx="${idx}">開啟郵件</button>` : ''}
           <button class="btn ghost btn-sm btn-pu-notified" data-idx="${idx}">標記已通知</button>
         </td>
       </tr>`).join('');
@@ -1507,8 +1541,8 @@
         link.click();
         link.remove();
         puResultStatus(box, 'success', copied
-          ? `已嘗試開啟郵件程式（收件人 ${item.contact_email}）。如沒有彈出，郵件全文已複製，貼到任何郵箱即可寄出。`
-          : `已嘗試開啟郵件程式（收件人 ${item.contact_email}）。`);
+          ? `已嘗試開啟郵件程式（收件人 ${puContactEmail(item)}）。如沒有彈出，郵件全文已複製，貼到任何郵箱即可寄出。`
+          : `已嘗試開啟郵件程式（收件人 ${puContactEmail(item)}）。`);
       });
     });
     box.querySelectorAll('.btn-pu-notified').forEach((btn) => {

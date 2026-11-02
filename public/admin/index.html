@@ -975,6 +975,7 @@
         <nav class="panel-subnav" aria-label="系統頁內分組">
           <a href="#sec-accounts" data-subnav-target="sec-accounts" class="active">帳戶與主檔</a>
           <a href="#sec-review" data-subnav-target="sec-review">審批設定</a>
+          <a href="#sec-notice" data-subnav-target="sec-notice">平台通告</a>
           <a href="#sec-tools" data-subnav-target="sec-tools">系統工具</a>
         </nav>
 
@@ -1227,6 +1228,82 @@
           </div>
         </div>
 
+        <div class="admin-group-title admin-section" id="sec-notice">平台通告</div>
+        <p class="subnav-hint">店舖與 OM 一開頁就會見到「生效中」的通告；店舖按 X 後，同一個版本不會再顯示，要再通知就按「重新推送」。</p>
+        <div class="card" id="notice_list_card">
+          <div class="card-header">
+            <h3 class="card-title">通告列表</h3>
+            <div class="card-actions">
+              <button class="btn btn-sm btn-primary" id="btn_notice_new" type="button">新增通告</button>
+            </div>
+          </div>
+          <div class="card-body">
+            <div id="notice_result"></div>
+            <div class="table-responsive">
+              <table class="table table-vcenter">
+                <thead><tr><th>標題</th><th>狀態</th><th>顯示期間</th><th>版本</th><th class="w-1"></th></tr></thead>
+                <tbody id="notice_rows"><tr><td colspan="5" class="text-center text-secondary">捲動到此處自動載入…</td></tr></tbody>
+              </table>
+            </div>
+            <p class="text-secondary small mb-0">「版本」是重新推送的次數。店舖的瀏覽器以「通告編號 + 版本」記住已關閉，所以改了字或按「重新推送」都會再見一次。</p>
+          </div>
+        </div>
+
+        <div class="card" id="notice_editor_card" hidden>
+          <div class="card-header">
+            <h3 class="card-title" id="notice_editor_heading">新增通告</h3>
+            <div class="card-actions">
+              <button class="btn btn-sm btn-ghost" id="btn_notice_cancel" type="button">取消</button>
+            </div>
+          </div>
+          <div class="card-body">
+            <div class="row g-3">
+              <div class="col-12">
+                <label class="form-label" for="notice_title">標題</label>
+                <input class="form-control" id="notice_title" maxlength="120" placeholder="例如：颱風期間安排">
+              </div>
+              <div class="col-12">
+                <label class="form-label" for="notice_body">內容</label>
+                <textarea class="form-control" id="notice_body" rows="3" maxlength="1000" placeholder="簡短說明，可分行。店舖只會見到這段文字。"></textarea>
+              </div>
+              <div class="col-md-6">
+                <label class="form-label" for="notice_link_text">按鈕文字（可留空）</label>
+                <input class="form-control" id="notice_link_text" maxlength="40" placeholder="例如：查看詳情">
+              </div>
+              <div class="col-md-6">
+                <label class="form-label" for="notice_link_url">按鈕連結（可留空）</label>
+                <input class="form-control" id="notice_link_url" maxlength="300" placeholder="/help.html 或 https://…">
+              </div>
+              <div class="col-md-4">
+                <label class="form-label" for="notice_tone">語氣</label>
+                <select class="form-select" id="notice_tone">
+                  <option value="info">一般（藍）</option>
+                  <option value="warning">需要注意（黃）</option>
+                  <option value="success">好消息（綠）</option>
+                </select>
+              </div>
+              <div class="col-md-4">
+                <label class="form-label" for="notice_start">開始顯示（可留空）</label>
+                <input class="form-control" type="datetime-local" id="notice_start">
+              </div>
+              <div class="col-md-4">
+                <label class="form-label" for="notice_end">停止顯示（可留空）</label>
+                <input class="form-control" type="datetime-local" id="notice_end">
+              </div>
+              <div class="col-12">
+                <label class="form-check form-switch">
+                  <input class="form-check-input" type="checkbox" id="notice_active" checked>
+                  <span class="form-check-label">啟用這條通告</span>
+                </label>
+              </div>
+            </div>
+            <div class="mt-3 d-flex flex-wrap gap-2 align-items-center">
+              <button class="btn btn-primary" id="btn_notice_save" type="button">儲存</button>
+              <span class="text-secondary small">儲存後店舖下次開頁即見；已按 X 關閉同一版本的店舖不會再彈。</span>
+            </div>
+          </div>
+        </div>
+
         <div class="admin-group-title admin-section" id="sec-tools">系統工具</div>
         <p class="subnav-hint">資料庫備份（每日 02:00／14:00）與 Recovery Code（公開頁「搵返申請編號」驗證用）。</p>
         <div class="card" data-lazy-section="backup">
@@ -1366,6 +1443,7 @@
 <script src="/js/admin.js"></script>
 <script src="/js/admin-zero-sales.js"></script>
 <script src="/js/admin-designated-sku.js"></script>
+<script src="/js/admin-notices.js"></script>
 <script src="/js/chart-lite.js"></script>
 <script src="/js/admin-stock.js"></script>
 <script src="/js/admin-ui.js"></script>

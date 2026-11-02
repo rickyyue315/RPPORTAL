@@ -69,6 +69,13 @@ import {
   isBackupStorageConfigured,
   openBackupObject,
 } from '../services/backup.js';
+import {
+  createNotice,
+  deleteNotice,
+  listNotices,
+  republishNotice,
+  updateNotice,
+} from '../services/notices.js';
 import { query, withTransaction } from '../db/pool.js';
 import {
   generateTemplateWorkbook,
@@ -5151,5 +5158,175 @@ adminRouter.get(
       res.destroy(err);
     });
     object.body.pipe(res);
+  }),
+);
+
+/* ------------------------------------------------------------------ */
+/* 平台通告（店舖／OM 頁面顯示；可排程、可重新推送）                    */
+/* ------------------------------------------------------------------ */
+
+const noticeLinkPattern = /^(https?:\/\/|\/)/i;
+const noticeIdSchema = z.string().uuid();
+
+const noticeInputSchema = z
+  .object({
+    title: z.string().trim().min(1, '請輸入標題').max(120, '標題最多 120 字'),
+    body: z.string().max(1000, '內容最多 1000 字').optional(),
+    linkUrl: z.string().trim().max(300).optional().nullable(),
+    linkText: z.string().trim().max(40, '按鈕文字最多 40 字').optional().nullable(),
+    tone: z.enum(['info', 'warning', 'success']).optional(),
+    isActive: z.boolean().optional(),
+    startsAt: z.string().datetime({ offset: true }).optional().nullable(),
+    endsAt: z.string().datetime({ offset: true }).optional().nullable(),
+  })
+  .refine((v) => !v.linkUrl || noticeLinkPattern.test(v.linkUrl), {
+    message: '連結只接受 http(s) 網址或以 / 開頭的站內路徑',
+    path: ['linkUrl'],
+  })
+  .refine((v) => !v.linkText || Boolean(v.linkUrl), {
+    message: '填了按鈕文字就要同時填連結',
+    path: ['linkText'],
+  })
+  .refine(
+    (v) => !v.startsAt || !v.endsAt || new Date(v.startsAt).getTime() < new Date(v.endsAt).getTime(),
+    { message: '結束時間必須遲於開始時間', path: ['endsAt'] },
+  );
+
+/** zod 只取第一個錯誤訊息：後台是逐格填的，一次報一個已經足夠。 */
+function firstIssue(error: z.ZodError): string {
+  return error.issues[0]?.message ?? '輸入有誤';
+}
+
+function noticeInputFrom(parsed: z.infer<typeof noticeInputSchema>) {
+  return {
+    title: parsed.title,
+    body: parsed.body ?? '',
+    // 空字串要當「沒有連結」，否則前台會渲染一個按不下去的按鈕
+    linkUrl: parsed.linkUrl || null,
+    linkText: parsed.linkText || null,
+    tone: parsed.tone ?? 'info',
+    isActive: parsed.isActive ?? true,
+    startsAt: parsed.startsAt || null,
+    endsAt: parsed.endsAt || null,
+  };
+}
+
+/** GET /api/admin/notices — 全部通告（含停用與過期）。 */
+adminRouter.get(
+  '/notices',
+  requireAdmin,
+  adminActionLimiter,
+  asyncHandler(async (_req: Request, res: Response) => {
+    res.setHeader('Cache-Control', 'no-store');
+    res.json({ notices: await listNotices() });
+  }),
+);
+
+/** POST /api/admin/notices — 新增一條通告。 */
+adminRouter.post(
+  '/notices',
+  requireAdmin,
+  adminActionLimiter,
+  asyncHandler(async (req: Request, res: Response) => {
+    const parsed = noticeInputSchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ error: firstIssue(parsed.error) });
+      return;
+    }
+    const notice = await createNotice(noticeInputFrom(parsed.data), req.adminUsername ?? 'admin');
+    await writeAuditEvent({
+      eventType: 'portal_notice_created',
+      actorRole: 'admin',
+      actor: req.adminUsername,
+      ip: getClientIp(req),
+      metadata: { notice_id: notice.id, title: notice.title },
+    });
+    res.status(201).json({ notice });
+  }),
+);
+
+/** PUT /api/admin/notices/:id — 修改通告內容／排程／開關。 */
+adminRouter.put(
+  '/notices/:id',
+  requireAdmin,
+  adminActionLimiter,
+  asyncHandler(async (req: Request, res: Response) => {
+    const id = noticeIdSchema.safeParse(req.params.id);
+    if (!id.success) {
+      res.status(400).json({ error: '通告編號格式不正確' });
+      return;
+    }
+    const parsed = noticeInputSchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ error: firstIssue(parsed.error) });
+      return;
+    }
+    const notice = await updateNotice(id.data, noticeInputFrom(parsed.data), req.adminUsername ?? 'admin');
+    if (!notice) {
+      res.status(404).json({ error: '找不到通告' });
+      return;
+    }
+    await writeAuditEvent({
+      eventType: 'portal_notice_updated',
+      actorRole: 'admin',
+      actor: req.adminUsername,
+      ip: getClientIp(req),
+      metadata: { notice_id: notice.id, title: notice.title, is_active: notice.is_active },
+    });
+    res.json({ notice });
+  }),
+);
+
+/** POST /api/admin/notices/:id/republish — revision + 1，所有店舖再見一次。 */
+adminRouter.post(
+  '/notices/:id/republish',
+  requireAdmin,
+  adminActionLimiter,
+  asyncHandler(async (req: Request, res: Response) => {
+    const id = noticeIdSchema.safeParse(req.params.id);
+    if (!id.success) {
+      res.status(400).json({ error: '通告編號格式不正確' });
+      return;
+    }
+    const notice = await republishNotice(id.data, req.adminUsername ?? 'admin');
+    if (!notice) {
+      res.status(404).json({ error: '找不到通告' });
+      return;
+    }
+    await writeAuditEvent({
+      eventType: 'portal_notice_republished',
+      actorRole: 'admin',
+      actor: req.adminUsername,
+      ip: getClientIp(req),
+      metadata: { notice_id: notice.id, title: notice.title, revision: notice.revision },
+    });
+    res.json({ notice });
+  }),
+);
+
+/** DELETE /api/admin/notices/:id — 刪除通告（店舖端即時消失）。 */
+adminRouter.delete(
+  '/notices/:id',
+  requireAdmin,
+  adminActionLimiter,
+  asyncHandler(async (req: Request, res: Response) => {
+    const id = noticeIdSchema.safeParse(req.params.id);
+    if (!id.success) {
+      res.status(400).json({ error: '通告編號格式不正確' });
+      return;
+    }
+    const removed = await deleteNotice(id.data);
+    if (!removed) {
+      res.status(404).json({ error: '找不到通告' });
+      return;
+    }
+    await writeAuditEvent({
+      eventType: 'portal_notice_deleted',
+      actorRole: 'admin',
+      actor: req.adminUsername,
+      ip: getClientIp(req),
+      metadata: { notice_id: id.data },
+    });
+    res.json({ ok: true });
   }),
 );

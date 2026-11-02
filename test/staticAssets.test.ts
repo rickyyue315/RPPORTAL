@@ -214,7 +214,7 @@ describe('static asset freshness', () => {
     expect(html).not.toContain('id="panel-review"');
 
     // 合併後的內容仍在，並有頁內分組導覽
-    for (const anchor of ['sec-batches', 'sec-accounts', 'sec-review', 'sec-tools']) {
+    for (const anchor of ['sec-batches', 'sec-accounts', 'sec-review', 'sec-notice', 'sec-tools']) {
       expect(html).toContain(`id="${anchor}"`);
       expect(html).toContain(`data-subnav-target="${anchor}"`);
     }
@@ -475,8 +475,9 @@ describe('RP Connect 品牌鎖定', () => {
     expect(script).not.toContain('RP 連繫網（RP Connect）');
   });
 
-  it('announces the rename once on every shop and OM page until it is dismissed', () => {
-    // 公司另有系統叫 Portal，改名後要主動通知一次，且按 X 後不可再騷擾店舖。
+  it('shows database-driven notices once on every shop and OM page', () => {
+    // 公司另有系統叫 Portal，改名通告要顯示一次；但通告內容改由後台維護，
+    // 前端不可再寫死任何文案，否則下次改字又要改程式碼。
     const pages = [
       'public/portal/zero-sales.html',
       'public/portal/store.html',
@@ -489,18 +490,28 @@ describe('RP Connect 品牌鎖定', () => {
       'public/help.html',
     ];
     for (const page of pages) {
-      expect(read(page), page).toContain('/js/rename-notice.js');
+      expect(read(page), page).toContain('/js/portal-notice.js');
     }
 
-    const script = read('public/js/rename-notice.js');
-    // 文案要有全名，並講明同「SASA Portal」無關
-    expect(script).toContain('RP Portal 已改名為');
-    expect(script).toContain('RP Connect — RP 連繫網申報平台');
-    expect(script).toContain('SASA Portal');
-    // 關閉記號寫入 localStorage（不是 sessionStorage：關掉瀏覽器再開不應重提）
-    expect(script).toContain('localStorage.setItem(STORAGE_KEY, DISMISSED)');
+    const script = read('public/js/portal-notice.js');
+    expect(script).toContain("fetch('/api/public/notice'");
+    // 記號要帶版本，否則「重新推送」會被舊記號擋住
+    expect(script).toContain('rp_notice_');
+    expect(script).toContain('_r${notice.revision}');
+    // 關閉記號存 localStorage（不是 sessionStorage：關掉瀏覽器再開不應重提）
     expect(script).not.toContain('sessionStorage.setItem');
     // 樣式放在 style.css，公開頁（無載入 portal.css）才吃得到
-    expect(read('public/css/style.css')).toContain('.rename-notice {');
+    expect(read('public/css/style.css')).toContain('.portal-notice {');
+
+    // 改名通告本身由 migration 寫入，之後可以在後台改字／停用
+    const migration = read('src/db/migrations/037_portal_notices.sql');
+    expect(migration).toContain('RP Portal 已改名為');
+    expect(migration).toContain('SASA Portal');
+
+    // 後台入口
+    const adminHtml = read('public/admin/index.html');
+    expect(adminHtml).toContain('id="sec-notice"');
+    expect(adminHtml).toContain('data-subnav-target="sec-notice"');
+    expect(adminHtml).toContain('/js/admin-notices.js');
   });
 });

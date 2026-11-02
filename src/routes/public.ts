@@ -68,6 +68,7 @@ import { query, withTransaction } from '../db/pool.js';
 import { config } from '../config.js';
 import { requirePublicWritesOpen } from '../middleware/publicWriteSuspension.js';
 import { generateApplicationNo } from '../lib/applicationNo.js';
+import { listActiveNotices } from '../services/notices.js';
 import { ipExpiryIso } from '../lib/ip.js';
 import { RETURN_SCHEDULE, RETURN_WINDOWS, getActiveReturnWindow, isReturnModificationOpen } from '../lib/returnSchedule.js';
 import { fingerprintPayload, getIdempotencyKey, hasInvalidIdempotencyKey } from '../lib/idempotency.js';
@@ -1980,6 +1981,30 @@ publicRouter.post(
         return;
       }
       throw err;
+    }
+  }),
+);
+
+/* ------------------------------------------------------------------ */
+/* 平台通告（由後台「系統 → 平台通告」維護）                            */
+/* ------------------------------------------------------------------ */
+
+/**
+ * GET /api/public/notice — 目前生效的通告，店舖與 OM 頁面開頁時取一次。
+ *
+ * 刻意不做登入檢查：公開頁（Urgent／銷售／退貨／查詢／說明）一樣要見到通告。
+ * `no-store` 不可省——改字或重新推送之後，店舖下次開頁就要見到新版本。
+ * 讀取失敗回空陣列而不是 5xx：通告只是附加資訊，不應該令整頁出錯。
+ */
+publicRouter.get(
+  '/notice',
+  asyncHandler(async (_req: Request, res: Response) => {
+    res.setHeader('Cache-Control', 'no-store');
+    try {
+      res.json({ notices: await listActiveNotices() });
+    } catch (err) {
+      console.error('[notice] 讀取失敗', (err as Error).message);
+      res.json({ notices: [] });
     }
   }),
 );

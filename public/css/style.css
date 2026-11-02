@@ -218,43 +218,62 @@ a:hover {
   }
 }
 
-/* 改名通知（rename-notice.js）：淺藍資訊卡，可關閉；店舖按 X 後不再出現。
-   放 style.css 而非 portal.css——公開頁（Urgent／銷售／退貨／查詢／說明）冇載入 portal.css。 */
-.rename-notice {
+/* 平台通告（portal-notice.js）：後台「系統 → 平台通告」維護。
+   放 style.css 而非 portal.css——公開頁（Urgent／銷售／退貨／查詢／說明）冇載入 portal.css。
+   語氣（--info／--warning／--success）只改顏色，版面完全不動。 */
+.portal-notice {
+  --pn-bg: var(--brand-50);
+  --pn-border: var(--brand-200);
+  --pn-icon-bg: var(--brand-100);
+  --pn-icon: var(--brand);
   display: flex;
   align-items: flex-start;
   gap: 12px;
   margin: 0 0 20px;
   padding: 14px 16px;
-  background: var(--brand-50);
-  border: 1px solid var(--brand-200);
+  background: var(--pn-bg);
+  border: 1px solid var(--pn-border);
   border-radius: var(--radius);
   box-shadow: var(--shadow-sm);
 }
 
-.rename-notice-icon {
+.portal-notice--warning {
+  --pn-bg: var(--warning-bg);
+  --pn-border: #efdca8;
+  --pn-icon-bg: #fbeecb;
+  --pn-icon: var(--warning);
+}
+
+.portal-notice--success {
+  --pn-bg: var(--success-bg);
+  --pn-border: #bfe6d0;
+  --pn-icon-bg: #d8f3e4;
+  --pn-icon: var(--success);
+}
+
+.portal-notice-icon {
   flex: 0 0 auto;
   display: grid;
   place-items: center;
   width: 34px;
   height: 34px;
   border-radius: 50%;
-  background: var(--brand-100);
-  color: var(--brand);
+  background: var(--pn-icon-bg);
+  color: var(--pn-icon);
 }
 
-.rename-notice-icon svg {
+.portal-notice-icon svg {
   width: 18px;
   height: 18px;
   display: block;
 }
 
-.rename-notice-body {
+.portal-notice-body {
   flex: 1 1 auto;
   min-width: 0;
 }
 
-.rename-notice-title {
+.portal-notice-title {
   margin: 0;
   font-size: 15px;
   font-weight: 700;
@@ -262,19 +281,16 @@ a:hover {
   color: var(--text);
 }
 
-.rename-notice-title strong {
-  color: var(--brand-dark);
-  font-weight: 800;
-}
-
-.rename-notice-desc {
+.portal-notice-desc {
   margin: 3px 0 0;
   font-size: 13px;
   line-height: 1.55;
   color: var(--muted);
+  /* 後台 textarea 打的分行要保留，否則長通告會擠成一大段 */
+  white-space: pre-line;
 }
 
-.rename-notice-cta {
+.portal-notice-cta {
   flex: 0 0 auto;
   align-self: center;
   padding: 6px 14px;
@@ -283,16 +299,18 @@ a:hover {
   font-weight: 700;
   color: var(--brand-dark);
   background: var(--card);
-  border: 1px solid var(--brand-200);
+  border: 1px solid var(--pn-border);
   border-radius: var(--radius-sm);
+  text-decoration: none;
+  white-space: nowrap;
   cursor: pointer;
 }
 
-.rename-notice-cta:hover {
-  background: var(--brand-100);
+.portal-notice-cta:hover {
+  background: var(--pn-icon-bg);
 }
 
-.rename-notice-close {
+.portal-notice-close {
   flex: 0 0 auto;
   align-self: flex-start;
   display: grid;
@@ -308,39 +326,42 @@ a:hover {
   cursor: pointer;
 }
 
-.rename-notice-close svg {
+.portal-notice-close svg {
   width: 16px;
   height: 16px;
   display: block;
 }
 
-.rename-notice-close:hover {
+.portal-notice-close:hover {
   color: var(--text);
-  background: var(--brand-100);
+  background: var(--pn-icon-bg);
 }
 
 @media (max-width: 640px) {
-  .rename-notice {
+  .portal-notice {
     gap: 10px;
     padding: 12px;
   }
 
-  .rename-notice-icon {
+  .portal-notice-icon {
     width: 30px;
     height: 30px;
   }
 
-  .rename-notice-title {
+  .portal-notice-title {
     font-size: 14px;
   }
 
-  .rename-notice-desc {
+  .portal-notice-desc {
     font-size: 12.5px;
   }
 
-  /* 手機上 X 已經好清楚，唔需要再擺一粒「知道了」爭位 */
-  .rename-notice-cta {
-    display: none;
+  /* 手機上按鈕與 X 並排會擠爆文字；連結改為貼在說明下面 */
+  .portal-notice-cta {
+    align-self: flex-start;
+    margin-left: 40px;
+    padding: 5px 12px;
+    font-size: 12.5px;
   }
 }
 

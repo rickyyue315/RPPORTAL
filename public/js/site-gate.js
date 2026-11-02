@@ -43,6 +43,49 @@
     return d.innerHTML;
   }
 
+  /**
+   * CSRF 是「雙重提交」：POST 必須帶 x-csrf-token，且要等於 csrf_token cookie。
+   * 這個檔案以前完全沒有帶，於是閘門登入／登出永遠 403「CSRF token 無效」。
+   */
+  let csrfToken = null;
+
+  async function ensureCsrf(force = false) {
+    if (csrfToken && !force) return csrfToken;
+    try {
+      const res = await fetch('/api/csrf', { credentials: 'same-origin', cache: 'no-store' });
+      const data = await res.json();
+      csrfToken = (data && data.token) || null;
+    } catch {
+      csrfToken = null;
+    }
+    return csrfToken;
+  }
+
+  /**
+   * POST 並自動帶 CSRF。cookie 被換掉（另一個分頁、cookie 過期）時第一次會
+   * 403，這裡會重取 token 再試一次，避免使用者卡在「按極都話 CSRF 無效」。
+   */
+  async function postWithCsrf(url, body) {
+    let last = null;
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      const token = await ensureCsrf(attempt > 0);
+      const headers = {};
+      if (body !== undefined) headers['Content-Type'] = 'application/json';
+      if (token) headers['x-csrf-token'] = token;
+      const res = await fetch(url, {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers,
+        ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
+      });
+      const data = await res.json().catch(() => null);
+      last = { res, data };
+      const csrfFailed = res.status === 403 && /csrf/i.test(String((data && data.error) || ''));
+      if (!csrfFailed) return last;
+    }
+    return last;
+  }
+
   async function fetchMe() {
     try {
       const res = await fetch('/api/portal/auth/me', { credentials: 'same-origin' });
@@ -55,14 +98,7 @@
 
   /** Real portal login: sets the same session cookie as the portal pages. */
   async function loginPortal(username, password) {
-    const res = await fetch('/api/portal/auth/login', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      credentials: 'same-origin',
-      body: JSON.stringify({ username, password }),
-    });
-    let data = null;
-    try { data = await res.json(); } catch {}
+    const { res, data } = await postWithCsrf('/api/portal/auth/login', { username, password });
     if (!res.ok) throw new Error((data && data.error) || '登入失敗，請稍後再試');
     return data;
   }
@@ -174,7 +210,7 @@
         try {
           // The shared session is bound to one store; drop it so the next
           // login re-creates it for the other shop.
-          await fetch('/api/portal/auth/logout', { method: 'POST', credentials: 'same-origin' });
+          await postWithCsrf('/api/portal/auth/logout');
         } catch {}
         clearSite();
         const input = document.getElementById('site_code');
@@ -223,7 +259,7 @@
     link.addEventListener('click', async (e) => {
       e.preventDefault();
       try {
-        await fetch('/api/portal/auth/logout', { method: 'POST', credentials: 'same-origin' });
+        await postWithCsrf('/api/portal/auth/logout');
       } catch {}
       clearSite();
       window.location.href = '/portal/';

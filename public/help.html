@@ -24,7 +24,7 @@
         <a href="/portal/store.html" class="nav-paused" title="暫停收單，仍可進入查看">一般NDRF · 暫停</a>
         <a href="/urgent.html" class="nav-paused" title="暫停收單，仍可進入查看">Urgent · 暫停</a>
         <a href="/sales.html" class="nav-paused" title="暫停收單，仍可進入查看">突發性銷售 · 暫停</a>
-        <a href="/return.html" class="nav-paused" title="暫停收單，仍可進入查看">行貨退貨 · 暫停</a>
+        <a href="/return.html">行貨退貨</a>
         <a href="/lookup.html" class="nav-paused" title="暫停收單，仍可進入查看">查詢／修改</a>
         <a href="/help.html" class="active" aria-current="page">使用說明</a>
         <a href="#" id="logout_link">登出</a>
@@ -36,7 +36,7 @@
   <main class="container">
     <section class="help-hero" aria-labelledby="help-title">
       <h2 id="help-title">跟著圖示，一步一步完成回覆</h2>
-      <p>店舖首頁為「90日零銷售回覆」，頁面上方有兩個分頁：<b>零銷售回覆</b>（預設）與<b>存貨走勢</b>。店舖以 Site Code 及密碼登入一次，所有頁面（90日零銷售、<b>指定SKU回覆</b>、一般 NDRF、Urgent、突發性銷售、行貨退貨）即共同登入並自動認店；Urgent、突發性銷售及行貨退貨已全部顯示，暫停收單中仍可進入查看。先選擇你要看的說明章節，圖片為介面示意圖，實際畫面可能因手機或電腦螢幕大小略有不同。</p>
+      <p>店舖首頁為「90日零銷售回覆」，頁面上方有兩個分頁：<b>零銷售回覆</b>（預設）與<b>存貨走勢</b>。店舖以 Site Code 及密碼登入一次，所有頁面（90日零銷售、<b>指定SKU回覆</b>、一般 NDRF、Urgent、突發性銷售、行貨退貨）即共同登入並自動認店；Urgent、突發性銷售及行貨退貨已全部顯示。行貨退貨只在店舖申請退行貨日期內收單；其他暫停收單的服務仍可進入查看。先選擇你要看的說明章節，圖片為介面示意圖，實際畫面可能因手機或電腦螢幕大小略有不同。</p>
     </section>
 
     <nav class="help-toc" aria-label="說明章節">
@@ -48,7 +48,7 @@
       <a href="#portal-status">6. 申請進度<small>查看審批狀態及結果</small></a>
       <a href="#urgent">7. Urgent Order<small>緊急補貨申報（暫停）</small></a>
       <a href="#sales">8. 突發性銷售申報<small>只填 Site Code 及 SKU（暫停）</small></a>
-      <a href="#return">9. 行貨退貨報數<small>申請退行貨及 Excel 一次過上載（暫停）</small></a>
+      <a href="#return">9. 行貨退貨報數<small>申請退行貨及 Excel 一次過上載（只限申請期內）</small></a>
       <a href="#lookup">10. 查詢／修改<small>Urgent／銷售／退貨</small></a>
       <a href="#reviewer">11. Buyer／SCT 審批<small>審批工作檯操作</small></a>
     </nav>
@@ -565,8 +565,8 @@
     </section>
 
     <section class="card help-section" id="return" aria-labelledby="return-title">
-      <h2 id="return-title">9. 行貨退貨報數（暫停收單，仍可進入查看）</h2>
-      <p class="help-section-intro">行貨退貨報數暫停收單中，仍可進入頁面查看時間表。與零銷售回覆同一模式：輸入一次自己店舖嘅 Site Code 後自動認店。</p>
+      <h2 id="return-title">9. 行貨退貨報數</h2>
+      <p class="help-section-intro">行貨退貨報數只在店舖申請退行貨日期內收單，其餘時間只可查看時間表。與零銷售回覆同一模式：輸入一次自己店舖嘅 Site Code 後自動認店。</p>
       <div class="help-step">
         <img src="/images/help/return-window.svg" alt="查看行貨退貨申請窗口及庫存分析報表的示意圖" width="640" height="360">
         <div>
@@ -677,7 +677,7 @@
       </div>
     </section>
 
-    <p class="help-footer">如需重新開始：店舖請直接進入「90日零銷售回覆」（店舖首頁）；Urgent、突發性銷售及行貨退貨已全部顯示，暫停收單中仍可進入查看。</p>
+    <p class="help-footer">如需重新開始：店舖請直接進入「90日零銷售回覆」（店舖首頁）；Urgent 及突發性銷售暫停收單中仍可進入查看，行貨退貨只在店舖申請退行貨日期內收單。</p>
   </main>
 
   <footer class="site-footer">Developed by RP Team - Ricky Yue · <span class="app-version" data-app-version></span></footer>
@@ -688,7 +688,17 @@
       if (!link) return;
       link.addEventListener('click', function (e) {
         e.preventDefault();
-        fetch('/api/portal/auth/logout', { method: 'POST', credentials: 'same-origin' })
+        // CSRF 是雙重提交，POST 必須帶 x-csrf-token，否則伺服器一律 403。
+        fetch('/api/csrf', { credentials: 'same-origin', cache: 'no-store' })
+          .then(function (r) { return r.json(); })
+          .catch(function () { return {}; })
+          .then(function (data) {
+            return fetch('/api/portal/auth/logout', {
+              method: 'POST',
+              credentials: 'same-origin',
+              headers: data && data.token ? { 'x-csrf-token': data.token } : {},
+            });
+          })
           .catch(function () {})
           .then(function () {
             try {

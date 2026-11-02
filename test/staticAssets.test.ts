@@ -276,4 +276,53 @@ describe('static asset freshness', () => {
       expect(navOf(page), page).toEqual(base);
     }
   });
+
+  // 全站 CSRF 是雙重提交：POST 一定要帶 x-csrf-token。共用登入閘曾經完全
+  // 冇帶，店舖在零銷售／退貨等頁面登入時永遠 403「CSRF token 無效」。
+  it('sends the CSRF token from the shared login gate', () => {
+    const gate = readFileSync(path.join(root, 'public/js/site-gate.js'), 'utf8');
+    expect(gate).toContain('x-csrf-token');
+    expect(gate).toContain('postWithCsrf');
+    // 不許再有裸 fetch 直接打需要 CSRF 的端點
+    expect(gate).not.toMatch(/fetch\(\s*'\/api\/portal\/auth\/(login|logout)'/);
+
+    const help = readFileSync(path.join(root, 'public/help.html'), 'utf8');
+    const logoutAt = help.indexOf("fetch('/api/portal/auth/logout'");
+    expect(logoutAt).toBeGreaterThan(-1);
+    expect(help.slice(logoutAt, logoutAt + 400)).toContain('x-csrf-token');
+  });
+
+  it('reopens only 行貨退貨 while the rest of the platform stays paused', () => {
+    const read = (file: string) => readFileSync(path.join(root, file), 'utf8');
+    const returnPage = read('public/return.html');
+    const lookupPage = read('public/lookup.html');
+    const indexPage = read('public/index.html');
+    const publicRoutes = read('src/routes/public.ts');
+
+    // 退貨頁不再載入平台暫停腳本，開放與否只由退行貨申請期決定
+    expect(returnPage).not.toContain('/js/service-suspension.js');
+    expect(returnPage).toContain('<a href="/return.html" class="active" aria-current="page">行貨退貨</a>');
+    expect(indexPage).not.toContain('行貨退貨報數<span class="badge-paused">');
+
+    // 其他暫停服務仍然被前端暫停腳本鎖住
+    expect(read('public/urgent.html')).toContain('/js/service-suspension.js');
+    expect(read('public/sales.html')).toContain('/js/service-suspension.js');
+
+    // 後端：退貨提交／匯入走 return scope；修改逐單按類型判斷
+    const between = (from: string, to: string) => publicRoutes.slice(
+      publicRoutes.indexOf(from),
+      publicRoutes.indexOf(to),
+    );
+    const returnSubmit = between("'/return/submit'", "'/return/template'");
+    expect(returnSubmit).toContain('requireReturnWritesOpen');
+    expect(returnSubmit).not.toContain('requirePublicWritesOpen');
+    const returnImport = between("'/return/import'", "'/return/import/record'");
+    expect(returnImport).toContain('requireReturnWritesOpen');
+    expect(returnImport).not.toContain('requirePublicWritesOpen');
+    expect(publicRoutes).toContain('isPublicWriteSuspendedFor(existing.submission_type');
+
+    // 查詢／修改頁不再整體封鎖；非退貨單由 lookup.js 自行攔截
+    expect(lookupPage).not.toContain('/js/service-suspension.js');
+    expect(read('public/js/lookup.js')).toContain('suspendedFor(s.submission_type)');
+  });
 });

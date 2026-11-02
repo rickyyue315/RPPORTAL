@@ -193,7 +193,13 @@ Railway 原生 volume backup 只限 Pro workspace，所以備份改為在**同�
 
 6. **rpportal 服務**加同一組 `BACKUP_S3_*`（唯讀：後台顯示狀態 + 下載最新一份）。留空不會令 app 出錯，只會顯示「未接駁儲存空間」並停用下載掣。
 
-**成本**：運算約 US$0.03／月（每次約 90 秒 × 0.5 vCPU）、儲存約 110 MB ≈ US$0.002／月，全部食落 Hobby 的 US$5 credit。
+**成本**（2026-11-02 實測）：每次執行 **5 秒**，dump **2.1 MB**；14 份 ≈ 30 MB。運算約 US$0.0002／月、儲存約 US$0.0005／月 —— 全部食落 Hobby 的 US$5 credit，實際額外支出近乎 $0。
+
+**命名（唔好當成錯誤）**
+
+- Canvas 上的顯示名是 `ndrf-backup`，但**真正的 S3 bucket 名是 `enclosed-folder-ssboj6wxl`** —— `enclosed-folder` 是 Railway 建立時的預設名、`-ssboj6wxl` 是自動 hash。之後只改過顯示名，S3 名永久不變，Credentials 頁顯示長名屬正常。**改名會令現有憑證失效**，變數要重新寫入。
+- Project 內另有一個 `ndrf-backup-api-orphan` 的孤兒 bucket（早期用 API `bucketCreate` 建立，沒有 environment instance）。它在 canvas 隱形、0 物件、不收費、不影響運作，不要當成重複建立去處理。
+
 
 **運作方式**
 

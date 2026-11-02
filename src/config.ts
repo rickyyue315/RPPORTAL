@@ -92,9 +92,6 @@ export const config = {
   timezone: process.env.APP_TIMEZONE ?? 'Asia/Hong_Kong',
   publicWriteSuspensionEnabled: bool('PUBLIC_WRITE_SUSPENSION_ENABLED', true),
   publicWriteSuspensionAt: isoDate('PUBLIC_WRITE_SUSPENSION_AT', '2026-08-11T23:59:59+08:00'),
-  // 行貨退貨申報重開：退貨的提交／Excel 匯入／申請期內修改只跟隨
-  // return-schedule.json 的申請期，不再被平台暫停攔截；其他服務照舊暫停。
-  publicReturnWritesReopened: bool('PUBLIC_RETURN_WRITES_REOPENED', true),
   ipRetentionDays: int('IP_RETENTION_DAYS', 365),
   maxUploadBytes: int('MAX_UPLOAD_MB', 5) * 1024 * 1024,
   maxImportRows: int('MAX_IMPORT_ROWS', 1000),

@@ -1,14 +1,9 @@
-/* 平台暫停的前端鏡像。行貨退貨已重開：退貨頁改由 /api/public/return/schedule
-   的申請期控制，只有營運把 PUBLIC_RETURN_WRITES_REOPENED 關掉時才再由本腳本封鎖。 */
 (() => {
   const cfg = globalThis.NDRF_OPTIONS?.publicWriteSuspension ?? {
     // 後端設定未能載入時，仍以目前的停用時間作安全 fallback。
     enabled: true,
     suspendAt: '2026-08-11T23:59:59+08:00',
   };
-
-  const page = location.pathname.replace(/\/+$/, '');
-  if ((page === '/return.html' || page === '/return') && cfg.returnReopened) return;
 
   const suspendAt = new Date(cfg.suspendAt).getTime();
   function isSuspended() {

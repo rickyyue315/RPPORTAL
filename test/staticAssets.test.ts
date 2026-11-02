@@ -292,58 +292,42 @@ describe('static asset freshness', () => {
     expect(help.slice(logoutAt, logoutAt + 400)).toContain('x-csrf-token');
   });
 
-  it('reopens only 行貨退貨 while the rest of the platform stays paused', () => {
+  it('keeps 行貨退貨 paused together with the rest of the platform', () => {
     const read = (file: string) => readFileSync(path.join(root, file), 'utf8');
     const returnPage = read('public/return.html');
     const lookupPage = read('public/lookup.html');
     const indexPage = read('public/index.html');
     const publicRoutes = read('src/routes/public.ts');
 
-    // 退貨頁仍載入同一支暫停腳本，但它會因 returnReopened 自我豁免；
-    // 開放與否只由退行貨申請期決定（營運關掉開關時腳本會重新封鎖）。
+    // 退貨頁由平台暫停腳本接管，導覽與首頁卡片都要顯示暫停
     expect(returnPage).toContain('/js/service-suspension.js');
-    const suspensionScript = read('public/js/service-suspension.js');
-    expect(suspensionScript).toContain("page === '/return.html' || page === '/return'");
-    expect(suspensionScript).toContain('cfg.returnReopened');
-    expect(returnPage).toContain('<a href="/return.html" class="active" aria-current="page">行貨退貨</a>');
-    expect(indexPage).not.toContain('行貨退貨報數<span class="badge-paused">');
+    expect(returnPage).toContain(
+      '<a href="/return.html" class="active nav-paused" aria-current="page" title="暫停收單，仍可進入查看">行貨退貨 · 暫停</a>',
+    );
+    expect(indexPage).toContain('行貨退貨報數<span class="badge-paused">暫停收單</span>');
 
-    // 其他暫停服務仍然被前端暫停腳本鎖住
+    // 其他服務同樣被前端暫停腳本鎖住
     expect(read('public/urgent.html')).toContain('/js/service-suspension.js');
     expect(read('public/sales.html')).toContain('/js/service-suspension.js');
 
-    // 後端：退貨提交／匯入走 return scope；修改逐單按類型判斷
+    // 後端：退貨提交／匯入與修改全部落在平台暫停守衛之內，沒有逐類型豁免
     const between = (from: string, to: string) => publicRoutes.slice(
       publicRoutes.indexOf(from),
       publicRoutes.indexOf(to),
     );
     const returnSubmit = between("'/return/submit'", "'/return/template'");
-    expect(returnSubmit).toContain('requireReturnWritesOpen');
-    expect(returnSubmit).not.toContain('requirePublicWritesOpen');
+    expect(returnSubmit).toContain('requirePublicWritesOpen');
+    expect(returnSubmit).not.toContain('requireReturnWritesOpen');
     const returnImport = between("'/return/import'", "'/return/import/record'");
-    expect(returnImport).toContain('requireReturnWritesOpen');
-    expect(returnImport).not.toContain('requirePublicWritesOpen');
-    expect(publicRoutes).toContain('isPublicWriteSuspendedFor(existing.submission_type');
+    expect(returnImport).toContain('requirePublicWritesOpen');
+    expect(returnImport).not.toContain('requireReturnWritesOpen');
 
-    // 查詢／修改頁不再整體封鎖；非退貨單由 lookup.js 自行攔截
-    expect(lookupPage).not.toContain('/js/service-suspension.js');
-    expect(read('public/js/lookup.js')).toContain('suspendedFor(s.submission_type)');
+    // 查詢／修改頁整體封鎖，lookup.js 不再逐單判斷
+    expect(lookupPage).toContain('/js/service-suspension.js');
+    expect(read('public/js/lookup.js')).not.toContain('suspendedFor');
 
-    // 導覽不可再把「查詢／修改」標成暫停：查詢一直可用，退貨單更可在窗口內修改
-    for (const page of ['public/lookup.html', 'public/help.html', 'public/index.html', 'public/return.html']) {
-      const html = read(page);
-      expect(html, page).toMatch(/<a href="\/lookup\.html"[^>]*>查詢／修改<\/a>/);
-      expect(html, page).not.toMatch(/<a href="\/lookup\.html"[^>]*nav-paused/);
-    }
-
-    // 教學頁要同步：退貨章節不再寫暫停，並補上「現時修改安排」
-    const helpPage = read('public/help.html');
-    expect(helpPage).toContain('<h2 id="return-title">9. 行貨退貨報數</h2>');
-    expect(helpPage).toContain('現時修改安排');
-    expect(helpPage).toContain('行貨退貨已重新開放');
-    // 其餘服務的導覽仍要標示暫停，避免店舖誤以為可以提交
-    expect(read('public/urgent.html')).toContain('Urgent · 暫停');
-    expect(read('public/sales.html')).toContain('突發性銷售 · 暫停');
+    // 教學頁要跟得上：第 9 節標明暫停
+    expect(read('public/help.html')).toContain('9. 行貨退貨報數（暫停收單，仍可進入查看）');
   });
 
   it('shop-facing password boxes do not invite browser autofill, and trim before sending', () => {

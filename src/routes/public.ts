@@ -66,7 +66,7 @@ import {
 import { isValidIsoDate, RF_REMARK_REQUIRED_SITES, SKU_PATTERN, SKU_ERROR, validateBusinessFields, validateUrgentReason } from '../lib/validation.js';
 import { query, withTransaction } from '../db/pool.js';
 import { config } from '../config.js';
-import { isPublicWriteSuspendedFor, requirePublicWritesOpen, requireReturnWritesOpen, sendPublicWriteSuspended } from '../middleware/publicWriteSuspension.js';
+import { requirePublicWritesOpen } from '../middleware/publicWriteSuspension.js';
 import { generateApplicationNo } from '../lib/applicationNo.js';
 import { ipExpiryIso } from '../lib/ip.js';
 import { RETURN_SCHEDULE, RETURN_WINDOWS, getActiveReturnWindow, isReturnModificationOpen } from '../lib/returnSchedule.js';
@@ -713,7 +713,7 @@ publicRouter.get(
 publicRouter.post(
   '/return/submit',
   requireStoreSessionForPublic,
-  requireReturnWritesOpen,
+  requirePublicWritesOpen,
   publicSubmitLimiter,
   asyncHandler(async (req: Request, res: Response) => {
     const parsed = returnSubmitSchema.safeParse(req.body);
@@ -799,7 +799,7 @@ publicRouter.get(
 publicRouter.post(
   '/return/import',
   requireStoreSessionForPublic,
-  requireReturnWritesOpen,
+  requirePublicWritesOpen,
   excelImportLimiter,
   upload.single('file'),
   asyncHandler(async (req: Request, res: Response) => {
@@ -1749,6 +1749,7 @@ const modifySchema = z.object({
 /** POST /api/public/modify — modify before export lock. */
 publicRouter.post(
   '/modify',
+  requirePublicWritesOpen,
   publicSubmitLimiter,
   asyncHandler(async (req: Request, res: Response) => {
     const parsed = modifySchema.safeParse(req.body);
@@ -1778,14 +1779,8 @@ publicRouter.post(
       res.status(404).json({ error: '找不到相符申報' });
       return;
     }
-    if (existing.locked_at || existing.exported_at) {
+  if (existing.locked_at || existing.exported_at) {
       res.status(409).json({ error: '此申報已匯出並鎖定，不能修改' });
-      return;
-    }
-
-    // 平台暫停時只放行行貨退貨（實際開放期由退行貨時間表控制）；其餘申請維持只讀。
-    if (isPublicWriteSuspendedFor(existing.submission_type === 'return' ? 'return' : 'default')) {
-      sendPublicWriteSuspended(res);
       return;
     }
 

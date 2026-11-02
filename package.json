@@ -1,6 +1,6 @@
 {
   "name": "ndrf-portal",
-  "version": "2.6.12",
+  "version": "2.6.13",
   "private": true,
   "type": "module",
   "description": "NDRF request platform - public submission + admin backend",

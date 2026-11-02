@@ -286,15 +286,30 @@ const FIXTURE_WEEK2 = [
   FOOTER_ROW,
 ];
 
-async function upload(reportDate: string, rows: CellValue[][], extra: { note?: string; kind?: string } = {}) {
+async function uploadBuffer(reportDate: string, buffer: Buffer, extra: { note?: string; kind?: string } = {}) {
   return upsertShopStockBatch({
-    buffer: await buildNonStandardXlsx(rows),
+    buffer,
     reportDate,
     reportKind: extra.kind ?? 'weekly',
     note: extra.note ?? '',
     uploadedBy: 'tester',
     maxRows: 500,
   });
+}
+
+async function upload(reportDate: string, rows: CellValue[][], extra: { note?: string; kind?: string } = {}) {
+  return uploadBuffer(reportDate, await buildNonStandardXlsx(rows), extra);
+}
+
+/**
+ * 同一份主夾具只產生一次 xlsx。`contentHash` 是**檔案位元組**雜湊，而 JSZip
+ * 每次 build 都會寫入當下時間戳；重新 build 會得到不同位元組，重複上載就
+ * 不會被當成 no-op（CI 較慢、跨過 2 秒 DOS 時間戳就會紅）。
+ */
+let cachedMainBuffer: Buffer | null = null;
+async function mainBuffer(): Promise<Buffer> {
+  cachedMainBuffer ??= await buildNonStandardXlsx(FIXTURE_MAIN);
+  return cachedMainBuffer;
 }
 
 // ---------------------------------------------------------------------------
@@ -588,7 +603,7 @@ describe('shopStock service', () => {
     expect(first.batch.store_count).toBe(2);
     expect(first.batch.row_count).toBe(2);
 
-    const second = await upload('2026-11-08', FIXTURE_MAIN);
+    const second = await uploadBuffer('2026-11-08', await mainBuffer());
     expect(second.replaced).toBe(true);
     expect(second.noop).toBe(false);
     // 整批取代 = 舊批次刪掉、新批次新 id（audit 靠 replacedBatch 追溯舊 id / 行數 / hash）
@@ -627,7 +642,7 @@ describe('shopStock service', () => {
   it('treats an identical re-upload (same content_hash) as a no-op', async () => {
     const before = await getShopStockSummary();
     const beforePoint = before.series.find((p) => p.report_date === '2026-11-08')!;
-    const again = await upload('2026-11-08', FIXTURE_MAIN);
+    const again = await uploadBuffer('2026-11-08', await mainBuffer());
     expect(again.noop).toBe(true);
     expect(again.replaced).toBe(false);
 

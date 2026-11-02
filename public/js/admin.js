@@ -1219,6 +1219,24 @@
     return `${origin}${puLoginPath(user)}`;
   }
 
+  /**
+   * 店舖文案主體。WhatsApp 與電郵共用，只有最後一句（回覆渠道）不同，
+   * 避免兩套文案日後各走各路。
+   */
+  function puStoreLines(user, password) {
+    const head = [user.site_code, user.display_name]
+      .filter((part) => part && String(part).trim())
+      .join(' ');
+    return [
+      `${head} 主管/文員 您好：`.trim(),
+      'NDRF Portal 已為貴店設定專屬登入密碼，所有店舖不再共用同一組密碼，詳情如下：',
+      `帳號：${user.username}`,
+      `密碼：${password}`,
+      `登入網址：${puLoginUrl(user)}`,
+      `後備網址：${puLoginUrl(user, PU_BACKUP_ORIGIN)}`,
+    ];
+  }
+
   function puWhatsAppText(user, password) {
     const name = user.display_name || user.username;
     if (user.role === 'om') {
@@ -1234,15 +1252,8 @@
       ].join('\r\n');
     }
     return [
-      `${name} 您好：`,
-      '',
-      'NDRF Portal 已為您設定專屬登入帳號，詳情如下：',
-      `帳號：${user.username}`,
-      `密碼：${password}`,
-      `登入網址：${puLoginUrl(user)}`,
-      `後備網址：${puLoginUrl(user, PU_BACKUP_ORIGIN)}`,
-      '',
-      '此密碼只供您本人使用，請勿轉發。如無法登入，請與我們聯絡。',
+      ...puStoreLines(user, password),
+      '此密碼只供貴店使用，請勿轉發。如無法登入，請與我們聯絡。',
     ].join('\r\n');
   }
 
@@ -1257,15 +1268,7 @@
 
   function puMailText(user, password) {
     return [
-      `${user.site_code || ''} ${user.display_name || ''} 負責人您好：`.trim(),
-      '',
-      'NDRF Portal 已為貴店設定專屬登入密碼，詳情如下：',
-      '',
-      `帳號：${user.username}`,
-      `密碼：${password}`,
-      `登入網址：${puLoginUrl(user)}`,
-      `後備網址：${puLoginUrl(user, PU_BACKUP_ORIGIN)}`,
-      '',
+      ...puStoreLines(user, password),
       '此密碼只供貴店使用，請勿轉發。如無法登入，請回覆此郵件與我們聯絡。',
     ].join('\r\n');
   }

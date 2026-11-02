@@ -177,6 +177,16 @@
     return '＝ ';
   }
 
+  /**
+   * KPI 副標用的「較上期」增減文字（HTML）：紅＝上升（轉差）、綠＝下降（改善）。
+   * 顏色只落在這段文字，數值本身不上色，免得把升跌誤讀成「這個水平好壞」。
+   */
+  function deltaNote(value, label) {
+    const n = num(value);
+    if (n === null) return `${esc(label)} <span class="text-secondary">暫無對比</span>`;
+    return `${esc(label)} <span class="${wowClass(n)}">${wowArrow(n)}${fmtPt(n)}</span>`;
+  }
+
   function kindLabel(kind) {
     return KIND_LABELS[kind] || kind || '—';
   }
@@ -565,11 +575,12 @@
     }
   }
 
-  function kpiCard(label, value, sub, tone) {
+  function kpiCard(label, value, sub, tone, subNote) {
+    const subHtml = [sub || '', subNote || ''].filter(Boolean).join('｜');
     return `<div class="stk-kpi">
       <div class="stk-kpi-value ${tone || ''}">${value}</div>
       <div class="stk-kpi-label">${label}</div>
-      ${sub ? `<div class="stk-kpi-sub">${sub}</div>` : ''}
+      ${subHtml ? `<div class="stk-kpi-sub">${subHtml}</div>` : ''}
     </div>`;
   }
 
@@ -1388,8 +1399,9 @@
           ? '沒有有效 SKU Carry 或不良存貨 SKU 數據'
           : (ovsWow === null
             ? (prev ? '上期沒有有效數據' : '只有 1 期資料')
-            : `${wowArrow(ovsWow)}${fmtPt(ovsWow)}　較上一期${prevOvsRatio === null ? '' : `（上期 ${fmtRatio(prevOvsRatio)}）`}`),
-        ovsRatio === null ? '' : wowClass(ovsWow)),
+            : (prevOvsRatio === null ? '' : `上期 ${fmtRatio(prevOvsRatio)}`)),
+        '',
+        ovsRatio !== null && ovsWow !== null ? deltaNote(ovsWow, '較上期') : ''),
     ].join('');
     if (note) note.textContent = `最新 ${reportDate || '—'}｜走勢期間與上方佔比趨勢同步`;
   }

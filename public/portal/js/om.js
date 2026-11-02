@@ -273,6 +273,16 @@
     return `<span class="${deltaClass(value)}">${esc(text)}</span>`;
   }
 
+  /**
+   * KPI 副標用的「較上一期」增減文字（HTML）：綠＝下降（改善）、紅＝上升（轉差）。
+   * 顏色只落在這段文字，數值本身不上色。
+   */
+  function deltaNote(value, label) {
+    const n = num(value);
+    if (n === null) return `<span class="om-muted">${esc(label)}暫無對比</span>`;
+    return `${esc(label)} <span class="${deltaClass(n)}">${deltaArrow(n)}${fmtPt(n)}</span>`;
+  }
+
   function storeLabel(siteCode) {
     const store = state.stores.find((s) => s.site_code === siteCode);
     return store ? `${store.site_code} ${store.shop}` : siteCode;
@@ -361,7 +371,7 @@
           stock
             ? `${fmtDate(stock.report_date)}｜全公司 ${fmtRatio(stock.company_ratio)}`
             : '尚未有存貨報表',
-          stock ? deltaClass(stock.wow_delta_pt) : ''),
+          '', stock ? deltaNote(stock.wow_delta_pt, '較上一期') : ''),
       ].join('');
     }
 
@@ -419,11 +429,18 @@
     });
   }
 
-  function kpiCard(value, label, sub, tone) {
+  /**
+   * KPI 卡。
+   * tone：直接為「數值本身」上色，只限狀態類指標（例如待回覆數 > 0 標紅）。
+   * subNote：較上一期／較全公司的增減文字（HTML），顏色只套在這段文字上，
+   *          數值本身保持深色，避免把「較上期升跌」誤讀成「這個水平高過公司」。
+   */
+  function kpiCard(value, label, sub, tone, subNote) {
+    const subHtml = [sub ? esc(sub) : '', subNote || ''].filter(Boolean).join('｜');
     return `<div class="dash-kpi">
       <div class="dash-kpi-value ${tone || ''}">${esc(value)}</div>
       <div class="dash-kpi-label">${esc(label)}</div>
-      ${sub ? `<div class="dash-kpi-sub">${esc(sub)}</div>` : ''}
+      ${subHtml ? `<div class="dash-kpi-sub">${subHtml}</div>` : ''}
     </div>`;
   }
 
@@ -642,12 +659,11 @@
       : `全公司 ${fmtRatio(k.company_ovs_carry_ratio)}`;
     kpi.innerHTML = [
       kpiCard(fmtRatio(k.ratio), '不良存貨佔比',
-        `${fmtDate(k.report_date)}｜${scope}`, deltaClass(k.wow_delta_pt)),
+        `${fmtDate(k.report_date)}｜${scope}`, '', deltaNote(k.wow_delta_pt, '較上一期')),
       kpiCard(fmtMoney(k.total_excess), '不良存貨值（P90D 0 Sales）', scope),
       kpiCard(fmtMoney(k.total_soh), '店舖存貨值（CM）', scope),
       kpiCard(fmtRatio(k.ovs_carry_ratio), '不良存貨 SKU ÷ Carry SKU',
-        `${skuCounts}｜${companySku}`,
-        deltaClass(k.ovs_wow_delta_pt)),
+        `${skuCounts}｜${companySku}`, '', deltaNote(k.ovs_wow_delta_pt, '較上一期')),
     ].join('');
   }
 

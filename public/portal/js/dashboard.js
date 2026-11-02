@@ -108,12 +108,23 @@
     if (box) box.innerHTML = '';
   }
 
-  function kpiCard(label, value, sub, tone) {
+  function kpiCard(label, value, sub, tone, subNote) {
+    const subHtml = [sub || '', subNote || ''].filter(Boolean).join('｜');
     return `<div class="dash-kpi">
       <div class="dash-kpi-value ${tone || ''}">${value}</div>
       <div class="dash-kpi-label">${label}</div>
-      ${sub ? `<div class="dash-kpi-sub">${sub}</div>` : ''}
+      ${subHtml ? `<div class="dash-kpi-sub">${subHtml}</div>` : ''}
     </div>`;
+  }
+
+  /**
+   * KPI 副標用的增減文字（HTML）：綠＝下降（改善）、紅＝上升（轉差）。
+   * 顏色只落在這段文字，數值本身保持深色。
+   */
+  function deltaNote(value, label) {
+    const n = num(value);
+    if (n === null) return `<span class="dash-muted">${label}暫無對比</span>`;
+    return `${label} <span class="${wowClass(n)}">${wowArrow(n)}${fmtPt(n)}</span>`;
   }
 
   function renderEmpty(title, text) {
@@ -177,13 +188,15 @@
       kpiCard('不良存貨值（P90D 0 Sales）', fmtMoney(excess), dateLabel),
       kpiCard('不良存貨佔比', zeroDivide ? '—' : fmtRatio(ratio),
         zeroDivide ? '店舖存貨值為 0，佔比不適用'
-          : (wow === null ? '需要至少 2 期資料才有 WoW' : `${wowArrow(wow)}${fmtPt(wow)}　較上一期`),
-        wowClass(wow)),
+          : (wow === null ? '需要至少 2 期資料才有 WoW' : ''),
+        '',
+        wow === null ? '' : deltaNote(wow, '較上一期')),
       kpiCard('不良存貨 SKU ÷ 店內貨品 SKU', fmtRatio(ovsRatio),
         ovsRatio === null
           ? '需要有效 SKU Carry 數據'
-          : (companyOvs === null ? '全公司暫無對比數據' : `全公司 ${fmtRatio(companyOvs)}｜${wowArrow(vsCompany)}${fmtPt(vsCompany)}　較全公司`),
-        wowClass(vsCompany)),
+          : (companyOvs === null ? '全公司暫無對比數據' : `全公司 ${fmtRatio(companyOvs)}`),
+        '',
+        ovsRatio === null || vsCompany === null ? '' : deltaNote(vsCompany, '較全公司')),
     ].join('');
   }
 

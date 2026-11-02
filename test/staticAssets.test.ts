@@ -459,3 +459,19 @@ describe('門店主檔同步入口', () => {
     expect(read('src/config.ts')).toContain("bool('STORES_MASTER_SYNC_ON_BOOT', true)");
   });
 });
+
+describe('RP Connect 品牌鎖定', () => {
+  const read = (file: string) => readFileSync(path.join(root, file), 'utf8');
+
+  it('uses the full brand name in the password notification copy (WhatsApp / email)', () => {
+    // 派密碼係店舖第一次、亦係最多次接觸平台名稱的地方。公司另有系統叫「Portal」，
+    // 只寫「RP 連繫網」或舊寫法「RP 連繫網（RP Connect）」都容易被混淆，所以
+    // WhatsApp 內文、郵件內文、郵件主旨一律用全名。
+    const script = read('public/js/admin.js');
+    expect(script).toContain('RP Connect — RP 連繫網申報平台已為貴店設定專屬登入密碼');
+    expect(script).toContain('RP Connect — RP 連繫網申報平台已為您設定專屬登入帳號');
+    expect(script).toContain("encodeURIComponent('RP Connect — RP 連繫網申報平台 專屬登入密碼')");
+    // 舊寫法不可回頭
+    expect(script).not.toContain('RP 連繫網（RP Connect）');
+  });
+});

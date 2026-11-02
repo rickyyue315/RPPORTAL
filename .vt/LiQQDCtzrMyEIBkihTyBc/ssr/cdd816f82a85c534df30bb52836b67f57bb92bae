@@ -1,0 +1,45 @@
+const __vite_ssr_import_0__ = await __vite_ssr_import__("/src/db/pool.ts", {"importedNames":["query"]});
+
+const EXPORT_CONTENT_TYPE = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+Object.defineProperty(__vite_ssr_exports__, "EXPORT_CONTENT_TYPE", { enumerable: true, configurable: true, get(){ return EXPORT_CONTENT_TYPE }});
+async function archiveExportBatchFile(client, batchId, filename, buffer, retentionDays) {
+  await client.query(
+    `INSERT INTO export_batch_files
+       (export_batch_id, filename, content_type, file_data, file_size, expires_at)
+     VALUES ($1, $2, $3, $4, $5, now() + ($6::int * interval '1 day'))`,
+    [batchId, filename, EXPORT_CONTENT_TYPE, buffer, buffer.length, retentionDays]
+  );
+}
+Object.defineProperty(__vite_ssr_exports__, "archiveExportBatchFile", { enumerable: true, configurable: true, get(){ return archiveExportBatchFile }});
+async function cleanupExpiredExportFiles(client) {
+  const result = client ? await client.query(
+    `UPDATE export_batch_files
+          SET file_data = NULL
+        WHERE file_data IS NOT NULL
+          AND expires_at <= now()
+       RETURNING export_batch_id`
+  ) : await __vite_ssr_import_0__.query(
+    `UPDATE export_batch_files
+        SET file_data = NULL
+      WHERE file_data IS NOT NULL
+       AND expires_at <= now()
+     RETURNING export_batch_id`
+  );
+  const cleared = Math.max(result.rowCount ?? 0, result.rows.length);
+  if (cleared > 0) {
+    try {
+      if (client) {
+        await client.query("VACUUM (ANALYZE) export_batch_files");
+      } else {
+        await __vite_ssr_import_0__.query("VACUUM (ANALYZE) export_batch_files");
+      }
+    } catch (err) {
+      console.error("[cleanup] VACUUM export_batch_files failed", err);
+    }
+  }
+  return cleared;
+}
+Object.defineProperty(__vite_ssr_exports__, "cleanupExpiredExportFiles", { enumerable: true, configurable: true, get(){ return cleanupExpiredExportFiles }});
+
+//# sourceMappingSource=vite-node
+//# sourceMappingURL=data:application/json;charset=utf-8;base64,eyJ2ZXJzaW9uIjozLCJtYXBwaW5ncyI6IkFBQUEsQ0FBQTtBQUNzQjtBQUVmLE1BQU0sc0JBQXNCO2lKQUFBO0FBR25DLGVBQXNCLHVCQUNwQixRQUNBLFNBQ0EsVUFDQSxRQUNBLGVBQ2U7QUFDZixRQUFNLE9BQU87QUFBQSxJQUNYO0FBQUE7QUFBQTtBQUFBLElBR0EsQ0FBQyxTQUFTLFVBQVUscUJBQXFCLFFBQVEsT0FBTyxRQUFRLGFBQWE7QUFBQSxFQUMvRTtBQUNGO3VKQUFBO0FBR0EsZUFBc0IsMEJBQTBCLFFBQXlDO0FBQ3ZGLFFBQU0sU0FBUyxTQUNYLE1BQU0sT0FBTztBQUFBLElBQ2I7QUFBQTtBQUFBO0FBQUE7QUFBQTtBQUFBLEVBS0YsSUFDRSxNQUFNO0FBQUEsSUFDUjtBQUFBO0FBQUE7QUFBQTtBQUFBO0FBQUEsRUFLRjtBQUNBLFFBQU0sVUFBVSxLQUFLLElBQUksT0FBTyxZQUFZLEdBQUcsT0FBTyxLQUFLLE1BQU07QUFDakUsTUFBSSxVQUFVLEdBQUc7QUFFZixRQUFJO0FBQ0YsVUFBSSxRQUFRO0FBQ1YsY0FBTSxPQUFPLE1BQU0scUNBQXFDO0FBQUEsTUFDMUQsT0FBTztBQUNMLGNBQU0sNEJBQU0scUNBQXFDO0FBQUEsTUFDbkQ7QUFBQSxJQUNGLFNBQVMsS0FBSztBQUNaLGNBQVEsTUFBTSw4Q0FBOEMsR0FBRztBQUFBLElBQ2pFO0FBQUEsRUFDRjtBQUNBLFNBQU87QUFDVDs2SkFBQSIsIm5hbWVzIjpbXSwiaWdub3JlTGlzdCI6W10sInNvdXJjZXMiOlsiZXhwb3J0RmlsZXMudHMiXSwic291cmNlc0NvbnRlbnQiOlsiaW1wb3J0IHR5cGUgcGcgZnJvbSAncGcnO1xuaW1wb3J0IHsgcXVlcnkgfSBmcm9tICcuLi9kYi9wb29sLmpzJztcblxuZXhwb3J0IGNvbnN0IEVYUE9SVF9DT05URU5UX1RZUEUgPSAnYXBwbGljYXRpb24vdm5kLm9wZW54bWxmb3JtYXRzLW9mZmljZWRvY3VtZW50LnNwcmVhZHNoZWV0bWwuc2hlZXQnO1xuXG4vKiogU3RvcmUgdGhlIGV4YWN0IGZvcm1hbCBleHBvcnQgc28gYSBjb21taXR0ZWQgbG9jayBjYW4gYWx3YXlzIGJlIHJlY292ZXJlZC4gKi9cbmV4cG9ydCBhc3luYyBmdW5jdGlvbiBhcmNoaXZlRXhwb3J0QmF0Y2hGaWxlKFxuICBjbGllbnQ6IHBnLlBvb2xDbGllbnQsXG4gIGJhdGNoSWQ6IHN0cmluZyxcbiAgZmlsZW5hbWU6IHN0cmluZyxcbiAgYnVmZmVyOiBCdWZmZXIsXG4gIHJldGVudGlvbkRheXM6IG51bWJlcixcbik6IFByb21pc2U8dm9pZD4ge1xuICBhd2FpdCBjbGllbnQucXVlcnkoXG4gICAgYElOU0VSVCBJTlRPIGV4cG9ydF9iYXRjaF9maWxlc1xuICAgICAgIChleHBvcnRfYmF0Y2hfaWQsIGZpbGVuYW1lLCBjb250ZW50X3R5cGUsIGZpbGVfZGF0YSwgZmlsZV9zaXplLCBleHBpcmVzX2F0KVxuICAgICBWQUxVRVMgKCQxLCAkMiwgJDMsICQ0LCAkNSwgbm93KCkgKyAoJDY6OmludCAqIGludGVydmFsICcxIGRheScpKWAsXG4gICAgW2JhdGNoSWQsIGZpbGVuYW1lLCBFWFBPUlRfQ09OVEVOVF9UWVBFLCBidWZmZXIsIGJ1ZmZlci5sZW5ndGgsIHJldGVudGlvbkRheXNdLFxuICApO1xufVxuXG4vKiogRHJvcCB0aGUgbGFyZ2UgYmluYXJ5IHBheWxvYWQgd2hpbGUga2VlcGluZyBiYXRjaCBtZXRhZGF0YSBhbmQgYXVkaXRhYmlsaXR5LiAqL1xuZXhwb3J0IGFzeW5jIGZ1bmN0aW9uIGNsZWFudXBFeHBpcmVkRXhwb3J0RmlsZXMoY2xpZW50PzogcGcuUG9vbENsaWVudCk6IFByb21pc2U8bnVtYmVyPiB7XG4gIGNvbnN0IHJlc3VsdCA9IGNsaWVudFxuICAgID8gYXdhaXQgY2xpZW50LnF1ZXJ5KFxuICAgICAgYFVQREFURSBleHBvcnRfYmF0Y2hfZmlsZXNcbiAgICAgICAgICBTRVQgZmlsZV9kYXRhID0gTlVMTFxuICAgICAgICBXSEVSRSBmaWxlX2RhdGEgSVMgTk9UIE5VTExcbiAgICAgICAgICBBTkQgZXhwaXJlc19hdCA8PSBub3coKVxuICAgICAgIFJFVFVSTklORyBleHBvcnRfYmF0Y2hfaWRgLFxuICAgIClcbiAgICA6IGF3YWl0IHF1ZXJ5KFxuICAgIGBVUERBVEUgZXhwb3J0X2JhdGNoX2ZpbGVzXG4gICAgICAgIFNFVCBmaWxlX2RhdGEgPSBOVUxMXG4gICAgICBXSEVSRSBmaWxlX2RhdGEgSVMgTk9UIE5VTExcbiAgICAgICBBTkQgZXhwaXJlc19hdCA8PSBub3coKVxuICAgICBSRVRVUk5JTkcgZXhwb3J0X2JhdGNoX2lkYCxcbiAgKTtcbiAgY29uc3QgY2xlYXJlZCA9IE1hdGgubWF4KHJlc3VsdC5yb3dDb3VudCA/PyAwLCByZXN1bHQucm93cy5sZW5ndGgpO1xuICBpZiAoY2xlYXJlZCA+IDApIHtcbiAgICAvLyBOVUxMLWluZyBCWVRFQSBkb2VzIG5vdCBmcmVlIGRpc2sgc3BhY2UgdW50aWwgdGhlIHRhYmxlIGlzIHZhY3V1bWVkLlxuICAgIHRyeSB7XG4gICAgICBpZiAoY2xpZW50KSB7XG4gICAgICAgIGF3YWl0IGNsaWVudC5xdWVyeSgnVkFDVVVNIChBTkFMWVpFKSBleHBvcnRfYmF0Y2hfZmlsZXMnKTtcbiAgICAgIH0gZWxzZSB7XG4gICAgICAgIGF3YWl0IHF1ZXJ5KCdWQUNVVU0gKEFOQUxZWkUpIGV4cG9ydF9iYXRjaF9maWxlcycpO1xuICAgICAgfVxuICAgIH0gY2F0Y2ggKGVycikge1xuICAgICAgY29uc29sZS5lcnJvcignW2NsZWFudXBdIFZBQ1VVTSBleHBvcnRfYmF0Y2hfZmlsZXMgZmFpbGVkJywgZXJyKTtcbiAgICB9XG4gIH1cbiAgcmV0dXJuIGNsZWFyZWQ7XG59XG4iXSwiZmlsZSI6Ii9zcmMvc2VydmljZXMvZXhwb3J0RmlsZXMudHMifQ==

@@ -1,0 +1,35 @@
+const __vite_ssr_import_0__ = await __vite_ssr_import__("express-rate-limit", {"importedNames":["rateLimit"]});
+const __vite_ssr_import_1__ = await __vite_ssr_import__("/src/middleware/postgresRateLimitStore.ts", {"importedNames":["PostgresRateLimitStore"]});
+
+
+const keyGenerator = (req) => {
+  const ip = req.ip ?? req.socket.remoteAddress ?? "unknown";
+  return `${ip}:${req.path}`;
+};
+function createLimiter(windowMs, limit, message) {
+  return __vite_ssr_import_0__.rateLimit({
+    windowMs,
+    limit,
+    standardHeaders: "draft-7",
+    legacyHeaders: false,
+    keyGenerator,
+    store: new __vite_ssr_import_1__.PostgresRateLimitStore(windowMs),
+    skip: () => process.env.NODE_ENV === "test",
+    message: { error: message }
+  });
+}
+const publicSubmitLimiter = createLimiter(15 * 60 * 1e3, 50, "提交次數過多，請稍後再試");
+Object.defineProperty(__vite_ssr_exports__, "publicSubmitLimiter", { enumerable: true, configurable: true, get(){ return publicSubmitLimiter }});
+const publicLookupLimiter = createLimiter(15 * 60 * 1e3, 120, "查詢次數過多，請稍後再試");
+Object.defineProperty(__vite_ssr_exports__, "publicLookupLimiter", { enumerable: true, configurable: true, get(){ return publicLookupLimiter }});
+const excelImportLimiter = createLimiter(60 * 60 * 1e3, 30, "匯入次數過多，請稍後再試");
+Object.defineProperty(__vite_ssr_exports__, "excelImportLimiter", { enumerable: true, configurable: true, get(){ return excelImportLimiter }});
+const adminLoginLimiter = createLimiter(15 * 60 * 1e3, 20, "登入嘗試次數過多，請稍後再試");
+Object.defineProperty(__vite_ssr_exports__, "adminLoginLimiter", { enumerable: true, configurable: true, get(){ return adminLoginLimiter }});
+const adminActionLimiter = createLimiter(15 * 60 * 1e3, 200, "操作次數過多，請稍後再試");
+Object.defineProperty(__vite_ssr_exports__, "adminActionLimiter", { enumerable: true, configurable: true, get(){ return adminActionLimiter }});
+const excelExportLimiter = createLimiter(60 * 60 * 1e3, 60, "匯出次數過多，請稍後再試");
+Object.defineProperty(__vite_ssr_exports__, "excelExportLimiter", { enumerable: true, configurable: true, get(){ return excelExportLimiter }});
+
+//# sourceMappingSource=vite-node
+//# sourceMappingURL=data:application/json;charset=utf-8;base64,eyJ2ZXJzaW9uIjozLCJtYXBwaW5ncyI6IkFBQUEsQ0FBQTs7QUFBMEI7QUFFYTtBQUV2QyxNQUFNLGVBQWUsQ0FBQyxRQUF5QjtBQUM3QyxRQUFNLEtBQUssSUFBSSxNQUFNLElBQUksT0FBTyxpQkFBaUI7QUFDakQsU0FBTyxHQUFHLEVBQUUsSUFBSSxJQUFJLElBQUk7QUFDMUI7QUFFQSxTQUFTLGNBQWMsVUFBa0IsT0FBZSxTQUFpQjtBQUN2RSxTQUFPLGdDQUFVO0FBQUEsSUFDZjtBQUFBLElBQ0E7QUFBQSxJQUNBLGlCQUFpQjtBQUFBLElBQ2pCLGVBQWU7QUFBQSxJQUNmO0FBQUEsSUFDQSxPQUFPLElBQUksNkNBQXVCLFFBQVE7QUFBQSxJQUMxQyxNQUFNLE1BQU0sUUFBUSxJQUFJLGFBQWE7QUFBQSxJQUNyQyxTQUFTLEVBQUUsT0FBTyxRQUFRO0FBQUEsRUFDNUIsQ0FBQztBQUNIO0FBRU8sTUFBTSxzQkFBc0IsY0FBYyxLQUFLLEtBQUssS0FBTSxJQUFJLGNBQWM7aUpBQUE7QUFFNUUsTUFBTSxzQkFBc0IsY0FBYyxLQUFLLEtBQUssS0FBTSxLQUFLLGNBQWM7aUpBQUE7QUFFN0UsTUFBTSxxQkFBcUIsY0FBYyxLQUFLLEtBQUssS0FBTSxJQUFJLGNBQWM7K0lBQUE7QUFFM0UsTUFBTSxvQkFBb0IsY0FBYyxLQUFLLEtBQUssS0FBTSxJQUFJLGdCQUFnQjs2SUFBQTtBQUU1RSxNQUFNLHFCQUFxQixjQUFjLEtBQUssS0FBSyxLQUFNLEtBQUssY0FBYzsrSUFBQTtBQUU1RSxNQUFNLHFCQUFxQixjQUFjLEtBQUssS0FBSyxLQUFNLElBQUksY0FBYzsrSUFBQSIsIm5hbWVzIjpbXSwiaWdub3JlTGlzdCI6W10sInNvdXJjZXMiOlsicmF0ZUxpbWl0cy50cyJdLCJzb3VyY2VzQ29udGVudCI6WyJpbXBvcnQgeyByYXRlTGltaXQgfSBmcm9tICdleHByZXNzLXJhdGUtbGltaXQnO1xuaW1wb3J0IHR5cGUgeyBSZXF1ZXN0IH0gZnJvbSAnZXhwcmVzcyc7XG5pbXBvcnQgeyBQb3N0Z3Jlc1JhdGVMaW1pdFN0b3JlIH0gZnJvbSAnLi9wb3N0Z3Jlc1JhdGVMaW1pdFN0b3JlLmpzJztcblxuY29uc3Qga2V5R2VuZXJhdG9yID0gKHJlcTogUmVxdWVzdCk6IHN0cmluZyA9PiB7XG4gIGNvbnN0IGlwID0gcmVxLmlwID8/IHJlcS5zb2NrZXQucmVtb3RlQWRkcmVzcyA/PyAndW5rbm93bic7XG4gIHJldHVybiBgJHtpcH06JHtyZXEucGF0aH1gO1xufTtcblxuZnVuY3Rpb24gY3JlYXRlTGltaXRlcih3aW5kb3dNczogbnVtYmVyLCBsaW1pdDogbnVtYmVyLCBtZXNzYWdlOiBzdHJpbmcpIHtcbiAgcmV0dXJuIHJhdGVMaW1pdCh7XG4gICAgd2luZG93TXMsXG4gICAgbGltaXQsXG4gICAgc3RhbmRhcmRIZWFkZXJzOiAnZHJhZnQtNycsXG4gICAgbGVnYWN5SGVhZGVyczogZmFsc2UsXG4gICAga2V5R2VuZXJhdG9yLFxuICAgIHN0b3JlOiBuZXcgUG9zdGdyZXNSYXRlTGltaXRTdG9yZSh3aW5kb3dNcyksXG4gICAgc2tpcDogKCkgPT4gcHJvY2Vzcy5lbnYuTk9ERV9FTlYgPT09ICd0ZXN0JyxcbiAgICBtZXNzYWdlOiB7IGVycm9yOiBtZXNzYWdlIH0sXG4gIH0pO1xufVxuXG5leHBvcnQgY29uc3QgcHVibGljU3VibWl0TGltaXRlciA9IGNyZWF0ZUxpbWl0ZXIoMTUgKiA2MCAqIDEwMDAsIDUwLCAn5o+Q5Lqk5qyh5pW46YGO5aSa77yM6KuL56iN5b6M5YaN6KmmJyk7XG5cbmV4cG9ydCBjb25zdCBwdWJsaWNMb29rdXBMaW1pdGVyID0gY3JlYXRlTGltaXRlcigxNSAqIDYwICogMTAwMCwgMTIwLCAn5p+l6Kmi5qyh5pW46YGO5aSa77yM6KuL56iN5b6M5YaN6KmmJyk7XG5cbmV4cG9ydCBjb25zdCBleGNlbEltcG9ydExpbWl0ZXIgPSBjcmVhdGVMaW1pdGVyKDYwICogNjAgKiAxMDAwLCAzMCwgJ+WMr+WFpeasoeaVuOmBjuWkmu+8jOiri+eojeW+jOWGjeippicpO1xuXG5leHBvcnQgY29uc3QgYWRtaW5Mb2dpbkxpbWl0ZXIgPSBjcmVhdGVMaW1pdGVyKDE1ICogNjAgKiAxMDAwLCAyMCwgJ+eZu+WFpeWYl+ippuasoeaVuOmBjuWkmu+8jOiri+eojeW+jOWGjeippicpO1xuXG5leHBvcnQgY29uc3QgYWRtaW5BY3Rpb25MaW1pdGVyID0gY3JlYXRlTGltaXRlcigxNSAqIDYwICogMTAwMCwgMjAwLCAn5pON5L2c5qyh5pW46YGO5aSa77yM6KuL56iN5b6M5YaN6KmmJyk7XG5cbmV4cG9ydCBjb25zdCBleGNlbEV4cG9ydExpbWl0ZXIgPSBjcmVhdGVMaW1pdGVyKDYwICogNjAgKiAxMDAwLCA2MCwgJ+WMr+WHuuasoeaVuOmBjuWkmu+8jOiri+eojeW+jOWGjeippicpO1xuIl0sImZpbGUiOiIvc3JjL21pZGRsZXdhcmUvcmF0ZUxpbWl0cy50cyJ9

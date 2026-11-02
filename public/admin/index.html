@@ -727,7 +727,7 @@
 
             <div class="d-flex gap-2 mb-2 flex-wrap align-items-end">
               <div style="min-width:260px;flex:1"><label class="form-label" for="dsku_subject">事項主題 <span class="text-danger">*</span></label><input type="text" id="dsku_subject" class="form-control" maxlength="200" placeholder="例：指定 SKU 存貨年期確認（10 月）"></div>
-              <div><label class="form-label" for="dsku_matter_type">事項類型</label><select id="dsku_matter_type" class="form-select"><option value="stock_year_breakdown">年期／可調撥件數</option></select></div>
+              <div style="min-width:190px"><label class="form-label" for="dsku_matter_type">事項類型</label><input type="text" id="dsku_matter_type" class="form-control" list="dsku_matter_type_options" maxlength="60" placeholder="例：陳列位置調查" autocomplete="off"><datalist id="dsku_matter_type_options"><option value="年期／可調撥件數"></option><option value="陳列位置調查"></option><option value="店舖陳列回報"></option><option value="存貨核對"></option><option value="包裝／陳列品回收"></option></datalist><div class="form-hint text-secondary small">可自己打，或留空按回覆內容自動命名</div></div>
               <div><label class="form-label" for="dsku_due_at">截止日期及時間（香港時間）</label><input type="datetime-local" id="dsku_due_at" class="form-control"></div>
               <div style="min-width:180px"><label class="form-label" for="dsku_reference">參考編號（選填）</label><input type="text" id="dsku_reference" class="form-control" maxlength="100" placeholder="例：RP-2026-1042"></div>
             </div>

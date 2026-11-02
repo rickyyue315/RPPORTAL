@@ -26,21 +26,26 @@
     return `<div class="alert ${kind}">${message}</div>`;
   }
 
-  async function getCsrf() {
-    if (!csrf) {
+  async function getCsrf(force = false) {
+    if (force || !csrf) {
       const d = await fetch('/api/csrf', { credentials: 'same-origin' }).then((r) => r.json());
       csrf = d.token;
     }
     return csrf;
   }
 
-  async function aFetch(url, opts = {}) {
+  async function aFetch(url, opts = {}, retried = false) {
     const token = await getCsrf();
     const headers = { ...(opts.headers || {}), 'x-csrf-token': token };
     if (opts.body && !(opts.body instanceof FormData)) headers['Content-Type'] = 'application/json';
-    const res = await fetch(url, { ...opts, credentials: 'same-origin' });
+    const res = await fetch(url, { ...opts, headers, credentials: 'same-origin' });
     const data = await res.json().catch(() => null);
     if (!res.ok) {
+      // Cookie 過期／被其他分頁換過：重新取 token 再試一次（FormData 可以重用）
+      if (res.status === 403 && !retried) {
+        await getCsrf(true);
+        return aFetch(url, opts, true);
+      }
       const err = new Error(data?.error || `請求失敗 (${res.status})`);
       err.data = data;
       err.status = res.status;
@@ -66,6 +71,16 @@
   function pageSize() {
     const v = Number($('dsku_page_size')?.value || 20);
     return [20, 50, 100].includes(v) ? v : 20;
+  }
+
+  /** 事項類型：可自由輸入；留空時按「回覆內容」自動命名 */
+  function matterTypeValue() {
+    const typed = ($('dsku_matter_type')?.value || '').trim();
+    if (typed) return typed;
+    const mode = $('dsku_reply_mode')?.value || 'auto';
+    if (mode === 'custom') return '自定欄位回覆';
+    if (mode === 'mixed') return '年期 + 自定欄位';
+    return 'stock_year_breakdown';
   }
 
   function fmtStock(value) {
@@ -920,7 +935,7 @@
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           subject,
-          matter_type: $('dsku_matter_type').value || 'stock_year_breakdown',
+          matter_type: matterTypeValue(),
           due_at: $('dsku_due_at').value || '',
           reference: ($('dsku_reference').value || '').trim(),
           instructions: ($('dsku_instructions').value || '').trim(),
@@ -1166,7 +1181,7 @@
     }
     const fd = new FormData();
     fd.append('subject', subject);
-    fd.append('matter_type', $('dsku_matter_type').value || 'stock_year_breakdown');
+    fd.append('matter_type', matterTypeValue());
     fd.append('due_at', $('dsku_due_at').value || '');
     fd.append('reference', ($('dsku_reference').value || '').trim());
     fd.append('instructions', ($('dsku_instructions').value || '').trim());

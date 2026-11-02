@@ -189,6 +189,13 @@ describe('static asset freshness', () => {
     expect(adminScript).toContain('dsku-cf-input');
     const omScript = readFileSync(path.join(root, 'public', 'portal', 'js', 'om-designated-sku.js'), 'utf8');
     expect(omScript).toContain('ds-cf-input');
+
+    // CSRF：aFetch 一定要真正送出 x-csrf-token header（曾漏傳 headers，整個分頁寫入 403）
+    expect(adminScript).toContain("'x-csrf-token': token");
+    expect(adminScript).toMatch(/fetch\(url, \{ \.\.\.opts, headers, credentials/);
+    // 事項類型可自由輸入（曾只有一個選項）
+    expect(adminHtml).toContain('list="dsku_matter_type_options"');
+    expect(adminScript).toContain('matterTypeValue()');
   });
 
   it('keeps the admin tabs consolidated (匯出批次 → 匯出, 帳戶／審批 → 系統)', () => {

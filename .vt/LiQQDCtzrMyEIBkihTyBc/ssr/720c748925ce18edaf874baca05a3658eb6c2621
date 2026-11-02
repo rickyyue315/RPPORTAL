@@ -1,0 +1,14 @@
+function getUploadedFile(req) {
+  return req.file;
+}
+Object.defineProperty(__vite_ssr_exports__, "getUploadedFile", { enumerable: true, configurable: true, get(){ return getUploadedFile }});
+function validateUploadedXlsx(file, maxBytes, extensionError) {
+  if (!file) return { status: 400, message: "請上載 Excel 檔案" };
+  if (!/\.xlsx$/i.test(file.originalname)) return { status: 400, message: extensionError };
+  if (file.size > maxBytes) return { status: 400, message: `檔案超過 ${maxBytes / 1024 / 1024}MB 限制` };
+  return null;
+}
+Object.defineProperty(__vite_ssr_exports__, "validateUploadedXlsx", { enumerable: true, configurable: true, get(){ return validateUploadedXlsx }});
+
+//# sourceMappingSource=vite-node
+//# sourceMappingURL=data:application/json;charset=utf-8;base64,eyJ2ZXJzaW9uIjozLCJtYXBwaW5ncyI6IkFBRU8sU0FBUyxnQkFBZ0IsS0FBK0M7QUFDN0UsU0FBUSxJQUFpRDtBQUMzRDt5SUFBQTtBQUVPLFNBQVMscUJBQ2QsTUFDQSxVQUNBLGdCQUM0QztBQUM1QyxNQUFJLENBQUMsS0FBTSxRQUFPLEVBQUUsUUFBUSxLQUFLLFNBQVMsZUFBZTtBQUN6RCxNQUFJLENBQUMsV0FBVyxLQUFLLEtBQUssWUFBWSxFQUFHLFFBQU8sRUFBRSxRQUFRLEtBQUssU0FBUyxlQUFlO0FBQ3ZGLE1BQUksS0FBSyxPQUFPLFNBQVUsUUFBTyxFQUFFLFFBQVEsS0FBSyxTQUFTLFFBQVEsV0FBVyxPQUFPLElBQUksUUFBUTtBQUMvRixTQUFPO0FBQ1Q7bUpBQUEiLCJuYW1lcyI6W10sImlnbm9yZUxpc3QiOltdLCJzb3VyY2VzIjpbInVwbG9hZC50cyJdLCJzb3VyY2VzQ29udGVudCI6WyJpbXBvcnQgdHlwZSB7IFJlcXVlc3QgfSBmcm9tICdleHByZXNzJztcblxuZXhwb3J0IGZ1bmN0aW9uIGdldFVwbG9hZGVkRmlsZShyZXE6IFJlcXVlc3QpOiBFeHByZXNzLk11bHRlci5GaWxlIHwgdW5kZWZpbmVkIHtcbiAgcmV0dXJuIChyZXEgYXMgUmVxdWVzdCAmIHsgZmlsZT86IEV4cHJlc3MuTXVsdGVyLkZpbGUgfSkuZmlsZTtcbn1cblxuZXhwb3J0IGZ1bmN0aW9uIHZhbGlkYXRlVXBsb2FkZWRYbHN4KFxuICBmaWxlOiBFeHByZXNzLk11bHRlci5GaWxlIHwgdW5kZWZpbmVkLFxuICBtYXhCeXRlczogbnVtYmVyLFxuICBleHRlbnNpb25FcnJvcjogc3RyaW5nLFxuKTogeyBzdGF0dXM6IG51bWJlcjsgbWVzc2FnZTogc3RyaW5nIH0gfCBudWxsIHtcbiAgaWYgKCFmaWxlKSByZXR1cm4geyBzdGF0dXM6IDQwMCwgbWVzc2FnZTogJ+iri+S4iui8iSBFeGNlbCDmqpTmoYgnIH07XG4gIGlmICghL1xcLnhsc3gkL2kudGVzdChmaWxlLm9yaWdpbmFsbmFtZSkpIHJldHVybiB7IHN0YXR1czogNDAwLCBtZXNzYWdlOiBleHRlbnNpb25FcnJvciB9O1xuICBpZiAoZmlsZS5zaXplID4gbWF4Qnl0ZXMpIHJldHVybiB7IHN0YXR1czogNDAwLCBtZXNzYWdlOiBg5qqU5qGI6LaF6YGOICR7bWF4Qnl0ZXMgLyAxMDI0IC8gMTAyNH1NQiDpmZDliLZgIH07XG4gIHJldHVybiBudWxsO1xufVxuIl0sImZpbGUiOiIvc3JjL2xpYi91cGxvYWQudHMifQ==

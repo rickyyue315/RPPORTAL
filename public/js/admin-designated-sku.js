@@ -854,6 +854,25 @@
     return value ? String(value).replace(' ', 'T').slice(0, 16) : '';
   }
 
+  /** 截止時間一律對齊 15 分鐘（00／15／30／45）。
+      input 本身已設 step="900"，瀏覽器只提供四個分鐘選項；
+      這裡再接住手動輸入或舊資料，避免出現 18:07 這類分鐘。 */
+  const DUE_STEP_MIN = 15;
+  function snapDueInput(input) {
+    if (!input || !input.value) return;
+    const m = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})/.exec(input.value);
+    if (!m) return;
+    const minutes = Number(m[5]);
+    if (minutes % DUE_STEP_MIN === 0) return;
+    // 用本地時間建 Date，向上取整到下一段（截止時間寧願遲少少，不可提早）；
+    // 60 分會自動進位到下一個鐘／日
+    const dt = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]), Number(m[4]), 0, 0, 0);
+    if (Number.isNaN(dt.getTime())) return;
+    dt.setMinutes(Math.ceil(minutes / DUE_STEP_MIN) * DUE_STEP_MIN);
+    const pad = (n) => String(n).padStart(2, '0');
+    input.value = `${dt.getFullYear()}-${pad(dt.getMonth() + 1)}-${pad(dt.getDate())}T${pad(dt.getHours())}:${pad(dt.getMinutes())}`;
+  }
+
   /* ---------------- 人手輸入 ---------------- */
 
   function addManualRow(row = {}) {
@@ -1263,6 +1282,13 @@
   function init() {
     if (!$('panel-designated-sku')) return;
     AdminPager.bindSize($('dsku_page_size'), PAGE_SIZE_KEY, () => loadBatches(true));
+    // 截止時間只接受 00／15／30／45（建立事項 + 編輯批次兩個入口）
+    ['dsku_due_at', 'dsku_batch_due'].forEach((id) => {
+      const input = $(id);
+      if (!input) return;
+      input.addEventListener('change', () => snapDueInput(input));
+      input.addEventListener('blur', () => snapDueInput(input));
+    });
     $('btn_dsku_upload').addEventListener('click', uploadBatch);
     $('btn_dsku_refresh').addEventListener('click', async () => { await loadBatches(); await loadSummary(); });
     $('btn_dsku_detail_close').addEventListener('click', closeDetail);

@@ -1149,6 +1149,55 @@ body.stk-modal-open { overflow: hidden; }
 .dsku-fields-table .form-control-sm,
 .dsku-fields-table .form-select-sm { font-size: 12.5px; }
 
+/* ---------------------------------------------------------------------------
+   建立事項：表單欄位格
+   原本用 .d-flex + 行內 min-width + align-items-end 排四欄：
+   「事項類型」多一行提示字令該欄變高，底部對齊就把 input 連 label 一齊推上去，
+   提示字又會溢出到隔鄰「截止」欄下面；欄寬由內容決定，視窗一窄就擠爆。
+   改用 grid：欄寬可預期、一律頂部對齊，提示字自動留在自己欄內。
+--------------------------------------------------------------------------- */
+.dsku-fields-grid {
+  display: grid;
+  gap: 14px 18px;
+  align-items: start;
+  margin: 0 0 10px;
+}
+.dsku-fields-grid--meta {
+  grid-template-columns:
+    minmax(240px, 2fr)    /* 事項主題（主欄） */
+    minmax(180px, 1fr)    /* 事項類型 */
+    minmax(196px, 1.05fr) /* 截止日期及時間 */
+    minmax(150px, .9fr);  /* 參考編號 */
+}
+.dsku-fields-grid--body {
+  grid-template-columns: minmax(0, 1fr) minmax(230px, .42fr);
+}
+.dsku-field { min-width: 0; }
+.dsku-field > .form-label {
+  margin-bottom: 4px;
+  font-size: 12.5px;
+  font-weight: 600;
+  line-height: 1.5;
+  color: #3f5a75;
+  white-space: nowrap;
+}
+.dsku-field > .form-control { width: 100%; }
+.dsku-field .dsku-label-hint {
+  margin-left: 6px;
+  font-size: 11px;
+  font-weight: 400;
+  color: #9aabbd;
+}
+.dsku-form-note { margin-left: 2px; font-size: 11.5px; line-height: 1.5; }
+
+@media (max-width: 991.98px) {
+  .dsku-fields-grid--meta { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .dsku-fields-grid--body { grid-template-columns: minmax(0, 1fr); }
+}
+@media (max-width: 575.98px) {
+  .dsku-fields-grid--meta { grid-template-columns: minmax(0, 1fr); }
+}
+
 /* 指定 SKU 回覆：通用彈窗（補加／修改 SKU、編輯批次資料） */
 .dsku-overlay {
   position: fixed;

@@ -725,16 +725,35 @@
               </button>
             </div>
 
-            <div class="d-flex gap-2 mb-2 flex-wrap align-items-end">
-              <div style="min-width:260px;flex:1"><label class="form-label" for="dsku_subject">事項主題 <span class="text-danger">*</span></label><input type="text" id="dsku_subject" class="form-control" maxlength="200" placeholder="例：指定 SKU 存貨年期確認（10 月）"></div>
-              <div style="min-width:190px"><label class="form-label" for="dsku_matter_type">事項類型</label><input type="text" id="dsku_matter_type" class="form-control" list="dsku_matter_type_options" maxlength="60" placeholder="例：陳列位置調查" autocomplete="off"><datalist id="dsku_matter_type_options"><option value="年期／可調撥件數"></option><option value="陳列位置調查"></option><option value="店舖陳列回報"></option><option value="存貨核對"></option><option value="包裝／陳列品回收"></option></datalist><div class="form-hint text-secondary small">可自己打，或留空按回覆內容自動命名</div></div>
-              <div><label class="form-label" for="dsku_due_at">截止日期及時間（香港時間）</label><input type="datetime-local" id="dsku_due_at" class="form-control"></div>
-              <div style="min-width:180px"><label class="form-label" for="dsku_reference">參考編號（選填）</label><input type="text" id="dsku_reference" class="form-control" maxlength="100" placeholder="例：RP-2026-1042"></div>
+            <div class="dsku-fields-grid dsku-fields-grid--meta">
+              <div class="dsku-field">
+                <label class="form-label" for="dsku_subject">事項主題 <span class="text-danger">*</span></label>
+                <input type="text" id="dsku_subject" class="form-control" maxlength="200" placeholder="例：指定 SKU 存貨年期確認（10 月）">
+              </div>
+              <div class="dsku-field">
+                <label class="form-label" for="dsku_matter_type">事項類型 <span class="dsku-label-hint">留空自動命名</span></label>
+                <input type="text" id="dsku_matter_type" class="form-control" list="dsku_matter_type_options" maxlength="60" placeholder="例：陳列位置調查" autocomplete="off">
+                <datalist id="dsku_matter_type_options"><option value="年期／可調撥件數"></option><option value="陳列位置調查"></option><option value="店舖陳列回報"></option><option value="存貨核對"></option><option value="包裝／陳列品回收"></option></datalist>
+              </div>
+              <div class="dsku-field">
+                <label class="form-label" for="dsku_due_at">截止日期及時間（香港時間）</label>
+                <input type="datetime-local" id="dsku_due_at" class="form-control" step="900">
+              </div>
+              <div class="dsku-field">
+                <label class="form-label" for="dsku_reference">參考編號（選填）</label>
+                <input type="text" id="dsku_reference" class="form-control" maxlength="100" placeholder="例：RP-2026-1042">
+              </div>
             </div>
-            <p class="text-secondary small mt-0 mb-2">截止時間一到，店舖即不能再提交（後台仍可代回覆）；留空代表不設截止。時間以香港時間 (GMT+8) 為準。</p>
-            <div class="d-flex gap-2 mb-2 flex-wrap align-items-end">
-              <div style="flex:1;min-width:280px"><label class="form-label" for="dsku_instructions">事項說明（選填，<b>空白時店舖端自動隱藏</b>）</label><textarea id="dsku_instructions" class="form-control" rows="2" maxlength="4000" placeholder="例：請按貨品年期填報可調撥件數，RP Team 會安排回收／調撥。"></textarea></div>
-              <div style="min-width:200px"><label class="form-label" for="dsku_note">內部備註（選填，店舖唔會見到）</label><input type="text" id="dsku_note" class="form-control" maxlength="1000" placeholder="例：DRG 品牌回收"></div>
+            <p class="dsku-form-note text-secondary small mt-0 mb-2">截止時間一到，店舖即不能再提交（後台仍可代回覆）；留空代表不設截止。時間以香港時間 (GMT+8) 為準，可選 00／15／30／45 分。</p>
+            <div class="dsku-fields-grid dsku-fields-grid--body">
+              <div class="dsku-field">
+                <label class="form-label" for="dsku_instructions">事項說明（選填，<b>空白時店舖端自動隱藏</b>）</label>
+                <textarea id="dsku_instructions" class="form-control" rows="2" maxlength="4000" placeholder="例：請按貨品年期填報可調撥件數，RP Team 會安排回收／調撥。"></textarea>
+              </div>
+              <div class="dsku-field">
+                <label class="form-label" for="dsku_note">內部備註（選填，店舖唔會見到）</label>
+                <textarea id="dsku_note" class="form-control" rows="2" maxlength="1000" placeholder="例：DRG 品牌回收"></textarea>
+              </div>
             </div>
 
             <div data-dsku-pane="excel">
@@ -903,7 +922,7 @@
             <p class="text-secondary small" id="dsku_batch_hint"></p>
             <div><label class="form-label" for="dsku_batch_subject">事項主題 <span class="text-danger">*</span></label><input type="text" id="dsku_batch_subject" class="form-control" maxlength="200"></div>
             <div class="d-flex gap-2 flex-wrap mt-2">
-              <div><label class="form-label" for="dsku_batch_due">截止日期及時間（香港時間）</label><input type="datetime-local" id="dsku_batch_due" class="form-control"></div>
+              <div><label class="form-label" for="dsku_batch_due">截止日期及時間（香港時間）</label><input type="datetime-local" id="dsku_batch_due" class="form-control" step="900"></div>
               <div style="min-width:170px"><label class="form-label" for="dsku_batch_reference">參考編號</label><input type="text" id="dsku_batch_reference" class="form-control" maxlength="100"></div>
             </div>
             <div class="mt-2"><label class="form-label" for="dsku_batch_instructions">事項說明</label><textarea id="dsku_batch_instructions" class="form-control" rows="2" maxlength="4000"></textarea></div>

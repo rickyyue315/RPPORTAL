@@ -176,6 +176,27 @@ describe('store accounts with their own password', () => {
     expect(fresh.status).toBe(200);
   });
 
+  // 後台結果表是按 id 找回該行再執行「複製文案／開啟郵件／標記已通知」。
+  // 少了 id，三個按鈕會全部靜默失效（2026-11-02 實際發生過）。
+  it('returns an id and contact email so the result table can act on each row', async () => {
+    const admin = await adminAgent();
+    const token = await csrfToken(admin);
+    const list = await admin.get('/api/admin/portal/users?role=store');
+    const target = (list.body.users as Array<{ id: string; username: string; site_code: string | null }>).find(
+      (user) => user.username === STORE_ISSUED,
+    );
+    expect(target).toBeDefined();
+
+    const reset = await admin
+      .post(`/api/admin/portal/users/${target!.id}/password/reset`)
+      .set('x-csrf-token', token)
+      .send({});
+
+    expect(reset.status).toBe(200);
+    expect(reset.body.id).toBe(target!.id);
+    expect(reset.body.contact_email).toBe(`${target!.site_code!.toLowerCase()}@sasa.com`);
+  });
+
   it('revokes existing sessions when the password is reset', async () => {
     const first = await login(STORE_ISSUED, STORE_PW);
     expect(first.status).toBe(200);

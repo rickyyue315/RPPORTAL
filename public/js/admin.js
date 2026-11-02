@@ -1331,12 +1331,10 @@
       });
       tbody.querySelectorAll('.btn-pu-link-copy').forEach((btn) => {
         btn.addEventListener('click', async () => {
-          try {
-            await navigator.clipboard.writeText(btn.dataset.url || '');
-            showAlert($('portal_users_result'), 'success', '登入連結已複製。');
-          } catch {
-            window.prompt('複製登入連結：', btn.dataset.url || '');
-          }
+          const ok = await puCopyText(btn.dataset.url || '');
+          showAlert($('portal_users_result'), ok ? 'success' : 'info', ok
+            ? '登入連結已複製。'
+            : '已顯示登入連結，請手動複製。');
         });
       });
       tbody.querySelectorAll('.btn-pu-pw-toggle').forEach((btn) => {
@@ -1351,12 +1349,10 @@
       tbody.querySelectorAll('.btn-pu-pw-copy').forEach((btn) => {
         btn.addEventListener('click', async () => {
           const password = puPasswordCache.get(btn.dataset.id) || '';
-          try {
-            await navigator.clipboard.writeText(password);
-            showAlert($('portal_users_result'), 'success', '密碼已複製。');
-          } catch {
-            window.prompt('複製密碼：', password);
-          }
+          const ok = await puCopyText(password);
+          showAlert($('portal_users_result'), ok ? 'success' : 'info', ok
+            ? '密碼已複製。'
+            : '已顯示密碼，請手動複製。');
         });
       });
       tbody.querySelectorAll('.btn-pu-wa-row').forEach((btn) => {
@@ -1406,6 +1402,57 @@
     }
   }
 
+  /**
+   * 複製到剪貼簿，三層後備：Clipboard API → execCommand → 手動 prompt。
+   * 只靠 navigator.clipboard 的話，在非 HTTPS、iframe 或未授權的瀏覽器會
+   * 靜靜失敗，使用者只會覺得「按了沒反應」。
+   */
+  async function puCopyText(text) {
+    try {
+      if (navigator.clipboard && window.isSecureContext) {
+        await navigator.clipboard.writeText(text);
+        return true;
+      }
+    } catch {
+      /* 落下一層 */
+    }
+    try {
+      const ta = document.createElement('textarea');
+      ta.value = text;
+      ta.setAttribute('readonly', '');
+      ta.style.position = 'fixed';
+      ta.style.top = '0';
+      ta.style.left = '-9999px';
+      document.body.appendChild(ta);
+      ta.select();
+      ta.setSelectionRange(0, ta.value.length);
+      const ok = document.execCommand('copy');
+      document.body.removeChild(ta);
+      if (ok) return true;
+    } catch {
+      /* 落最後一層 */
+    }
+    window.prompt('請按 Ctrl+C 複製以下內容：', text);
+    return false;
+  }
+
+  /**
+   * 結果表的提示區。**不可**用 showAlert()：它會覆寫容器的 innerHTML，
+   * 整張表連同按鈕一齊消失（使用者會以為「按完就冇反應」）。
+   */
+  function puResultStatus(box, type, message) {
+    const el = box.querySelector('.pu-pw-status');
+    if (!el) return;
+    el.innerHTML = `<div class="alert ${type} mb-2">${escapeHtml(message)}</div>`;
+  }
+
+  /** mailto 只編碼主旨與內文；地址本身要原樣，`%40` 會令部分郵件程式拒絕開啟。 */
+  function puMailtoUrl(user, password) {
+    return 'mailto:' + (user.contact_email || '') +
+      '?subject=' + encodeURIComponent('NDRF Portal 專屬登入密碼') +
+      '&body=' + encodeURIComponent(puMailText(user, password));
+  }
+
   function renderPasswordResults(items, title) {
     const box = $('portal_password_bulk_result');
     if (!box) return;
@@ -1413,52 +1460,66 @@
       box.innerHTML = '';
       return;
     }
-    const rows = items.map((item) => `
+    // 逐行用索引定位，而不是 id：API 只要有一次漏回傳 id，按鈕就會全部靜默失效。
+    const rows = items.map((item, idx) => `
       <tr>
         <td>${escapeHtml(item.username)}${item.site_code ? ` <span class="text-secondary">(${escapeHtml(item.site_code)})</span>` : ''}</td>
         <td>${item.role === 'om' ? 'OM' : 'Store'}</td>
         <td><code>${escapeHtml(item.password)}</code></td>
         <td>
           <a class="btn ghost btn-sm" href="${escapeHtml(puWhatsAppUrl(item, item.password))}" target="_blank" rel="noopener">開啟 WhatsApp</a>
-          <button class="btn ghost btn-sm btn-pu-wa" data-id="${escapeHtml(item.id)}">複製文案</button>
-          ${item.role === 'store' && item.contact_email ? `<button class="btn ghost btn-sm btn-pu-mail" data-id="${escapeHtml(item.id)}">開啟郵件</button>` : ''}
-          <button class="btn ghost btn-sm btn-pu-notified" data-id="${escapeHtml(item.id)}">標記已通知</button>
+          <button class="btn ghost btn-sm btn-pu-wa" data-idx="${idx}">複製文案</button>
+          ${item.role === 'store' && item.contact_email ? `<button class="btn ghost btn-sm btn-pu-mail" data-idx="${idx}">開啟郵件</button>` : ''}
+          <button class="btn ghost btn-sm btn-pu-notified" data-idx="${idx}">標記已通知</button>
         </td>
       </tr>`).join('');
     box.innerHTML = `<div class="alert success">${escapeHtml(title)}</div>
-      <p class="text-secondary small">密碼同時已存入帳戶，之後仍可在列表按「顯示」查看。建議立即用 WhatsApp 或郵件通知本人，然後按「標記已通知」。</p>
+      <p class="text-secondary small">密碼同時已存入帳戶，之後仍可在列表按「顯示」查看。建議立即用 WhatsApp 或郵件通知本人，然後按「標記已通知」。<br>按「開啟郵件」若沒有彈出郵件程式，代表這部電腦未設定預設郵件程式 —— 郵件全文會自動複製，可貼到任何郵箱寄出。</p>
+      <div class="pu-pw-status"></div>
       <div class="table-responsive"><table class="table table-vcenter">
         <thead><tr><th>帳戶</th><th>角色</th><th>密碼</th><th>通知</th></tr></thead>
         <tbody>${rows}</tbody>
       </table></div>`;
     box.querySelectorAll('.btn-pu-wa').forEach((btn) => {
       btn.addEventListener('click', async () => {
-        const item = items.find((entry) => entry.id === btn.dataset.id);
+        const item = items[Number(btn.dataset.idx)];
         if (!item) return;
-        const text = puWhatsAppText(item, item.password);
-        try {
-          await navigator.clipboard.writeText(text);
-          showAlert(box, 'success', 'WhatsApp 文案已複製，可直接貼上。');
-        } catch {
-          window.prompt('複製文案：', text);
-        }
+        const ok = await puCopyText(puWhatsAppText(item, item.password));
+        puResultStatus(box, ok ? 'success' : 'info', ok
+          ? `已複製 ${item.username} 的 WhatsApp 文案，可直接貼上。`
+          : '已顯示文案，請手動複製。');
       });
     });
     box.querySelectorAll('.btn-pu-mail').forEach((btn) => {
-      btn.addEventListener('click', () => {
-        const item = items.find((entry) => entry.id === btn.dataset.id);
-        if (!item || !item.contact_email) return;
-        const uri = 'mailto:' + encodeURIComponent(item.contact_email) +
-          '?subject=' + encodeURIComponent('NDRF Portal 專屬登入密碼') +
-          '&body=' + encodeURIComponent(puMailText(item, item.password));
-        window.location.href = uri;
-        markPuNotified(item.id);
+      btn.addEventListener('click', async () => {
+        const item = items[Number(btn.dataset.idx)];
+        if (!item) return;
+        // 先複製全文：部分電腦沒有預設郵件程式，mailto 會靜靜失效。
+        const copied = await puCopyText(puMailText(item, item.password));
+        const link = document.createElement('a');
+        link.href = puMailtoUrl(item, item.password);
+        link.rel = 'noopener';
+        link.style.display = 'none';
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+        puResultStatus(box, 'success', copied
+          ? `已嘗試開啟郵件程式（收件人 ${item.contact_email}）。如沒有彈出，郵件全文已複製，貼到任何郵箱即可寄出。`
+          : `已嘗試開啟郵件程式（收件人 ${item.contact_email}）。`);
       });
     });
     box.querySelectorAll('.btn-pu-notified').forEach((btn) => {
       btn.addEventListener('click', async () => {
-        const ok = await markPuNotified(btn.dataset.id);
-        showAlert(box, ok ? 'success' : 'danger', ok ? '已標記為已通知。' : '標記失敗，請重試。');
+        const item = items[Number(btn.dataset.idx)];
+        if (!item) return;
+        if (!item.id) {
+          puResultStatus(box, 'danger', '這一列沒有帳戶 ID，請改在下方列表該帳戶按「標記已通知」。');
+          return;
+        }
+        const ok = await markPuNotified(item.id);
+        puResultStatus(box, ok ? 'success' : 'danger', ok
+          ? `已將 ${item.username} 標記為已通知。`
+          : '標記失敗，請重試。');
       });
     });
   }

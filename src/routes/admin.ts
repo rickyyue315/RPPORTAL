@@ -1812,6 +1812,9 @@ adminRouter.post(
       metadata: { username: user.username, role: user.role, site_code: user.site_code },
     });
     res.json({
+      // `id` 必須回傳：前端結果表逐行按 id 找回對應帳戶（複製文案／開啟郵件／
+      // 標記已通知），缺少它會令所有行內按鈕靜默失效。
+      id: user.id,
       password,
       username: user.username,
       display_name: user.display_name,

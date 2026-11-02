@@ -65,7 +65,7 @@
       <span class="rename-notice-icon">${ICON}</span>
       <div class="rename-notice-body">
         <p class="rename-notice-title">RP Portal 已改名為 <strong>RP Connect — RP 連繫網申報平台</strong></p>
-        <p class="rename-notice-desc">網址、登入帳號及密碼全部不變；此平台與公司另一個「SASA Portal」無關，認住 RP Connect 即可。</p>
+        <p class="rename-notice-desc">網址、登入帳號及密碼全部不變。此平台與公司另一個「SASA Portal」無關，是 RP Team 向店舖發通告及收集回覆的平台。</p>
       </div>
       <button type="button" class="rename-notice-cta">知道了</button>
       <button type="button" class="rename-notice-close" aria-label="關閉改名通知">${CLOSE_ICON}</button>`;

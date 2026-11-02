@@ -345,4 +345,19 @@ describe('static asset freshness', () => {
     expect(read('public/urgent.html')).toContain('Urgent · 暫停');
     expect(read('public/sales.html')).toContain('突發性銷售 · 暫停');
   });
+
+  it('shop-facing password boxes do not invite browser autofill, and trim before sending', () => {
+    const read = (file: string) => readFileSync(path.join(root, file), 'utf8');
+    // 一台電腦會輪流登入多間店（RP Team）或多個 OM。Chrome 會把上一個帳戶的
+    // 密碼自動填進同一個框，畫面上同樣是一排圓點，看起來像已打對，實際送出
+    // 舊密碼換來「密碼不正確」。所以店舖／OM 的密碼框一律關閉自動填入。
+    for (const file of ['public/js/site-gate.js', 'public/portal/js/portal.js', 'public/portal/om.html']) {
+      expect(read(file), file).not.toContain('autocomplete="current-password"');
+      expect(read(file), file).toContain('autocomplete="off"');
+    }
+    // 由 WhatsApp／電郵複製密碼常夾帶尾隨空白或換行，送出前必須 trim。
+    expect(read('public/js/site-gate.js')).toContain("const pass = (passInput.value || '').trim();");
+    expect(read('public/portal/js/portal.js')).toContain("const pass = (passInput.value || '').trim();");
+    expect(read('public/portal/js/om.js')).toContain("const pass = ($('om_login_pass')?.value || '').trim();");
+  });
 });

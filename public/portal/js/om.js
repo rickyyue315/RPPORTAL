@@ -89,7 +89,9 @@
     event.preventDefault();
     const btn = $('om_login_btn');
     const name = ($('om_login_name')?.value || '').trim();
-    const pass = $('om_login_pass')?.value || '';
+    // 密碼一律 trim：由 WhatsApp／電郵複製時常夾帶尾隨空白或換行，
+    // 伺服器會當成錯誤密碼。產生器不會產生含空白的密碼，所以安全。
+    const pass = ($('om_login_pass')?.value || '').trim();
     showAlert($('om_login_error'), '', '');
     if (!name || !pass) {
       showAlert($('om_login_error'), 'error', '請輸入 OM 名稱及密碼');
@@ -111,6 +113,8 @@
       activateTab('tab_om_overview', { silent: true });
     } catch (err) {
       showAlert($('om_login_error'), 'error', esc(err.message));
+      const pass = $('om_login_pass');
+      if (pass) { pass.focus(); pass.select(); }
     } finally {
       if (btn) { btn.disabled = false; btn.textContent = '登入'; }
     }
@@ -1017,6 +1021,15 @@
 
   function bindEvents() {
     $('om_login_form')?.addEventListener('submit', login);
+    $('om_login_pass_toggle')?.addEventListener('click', () => {
+      const pass = $('om_login_pass');
+      const btn = $('om_login_pass_toggle');
+      if (!pass) return;
+      const showing = pass.type === 'text';
+      pass.type = showing ? 'password' : 'text';
+      if (btn) btn.textContent = showing ? '顯示' : '隱藏';
+      pass.focus();
+    });
     $('om_logout_link')?.addEventListener('click', logout);
     $('om_refresh')?.addEventListener('click', async () => {
       await loadOverview();

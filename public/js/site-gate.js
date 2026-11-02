@@ -137,7 +137,10 @@
           '<label for="site_gate_input">Site Code</label>' +
           '<input type="text" id="site_gate_input" autocomplete="off" placeholder="例如 HA02">' +
           '<label for="site_gate_pass" style="margin-top:12px">密碼</label>' +
-          '<input type="password" id="site_gate_pass" autocomplete="current-password" placeholder="密碼">' +
+          '<div style="display:flex;gap:8px;align-items:center">' +
+            '<input type="password" id="site_gate_pass" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" placeholder="密碼" style="flex:1">' +
+            '<button type="button" class="btn ghost" id="site_gate_pass_toggle">顯示</button>' +
+          '</div>' +
           '<div class="btn-row" style="margin-top:16px">' +
             '<button class="btn" type="button" id="site_gate_go">進入</button>' +
             '<a class="btn ghost" href="/portal/zero-sales.html">先去零銷售回覆（店舖首頁）</a>' +
@@ -155,18 +158,22 @@
       const go = async () => {
         const code = (input.value || '').trim().toUpperCase();
         if (!code) { showErr('請輸入 Site Code'); return; }
+        // 由 WhatsApp／電郵複製密碼時常夾帶尾隨空白或換行；伺服器會視為
+        // 錯誤密碼。產生器不會產生含空白的密碼，所以一律 trim。
+        const pass = (passInput.value || '').trim();
+        if (!pass) { showErr('請輸入密碼'); passInput.focus(); return; }
         btn.disabled = true;
         btn.textContent = '載入中…';
         showErr('');
         try {
-          const me = await loginPortal(code, passInput.value);
+          const me = await loginPortal(code, pass);
           const user = me && me.user;
           if (user && (user.role === 'buyer' || user.role === 'sct')) {
             window.location.href = '/portal/reviewer.html';
             return;
           }
           if (!user || user.role !== 'store' || !user.site_code) throw new Error('帳戶無效');
-          rememberPass(passInput.value);
+          rememberPass(pass);
           const applied = await applySessionSite(user.site_code);
           overlay.remove();
           resolve(applied);
@@ -174,14 +181,41 @@
           showErr(err.message || '登入失敗');
           btn.disabled = false;
           btn.textContent = '進入';
+          // 選取舊值：直接打字就會覆蓋，不必逐字刪。
+          passInput.focus();
+          passInput.select();
         }
       };
       btn.addEventListener('click', go);
+      const passToggle = overlay.querySelector('#site_gate_pass_toggle');
+      passToggle.addEventListener('click', () => {
+        const showing = passInput.type === 'text';
+        passInput.type = showing ? 'password' : 'text';
+        passToggle.textContent = showing ? '顯示' : '隱藏';
+        passInput.focus();
+      });
+      // 瀏覽器（尤其 Chrome）會自動填入上一個帳戶的密碼，畫面上同樣是一排
+      // 圓點，看起來像已輸入正確密碼。閘門每次都應該由空白開始，所以在
+      // 使用者真正動手之前把自動填入的值清掉。
+      let passTouched = false;
+      const markTouched = () => { passTouched = true; };
+      passInput.addEventListener('keydown', markTouched);
+      passInput.addEventListener('paste', markTouched);
+      passInput.addEventListener('input', markTouched);
       const submitOnEnter = (e) => { if (e.key === 'Enter') { e.preventDefault(); go(); } };
       input.addEventListener('keydown', submitOnEnter);
       passInput.addEventListener('keydown', submitOnEnter);
       input.addEventListener('input', () => { input.value = input.value.toUpperCase(); });
-      setTimeout(() => (initial ? passInput : input).focus(), 50);
+      const clearAutofill = () => {
+        if (!passTouched && passInput.value) passInput.value = '';
+      };
+      setTimeout(() => {
+        (initial ? passInput : input).focus();
+        clearAutofill();
+      }, 50);
+      // Chrome 有時在首次繪製後才填入，所以再補幾次檢查。
+      setTimeout(clearAutofill, 400);
+      setTimeout(clearAutofill, 1200);
     });
   }
 

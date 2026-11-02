@@ -37,7 +37,10 @@
         <label for="om_login_name">OM 名稱</label>
         <input type="text" id="om_login_name" autocomplete="username" placeholder="例如 Ivy" required>
         <label for="om_login_pass" style="margin-top:12px">OM 密碼</label>
-        <input type="password" id="om_login_pass" autocomplete="current-password" placeholder="請輸入 OM 密碼" required>
+        <div style="display:flex;gap:8px;align-items:center">
+          <input type="password" id="om_login_pass" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" placeholder="請輸入 OM 密碼" style="flex:1" required>
+          <button type="button" class="btn ghost" id="om_login_pass_toggle">顯示</button>
+        </div>
         <div class="btn-row" style="margin-top:16px">
           <button class="btn" type="submit" id="om_login_btn">登入</button>
           <a class="btn ghost" href="/portal/zero-sales.html">店舖登入</a>

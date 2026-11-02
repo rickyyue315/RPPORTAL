@@ -39,6 +39,17 @@ export default defineRailway(() => {
       // Set their values in the Railway dashboard before/after the first apply.
       ADMIN_PASSWORD: preserve(),
       PORTAL_SHARED_PASSWORD: preserve(),
+      // OM 專用密碼：必須先在 dashboard 建立值，再加 preserve()。
+      // preserve() 只保留既有值，不會建立值；若本來不存在，OM 密碼會無聲
+      // 跌回 src/config.ts 的預設值。
+      PORTAL_OM_PASSWORD: preserve(),
+
+      // 逐帳戶密碼相容開關。全部發放完之後才改成 "false"。
+      PORTAL_STORE_SHARED_PASSWORD_ENABLED: "true",
+      PORTAL_OM_SHARED_PASSWORD_ENABLED: "true",
+      PORTAL_LOGIN_FAIL_WINDOW_MINUTES: "30",
+      PORTAL_LOGIN_FAIL_PER_USER_IP: "10",
+      LOGIN_USERNAME_LOCK_THRESHOLD: "50",
 
       SESSION_TTL_HOURS: "8",
       LOGIN_LOCK_THRESHOLD: "5",

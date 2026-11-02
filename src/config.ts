@@ -70,7 +70,17 @@ export const config = {
   portalSharedPassword: process.env.PORTAL_SHARED_PASSWORD ?? 'SASA1234',
   // OM（營運經理）專用密碼。OM 以「OM 名稱」登入，只可查看／代覆自己
   // 管理的店舖；與店舖共用密碼分開，避免店舖帳戶登入 OM 介面。
+  // 這把密碼只對「尚未發放個人密碼」的 OM 帳戶有效；全部發放完之後
+  // 應把 PORTAL_OM_SHARED_PASSWORD_ENABLED 設為 false。
   portalOmPassword: process.env.PORTAL_OM_PASSWORD || 'SASAOM178',
+  // 逐帳戶密碼的相容開關。true = 未發放個人密碼的帳戶仍可用共用密碼登入；
+  // false = 只有已發放個人密碼的帳戶才可登入（各自獨立，互不相通）。
+  // 只影響 store 與 om；buyer／sct 永遠走共用密碼。
+  portalStoreSharedPasswordEnabled: bool('PORTAL_STORE_SHARED_PASSWORD_ENABLED', true),
+  portalOmSharedPasswordEnabled: bool('PORTAL_OM_SHARED_PASSWORD_ENABLED', true),
+  // 登入防爆破：以「最後一次成功登入之後」的失敗次數計算。
+  portalLoginFailWindowMinutes: Math.max(1, int('PORTAL_LOGIN_FAIL_WINDOW_MINUTES', 30)),
+  portalLoginFailPerUserIp: Math.max(1, int('PORTAL_LOGIN_FAIL_PER_USER_IP', 10)),
   sessionTtlHours: int('SESSION_TTL_HOURS', 8),
   loginLockThreshold: int('LOGIN_LOCK_THRESHOLD', 5),
   loginLockMinutes: int('LOGIN_LOCK_MINUTES', 15),

@@ -19,12 +19,17 @@ import {
 import { config } from '../config.js';
 import { getStore } from '../services/stores.js';
 import {
-  createPortalSession,
+  createPortalSessionGuarded,
   destroyPortalSession,
+  findPortalUserForLogin,
+  getPortalLoginLock,
   normalizePortalUsername,
+  recordLoginAttempt,
+  resolveAuthMode,
+  sharedPasswordEnabledFor,
   verifyOmPassword,
+  verifyPassword,
   verifySharedPassword,
-  type PortalUserRow,
 } from '../services/portalAuth.js';
 import {
   createNormalSubmission,
@@ -193,11 +198,14 @@ portalRouter.post(
   '/auth/login',
   adminActionLimiter,
   asyncHandler(async (req: Request, res: Response) => {
-    // Portal login supports two separate shared passwords:
-    //   * Store / Buyer / SCT: PORTAL_SHARED_PASSWORD (default SASA1234)
-    //   * OM: PORTAL_OM_PASSWORD (default SASAOM178), username = OM name
-    // The account must exist and be active; the admin backend is unaffected
-    // and keeps its own ADMIN_PASSWORD.
+    // Two credential systems share this endpoint:
+    //   * buyer / sct  — one company-wide Portal password
+    //   * store / om   — each account has its own password once the admin has
+    //                    issued one; until then the shared password still works
+    //                    (PORTAL_STORE_/OM_SHARED_PASSWORD_ENABLED). OM and
+    //                    Store never share a password: an OM account can never
+    //                    be opened with the store-wide password.
+    // The admin backend is unaffected and keeps its own ADMIN_PASSWORD.
     const parsed = loginSchema.safeParse(req.body);
     if (!parsed.success) {
       res.status(400).json({ error: '請輸入使用者名稱' });
@@ -208,59 +216,76 @@ portalRouter.post(
       res.status(400).json({ error: '請輸入使用者名稱' });
       return;
     }
-    const found = await query<PortalUserRow>('SELECT * FROM portal_users WHERE username = $1', [normalized]);
-    const user: PortalUserRow | undefined = found.rows[0];
+    const ip = getClientIp(req);
 
-    if (verifyOmPassword(parsed.data.password)) {
-      if (!user || user.role !== 'om' || !user.active) {
-        res.status(401).json({ error: 'OM 名稱不正確或帳戶已停用' });
-        return;
-      }
-      const session = await createPortalSession(user.id);
-      res.cookie(PORTAL_SESSION_COOKIE, session.token, {
-        httpOnly: true,
-        secure: config.env === 'production',
-        sameSite: 'lax',
-        path: '/',
-        maxAge: config.sessionTtlHours * 3600 * 1000,
-      });
-      await writeAuditEvent({
-        eventType: 'portal_login',
-        actorRole: 'om',
-        actor: user.username,
-        ip: getClientIp(req),
-        metadata: { role: 'om', om: user.display_name || user.username, auth_mode: 'om_password' },
-      });
-      res.json({
-        ok: true,
-        user: {
-          username: user.username,
-          display_name: user.display_name,
-          role: 'om',
-          site_code: null,
-          must_change_password: false,
-        },
+    // Brute-force gate runs first: a locked identifier never reaches password
+    // verification, so response timing cannot be used to probe accounts.
+    const lock = await getPortalLoginLock(normalized, ip);
+    if (lock.locked) {
+      res.status(429).json({
+        error: `嘗試次數過多，請 ${lock.retryAfterMinutes} 分鐘後再試`,
+        code: 'PORTAL_LOGIN_LOCKED',
       });
       return;
     }
 
-    if (!verifySharedPassword(parsed.data.password)) {
-      res.status(401).json({ error: '密碼不正確' });
-      return;
-    }
-    // No self-service: accounts are created by Admin (store sync / manual
-    // creation), so an unknown or deactivated username is simply rejected.
-    if (!user || !user.active) {
-      // Same message either way so the response does not reveal whether
-      // the username exists or is deactivated.
+    const user = await findPortalUserForLogin(normalized);
+    // No self-service: accounts exist only because Admin provisioned them, so
+    // an unknown username and a deactivated account fail identically.
+    if (!user) {
+      await recordLoginAttempt(normalized, ip, false);
       res.status(401).json({ error: '使用者名稱不正確或帳戶已停用' });
       return;
     }
-    if (user.role === 'om') {
-      res.status(401).json({ error: 'OM 帳戶請使用 OM 專用密碼登入' });
+    const mode = resolveAuthMode(user);
+    if (mode === 'reject') {
+      await recordLoginAttempt(normalized, ip, false);
+      res.status(401).json({ error: '使用者名稱不正確或帳戶已停用' });
       return;
     }
-    const session = await createPortalSession(user.id);
+
+    let ok = false;
+    if (mode === 'per_user') {
+      ok = await verifyPassword(parsed.data.password, user.password_hash);
+    } else if (!sharedPasswordEnabledFor(user.role)) {
+      // The admin has turned the shared password off; this account simply has
+      // not been issued one yet.
+      await recordLoginAttempt(normalized, ip, false);
+      res.status(401).json({
+        error: '此帳戶尚未開通密碼，請聯絡管理員',
+        code: 'PORTAL_PASSWORD_NOT_ISSUED',
+      });
+      return;
+    } else if (user.role === 'om') {
+      ok = verifyOmPassword(parsed.data.password);
+      if (!ok && verifySharedPassword(parsed.data.password)) {
+        // Explicit message for the privilege-downgrade attempt: an OM must not
+        // be able to enter through the store-wide password.
+        await recordLoginAttempt(normalized, ip, false);
+        res.status(401).json({ error: 'OM 帳戶請使用 OM 專用密碼登入' });
+        return;
+      }
+    } else {
+      ok = verifySharedPassword(parsed.data.password);
+    }
+
+    if (!ok) {
+      await recordLoginAttempt(normalized, ip, false);
+      res.status(401).json({ error: '密碼不正確' });
+      return;
+    }
+
+    // Guarded insert: if an admin reset the password (or the mode flipped)
+    // between verification and here, no session is created.
+    const session = await createPortalSessionGuarded(user.id, user.password_hash, mode);
+    if (!session) {
+      res.status(409).json({
+        error: '登入憑證已更新，請重新輸入密碼',
+        code: 'PORTAL_CREDENTIALS_CHANGED',
+      });
+      return;
+    }
+    await recordLoginAttempt(normalized, ip, true);
     res.cookie(PORTAL_SESSION_COOKIE, session.token, {
       httpOnly: true,
       secure: config.env === 'production',
@@ -272,8 +297,13 @@ portalRouter.post(
       eventType: 'portal_login',
       actorRole: user.role,
       actor: user.username,
-      ip: getClientIp(req),
-      metadata: { role: user.role, site_code: user.site_code ?? null, shared_password: true },
+      ip,
+      metadata: {
+        role: user.role,
+        site_code: user.site_code ?? null,
+        auth_mode: mode,
+        om: user.role === 'om' ? user.display_name || user.username : null,
+      },
     });
     res.json({
       ok: true,

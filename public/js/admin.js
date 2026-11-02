@@ -1188,9 +1188,70 @@
 
   /* Portal users ------------------------------------------------------ */
 
+  // 明文密碼只留在 JS 記憶體，不寫進 data-*／title：DOM 屬性會被瀏覽器擴充、
+  // 頁面存檔與截圖工具一併讀走，等於把密碼貼在牆上。
+  let puPasswordCache = new Map();
+
+  function currentPuFilters() {
+    return {
+      role: ($('pu_filter_role') ? $('pu_filter_role').value : '').trim(),
+      password_status: ($('pu_filter_password') ? $('pu_filter_password').value : '').trim(),
+      q: ($('pu_filter_q') ? $('pu_filter_q').value : '').trim(),
+    };
+  }
+
+  function puLoginUrl(user) {
+    return user.role === 'om'
+      ? `${window.location.origin}/portal/om.html?user=${encodeURIComponent(user.username)}`
+      : `${window.location.origin}/portal/?user=${encodeURIComponent(user.username)}`;
+  }
+
+  function puWhatsAppText(user, password) {
+    return [
+      `${user.display_name || user.username} 您好：`,
+      '',
+      'NDRF Portal 已為您設定專屬登入帳號，詳情如下：',
+      `帳號：${user.username}`,
+      `密碼：${password}`,
+      `登入網址：${puLoginUrl(user)}`,
+      '',
+      '此密碼只供您本人使用，請勿轉發。如無法登入，請與我們聯絡。',
+    ].join('\r\n');
+  }
+
+  function puMailText(user, password) {
+    return [
+      `${user.site_code || ''} ${user.display_name || ''} 負責人您好：`.trim(),
+      '',
+      'NDRF Portal 已為貴店設定專屬登入密碼，詳情如下：',
+      '',
+      `帳號：${user.username}`,
+      `密碼：${password}`,
+      `登入網址：${puLoginUrl(user)}`,
+      '',
+      '此密碼只供貴店使用，請勿轉發。如無法登入，請回覆此郵件與我們聯絡。',
+    ].join('\r\n');
+  }
+
+  function puPasswordCell(user) {
+    if (user.role !== 'store' && user.role !== 'om') return '<span class="text-secondary">—</span>';
+    if (user.password_status !== 'issued') return '<span class="status-badge locked">未發放</span>';
+    const notified = user.password_notified_at
+      ? `<div class="small text-secondary">已通知 ${escapeHtml(user.password_notified_at)}</div>`
+      : '<div class="small text-secondary">未通知</div>';
+    return `<span class="pu-pw" data-id="${user.id}">••••••••</span>
+      <button class="btn ghost btn-sm btn-pu-pw-toggle" data-id="${user.id}">顯示</button>
+      <button class="btn ghost btn-sm btn-pu-pw-copy" data-id="${user.id}">複製</button>
+      ${notified}`;
+  }
+
   async function loadPortalUsers() {
     try {
+      const filters = currentPuFilters();
       const params = new URLSearchParams({ page: String(puPage), page_size: String(currentPuPageSize()) });
+      if (filters.role) params.set('role', filters.role);
+      if (filters.password_status) params.set('password_status', filters.password_status);
+      if (filters.q) params.set('q', filters.q);
       const data = await adminFetch(`/api/admin/portal/users?${params.toString()}`);
       const pages = Number(data.total_pages) || 0;
       if (pages > 0 && Number(data.page) > pages) {
@@ -1198,14 +1259,14 @@
         return loadPortalUsers();
       }
       puPage = Number(data.page) || 1;
+      puPasswordCache = new Map(data.users.map((u) => [u.id, u.initial_password || '']));
       const tbody = $('portal_users_body');
       if (!tbody) return;
       tbody.innerHTML = data.users.length
         ? data.users.map((u) => {
           const roleLabels = { store: 'Store', buyer: 'Buyer', sct: 'SCT', om: 'OM' };
-          const loginUrl = u.role === 'om'
-            ? `${window.location.origin}/portal/om.html?user=${encodeURIComponent(u.username)}`
-            : `${window.location.origin}/portal/?user=${encodeURIComponent(u.username)}`;
+          const loginUrl = puLoginUrl(u);
+          const canOwnPassword = u.role === 'store' || u.role === 'om';
           return `<tr>
         <td><input type="checkbox" class="pu-select" data-id="${u.id}" aria-label="選擇 ${escapeHtml(u.username)}"></td>
         <td>${escapeHtml(u.username)}</td>
@@ -1213,14 +1274,16 @@
         <td>${escapeHtml(roleLabels[u.role] || u.role)}</td>
         <td>${escapeHtml(u.site_code || '—')}</td>
         <td>${u.active ? '<span class="status-badge received">啟用</span>' : '<span class="status-badge locked">停用</span>'}</td>
+        <td>${puPasswordCell(u)}</td>
         <td><a href="${escapeHtml(loginUrl)}" target="_blank" rel="noopener">開啟</a> <button class="btn ghost btn-sm btn-pu-link-copy" data-url="${escapeHtml(loginUrl)}">複製</button></td>
         <td>
+          ${canOwnPassword && u.active ? `<button class="btn ghost btn-sm btn-pu-pw-reset" data-id="${u.id}" data-username="${escapeHtml(u.username)}">${u.password_status === 'issued' ? '重設密碼' : '生成密碼'}</button>` : ''}
           <button class="btn ghost btn-pu-toggle" data-id="${u.id}" data-active="${u.active}">${u.active ? '停用' : '啟用'}</button>
           <button class="btn ghost btn-pu-del" data-id="${u.id}" data-username="${escapeHtml(u.username)}">刪除</button>
         </td>
       </tr>`;
         }).join('')
-        : '<tr><td colspan="8" class="text-center text-secondary">沒有帳戶</td></tr>';
+        : '<tr><td colspan="9" class="text-center text-secondary">沒有帳戶</td></tr>';
       tbody.querySelectorAll('.btn-pu-toggle').forEach((btn) => {
         btn.addEventListener('click', () => togglePortalUser(btn.dataset.id, btn.dataset.active === 'true'));
       });
@@ -1237,6 +1300,29 @@
           }
         });
       });
+      tbody.querySelectorAll('.btn-pu-pw-toggle').forEach((btn) => {
+        btn.addEventListener('click', () => {
+          const cell = tbody.querySelector(`.pu-pw[data-id="${btn.dataset.id}"]`);
+          if (!cell) return;
+          const masked = cell.textContent === '••••••••';
+          cell.textContent = masked ? puPasswordCache.get(btn.dataset.id) || '' : '••••••••';
+          btn.textContent = masked ? '隱藏' : '顯示';
+        });
+      });
+      tbody.querySelectorAll('.btn-pu-pw-copy').forEach((btn) => {
+        btn.addEventListener('click', async () => {
+          const password = puPasswordCache.get(btn.dataset.id) || '';
+          try {
+            await navigator.clipboard.writeText(password);
+            showAlert($('portal_users_result'), 'success', '密碼已複製。');
+          } catch {
+            window.prompt('複製密碼：', password);
+          }
+        });
+      });
+      tbody.querySelectorAll('.btn-pu-pw-reset').forEach((btn) => {
+        btn.addEventListener('click', () => resetPortalPassword(btn.dataset.id, btn.dataset.username));
+      });
       AdminPager.render({
         nav: $('pu_page_numbers'),
         range: $('pu_page_range'),
@@ -1249,7 +1335,115 @@
       const selectAll = $('pu_select_all');
       if (selectAll) selectAll.checked = false;
     } catch (err) {
-      if ($('portal_users_body')) $('portal_users_body').innerHTML = `<tr><td colspan="8" class="text-center text-secondary">載入失敗：${escapeHtml(err.message)}</td></tr>`;
+      if ($('portal_users_body')) $('portal_users_body').innerHTML = `<tr><td colspan="9" class="text-center text-secondary">載入失敗：${escapeHtml(err.message)}</td></tr>`;
+    }
+  }
+
+  async function markPuNotified(id) {
+    try {
+      await adminFetch(`/api/admin/portal/users/${id}/password/notified`, { method: 'POST' });
+      loadPortalUsers();
+    } catch {
+      /* 標記「已通知」失敗不應擋住真正要做的事（把密碼交給對方）。 */
+    }
+  }
+
+  function renderPasswordResults(items, title) {
+    const box = $('portal_password_bulk_result');
+    if (!box) return;
+    if (!items.length) {
+      box.innerHTML = '';
+      return;
+    }
+    const rows = items.map((item) => `
+      <tr>
+        <td>${escapeHtml(item.username)}${item.site_code ? ` <span class="text-secondary">(${escapeHtml(item.site_code)})</span>` : ''}</td>
+        <td>${item.role === 'om' ? 'OM' : 'Store'}</td>
+        <td><code>${escapeHtml(item.password)}</code></td>
+        <td>
+          <button class="btn ghost btn-sm btn-pu-wa" data-id="${escapeHtml(item.id)}">WhatsApp 文案</button>
+          ${item.role === 'store' && item.contact_email ? `<button class="btn ghost btn-sm btn-pu-mail" data-id="${escapeHtml(item.id)}">開啟郵件</button>` : ''}
+          <button class="btn ghost btn-sm btn-pu-notified" data-id="${escapeHtml(item.id)}">標記已通知</button>
+        </td>
+      </tr>`).join('');
+    box.innerHTML = `<div class="alert success">${escapeHtml(title)}</div>
+      <p class="text-secondary small">密碼同時已存入帳戶，之後仍可在列表按「顯示」查看。建議立即用 WhatsApp 或郵件通知本人，然後按「標記已通知」。</p>
+      <div class="table-responsive"><table class="table table-vcenter">
+        <thead><tr><th>帳戶</th><th>角色</th><th>密碼</th><th>通知</th></tr></thead>
+        <tbody>${rows}</tbody>
+      </table></div>`;
+    box.querySelectorAll('.btn-pu-wa').forEach((btn) => {
+      btn.addEventListener('click', async () => {
+        const item = items.find((entry) => entry.id === btn.dataset.id);
+        if (!item) return;
+        const text = puWhatsAppText(item, item.password);
+        try {
+          await navigator.clipboard.writeText(text);
+          showAlert(box, 'success', 'WhatsApp 文案已複製，可直接貼上。');
+        } catch {
+          window.prompt('複製文案：', text);
+        }
+      });
+    });
+    box.querySelectorAll('.btn-pu-mail').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const item = items.find((entry) => entry.id === btn.dataset.id);
+        if (!item || !item.contact_email) return;
+        const uri = 'mailto:' + encodeURIComponent(item.contact_email) +
+          '?subject=' + encodeURIComponent('NDRF Portal 專屬登入密碼') +
+          '&body=' + encodeURIComponent(puMailText(item, item.password));
+        window.location.href = uri;
+        markPuNotified(item.id);
+      });
+    });
+    box.querySelectorAll('.btn-pu-notified').forEach((btn) => {
+      btn.addEventListener('click', async () => {
+        await markPuNotified(btn.dataset.id);
+        showAlert(box, 'success', '已標記為已通知。');
+      });
+    });
+  }
+
+  async function resetPortalPassword(id, username) {
+    if (!window.confirm(`為「${username}」生成新密碼？\n\n生成後舊密碼即時失效，該帳戶已登入的裝置會被登出。`)) return;
+    try {
+      const data = await adminFetch(`/api/admin/portal/users/${id}/password/reset`, { method: 'POST' });
+      await loadPortalUsers();
+      renderPasswordResults([data], `已為 ${data.username} 生成新密碼`);
+    } catch (err) {
+      showAlert($('portal_users_result'), 'error', escapeHtml(err.message));
+    }
+  }
+
+  async function bulkGeneratePasswords() {
+    const ids = Array.from(document.querySelectorAll('.pu-select:checked')).map((box) => box.dataset.id);
+    const filters = currentPuFilters();
+    const useOnlyMissing = ids.length === 0 && filters.password_status === 'not_issued';
+    if (!ids.length && !useOnlyMissing) {
+      showAlert($('portal_users_result'), 'error', '請先選取帳戶；或把「密碼狀態」篩選設為「未發放」再按此按鈕。');
+      return;
+    }
+    const body = useOnlyMissing ? { only_missing: true } : { ids };
+    try {
+      const preview = await adminFetch('/api/admin/portal/users/passwords/bulk', {
+        method: 'POST',
+        body: JSON.stringify({ ...body, dry_run: true }),
+      });
+      if (!preview.generated) {
+        showAlert($('portal_users_result'), 'info', '所選範圍內沒有可生成的帳戶（可能全部已發放）。');
+        return;
+      }
+      const scope = useOnlyMissing ? '所有未發放的 Store／OM 帳戶' : `已選取的 ${ids.length} 個帳戶`;
+      if (!window.confirm(`將為${scope}生成新密碼，共 ${preview.generated} 個。\n\n生成後舊密碼即時失效，相關帳戶會被登出。確定繼續？`)) return;
+      const data = await adminFetch('/api/admin/portal/users/passwords/bulk', {
+        method: 'POST',
+        body: JSON.stringify({ ...body, dry_run: false }),
+      });
+      await loadPortalUsers();
+      const title = `已生成 ${data.generated} 個密碼` + (data.skipped ? `，略過 ${data.skipped} 個（期間已被其他人發放）` : '');
+      renderPasswordResults(data.items || [], title);
+    } catch (err) {
+      showAlert($('portal_users_result'), 'error', escapeHtml(err.message));
     }
   }
 
@@ -1307,6 +1501,46 @@
   $('btn_pu_bulk_activate').addEventListener('click', () => bulkPortalUsers('activate', '啟用'));
   $('btn_pu_bulk_deactivate').addEventListener('click', () => bulkPortalUsers('deactivate', '停用'));
   $('btn_pu_bulk_delete').addEventListener('click', () => bulkPortalUsers('delete', '刪除'));
+
+  async function exportPortalPasswords() {
+    const btn = $('btn_pu_export_passwords');
+    btn.disabled = true;
+    try {
+      const res = await fetch('/api/admin/portal/users/passwords/export', { credentials: 'include' });
+      if (!res.ok) throw new Error('匯出失敗，請重試');
+      const blob = await res.blob();
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = 'Portal_Passwords.csv';
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+      showAlert($('portal_users_result'), 'success', '已匯出密碼 CSV。檔案含明文密碼，用完請即時刪除，不要留在共享資料夾或雲端同步目錄。');
+    } catch (err) {
+      showAlert($('portal_users_result'), 'error', escapeHtml(err.message));
+    } finally {
+      btn.disabled = false;
+    }
+  }
+
+  if ($('btn_pu_bulk_password')) $('btn_pu_bulk_password').addEventListener('click', bulkGeneratePasswords);
+  if ($('btn_pu_export_passwords')) $('btn_pu_export_passwords').addEventListener('click', exportPortalPasswords);
+  if ($('btn_pu_filter_apply')) {
+    $('btn_pu_filter_apply').addEventListener('click', () => {
+      puPage = 1;
+      loadPortalUsers();
+    });
+  }
+  if ($('pu_filter_q')) {
+    $('pu_filter_q').addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        puPage = 1;
+        loadPortalUsers();
+      }
+    });
+  }
 
   async function loadPuSiteOptions() {
     const sel = $('pu_site');
@@ -1416,7 +1650,7 @@
         html += '<div class="alert success">以下新店舖帳戶已建立（登入時輸入 Site Code 及密碼）：<ul>' + data.created.map((c) => `<li><b>${escapeHtml(c.username)}</b>（${escapeHtml(c.site_code)}）</li>`).join('') + '</ul></div>';
       }
       if ((om.created || []).length) {
-        html += '<div class="alert success">以下 OM 帳戶已建立（登入時輸入 OM 名稱及 OM 專用密碼）：<b>' + escapeHtml(om.created.join(', ')) + '</b></div>';
+        html += '<div class="alert success">以下 OM 帳戶已建立，<b>尚未有獨立密碼</b>（暫用 OM 專用密碼登入）：<b>' + escapeHtml(om.created.join(', ')) + '</b>。請在上方選取後按「生成／重設密碼」，再把密碼通知本人。</div>';
       }
       if (data.deactivated.length) html += `<div class="alert info">已停用（不在門店主檔）：${escapeHtml(data.deactivated.join(', '))}</div>`;
       showAlert($('portal_users_result'), '', html);

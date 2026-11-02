@@ -66,8 +66,10 @@ export async function syncStorePortalAccounts(adminUsername: string): Promise<St
         );
         result.created.push({ site_code: site.site_code, username });
       } else if (!existing.active) {
+        // 只重新啟用，不動密碼：已發放的帳戶若被清空 initial_password 就會
+        // 退回共用密碼；一旦共用密碼已關閉，該店即刻鎖死。
         await client.query(
-          'UPDATE portal_users SET active = true, must_change_password = false, initial_password = NULL, updated_at = now() WHERE id = $1',
+          'UPDATE portal_users SET active = true, updated_at = now() WHERE id = $1',
           [existing.id],
         );
         result.reactivated.push(site.site_code);
@@ -200,8 +202,9 @@ export async function createSingleStoreAccount(input: {
     const username = normalizePortalUsername(siteCode);
     if (found) {
       if (found.active) throw new StoreAccountError('此店舖帳戶已存在');
+      // 同樣只重新啟用，不清除已發放的密碼。
       await client.query(
-        'UPDATE portal_users SET active = true, must_change_password = false, initial_password = NULL, updated_at = now() WHERE id = $1',
+        'UPDATE portal_users SET active = true, updated_at = now() WHERE id = $1',
         [found.id],
       );
       return { username, site_code: siteCode, reactivated: true };

@@ -931,7 +931,34 @@
             </div>
           </div>
           <div class="card-body collapse show" id="portal-users-collapse">
-            <p class="text-secondary small">Portal 帳戶（Store／Buyer／SCT／OM）以「使用者名稱（Site Code 或 OM 名稱）＋密碼」登入；登入連結會自動帶出使用者名稱。Store 可單間建立（選店舖）或按門店主檔同步；Buyer／SCT 帳戶在此建立；OM 帳戶由門店主檔或最新存貨報表的 OM 欄自動建立（OM 名稱＋OM 專用密碼）。管理員可啟用／停用／刪除帳戶或一次過操作（先選取再按鈕，表頭可全選）。尚有 SKU 分派的 Buyer 或有待審批的 SCT 不可停用或刪除。</p>
+            <p class="text-secondary small">Portal 帳戶（Store／Buyer／SCT／OM）以「使用者名稱（Site Code 或 OM 名稱）＋密碼」登入；登入連結會自動帶出使用者名稱。Store 可單間建立（選店舖）或按門店主檔同步；Buyer／SCT 帳戶在此建立；OM 帳戶由門店主檔或最新存貨報表的 OM 欄自動建立。<b>Store 與 OM 可各自持有獨立密碼</b>：按「生成密碼」後該帳戶即改用新密碼（共用密碼對它即時失效），密碼可在此查看、複製、重設或匯出；未生成的帳戶仍用共用密碼（OM 用 OM 專用密碼）。Buyer／SCT 不受影響。</p>
+            <div class="d-flex gap-2 mb-3 flex-wrap align-items-end">
+              <div>
+                <label class="form-label" for="pu_filter_role">角色</label>
+                <select id="pu_filter_role" class="form-select">
+                  <option value="">全部</option>
+                  <option value="store">Store</option>
+                  <option value="om">OM</option>
+                  <option value="buyer">Buyer</option>
+                  <option value="sct">SCT</option>
+                </select>
+              </div>
+              <div>
+                <label class="form-label" for="pu_filter_password">密碼狀態</label>
+                <select id="pu_filter_password" class="form-select">
+                  <option value="">全部</option>
+                  <option value="issued">已發放</option>
+                  <option value="not_issued">未發放</option>
+                </select>
+              </div>
+              <div class="flex-grow-1" style="min-width:200px">
+                <label class="form-label" for="pu_filter_q">搜尋</label>
+                <input type="text" id="pu_filter_q" class="form-control" placeholder="Site Code／使用者名稱／顯示名稱" autocomplete="off">
+              </div>
+              <div class="align-self-end">
+                <button class="btn btn-outline-primary" id="btn_pu_filter_apply">查詢</button>
+              </div>
+            </div>
             <div class="d-flex gap-2 mb-3 flex-wrap">
               <div class="flex-grow-1" id="pu_username_wrap" style="min-width:200px">
                 <label class="form-label">使用者名稱（Buyer／SCT）</label>
@@ -963,9 +990,12 @@
               <button class="btn btn-sm btn-outline-primary" id="btn_pu_bulk_activate">一次過啟用</button>
               <button class="btn btn-sm" id="btn_pu_bulk_deactivate">一次過停用</button>
               <button class="btn btn-sm btn-outline-danger" id="btn_pu_bulk_delete">一次過刪除</button>
+              <button class="btn btn-sm btn-primary" id="btn_pu_bulk_password">生成／重設密碼</button>
+              <button class="btn btn-sm btn-outline-secondary" id="btn_pu_export_passwords">匯出密碼 (CSV)</button>
             </div>
+            <div id="portal_password_bulk_result"></div>
             <div class="table-responsive">
-              <table class="table table-vcenter"><thead><tr><th><input type="checkbox" id="pu_select_all" title="全選本頁"></th><th>使用者名稱</th><th>顯示名稱</th><th>角色</th><th>Site Code</th><th>狀態</th><th>登入連結</th><th>操作</th></tr></thead><tbody id="portal_users_body"><tr><td colspan="8" class="text-center text-secondary">捲動到此處自動載入…</td></tr></tbody></table>
+              <table class="table table-vcenter"><thead><tr><th><input type="checkbox" id="pu_select_all" title="全選本頁"></th><th>使用者名稱</th><th>顯示名稱</th><th>角色</th><th>Site Code</th><th>狀態</th><th>密碼</th><th>登入連結</th><th>操作</th></tr></thead><tbody id="portal_users_body"><tr><td colspan="9" class="text-center text-secondary">捲動到此處自動載入…</td></tr></tbody></table>
             </div>
             <div class="admin-pagination">
               <span id="pu_page_range" class="page-range text-secondary small"></span>

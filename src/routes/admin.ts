@@ -49,6 +49,13 @@ import {
   syncStorePortalAccounts,
 } from '../services/storeAccounts.js';
 import {
+  generateInitialPassword,
+  hashPassword,
+  issuePassword,
+  issuePasswordsBulk,
+  markPasswordNotified,
+} from '../services/portalAuth.js';
+import {
   assertBuyerHasNoSkus,
   assertSctHasNoPending,
   listSkuMaster,
@@ -1695,39 +1702,326 @@ adminRouter.post(
   }),
 );
 
-/** GET /api/admin/portal/users — list portal accounts (includes admin-viewable initial passwords). */
+/** GET /api/admin/portal/users — list portal accounts with password status and admin-viewable passwords. */
 adminRouter.get(
   '/portal/users',
   requireAdmin,
   adminActionLimiter,
   asyncHandler(async (req: Request, res: Response) => {
     const { page, size, offset } = parsePagination(req);
-    const countResult = await query<{ count: string }>('SELECT count(*)::text AS count FROM portal_users');
+    const roleParam = typeof req.query.role === 'string' && req.query.role.trim() ? req.query.role.trim() : null;
+    const searchText = typeof req.query.q === 'string' ? req.query.q.trim() : '';
+    const statusParam = typeof req.query.password_status === 'string' ? req.query.password_status.trim() : '';
+    const statusFilter = statusParam === 'issued' || statusParam === 'not_issued' ? statusParam : null;
+
+    // 「已發放」的判定必須與 resolveAuthMode() 完全一致：後台說已發放、但登入
+    // 其實仍走共用密碼，是最容易誤導管理員的半殘狀態。
+    const base = `
+      WITH listed AS (
+        SELECT u.id, u.username, u.display_name, u.role, u.site_code, u.active,
+               u.must_change_password, u.created_at,
+               u.password_issued_at, u.password_notified_at,
+               CASE
+                 WHEN u.role NOT IN ('store', 'om') THEN 'not_applicable'
+                 WHEN u.initial_password IS NOT NULL AND u.password_hash LIKE 'scrypt$%' THEN 'issued'
+                 ELSE 'not_issued'
+               END AS password_status,
+               CASE WHEN u.role = 'store' THEN lower(u.site_code) || '@sasa.com' ELSE NULL END AS contact_email,
+               CASE
+                 WHEN u.role IN ('store', 'om')
+                  AND u.initial_password IS NOT NULL
+                  AND u.password_hash LIKE 'scrypt$%'
+                 THEN u.initial_password
+                 ELSE NULL
+               END AS initial_password
+          FROM portal_users u
+      )
+      SELECT * FROM listed
+       WHERE ($1::text IS NULL OR role = $1)
+         AND ($2::text = '' OR username ILIKE '%' || $2 || '%' OR display_name ILIKE '%' || $2 || '%'
+              OR COALESCE(site_code, '') ILIKE '%' || $2 || '%')
+         AND ($3::text IS NULL OR password_status = $3)
+    `;
+
+    const countResult = await query<{ count: string }>(
+      `SELECT count(*)::text AS count FROM (${base}) AS filtered`,
+      [roleParam, searchText, statusFilter],
+    );
     const total = Number(countResult.rows[0]?.count ?? 0);
-    const result = await query<{
-      id: string;
-      username: string;
-      display_name: string;
-      role: string;
-      site_code: string | null;
-      must_change_password: boolean;
-      active: boolean;
-      created_at: string;
-      initial_password: string | null;
-    }>(
-      `SELECT id, username, display_name, role, site_code, must_change_password, active, created_at, initial_password
-         FROM portal_users
-        ORDER BY role, site_code, username
-        LIMIT $1 OFFSET $2`,
-      [size, offset],
+    const result = await query(
+      `${base}
+        ORDER BY CASE role WHEN 'store' THEN 1 WHEN 'om' THEN 2 WHEN 'buyer' THEN 3 ELSE 4 END,
+                 site_code NULLS LAST, username
+        LIMIT $4 OFFSET $5`,
+      [roleParam, searchText, statusFilter, size, offset],
     );
     res.json({
-      users: result.rows.map((row) => ({ ...row, created_at: toHKString(row.created_at) })),
+      users: result.rows.map((row) => ({
+        ...row,
+        created_at: toHKString(row.created_at as string),
+        password_issued_at: row.password_issued_at ? toHKString(row.password_issued_at as string) : null,
+        password_notified_at: row.password_notified_at ? toHKString(row.password_notified_at as string) : null,
+      })),
       total,
       page,
       page_size: size,
       total_pages: Math.ceil(total / size),
     });
+  }),
+);
+
+/** POST /api/admin/portal/users/:id/password/reset — issue a fresh random password for one Store or OM account. */
+adminRouter.post(
+  '/portal/users/:id/password/reset',
+  requireUuidParam('id'),
+  requireAdmin,
+  adminActionLimiter,
+  asyncHandler(async (req: Request, res: Response) => {
+    const found = await query<{
+      id: string;
+      username: string;
+      display_name: string;
+      role: string;
+      site_code: string | null;
+      active: boolean;
+    }>(
+      'SELECT id, username, display_name, role, site_code, active FROM portal_users WHERE id = $1',
+      [req.params.id],
+    );
+    const user = found.rows[0];
+    if (!user) {
+      res.status(404).json({ error: '找不到此帳戶' });
+      return;
+    }
+    if (user.role !== 'store' && user.role !== 'om') {
+      res.status(400).json({ error: '此帳戶不需要獨立密碼' });
+      return;
+    }
+    if (!user.active) {
+      res.status(409).json({ error: '帳戶已停用，請先啟用' });
+      return;
+    }
+
+    const password = generateInitialPassword();
+    await issuePassword(user.id, password);
+    await writeAuditEvent({
+      eventType: 'portal_password_reset',
+      actorRole: 'admin',
+      actor: req.adminUsername!,
+      ip: getClientIp(req),
+      metadata: { username: user.username, role: user.role, site_code: user.site_code },
+    });
+    res.json({
+      password,
+      username: user.username,
+      display_name: user.display_name,
+      role: user.role,
+      site_code: user.site_code,
+      contact_email:
+        user.role === 'store' && user.site_code ? `${user.site_code.toLowerCase()}@sasa.com` : null,
+    });
+  }),
+);
+
+const portalPasswordBulkSchema = z.object({
+  ids: z.array(z.string().uuid()).max(200).optional(),
+  only_missing: z.boolean().optional().default(false),
+  dry_run: z.boolean().optional().default(false),
+});
+
+/** POST /api/admin/portal/users/passwords/bulk — issue random passwords for many Store / OM accounts.
+ *
+ * Hashing 97 accounts sequentially would exceed the request timeout, so hashes
+ * are computed with concurrency 4 first and written in a single transaction.
+ */
+adminRouter.post(
+  '/portal/users/passwords/bulk',
+  requireAdmin,
+  adminActionLimiter,
+  asyncHandler(async (req: Request, res: Response) => {
+    const parsed = portalPasswordBulkSchema.safeParse(req.body ?? {});
+    if (!parsed.success) {
+      res.status(400).json({ error: parsed.error.issues[0]?.message ?? '參數無效' });
+      return;
+    }
+    const { ids, only_missing: onlyMissing, dry_run: dryRun } = parsed.data;
+
+    const fields = `id, username, display_name, role, site_code`;
+    let targets: Array<{
+      id: string;
+      username: string;
+      display_name: string;
+      role: string;
+      site_code: string | null;
+    }>;
+    if (ids && ids.length > 0) {
+      const result = await query<typeof targets[number]>(
+        `SELECT ${fields} FROM portal_users
+          WHERE id = ANY($1::uuid[]) AND role IN ('store', 'om') AND active = true
+          ORDER BY CASE role WHEN 'store' THEN 1 ELSE 2 END, site_code NULLS LAST, username`,
+        [ids],
+      );
+      targets = result.rows;
+    } else if (onlyMissing) {
+      const result = await query<typeof targets[number]>(
+        `SELECT ${fields} FROM portal_users
+          WHERE role IN ('store', 'om') AND active = true
+            AND (initial_password IS NULL OR password_hash NOT LIKE 'scrypt$%')
+          ORDER BY CASE role WHEN 'store' THEN 1 ELSE 2 END, site_code NULLS LAST, username`,
+        [],
+      );
+      targets = result.rows;
+    } else {
+      res.status(400).json({ error: '請先選取帳戶，或指定只處理未發放的帳戶' });
+      return;
+    }
+
+    if (targets.length > 200) {
+      res.status(400).json({ error: '一次最多處理 200 個帳戶' });
+      return;
+    }
+
+    const describe = (target: (typeof targets)[number]) => ({
+      id: target.id,
+      username: target.username,
+      display_name: target.display_name,
+      role: target.role,
+      site_code: target.site_code,
+      contact_email:
+        target.role === 'store' && target.site_code ? `${target.site_code.toLowerCase()}@sasa.com` : null,
+    });
+
+    if (dryRun) {
+      res.json({
+        dry_run: true,
+        generated: targets.length,
+        skipped: 0,
+        items: targets.map(describe),
+      });
+      return;
+    }
+
+    const CONCURRENCY = 4;
+    const prepared: Array<{
+      userId: string;
+      password: string;
+      passwordHash: string;
+      target: (typeof targets)[number];
+    }> = [];
+    for (let i = 0; i < targets.length; i += CONCURRENCY) {
+      const slice = targets.slice(i, i + CONCURRENCY);
+      const batch = await Promise.all(
+        slice.map(async (target) => {
+          const password = generateInitialPassword();
+          return { userId: target.id, password, passwordHash: await hashPassword(password), target };
+        }),
+      );
+      prepared.push(...batch);
+    }
+
+    const { issued, skipped } = await issuePasswordsBulk(prepared, onlyMissing);
+    const issuedSet = new Set(issued);
+    await writeAuditEvent({
+      eventType: 'portal_password_bulk_generated',
+      actorRole: 'admin',
+      actor: req.adminUsername!,
+      ip: getClientIp(req),
+      metadata: {
+        requested: targets.length,
+        issued: issued.length,
+        skipped: skipped.length,
+        only_missing: onlyMissing,
+      },
+    });
+    res.json({
+      dry_run: false,
+      generated: issued.length,
+      skipped: skipped.length,
+      items: prepared
+        .filter((entry) => issuedSet.has(entry.userId))
+        .map((entry) => ({ ...describe(entry.target), password: entry.password })),
+    });
+  }),
+);
+
+/** POST /api/admin/portal/users/:id/password/notified — mark an issued password as delivered. */
+adminRouter.post(
+  '/portal/users/:id/password/notified',
+  requireUuidParam('id'),
+  requireAdmin,
+  adminActionLimiter,
+  asyncHandler(async (req: Request, res: Response) => {
+    const found = await query<{ id: string }>('SELECT id FROM portal_users WHERE id = $1', [req.params.id]);
+    if (!found.rows[0]) {
+      res.status(404).json({ error: '找不到此帳戶' });
+      return;
+    }
+    await markPasswordNotified(found.rows[0].id);
+    await writeAuditEvent({
+      eventType: 'portal_password_notified',
+      actorRole: 'admin',
+      actor: req.adminUsername!,
+      ip: getClientIp(req),
+      metadata: { user_id: found.rows[0].id },
+    });
+    res.json({ ok: true });
+  }),
+);
+
+/** GET /api/admin/portal/users/passwords/export — CSV of every account whose password has been issued. */
+adminRouter.get(
+  '/portal/users/passwords/export',
+  requireAdmin,
+  excelExportLimiter,
+  asyncHandler(async (req: Request, res: Response) => {
+    const result = await query<{
+      username: string;
+      display_name: string;
+      role: string;
+      site_code: string | null;
+      initial_password: string;
+      password_issued_at: string | null;
+    }>(
+      `SELECT username, display_name, role, site_code, initial_password, password_issued_at
+         FROM portal_users
+        WHERE role IN ('store', 'om')
+          AND initial_password IS NOT NULL
+          AND password_hash LIKE 'scrypt$%'
+        ORDER BY CASE role WHEN 'store' THEN 1 ELSE 2 END, site_code NULLS LAST, username`,
+    );
+
+    const origin = `${req.protocol}://${req.get('host')}`;
+    const cell = (value: unknown) => `"${String(value ?? '').replace(/"/g, '""')}"`;
+    const rows = [
+      ['username', 'display_name', 'role', 'site_code', 'contact_email', 'password', 'login_url', 'issued_at'],
+      ...result.rows.map((row) => [
+        row.username,
+        row.display_name,
+        row.role,
+        row.site_code ?? '',
+        row.role === 'store' && row.site_code ? `${row.site_code.toLowerCase()}@sasa.com` : '',
+        row.initial_password,
+        row.role === 'om'
+          ? `${origin}/portal/om.html?user=${encodeURIComponent(row.username)}`
+          : `${origin}/portal/?user=${encodeURIComponent(row.username)}`,
+        row.password_issued_at ?? '',
+      ]),
+    ];
+    const csv = `\uFEFF${rows.map((row) => row.map(cell).join(',')).join('\r\n')}\r\n`;
+
+    await writeAuditEvent({
+      eventType: 'portal_password_export',
+      actorRole: 'admin',
+      actor: req.adminUsername!,
+      ip: getClientIp(req),
+      metadata: { rows: result.rows.length },
+    });
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader(
+      'Content-Disposition',
+      `attachment; filename="Portal_Passwords_${toHKDateString(new Date())}.csv"`,
+    );
+    res.send(csv);
   }),
 );
 

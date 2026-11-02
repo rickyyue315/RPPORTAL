@@ -1298,6 +1298,8 @@ const designatedSkuReplySchema = z.object({
           .default([]),
         note: z.string().max(2000).optional().default(''),
         no_transfer: z.boolean().optional().default(false),
+        /** 自定回覆欄位：{ f1: '3', f2: '門口陳列架' } */
+        fields: z.record(z.string().max(10), z.union([z.string().max(500), z.number(), z.null()])).optional(),
       }),
     )
     .min(1, '請為事項內每個 SKU 填寫回覆')

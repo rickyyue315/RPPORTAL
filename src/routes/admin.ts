@@ -195,6 +195,7 @@ import {
   reopenBatch as reopenDesignatedSkuBatch,
   updateBatch as updateDesignatedSkuBatch,
   updateItem as updateDesignatedSkuItem,
+  updateReplyFields as updateDesignatedSkuReplyFields,
   type DesignatedSkuMatter,
 } from '../services/designatedSku.js';
 
@@ -4136,6 +4137,8 @@ const designatedSkuUploadSchema = z.object({
   due_at: z.string().trim().optional().default(''),
   reference: z.string().max(100).optional().default(''),
   note: z.string().max(1000).optional().default(''),
+  /** auto = 按表頭自動判斷（有自定欄位就有、有年期欄就一併要） */
+  reply_mode: z.enum(['auto', 'stock_year', 'custom', 'mixed']).optional().default('auto'),
 });
 
 /**
@@ -4181,6 +4184,8 @@ function designatedSkuExportRows(matters: DesignatedSkuMatter[]) {
     is_open: boolean;
     created_at: string;
     lines: Array<{ year_code: string; qty: number }>;
+    reply_fields: Array<{ label: string; value: string }>;
+    reply_scope: string;
   }> = [];
   for (const matter of matters) {
     for (const item of matter.items) {
@@ -4207,6 +4212,11 @@ function designatedSkuExportRows(matters: DesignatedSkuMatter[]) {
         is_open: matter.is_open,
         created_at: matter.batch_created_at,
         lines: item.lines,
+        reply_fields: matter.reply_fields.map((field) => ({
+          label: field.label,
+          value: item.reply_values[field.key] ?? '',
+        })),
+        reply_scope: matter.reply_scope,
       });
     }
   }
@@ -4284,6 +4294,18 @@ adminRouter.post(
       }
     }
 
+    const replyFields = parsed.replyFields ?? [];
+    // 每間店一套：佔位 SKU 沒有存貨／年期，一律以自定欄位回覆
+    const replyMode = parsed.replyScope === 'matter'
+      ? 'custom'
+      : (meta.data.reply_mode === 'auto' ? (parsed.replyMode ?? 'stock_year') : meta.data.reply_mode);
+    if (replyMode !== 'stock_year' && !replyFields.length) {
+      res.status(400).json({
+        error: '回覆模式包含自定欄位，但檔案內沒有可辨識的回覆欄位（內建 5 欄以外的表頭）',
+      });
+      return;
+    }
+
     const { batchId, batchCode, matterCodes } = await createDesignatedSkuBatch({
       subject: meta.data.subject,
       matterType: meta.data.matter_type,
@@ -4291,6 +4313,9 @@ adminRouter.post(
       dueAt: due.value,
       reference: meta.data.reference ?? '',
       note: meta.data.note ?? '',
+      replyMode,
+      replyScope: parsed.replyScope ?? 'item',
+      replyFields,
       sourceFilename: file.originalname,
       rows: parsed.rows.map((r) => ({
         siteCode: r.siteCode,
@@ -4322,6 +4347,9 @@ adminRouter.post(
         store_count: storeCount,
         skipped_rows: parsed.skippedRows,
         warn_count: (parsed.warnings ?? []).length,
+        reply_mode: replyMode,
+        reply_scope: parsed.replyScope ?? 'item',
+        reply_field_count: replyFields.length,
         forced: force,
       },
     });
@@ -4337,6 +4365,9 @@ adminRouter.post(
       skippedRows: parsed.skippedRows,
       warnings: parsed.warnings ?? [],
       matterCodes: matterCodes.slice(0, 5),
+      replyMode,
+      replyScope: parsed.replyScope ?? 'item',
+      replyFields,
     });
   }),
 );
@@ -4715,6 +4746,67 @@ adminRouter.put(
       },
     });
     res.json({ ok: true, batch });
+  }),
+);
+
+const designatedSkuReplyFieldSchema = z.object({
+  key: z.string().trim().max(10).optional(),
+  label: z.string().trim().min(1, '欄位名稱不可留空').max(80),
+  type: z.enum(['text', 'number', 'choice']).optional().default('text'),
+  required: z.boolean().optional().default(false),
+  hint: z.string().max(120).optional().default(''),
+  options: z.array(z.string().trim().max(40)).max(12).optional(),
+});
+
+const designatedSkuReplyFieldsSchema = z.object({
+  fields: z.array(designatedSkuReplyFieldSchema).max(10, '最多只可設定 10 個回覆欄位'),
+  reply_mode: z.enum(['stock_year', 'custom', 'mixed']).optional(),
+});
+
+/**
+ * PUT /api/admin/designated-sku/batches/:id/reply-fields
+ * 修改自定回覆欄位（改名／類型／必填／排序／增刪）。
+ * 已有回覆值的欄位移除會被擋；套用層級（每 SKU / 每店）建立後不可改。
+ */
+adminRouter.put(
+  '/designated-sku/batches/:id/reply-fields',
+  requireUuidParam('id'),
+  requireAdmin,
+  asyncHandler(async (req: Request, res: Response) => {
+    const parsed = designatedSkuReplyFieldsSchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ error: parsed.error.issues[0]?.message ?? '回覆欄位資料無效' });
+      return;
+    }
+    try {
+      const batch = await updateDesignatedSkuReplyFields({
+        batchId: req.params.id as string,
+        fields: parsed.data.fields,
+        mode: parsed.data.reply_mode,
+      });
+      if (!batch) {
+        res.status(404).json({ error: '找不到批次' });
+        return;
+      }
+      await writeAuditEvent({
+        eventType: 'designated_sku_reply_fields_updated',
+        actorRole: 'admin',
+        actor: req.adminUsername,
+        ip: getClientIp(req),
+        metadata: {
+          batch_code: batch.batch_code,
+          reply_mode: batch.reply_mode,
+          reply_fields: batch.reply_fields.map((f) => `${f.key}:${f.label}`),
+        },
+      });
+      res.json({ ok: true, batch });
+    } catch (err) {
+      if (err instanceof DesignatedSkuError) {
+        res.status(400).json({ error: err.message });
+        return;
+      }
+      throw err;
+    }
   }),
 );
 

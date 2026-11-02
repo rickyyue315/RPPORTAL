@@ -176,6 +176,19 @@ describe('static asset freshness', () => {
     // 管理員代店舖回覆：明細行有「代回覆 / 編輯回覆」，彈窗可改年期
     expect(adminScript).toContain('dsku_edit_reply_overlay');
     expect(adminScript).toContain('代回覆');
+
+    // 回覆自定欄位（每批次不同，上限 10）：批次定義 → 店舖端動態表單 → 後台欄位編輯
+    const portalCss = readFileSync(path.join(root, 'public', 'portal', 'css', 'portal.css'), 'utf8');
+    expect(storeScript).toContain('ds-cf-input');
+    expect(storeScript).toContain('reply_fields');
+    expect(storeScript).toContain('reply_scope');
+    expect(portalCss).toContain('.ds-cf-grid');
+    expect(adminHtml).toContain('id="dsku_fields_overlay"');
+    expect(adminHtml).toContain('id="dsku_reply_mode"');
+    expect(adminScript).toContain('/reply-fields');
+    expect(adminScript).toContain('dsku-cf-input');
+    const omScript = readFileSync(path.join(root, 'public', 'portal', 'js', 'om-designated-sku.js'), 'utf8');
+    expect(omScript).toContain('ds-cf-input');
   });
 
   it('keeps the admin tabs consolidated (匯出批次 → 匯出, 帳戶／審批 → 系統)', () => {

@@ -1,7 +1,15 @@
 import type { PoolClient } from 'pg';
 import { query, withTransaction } from '../db/pool.js';
 import { toHKDateString, toHKString } from '../lib/time.js';
-import { normalizeYearCode } from '../lib/designatedSku.js';
+import {
+  DESIGNATED_SKU_MAX_REPLY_FIELDS,
+  normalizeReplyFields,
+  normalizeReplyValues,
+  normalizeYearCode,
+  type DesignatedSkuReplyField,
+  type DesignatedSkuReplyMode,
+  type DesignatedSkuReplyScope,
+} from '../lib/designatedSku.js';
 
 /**
  * 指定 SKU 回覆 — 資料存取
@@ -37,6 +45,8 @@ export interface DesignatedSkuMatterItem {
   reply_note: string;
   reply_total: number | null;
   reply_line_count: number;
+  /** 自定回覆欄位值（key 對應批次 reply_fields） */
+  reply_values: Record<string, string>;
   replied_at: string | null;
   replied_by: string | null;
   reply_count: number;
@@ -68,6 +78,12 @@ export interface DesignatedSkuMatter {
   is_open: boolean;
   /** 全部 SKU 已回覆（或標示無可調撥）才算是 replied */
   status: 'pending' | 'replied';
+  /** 回覆內容：年期／可調撥件數、純自定欄位、或兩者 */
+  reply_mode: DesignatedSkuReplyMode;
+  /** 欄位套用層級：每個 SKU 一套 / 每間店（事項）一套 */
+  reply_scope: DesignatedSkuReplyScope;
+  /** 批次定義的回覆欄位（最多 10 個） */
+  reply_fields: DesignatedSkuReplyField[];
   item_count: number;
   replied_item_count: number;
   reply_total: number;
@@ -88,6 +104,10 @@ export interface DesignatedSkuBatchRow {
   reference: string;
   note: string;
   settings: Record<string, unknown>;
+  /** 回覆模式與欄位（批次層級） */
+  reply_mode: DesignatedSkuReplyMode;
+  reply_scope: DesignatedSkuReplyScope;
+  reply_fields: DesignatedSkuReplyField[];
   source_filename: string;
   row_count: number;
   store_count: number;
@@ -144,7 +164,7 @@ function asStringRecord(value: unknown): Record<string, string> {
 const MATTER_SELECT = `
   SELECT m.*, b.batch_code, b.subject, b.matter_type, b.instructions, b.due_at, b.reference,
          b.note AS batch_note, b.settings, b.created_at AS batch_created_at,
-         b.closed_at AS batch_closed_at, s.shop,
+         b.closed_at AS batch_closed_at, b.reply_mode, b.reply_scope, b.reply_fields, s.shop,
          (b.closed_at IS NULL AND (b.due_at IS NULL OR b.due_at > now())) AS is_open_now
     FROM designated_sku_matters m
     JOIN designated_sku_batches b ON b.id = m.batch_id
@@ -170,6 +190,9 @@ interface MatterBase {
   batch_created_at: string;
   batch_closed_at: string | null;
   is_open: boolean;
+  reply_mode: DesignatedSkuReplyMode;
+  reply_scope: DesignatedSkuReplyScope;
+  reply_fields: DesignatedSkuReplyField[];
 }
 
 function mapMatterBase(row: Record<string, unknown>): MatterBase {
@@ -183,6 +206,9 @@ function mapMatterBase(row: Record<string, unknown>): MatterBase {
     is_open: Boolean((row as Record<string, unknown>).is_open_now),
     is_expired: !m.batch_closed_at && Boolean((row as Record<string, unknown>).due_at) && !(row as Record<string, unknown>).is_open_now,
     shop: m.shop ?? '',
+    reply_mode: m.reply_mode === 'custom' || m.reply_mode === 'mixed' ? m.reply_mode : 'stock_year',
+    reply_scope: m.reply_scope === 'matter' ? 'matter' : 'item',
+    reply_fields: normalizeReplyFields(m.reply_fields),
   };
 }
 
@@ -196,6 +222,7 @@ function mapItem(row: Record<string, unknown>): DesignatedSkuMatterItem {
     reply_count: Number(item.reply_count ?? 0),
     no_transfer: Boolean(item.no_transfer),
     payload: asStringRecord(item.payload),
+    reply_values: asStringRecord(item.reply_values),
     replied_at: item.replied_at ? toHKString(item.replied_at as unknown as string) : null,
     admin_edited_at: item.admin_edited_at ? toHKString(item.admin_edited_at as unknown as string) : null,
     admin_edited_by: item.admin_edited_by ?? '',
@@ -276,6 +303,12 @@ export interface CreateDesignatedSkuBatchInput {
   reference?: string;
   note?: string;
   settings?: Record<string, unknown>;
+  /** 回覆內容模式；預設 stock_year（與舊批次一致） */
+  replyMode?: DesignatedSkuReplyMode;
+  /** item = 每個 SKU 一套（預設）；matter = 每間店一套 */
+  replyScope?: DesignatedSkuReplyScope;
+  /** 自定回覆欄位（最多 10 個） */
+  replyFields?: DesignatedSkuReplyField[];
   sourceFilename: string;
   rows: Array<{
     siteCode: string;
@@ -299,8 +332,9 @@ export async function createBatch(
     const ins = await client.query<{ id: string }>(
       `INSERT INTO designated_sku_batches
          (batch_code, subject, matter_type, instructions, due_at, reference, note, settings,
+          reply_mode, reply_scope, reply_fields,
           source_filename, row_count, store_count, skipped_rows, warn_count, content_hash, created_by)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
        RETURNING id`,
       [
         batchCode,
@@ -311,6 +345,9 @@ export async function createBatch(
         input.reference ?? '',
         input.note ?? '',
         JSON.stringify(input.settings ?? {}),
+        input.replyMode ?? 'stock_year',
+        input.replyScope ?? 'item',
+        JSON.stringify(input.replyFields ?? []),
         input.sourceFilename,
         input.rows.length,
         0,
@@ -392,6 +429,9 @@ function mapBatch(row: Record<string, unknown>): DesignatedSkuBatchRow {
     ...b,
     due_at: hkDateTime(b.due_at as unknown as string | Date | null),
     settings: asRecord(b.settings),
+    reply_mode: b.reply_mode === 'custom' || b.reply_mode === 'mixed' ? b.reply_mode : 'stock_year',
+    reply_scope: b.reply_scope === 'matter' ? 'matter' : 'item',
+    reply_fields: normalizeReplyFields(b.reply_fields),
     created_at: toHKString(b.created_at as unknown as string),
     closed_at: b.closed_at ? toHKString(b.closed_at as unknown as string) : null,
     is_open: Boolean((row as Record<string, unknown>).is_open_now),
@@ -643,6 +683,8 @@ export interface MatterReplyItemInput {
   lines: Array<{ year_code?: unknown; qty?: unknown }>;
   note?: string;
   no_transfer?: boolean;
+  /** 自定回覆欄位：{ f1: '3', f2: '門口' }（key 對應批次 reply_fields） */
+  fields?: Record<string, unknown>;
 }
 
 export interface SubmitMatterReplyInput {
@@ -687,36 +729,65 @@ function normalizeLines(raw: Array<{ year_code?: unknown; qty?: unknown }>): Des
 interface NormalizedItemReply {
   itemId: string;
   lines: DesignatedSkuReplyLine[];
-  total: number;
+  total: number | null;
   note: string;
   noTransfer: boolean;
+  values: Record<string, string>;
+}
+
+interface ReplyRules {
+  mode: DesignatedSkuReplyMode;
+  fields: DesignatedSkuReplyField[];
+  /** 每間店一套：錯誤訊息用「本店回覆」，不顯示佔位 SKU */
+  shopLevel: boolean;
 }
 
 function validateItemReplies(
   dbItems: Array<{ id: string; sku: string; stock_qty: number | null }>,
   submitted: MatterReplyItemInput[],
+  rules: ReplyRules,
 ): NormalizedItemReply[] {
   const byId = new Map(dbItems.map((it) => [it.id, it]));
   if (submitted.length !== byId.size) {
-    throw new DesignatedSkuError('請為事項內每個 SKU 填寫回覆，或選取「無可調撥」');
+    throw new DesignatedSkuError(
+      rules.shopLevel ? '請填寫本店回覆後再提交' : '請為事項內每個 SKU 填寫回覆，或選取「無可調撥」',
+    );
   }
   const seen = new Set<string>();
   const out: NormalizedItemReply[] = [];
   for (const input of submitted) {
     const item = byId.get(input.item_id);
     if (!item) throw new DesignatedSkuError('回覆資料與事項不符，請重新整理後再試');
-    if (seen.has(input.item_id)) throw new DesignatedSkuError('同一個 SKU 只可回覆一次');
+    if (seen.has(input.item_id)) throw new DesignatedSkuError('同一項回覆只可提交一次');
     seen.add(input.item_id);
 
-    const noTransfer = input.no_transfer === true;
-    const lines = noTransfer ? [] : normalizeLines(input.lines);
-    const total = lines.reduce((sum, line) => sum + line.qty, 0);
-    const stock = item.stock_qty === null || item.stock_qty === undefined ? null : Number(item.stock_qty);
-    if (!noTransfer && stock !== null && total > stock) {
-      throw new DesignatedSkuError(`SKU ${item.sku} 的可調撥件數合計 ${total} 件，不可多於存貨 ${stock} 件`);
+    const subject = rules.shopLevel ? '本店回覆' : `SKU ${item.sku}`;
+    const noTransfer = rules.mode === 'custom' ? false : input.no_transfer === true;
+
+    // 自定欄位：必填、數字格式、選項一律在 lib 驗證（錯誤轉為業務錯誤，回 400 而非 500）
+    let values: Record<string, string>;
+    try {
+      values = normalizeReplyValues(input.fields, rules.fields, subject);
+    } catch (err) {
+      throw new DesignatedSkuError(err instanceof Error ? err.message : String(err));
     }
+    if (rules.mode === 'custom' && Object.keys(values).length === 0) {
+      throw new DesignatedSkuError(`${subject}：請至少填寫一個回覆欄位`);
+    }
+
+    let lines: DesignatedSkuReplyLine[] = [];
+    let total: number | null = null;
+    if (rules.mode !== 'custom') {
+      lines = noTransfer ? [] : normalizeLines(input.lines);
+      total = lines.reduce((sum, line) => sum + line.qty, 0);
+      const stock = item.stock_qty === null || item.stock_qty === undefined ? null : Number(item.stock_qty);
+      if (!noTransfer && stock !== null && total > stock) {
+        throw new DesignatedSkuError(`SKU ${item.sku} 的可調撥件數合計 ${total} 件，不可多於存貨 ${stock} 件`);
+      }
+    }
+
     const note = String(input.note ?? '').slice(0, DESIGNATED_SKU_NOTE_MAX);
-    out.push({ itemId: input.item_id, lines, total, note, noTransfer });
+    out.push({ itemId: input.item_id, lines, total, note, noTransfer, values });
   }
   return out;
 }
@@ -741,8 +812,11 @@ export async function submitMatterReply(input: SubmitMatterReplyInput): Promise<
       closed_at: string | null;
       due_at: string | null;
       overdue: boolean;
+      reply_mode: string;
+      reply_scope: string;
+      reply_fields: unknown;
     }>(
-      `SELECT m.id, m.site_code, b.closed_at, b.due_at,
+      `SELECT m.id, m.site_code, b.closed_at, b.due_at, b.reply_mode, b.reply_scope, b.reply_fields,
               (b.due_at IS NOT NULL AND b.due_at <= now()) AS overdue
          FROM designated_sku_matters m
          JOIN designated_sku_batches b ON b.id = m.batch_id
@@ -769,7 +843,11 @@ export async function submitMatterReply(input: SubmitMatterReplyInput): Promise<
         WHERE matter_id = $1 FOR UPDATE`,
       [matter.id],
     );
-    const replies = validateItemReplies(itemRows.rows, input.items);
+    const replies = validateItemReplies(itemRows.rows, input.items, {
+      mode: matter.reply_mode === 'custom' || matter.reply_mode === 'mixed' ? matter.reply_mode : 'stock_year',
+      fields: normalizeReplyFields(matter.reply_fields),
+      shopLevel: matter.reply_scope === 'matter',
+    });
 
     for (const reply of replies) {
       await replaceLines(client, reply.itemId, reply.lines);
@@ -780,6 +858,7 @@ export async function submitMatterReply(input: SubmitMatterReplyInput): Promise<
                 reply_note = $3,
                 reply_total = $4,
                 reply_line_count = $5,
+                reply_values = $8::jsonb,
                 replied_at = now(),
                 replied_by = $6,
                 replied_by_user_id = $7,
@@ -797,6 +876,7 @@ export async function submitMatterReply(input: SubmitMatterReplyInput): Promise<
           reply.lines.length,
           input.repliedBy,
           input.repliedByUserId,
+          JSON.stringify(reply.values),
         ],
       );
     }
@@ -823,18 +903,32 @@ export async function adminSubmitMatterReply(
   input: AdminMatterReplyInput,
 ): Promise<{ matter: DesignatedSkuMatter; entered: boolean }> {
   const entered = await withTransaction(async (client) => {
-    const m = await client.query<{ id: string }>(
-      'SELECT id FROM designated_sku_matters WHERE id = $1 AND batch_id = $2 FOR UPDATE',
+    const m = await client.query<{
+      id: string;
+      reply_mode: string;
+      reply_scope: string;
+      reply_fields: unknown;
+    }>(
+      `SELECT m.id, b.reply_mode, b.reply_scope, b.reply_fields
+         FROM designated_sku_matters m
+         JOIN designated_sku_batches b ON b.id = m.batch_id
+        WHERE m.id = $1 AND m.batch_id = $2
+        FOR UPDATE OF m`,
       [input.matterId, input.batchId],
     );
     if (!m.rows[0]) throw new DesignatedSkuNotFoundError('找不到此事項，可能已被刪除');
+    const matterRow = m.rows[0];
 
     const itemRows = await client.query<{ id: string; sku: string; stock_qty: number | null; status: string }>(
       `SELECT id, sku, stock_qty, status FROM designated_sku_items
         WHERE matter_id = $1 FOR UPDATE`,
       [input.matterId],
     );
-    const replies = validateItemReplies(itemRows.rows, input.items);
+    const replies = validateItemReplies(itemRows.rows, input.items, {
+      mode: matterRow.reply_mode === 'custom' || matterRow.reply_mode === 'mixed' ? matterRow.reply_mode : 'stock_year',
+      fields: normalizeReplyFields(matterRow.reply_fields),
+      shopLevel: matterRow.reply_scope === 'matter',
+    });
     const statusById = new Map(itemRows.rows.map((row) => [row.id, row.status]));
     let anyPending = false;
 
@@ -849,6 +943,7 @@ export async function adminSubmitMatterReply(
                 reply_note = $3,
                 reply_total = $4,
                 reply_line_count = $5,
+                reply_values = $8::jsonb,
                 replied_at = CASE WHEN status = 'pending' THEN now() ELSE replied_at END,
                 replied_by = CASE WHEN status = 'pending' THEN $6 ELSE replied_by END,
                 reply_count = CASE WHEN status = 'pending' THEN 1 ELSE reply_count END,
@@ -864,6 +959,7 @@ export async function adminSubmitMatterReply(
           reply.lines.length,
           `管理員代填（${input.actor}）`,
           input.actor,
+          JSON.stringify(reply.values),
         ],
       );
     }
@@ -1030,14 +1126,17 @@ export async function addItem(
   input: AddDesignatedSkuItemInput,
 ): Promise<{ itemId: string; matterId: string; matterCode: string; matterCreated: boolean }> {
   return withTransaction(async (client) => {
-    const batch = await client.query<{ closed_at: string | null }>(
-      'SELECT closed_at FROM designated_sku_batches WHERE id = $1 FOR UPDATE',
+    const batch = await client.query<{ closed_at: string | null; reply_scope: string }>(
+      'SELECT closed_at, reply_scope FROM designated_sku_batches WHERE id = $1 FOR UPDATE',
       [input.batchId],
     );
     const batchRow = batch.rows[0];
     if (!batchRow) throw new DesignatedSkuNotFoundError('找不到批次，可能已被刪除');
     if (batchRow.closed_at) {
       throw new DesignatedSkuError('批次已封存，請先「重開」再加入 SKU');
+    }
+    if (batchRow.reply_scope === 'matter') {
+      throw new DesignatedSkuError('此批次為「每間店一套」回覆，不可加入個別 SKU；如要逐個 SKU 回覆，請另建批次');
     }
 
     const site = await client.query<{ site_code: string }>('SELECT site_code FROM stores WHERE site_code = $1', [
@@ -1123,13 +1222,16 @@ export async function updateItem(input: UpdateDesignatedSkuItemInput): Promise<{
     const item = itemRes.rows[0];
     if (!item) throw new DesignatedSkuNotFoundError('找不到此 SKU，可能已被刪除');
 
-    const batch = await client.query<{ closed_at: string | null }>(
-      'SELECT closed_at FROM designated_sku_batches WHERE id = $1 FOR UPDATE',
+    const batch = await client.query<{ closed_at: string | null; reply_scope: string }>(
+      'SELECT closed_at, reply_scope FROM designated_sku_batches WHERE id = $1 FOR UPDATE',
       [input.batchId],
     );
     const batchRow = batch.rows[0];
     if (!batchRow) throw new DesignatedSkuNotFoundError('找不到批次，可能已被刪除');
     if (batchRow.closed_at) throw new DesignatedSkuError('批次已封存，請先「重開」再修改');
+    if (batchRow.reply_scope === 'matter') {
+      throw new DesignatedSkuError('此批次為「每間店一套」回覆，沒有個別 SKU 可修改');
+    }
 
     const nextStock = input.stockQty === undefined ? item.stock_qty : input.stockQty;
     if (nextStock !== null && nextStock !== undefined && item.status === 'replied') {
@@ -1261,6 +1363,58 @@ export async function updateBatch(input: UpdateDesignatedSkuBatchInput): Promise
   if (input.note !== undefined) push('note', input.note);
   if (!sets.length) return getBatch(input.batchId);
   await query(`UPDATE designated_sku_batches SET ${sets.join(', ')} WHERE id = $1`, params);
+  return getBatch(input.batchId);
+}
+
+export interface UpdateReplyFieldsInput {
+  batchId: string;
+  /** 完整欄位陣列（現有欄位要帶回原本的 key，改名才會對得上舊回覆） */
+  fields: unknown;
+  mode?: DesignatedSkuReplyMode;
+}
+
+/**
+ * 更新批次的自定回覆欄位定義。
+ * - 上限 10 個；套用層級（item / matter）建立後不可改
+ * - 已有回覆值的欄位不可刪除，但可改名、改類型、改必填
+ */
+export async function updateReplyFields(input: UpdateReplyFieldsInput): Promise<DesignatedSkuBatchRow | null> {
+  const rawCount = Array.isArray(input.fields) ? input.fields.length : 0;
+  if (rawCount > DESIGNATED_SKU_MAX_REPLY_FIELDS) {
+    throw new DesignatedSkuError(`最多只可設定 ${DESIGNATED_SKU_MAX_REPLY_FIELDS} 個回覆欄位`);
+  }
+  const fields = normalizeReplyFields(input.fields);
+  if (rawCount > 0 && fields.length === 0) {
+    throw new DesignatedSkuError('回覆欄位不可全部留空');
+  }
+
+  const batch = await getBatch(input.batchId);
+  if (!batch) return null;
+
+  const nextKeys = new Set(fields.map((f) => f.key));
+  const removed = batch.reply_fields.filter((f) => !nextKeys.has(f.key));
+  if (removed.length) {
+    const used = await query<{ key: string }>(
+      `SELECT DISTINCT e.key
+         FROM designated_sku_items i
+         JOIN designated_sku_matters m ON m.id = i.matter_id
+         CROSS JOIN LATERAL jsonb_each_text(i.reply_values) AS e(key, value)
+        WHERE m.batch_id = $1 AND btrim(e.value) <> ''`,
+      [input.batchId],
+    );
+    const usedKeys = new Set(used.rows.map((r) => r.key));
+    const blocked = removed.filter((f) => usedKeys.has(f.key));
+    if (blocked.length) {
+      throw new DesignatedSkuError(
+        `欄位「${blocked.map((f) => f.label).join('、')}」已有店舖回覆，不可刪除；如不再使用，可改名或改為選填`,
+      );
+    }
+  }
+
+  await query(
+    `UPDATE designated_sku_batches SET reply_fields = $2::jsonb, reply_mode = $3 WHERE id = $1`,
+    [input.batchId, JSON.stringify(fields), input.mode ?? batch.reply_mode],
+  );
   return getBatch(input.batchId);
 }
 

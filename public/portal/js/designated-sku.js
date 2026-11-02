@@ -14,6 +14,11 @@
   const MAX_LINES = 20;
   const MAX_QTY = 9999;
 
+  /** 目前開啟事項的回覆設定（由批次帶落嚟） */
+  let currentFields = [];
+  let currentMode = 'stock_year';
+  let currentScope = 'item';
+
   /* ---------------- 工具 ---------------- */
 
   function fmtStock(value) {
@@ -32,8 +37,17 @@
       : '<span class="badge-pending">未回覆</span>';
   }
 
-  function itemSummary(item) {
+  function itemSummary(item, matter) {
     if (item.status !== 'replied') return '<span class="ds-line-pending">未回覆</span>';
+    const mode = (matter && matter.reply_mode) || 'stock_year';
+    const fields = (matter && matter.reply_fields) || [];
+    if (mode === 'custom') {
+      const values = (item.reply_values || {});
+      const parts = fields
+        .filter((f) => values[f.key])
+        .map((f) => `<span class="ds-cf-chip">${p.escapeHtml(f.label)} <b>${p.escapeHtml(values[f.key])}</b></span>`);
+      return parts.length ? parts.join(' ') : '<span class="ds-line-none">已回覆</span>';
+    }
     if (item.no_transfer) return '<span class="ds-line-none">無可調撥</span>';
     const chips = (item.lines || [])
       .map((l) => `<span class="ds-chip"><b>${p.escapeHtml(l.year_code)}</b> × ${p.escapeHtml(String(l.qty))}</span>`)
@@ -76,10 +90,14 @@
     try {
       const data = await p.api('/api/portal/designated-sku/matters');
       matters = data.matters || [];
-      const skuCount = matters.reduce((sum, m) => sum + m.item_count, 0);
+      const skuCount = matters.reduce((sum, m) => sum + (m.reply_scope === 'matter' ? 0 : m.item_count), 0);
+      const shopLevelCount = matters.filter((m) => m.reply_scope === 'matter').length;
+      const parts = [];
+      if (skuCount) parts.push(`${skuCount} 個 SKU`);
+      if (shopLevelCount) parts.push(`${shopLevelCount} 個店舖層事項`);
       $('ds_site_info').innerHTML =
         `<div class="site-banner">${p.escapeHtml(data.site_code)}${data.shop ? ` ${p.escapeHtml(data.shop)}` : ''}</div>` +
-        `<div>共 ${matters.length} 個事項（${skuCount} 個 SKU）${data.pending_count ? `｜<b class="ds-pending-count">${data.pending_count} 個事項未回覆</b>` : '｜全部已回覆'}</div>`;
+        `<div>共 ${matters.length} 個事項${parts.length ? `（${parts.join('｜')}）` : ''}${data.pending_count ? `｜<b class="ds-pending-count">${data.pending_count} 個事項未回覆</b>` : '｜全部已回覆'}</div>`;
       render();
       if (wantedMatterCode) {
         const code = wantedMatterCode;
@@ -117,17 +135,18 @@
       const closed = !matter.is_open;
       const replied = matter.status === 'replied';
       const label = closed ? '查看回覆' : replied ? '修改回覆' : '回覆';
+      const shopLevel = matter.reply_scope === 'matter';
       const facts = [
-        `<b>${matter.item_count}</b> 個 SKU`,
+        shopLevel ? '<b>每間店一套</b>（不需逐個 SKU）' : `<b>${matter.item_count}</b> 個 SKU`,
         `批次 <span class="ds-code">${p.escapeHtml(matter.batch_code)}</span>`,
         matter.due_at ? `截止 <b>${p.escapeHtml(matter.due_at)}</b>（香港時間）` : '',
         matter.reference ? `參考 ${p.escapeHtml(matter.reference)}` : '',
       ].filter(Boolean).join('<span class="ds-sep">｜</span>');
-      const skuRows = (matter.items || []).map((item) => `
+      const skuRows = shopLevel ? '' : (matter.items || []).map((item) => `
         <div class="ds-sku-line">
           <div class="ds-sku-line-id"><b class="ds-code">${p.escapeHtml(item.sku)}</b><span>${p.escapeHtml(item.description || '')}</span></div>
           <div class="ds-sku-line-stock">存貨 ${p.escapeHtml(fmtStock(item.stock_qty))}</div>
-          <div class="ds-sku-line-reply">${itemSummary(item)}</div>
+          <div class="ds-sku-line-reply">${itemSummary(item, matter)}</div>
         </div>`).join('');
       return `<article class="ds-matter${closed ? ' ds-matter--closed' : replied ? ' ds-matter--replied' : ' ds-matter--pending'}">
         <div class="ds-matter-head">
@@ -135,8 +154,8 @@
           <button class="btn ghost btn-sm ds-open" type="button" data-open="${p.escapeHtml(matter.matter_code)}"${!closed && !replied ? ' aria-label="此事項仍需要回覆"' : ''}>${label}</button>
         </div>
         <h3 class="ds-matter-title">${p.escapeHtml(matter.subject)}</h3>
-        <div class="ds-matter-facts">${facts}</div>
-        <div class="ds-sku-list">${skuRows}</div>
+        <div class="ds-matter-facts">${facts}${shopLevel && replied ? `<span class="ds-sep">｜</span>${itemSummary((matter.items || [])[0] || {}, matter)}` : ''}</div>
+        ${skuRows ? `<div class="ds-sku-list">${skuRows}</div>` : ''}
         ${matter.instructions ? `<div class="ds-instructions">${p.escapeHtml(matter.instructions).replace(/\n/g, '<br>')}</div>` : ''}
       </article>`;
     }).join('');
@@ -206,12 +225,65 @@
 
   function updateOverallTotal() {
     if (!currentMatter) return;
+    if (currentMode === 'custom') {
+      const inputs = Array.from($('ds_sku_sections').querySelectorAll('.ds-cf-input'));
+      const filled = inputs.filter((el) => String(el.value || '').trim() !== '').length;
+      const required = currentFields.filter((f) => f.required).length;
+      const scopeText = currentScope === 'matter' ? '本店回覆' : `${currentMatter.item_count} 個 SKU`;
+      $('ds_reply_summary').innerHTML = `${scopeText}｜已填 <b>${filled}</b> / ${inputs.length} 欄`
+        + (required ? `｜其中 <b>${required}</b> 欄必填` : '');
+      return;
+    }
     let total = 0;
     const sections = Array.from($('ds_sku_sections').querySelectorAll('[data-item]'));
     for (const section of sections) {
-      if (!section.querySelector('.ds-no-transfer').checked) total += sectionTotal(section);
+      const skip = section.querySelector('.ds-no-transfer');
+      if (!skip || !skip.checked) total += sectionTotal(section);
     }
     $('ds_reply_summary').innerHTML = `${currentMatter.item_count} 個 SKU｜合計 <b>${total}</b> 件`;
+  }
+
+  /* ---------------- 自定回覆欄位 ---------------- */
+
+  function fieldInputHtml(field, value) {
+    const v = value === null || value === undefined ? '' : String(value);
+    const common = `class="ds-cf-input" data-field="${p.escapeHtml(field.key)}"`
+      + ` aria-label="${p.escapeHtml(field.label)}"`
+      + ` value="${p.escapeHtml(v)}"`;
+    if (field.type === 'number') {
+      return `<input ${common} type="number" min="0" step="any" inputmode="decimal" placeholder="${p.escapeHtml(field.hint || '')}">`;
+    }
+    if (field.type === 'choice') {
+      const options = (field.options && field.options.length ? field.options : ['是', '否']);
+      const selectAttr = `class="ds-cf-input" data-field="${p.escapeHtml(field.key)}" aria-label="${p.escapeHtml(field.label)}"`;
+      return `<select ${selectAttr}>`
+        + `<option value="">請選擇</option>`
+        + options.map((o) => `<option value="${p.escapeHtml(o)}"${o === v ? ' selected' : ''}>${p.escapeHtml(o)}</option>`).join('')
+        + `</select>`;
+    }
+    return `<input ${common} type="text" maxlength="300" placeholder="${p.escapeHtml(field.hint || '')}">`;
+  }
+
+  function fieldGridHtml(item) {
+    if (!currentFields.length) return '';
+    const values = (item && item.reply_values) || {};
+    const cells = currentFields.map((field) => {
+      const wide = field.type === 'text' && field.label.length > 16 ? ' ds-cf--wide' : '';
+      return `<label class="ds-cf${wide}">
+        <span class="ds-cf-label">${p.escapeHtml(field.label)}${field.required ? '<span class="ds-cf-req">*</span>' : ''}</span>
+        ${fieldInputHtml(field, values[field.key])}
+        ${field.hint ? `<small class="ds-cf-hint">${p.escapeHtml(field.hint)}</small>` : ''}
+      </label>`;
+    }).join('');
+    return `<div class="ds-cf-grid">${cells}</div>`;
+  }
+
+  function fieldValuesReadonly(item) {
+    const values = (item && item.reply_values) || {};
+    const parts = currentFields
+      .filter((f) => values[f.key])
+      .map((f) => `<span class="ds-cf-chip">${p.escapeHtml(f.label)} <b>${p.escapeHtml(values[f.key])}</b></span>`);
+    return parts.length ? parts.join(' ') : '<span class="ds-line-none">未填寫</span>';
   }
 
   function setNoTransfer(section, on) {
@@ -231,44 +303,63 @@
 
   function buildSkuSection(item) {
     const section = document.createElement('section');
-    section.className = 'ds-sku';
+    section.className = 'ds-sku' + (currentScope === 'matter' ? ' ds-sku--shop' : '');
     section.setAttribute('data-item', item.id);
-    const stock = item.stock_qty === null || item.stock_qty === undefined ? null : Number(item.stock_qty);
     const isNoTransfer = item.no_transfer === true;
 
-    section.innerHTML = `
-      <div class="ds-sku-head">
-        <div class="ds-sku-id"><b class="ds-code">${p.escapeHtml(item.sku)}</b><span>${p.escapeHtml(item.description || '')}</span></div>
-        <div class="ds-sku-stock">存貨 <b>${p.escapeHtml(fmtStock(item.stock_qty))}</b></div>
-      </div>
+    const headHtml = currentScope === 'matter'
+      ? `<div class="ds-sku-head">
+          <div class="ds-sku-id"><b>本店回覆</b><span>套用於事項內 ${currentMatter.item_count} 個 SKU</span></div>
+        </div>`
+      : `<div class="ds-sku-head">
+          <div class="ds-sku-id"><b class="ds-code">${p.escapeHtml(item.sku)}</b><span>${p.escapeHtml(item.description || '')}</span></div>
+          <div class="ds-sku-stock">存貨 <b>${p.escapeHtml(fmtStock(item.stock_qty))}</b></div>
+        </div>`;
+
+    if (readOnly) {
+      // 只供查閱：自定欄位與年期一律顯示靜態值
+      const linesHtml = currentMode === 'custom' ? '' : `<div class="ds-sku-readonly">${item.status !== 'replied'
+        ? '<span class="ds-line-pending">店舖未提交回覆（已截止）</span>'
+        : (item.no_transfer
+          ? '<span class="ds-line-none">無可調撥件數</span>'
+          : `${(item.lines || []).map((l) => `<span class="ds-chip"><b>${p.escapeHtml(l.year_code)}</b> × ${p.escapeHtml(String(l.qty))}</span>`).join(' ')}<span class="ds-total-inline">合計 <b>${item.reply_total ?? 0}</b> 件</span>`)}</div>`;
+      section.innerHTML = headHtml
+        + (currentFields.length ? `<div class="ds-cf-readonly">${fieldValuesReadonly(item)}</div>` : '')
+        + linesHtml
+        + (item.reply_note ? `<div class="hint">備註：${p.escapeHtml(item.reply_note)}</div>` : '');
+      return section;
+    }
+
+    const linesBlock = currentMode === 'custom' ? '' : `
       <div class="ds-editor">
         <div class="ds-lines-head" aria-hidden="true"><span>貨品年期 (MMYY)</span><span>可調撥件數</span><span></span></div>
         <div class="ds-lines"></div>
         <button class="btn ghost btn-sm ds-add-line" type="button">＋ 新增年期</button>
       </div>
       <label class="ds-none"><input type="checkbox" class="ds-no-transfer"> 此 SKU 無可調撥件數</label>
-      <div class="ds-total ds-sku-total"></div>
-      <label class="ds-sku-note-label" for="ds_note_${p.escapeHtml(item.id)}">此 SKU 備註（選填）</label>
+      <div class="ds-total ds-sku-total"></div>`;
+
+    section.innerHTML = headHtml + fieldGridHtml(item) + linesBlock + `
+      <label class="ds-sku-note-label" for="ds_note_${p.escapeHtml(item.id)}">備註（選填）</label>
       <input class="ds-sku-note" id="ds_note_${p.escapeHtml(item.id)}" type="text" maxlength="2000" placeholder="例如：陳列品、包裝破損…" value="${p.escapeHtml(item.reply_note || '')}">
     `;
 
-    const wrap = section.querySelector('.ds-lines');
-    if (readOnly) {
-      // 只供查閱：顯示靜態年期，不提供輸入
-      section.innerHTML = `
-        <div class="ds-sku-head">
-          <div class="ds-sku-id"><b class="ds-code">${p.escapeHtml(item.sku)}</b><span>${p.escapeHtml(item.description || '')}</span></div>
-          <div class="ds-sku-stock">存貨 <b>${p.escapeHtml(fmtStock(item.stock_qty))}</b></div>
-        </div>
-        <div class="ds-sku-readonly">${item.status !== 'replied'
-          ? '<span class="ds-line-pending">店舖未提交回覆（已截止）</span>'
-          : (item.no_transfer
-            ? '<span class="ds-line-none">無可調撥件數</span>'
-            : `${(item.lines || []).map((l) => `<span class="ds-chip"><b>${p.escapeHtml(l.year_code)}</b> × ${p.escapeHtml(String(l.qty))}</span>`).join(' ')}<span class="ds-total-inline">合計 <b>${item.reply_total ?? 0}</b> 件</span>`)}</div>
-        ${item.reply_note ? `<div class="hint">備註：${p.escapeHtml(item.reply_note)}</div>` : ''}`;
+    if (currentFields.length) {
+      section.querySelectorAll('.ds-cf-input').forEach((input) => {
+        input.addEventListener('input', () => {
+          input.classList.remove('is-invalid');
+          updateOverallTotal();
+        });
+        input.addEventListener('change', updateOverallTotal);
+      });
+    }
+
+    if (currentMode === 'custom') {
+      updateOverallTotal();
       return section;
     }
 
+    const wrap = section.querySelector('.ds-lines');
     (item.lines && item.lines.length ? item.lines : [{}]).forEach((line) => addLine(wrap, line));
     section.querySelector('.ds-add-line').addEventListener('click', () => {
       addLine(wrap, {});
@@ -286,12 +377,16 @@
     const matter = matters.find((m) => m.matter_code === code);
     if (!matter) return;
     currentMatter = matter;
+    currentFields = matter.reply_fields || [];
+    currentMode = matter.reply_mode || 'stock_year';
+    currentScope = matter.reply_scope || 'item';
     readOnly = !matter.is_open;
     $('ds_reply_title').textContent = readOnly
       ? `事項回覆（已截止） — ${matter.matter_code}`
       : matter.status === 'replied' ? `修改回覆 — ${matter.matter_code}` : `回覆事項 — ${matter.matter_code}`;
     $('ds_reply_matter').textContent = `${matter.subject}｜批次 ${matter.batch_code}`;
-    $('ds_reply_sub').textContent = `${matter.item_count} 個 SKU` +
+    $('ds_reply_sub').textContent = (currentScope === 'matter' ? '每間店一套' : `${matter.item_count} 個 SKU`) +
+      (currentFields.length ? `｜${currentFields.length} 個回覆欄位` : '') +
       (matter.due_at ? `｜截止 ${matter.due_at}（香港時間）` : '') +
       (matter.reference ? `｜參考 ${matter.reference}` : '');
 
@@ -323,8 +418,8 @@
     updateOverallTotal();
     $('ds_reply_dialog').showModal();
     if (!readOnly) {
-      const firstYear = wrap.querySelector('.ds-year');
-      if (firstYear) setTimeout(() => firstYear.focus(), 60);
+      const first = wrap.querySelector('.ds-year') || wrap.querySelector('.ds-cf-input');
+      if (first) setTimeout(() => first.focus(), 60);
     }
   }
 
@@ -375,14 +470,49 @@
     return out;
   }
 
+  /** 讀取自定欄位；必填未填或數字格式錯即時標紅並中止 */
+  function collectFields(section, subject) {
+    const out = {};
+    for (const field of currentFields) {
+      const el = section.querySelector(`.ds-cf-input[data-field="${field.key}"]`);
+      const value = el ? String(el.value || '').trim() : '';
+      if (!value) {
+        if (field.required) {
+          if (el) el.classList.add('is-invalid');
+          throw new Error(`${subject}：「${field.label}」為必填`);
+        }
+        continue;
+      }
+      if (field.type === 'number' && !/^\d+(\.\d+)?$/.test(value)) {
+        if (el) el.classList.add('is-invalid');
+        throw new Error(`${subject}：「${field.label}」必須為數字（不接受負數或文字）`);
+      }
+      out[field.key] = value;
+    }
+    return out;
+  }
+
   function collectItems() {
     return Array.from($('ds_sku_sections').querySelectorAll('[data-item]')).map((section) => {
       const item = (currentMatter.items || []).find((it) => it.id === section.dataset.item);
-      const sku = item ? item.sku : '—';
-      const noTransfer = section.querySelector('.ds-no-transfer').checked;
+      const subject = currentScope === 'matter' ? '本店回覆' : `SKU ${item ? item.sku : '—'}`;
+      const fields = collectFields(section, subject);
       const note = (section.querySelector('.ds-sku-note')?.value || '').trim();
-      if (noTransfer) return { item_id: section.dataset.item, lines: [], note, no_transfer: true };
-      return { item_id: section.dataset.item, lines: collectSectionLines(section, sku), note, no_transfer: false };
+      if (currentMode === 'custom') {
+        if (!Object.keys(fields).length) throw new Error(`${subject}：請至少填寫一個回覆欄位`);
+        return { item_id: section.dataset.item, lines: [], note, no_transfer: false, fields };
+      }
+      const checkbox = section.querySelector('.ds-no-transfer');
+      if (checkbox && checkbox.checked) {
+        return { item_id: section.dataset.item, lines: [], note, no_transfer: true, fields };
+      }
+      return {
+        item_id: section.dataset.item,
+        lines: collectSectionLines(section, item ? item.sku : '—'),
+        note,
+        no_transfer: false,
+        fields,
+      };
     });
   }
 
@@ -410,7 +540,10 @@
       $('ds_reply_dialog').close();
       render();
       await loadMatters();
-      p.showAlert($('ds_list_error'), 'success', `已儲存 <b>${p.escapeHtml(data.matter.matter_code)}</b> 的回覆（${data.matter.item_count} 個 SKU，合計 ${data.matter.reply_total} 件）。如發現輸入有誤，可在截止前再修改。`);
+      const summary = data.matter.reply_mode === 'custom'
+        ? (data.matter.reply_scope === 'matter' ? '本店回覆已儲存' : `${data.matter.item_count} 個 SKU 已回覆`)
+        : `${data.matter.item_count} 個 SKU，合計 ${data.matter.reply_total} 件`;
+      p.showAlert($('ds_list_error'), 'success', `已儲存 <b>${p.escapeHtml(data.matter.matter_code)}</b> 的回覆（${summary}）。如發現輸入有誤，可在截止前再修改。`);
     } catch (err) {
       if (err.status === 409 && err.data?.code === 'MATTER_CLOSED') {
         $('ds_reply_dialog').close();

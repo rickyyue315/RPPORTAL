@@ -1122,6 +1122,33 @@ body.stk-modal-open { overflow: hidden; }
   font-weight: 600;
 }
 
+/* 自定回覆欄位（批次定義，最多 10 個） */
+.dsku-cf-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px 14px;
+  margin: 2px 0 12px;
+}
+.dsku-cf { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.dsku-cf-label { font-size: 12px; font-weight: 600; color: #475569; line-height: 1.55; }
+.dsku-cf-input.is-invalid { border-color: #d9534f; background: #fef7f6; }
+.dsku-fields-meta { font-size: 12.5px; color: #475569; }
+.dsku-field-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+.dsku-field-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 8px;
+  border-radius: 6px;
+  background: #eef5fc;
+  color: #3f5a75;
+  font-size: 12px;
+}
+.dsku-field-chip em { font-style: normal; font-size: 10.5px; color: #8296a8; }
+.dsku-fields-table td { vertical-align: middle; }
+.dsku-fields-table .form-control-sm,
+.dsku-fields-table .form-select-sm { font-size: 12.5px; }
+
 /* 指定 SKU 回覆：通用彈窗（補加／修改 SKU、編輯批次資料） */
 .dsku-overlay {
   position: fixed;

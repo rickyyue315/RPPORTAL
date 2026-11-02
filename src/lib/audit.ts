@@ -76,6 +76,7 @@ export type AuditEventType =
   | 'designated_sku_replied'
   | 'designated_sku_reply_admin_edited'
   | 'designated_sku_batch_updated'
+  | 'designated_sku_reply_fields_updated'
   | 'designated_sku_item_added'
   | 'designated_sku_item_updated'
   | 'om_zero_sales_reply'

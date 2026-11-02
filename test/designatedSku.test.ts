@@ -110,6 +110,7 @@ interface MatterItem {
   admin_edited_at: string | null;
   admin_edited_by: string;
   lines: Array<{ year_code: string; qty: number }>;
+  reply_values: Record<string, string>;
 }
 
 interface Matter {
@@ -122,6 +123,9 @@ interface Matter {
   reply_total: number;
   is_open: boolean;
   replied_by: string;
+  reply_mode: string;
+  reply_scope: string;
+  reply_fields: Array<{ key: string; label: string; type: string; required: boolean }>;
   items: MatterItem[];
 }
 
@@ -888,5 +892,168 @@ describe('人手輸入與批次維護', () => {
       .set('x-csrf-token', admin._csrf ?? '')
       .send({ site_code: 'HC63', sku: '200000000077', stock_qty: 1 });
     expect(ok.status).toBe(201);
+  });
+});
+
+describe('回覆自定欄位（每批次不同，上限 10 個）', () => {
+  const SHOP_HEADERS = [
+    'Shop',
+    'Wall 架 (闊度約 51cm-55cm)',
+    '5 層架 (闊度約 32cm)',
+    '有多少行陳列',
+    '如果不是 wall 架或 5 層架, 請寫明是甚麼位置',
+  ];
+
+  let shopBatchId = '';
+  let shopBatchCode = '';
+  let shopMatterCode = '';
+  let shopItemId = '';
+
+  async function buildSurvey(rows: Array<Array<string | number | null>>): Promise<Buffer> {
+    const wb = new ExcelJS.Workbook();
+    const ws = wb.addWorksheet('Store回覆');
+    ws.addRow(SHOP_HEADERS);
+    rows.forEach((row) => ws.addRow(row));
+    return Buffer.from(await wb.xlsx.writeBuffer());
+  }
+
+  it('只有 Shop 的檔案：4 個表頭自動成為回覆欄位，每間店一套（SKU 0）', async () => {
+    const admin = await adminAgent();
+    const res = await uploadBatch(admin, await buildSurvey([
+      ['HB20', 3, 2, 5, '門口陳列架'],
+      ['HA02', 4, null, 4, null],
+    ]), { subject: '11 月門店陳列調查' });
+    expect(res.status).toBe(201);
+    expect(res.body.replyScope).toBe('matter');
+    expect(res.body.replyMode).toBe('custom');
+    expect(res.body.replyFields.map((f: { label: string }) => f.label)).toEqual([
+      'Wall 架 (闊度約 51cm-55cm)',
+      '5 層架 (闊度約 32cm)',
+      '有多少行陳列',
+      '如果不是 wall 架或 5 層架, 請寫明是甚麼位置',
+    ]);
+    expect(res.body.replyFields.map((f: { type: string }) => f.type)).toEqual(['text', 'text', 'number', 'text']);
+    expect(res.body.itemCount).toBe(2);
+    shopBatchId = res.body.batchId as string;
+    shopBatchCode = res.body.batchCode as string;
+    expect(shopBatchCode).toMatch(/^DSKU-\d{6}-\d{4}$/);
+
+    const { matters } = await batchMatters(admin, shopBatchId);
+    const hb20 = matters.find((m) => m.site_code === 'HB20')!;
+    shopMatterCode = hb20.matter_code;
+    shopItemId = hb20.items[0]!.id;
+    // 佔位 SKU：店舖層回覆，無存貨
+    expect(hb20.items[0]!.sku).toBe('0');
+    expect(hb20.items[0]!.stock_qty).toBeNull();
+  });
+
+  it('必填驗證、數字格式；填 0 會保留（空白 ≠ 0）', async () => {
+    const admin = await adminAgent();
+    const put = await admin
+      .put(`/api/admin/designated-sku/batches/${shopBatchId}/reply-fields`)
+      .set('x-csrf-token', admin._csrf ?? '')
+      .send({
+        fields: [
+          { key: 'f1', label: 'Wall 架（行）', type: 'number', required: true },
+          { key: 'f2', label: '5 層架（行）', type: 'number', required: false },
+          { key: 'f3', label: '陳列行數', type: 'number', required: false },
+          { key: 'f4', label: '其他位置', type: 'text', required: false },
+        ],
+        reply_mode: 'custom',
+      });
+    expect(put.status).toBe(200);
+    expect(put.body.batch.reply_fields[0].label).toBe('Wall 架（行）');
+
+    const store = await storeAgent('HB20');
+    const url = `/api/portal/designated-sku/matters/${shopMatterCode}/reply`;
+
+    const missing = await store.put(url).set('x-csrf-token', store._csrf ?? '')
+      .send({ items: [{ item_id: shopItemId, fields: { f2: '2' } }] });
+    expect(missing.status).toBe(400);
+    expect(missing.body.error).toContain('必填');
+
+    const bad = await store.put(url).set('x-csrf-token', store._csrf ?? '')
+      .send({ items: [{ item_id: shopItemId, fields: { f1: '三行' } }] });
+    expect(bad.status).toBe(400);
+
+    const empty = await store.put(url).set('x-csrf-token', store._csrf ?? '')
+      .send({ items: [{ item_id: shopItemId, fields: {} }] });
+    expect(empty.status).toBe(400);
+
+    const ok = await store.put(url).set('x-csrf-token', store._csrf ?? '')
+      .send({ items: [{ item_id: shopItemId, fields: { f1: '3', f2: '0', f3: '5', f4: '門口陳列架' }, note: '店長確認' }] });
+    expect(ok.status).toBe(200);
+    expect(ok.body.matter.items[0].reply_values).toEqual({ f1: '3', f2: '0', f3: '5', f4: '門口陳列架' });
+    expect(ok.body.matter.reply_mode).toBe('custom');
+    expect(ok.body.matter.reply_scope).toBe('matter');
+    // 純自定欄位模式沒有件數合計
+    expect(ok.body.matter.reply_total).toBe(0);
+    expect(ok.body.matter.items[0].reply_total).toBeNull();
+  });
+
+  it('改名不影響已收回覆；有回覆值的欄位不可刪除', async () => {
+    const admin = await adminAgent();
+    const renamed = await admin
+      .put(`/api/admin/designated-sku/batches/${shopBatchId}/reply-fields`)
+      .set('x-csrf-token', admin._csrf ?? '')
+      .send({
+        fields: [
+          { key: 'f1', label: 'Wall 架行數（新名）', type: 'number', required: true },
+          { key: 'f2', label: '5 層架（行）', type: 'number', required: false },
+          { key: 'f3', label: '陳列行數', type: 'number', required: false },
+          { key: 'f4', label: '其他位置', type: 'text', required: false },
+        ],
+      });
+    expect(renamed.status).toBe(200);
+
+    const { matters } = await batchMatters(admin, shopBatchId);
+    const hb20 = matters.find((m) => m.site_code === 'HB20')!;
+    expect(hb20.reply_fields[0]!.label).toBe('Wall 架行數（新名）');
+    expect(hb20.items[0]!.reply_values).toEqual({ f1: '3', f2: '0', f3: '5', f4: '門口陳列架' });
+
+    const blocked = await admin
+      .put(`/api/admin/designated-sku/batches/${shopBatchId}/reply-fields`)
+      .set('x-csrf-token', admin._csrf ?? '')
+      .send({ fields: [{ key: 'f2', label: '5 層架（行）', type: 'number', required: false }] });
+    expect(blocked.status).toBe(400);
+    expect(blocked.body.error).toContain('不可刪除');
+  });
+
+  it('每間店一套的批次不可補加個別 SKU', async () => {
+    const admin = await adminAgent();
+    const res = await admin
+      .post(`/api/admin/designated-sku/batches/${shopBatchId}/items`)
+      .set('x-csrf-token', admin._csrf ?? '')
+      .send({ site_code: 'HB20', sku: '107668017004', stock_qty: 1 });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toContain('每間店一套');
+  });
+
+  it('匯出：自定欄位成為表格欄，SKU 欄留空', async () => {
+    const admin = await adminAgent();
+    const res = await getXlsx(admin, `/api/admin/designated-sku/export?batch_id=${shopBatchId}`);
+    expect(res.status).toBe(200);
+    const wb = new ExcelJS.Workbook();
+    await wb.xlsx.load(res.body as Buffer);
+    const ws = wb.getWorksheet('事項回覆')!;
+    const headers = (ws.getRow(1).values as unknown[]).slice(1).map(String);
+    expect(headers).toContain('Wall 架行數（新名）');
+    expect(headers.indexOf('Wall 架行數（新名）')).toBeLessThan(headers.indexOf('存貨'));
+    const row = (ws.getRow(2).values as unknown[]).slice(1);
+    expect(row[2]).toBe('11 月門店陳列調查');
+    expect(row[6]).toBe(''); // SKU 欄：每間店一套，不顯示佔位 0
+    expect(row[8]).toBe('3');
+    expect(row[9]).toBe('0');
+  });
+
+  it('超過 10 個回覆欄位：整份擋住並列出欄名', async () => {
+    const admin = await adminAgent();
+    const wb = new ExcelJS.Workbook();
+    const ws = wb.addWorksheet('太多欄');
+    ws.addRow(['Shop', ...Array.from({ length: 11 }, (_, i) => `欄位 ${i + 1}`)]);
+    ws.addRow(['HA15', ...Array.from({ length: 11 }, () => 1)]);
+    const res = await uploadBatch(admin, Buffer.from(await wb.xlsx.writeBuffer()), { subject: '欄位過多測試' });
+    expect(res.status).toBe(400);
+    expect(JSON.stringify(res.body)).toContain('上限 10');
   });
 });

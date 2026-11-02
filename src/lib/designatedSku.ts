@@ -23,6 +23,123 @@ export const DESIGNATED_SKU_COLUMNS = [
   '貨品年期 (MMYY)',
 ] as const;
 
+/** 回覆欄位上限（批次層級硬限；Excel 匯入、後台編輯、前端顯示共用同一個數） */
+export const DESIGNATED_SKU_MAX_REPLY_FIELDS = 10;
+/** 回覆文字欄上限 */
+export const DESIGNATED_SKU_REPLY_TEXT_MAX = 300;
+
+/**
+ * 「每間店一套」模式的佔位 SKU。
+ * 真實 SaSa Article 為 9–12 位數字，不會撞上單一個 0；
+ * 店舖端不會顯示此編號，匯出時 SKU 欄留空。
+ */
+export const DESIGNATED_SKU_PLACEHOLDER_SKU = '0';
+
+export type DesignatedSkuReplyFieldType = 'text' | 'number' | 'choice';
+export type DesignatedSkuReplyMode = 'stock_year' | 'custom' | 'mixed';
+export type DesignatedSkuReplyScope = 'item' | 'matter';
+
+export interface DesignatedSkuReplyField {
+  /** 穩定識別（f1…f10）；改名不改 key，已收回覆不會失去對應 */
+  key: string;
+  /** 店舖見到的欄位標題 */
+  label: string;
+  type: DesignatedSkuReplyFieldType;
+  required: boolean;
+  hint?: string;
+  /** type = choice 時可選值 */
+  options?: string[];
+}
+
+const FIELD_KEY_PATTERN = /^f\d{1,2}$/;
+
+/** 欄位類型推斷：只認明顯的數量字眼，其餘一律文字（不猜） */
+export function inferReplyFieldType(label: string): DesignatedSkuReplyFieldType {
+  return /(多少|幾多|數量|件數|行數|數目|qty|quantity|count|number)/i.test(label) ? 'number' : 'text';
+}
+
+/**
+ * 清洗欄位定義：最多 10 個、key 唯一、label 去空白。
+ * 接受 DB 回來的 JSONB（可能是字串）或 API 傳來的陣列。
+ */
+export function normalizeReplyFields(raw: unknown): DesignatedSkuReplyField[] {
+  let list: unknown = raw;
+  if (typeof list === 'string') {
+    try {
+      list = JSON.parse(list);
+    } catch {
+      return [];
+    }
+  }
+  if (!Array.isArray(list)) return [];
+
+  const out: DesignatedSkuReplyField[] = [];
+  const usedKeys = new Set<string>();
+  for (const entry of list.slice(0, DESIGNATED_SKU_MAX_REPLY_FIELDS)) {
+    if (!entry || typeof entry !== 'object') continue;
+    const item = entry as Record<string, unknown>;
+    const label = String(item.label ?? '').trim().slice(0, 80);
+    if (!label) continue;
+    let key = String(item.key ?? '').trim();
+    if (!FIELD_KEY_PATTERN.test(key) || usedKeys.has(key)) {
+      let n = 1;
+      while (usedKeys.has(`f${n}`)) n += 1;
+      key = `f${n}`;
+    }
+    usedKeys.add(key);
+    const type = item.type === 'number' || item.type === 'choice' ? item.type : 'text';
+    const required = item.required === true;
+    const hint = String(item.hint ?? '').trim().slice(0, 120);
+    const options = Array.isArray(item.options)
+      ? item.options.map((o) => String(o ?? '').trim().slice(0, 40)).filter(Boolean).slice(0, 12)
+      : [];
+    out.push({
+      key,
+      label,
+      type,
+      required,
+      ...(hint ? { hint } : {}),
+      ...(type === 'choice' ? { options: options.length ? options : ['是', '否'] } : {}),
+    });
+  }
+  return out;
+}
+
+/**
+ * 填入值驗證：只保留有定義的欄位，空字串一律當「未填」（不寫入）。
+ * 回傳正規化後的物件；有必填未填或格式錯誤時 throw 帶欄名的人話錯誤。
+ */
+export function normalizeReplyValues(
+  raw: unknown,
+  fields: DesignatedSkuReplyField[],
+  subject: string,
+): Record<string, string> {
+  const input = raw && typeof raw === 'object' && !Array.isArray(raw) ? (raw as Record<string, unknown>) : {};
+  const out: Record<string, string> = {};
+  for (const field of fields) {
+    const value = input[field.key];
+    const text = value === null || value === undefined ? '' : String(value).trim();
+    if (!text) {
+      if (field.required) throw new Error(`${subject}：「${field.label}」為必填`);
+      continue;
+    }
+    if (field.type === 'number') {
+      if (!/^\d+(\.\d{1,2})?$/.test(text)) {
+        throw new Error(`${subject}：「${field.label}」必須為數字（不接受負數或文字）`);
+      }
+    } else if (field.type === 'choice') {
+      const options = field.options && field.options.length ? field.options : ['是', '否'];
+      if (!options.includes(text)) {
+        throw new Error(`${subject}：「${field.label}」只可選擇 ${options.join('／')}`);
+      }
+    } else if (text.length > DESIGNATED_SKU_REPLY_TEXT_MAX) {
+      throw new Error(`${subject}：「${field.label}」不可超過 ${DESIGNATED_SKU_REPLY_TEXT_MAX} 字`);
+    }
+    out[field.key] = text;
+  }
+  return out;
+}
+
 /** 欄名比對用的正規化：去空白、去括號、轉小寫 */
 function normalizeHeader(raw: string): string {
   return String(raw ?? '')
@@ -144,6 +261,11 @@ export interface DesignatedSkuParsed {
   warnings?: Array<{ row: number; field: string; reason: string; siteCode?: string }>;
   rows?: DesignatedSkuParsedRow[];
   contentHash?: string;
+  /** 由表頭自動抽出的回覆欄位（最多 10 個） */
+  replyFields?: DesignatedSkuReplyField[];
+  /** item = 每個 SKU 一套；matter = 每間店一套（檔案無 Article 欄） */
+  replyScope?: DesignatedSkuReplyScope;
+  replyMode?: DesignatedSkuReplyMode;
 }
 
 function parseStockQty(raw: string): { value: number | null; invalid: boolean } {
@@ -153,6 +275,12 @@ function parseStockQty(raw: string): { value: number | null; invalid: boolean } 
   const n = Number(text);
   if (!Number.isInteger(n) || n < 0) return { value: null, invalid: true };
   return { value: n, invalid: false };
+}
+
+/** 舊模板的兩個「店舖填寫」欄，不算自定回覆欄位（它們代表年期模式） */
+function isLegacyReplyHeader(header: string): boolean {
+  const h = normalizeHeader(header);
+  return h.includes('可調撥件數') || h.includes('貨品年期') || h === 'mmyy';
 }
 
 export async function parseDesignatedSkuWorkbook(
@@ -192,7 +320,8 @@ export async function parseDesignatedSkuWorkbook(
         if (field && !map.has(field)) map.set(field, c);
       }
       const score = HEADER_FIELDS.filter((f) => map.has(f)).length;
-      if (map.has('site') && map.has('sku') && score > bestScore) {
+      // Article 可以不出現（= 每間店一套）；但 Site 一定要有
+      if (map.has('site') && score > bestScore) {
         sheet = ws;
         headerRowNum = r;
         headerMap = map;
@@ -201,7 +330,7 @@ export async function parseDesignatedSkuWorkbook(
     }
   }
 
-  if (!sheet || !headerMap.has('site') || !headerMap.has('sku')) {
+  if (!sheet || !headerMap.has('site')) {
     return {
       ok: false,
       totalRows: 0,
@@ -209,7 +338,7 @@ export async function parseDesignatedSkuWorkbook(
       errors: [{
         row: 0,
         field: 'header',
-        reason: '找不到表頭：檔案必須包含 Site（或 Site Code）及 Article（或 SKU）欄',
+        reason: '找不到表頭：檔案必須包含 Site（或 Site Code）欄；如要逐個 SKU 回覆，另加 Article（或 SKU）欄',
       }],
       contentHash,
     };
@@ -223,6 +352,49 @@ export async function parseDesignatedSkuWorkbook(
     fullHeaders.push(cellText(headerRow.getCell(c)).trim() || `Column ${c}`);
   }
   headers = fullHeaders;
+
+  // ---------------------------------------------------------------------
+  // 回覆欄位：內建 5 欄及舊「年期／件數」欄以外，其餘表頭自動成為自定欄位。
+  // 表頭就是欄位名，上載後仍可在後台改名；key 固定 f1…f10，改名不影響已收回覆。
+  // ---------------------------------------------------------------------
+  const replyScope: DesignatedSkuReplyScope = headerMap.has('sku') ? 'item' : 'matter';
+  const mappedColumns = new Set<number>(headerMap.values());
+  const replyFields: DesignatedSkuReplyField[] = [];
+  let hasYearColumns = false;
+  for (let c = 1; c <= columnCount; c += 1) {
+    const raw = fullHeaders[c - 1] ?? '';
+    if (mappedColumns.has(c)) continue;
+    if (!raw || /^Column \d+$/i.test(raw)) continue;
+    if (isLegacyReplyHeader(raw)) {
+      hasYearColumns = true;
+      continue;
+    }
+    replyFields.push({
+      key: `f${replyFields.length + 1}`,
+      label: raw.slice(0, 80),
+      type: inferReplyFieldType(raw),
+      required: false,
+    });
+  }
+  if (replyFields.length > DESIGNATED_SKU_MAX_REPLY_FIELDS) {
+    return {
+      ok: false,
+      sheetName: sheet.name,
+      headers,
+      totalRows: 0,
+      skippedRows: 0,
+      errors: [{
+        row: headerRowNum,
+        field: '回覆欄位',
+        reason: `本次上載有 ${replyFields.length} 個回覆欄位（${replyFields.map((f) => f.label).join('、')}），`
+          + `上限 ${DESIGNATED_SKU_MAX_REPLY_FIELDS} 個；請先刪減欄位再上載`,
+      }],
+      contentHash,
+    };
+  }
+  const replyMode: DesignatedSkuReplyMode = replyScope === 'matter'
+    ? 'custom'
+    : (replyFields.length ? (hasYearColumns ? 'mixed' : 'custom') : 'stock_year');
 
   const errors: NonNullable<DesignatedSkuParsed['errors']> = [];
   const warnings: NonNullable<DesignatedSkuParsed['warnings']> = [];
@@ -256,7 +428,10 @@ export async function parseDesignatedSkuWorkbook(
       return;
     }
 
-    const sku = normalizeText(cellText(row.getCell(headerMap.get('sku')!)));
+    // 沒有 Article 欄 = 每間店一套；用佔位 SKU 代表店舖層（不顯示、不匯出）
+    const sku = headerMap.has('sku')
+      ? normalizeText(cellText(row.getCell(headerMap.get('sku')!)))
+      : DESIGNATED_SKU_PLACEHOLDER_SKU;
     const hierarchy = headerMap.has('hierarchy')
       ? cellText(row.getCell(headerMap.get('hierarchy')!))
       : '';
@@ -275,7 +450,9 @@ export async function parseDesignatedSkuWorkbook(
         siteCode,
       });
     }
-    if (!sku) errors.push({ row: rowNumber, field: 'SKU', reason: 'Article / SKU 為必填' });
+    if (headerMap.has('sku') && !sku) {
+      errors.push({ row: rowNumber, field: 'SKU', reason: 'Article / SKU 為必填' });
+    }
     if (stock.invalid) {
       warnings.push({
         row: rowNumber,
@@ -286,12 +463,15 @@ export async function parseDesignatedSkuWorkbook(
     }
 
     if (siteCode && sku) {
-      const key = `${siteCode}|${sku}`;
+      // 每間店一套：同一店舖只可以一行；逐個 SKU：店舖 + SKU 不可重複
+      const key = replyScope === 'matter' ? siteCode : `${siteCode}|${sku}`;
       if (seen.has(key)) {
         errors.push({
           row: rowNumber,
-          field: 'SKU',
-          reason: '檔案內 Site Code + Article 重複',
+          field: replyScope === 'matter' ? 'Site' : 'SKU',
+          reason: replyScope === 'matter'
+            ? '此檔為「每間店一套」，同一店舖只可以有一行'
+            : '檔案內 Site Code + Article 重複',
           siteCode,
         });
       }
@@ -343,6 +523,9 @@ export async function parseDesignatedSkuWorkbook(
     rows,
     warnings,
     contentHash,
+    replyFields,
+    replyScope,
+    replyMode,
   };
 }
 
@@ -402,6 +585,9 @@ export async function generateDesignatedSkuTemplateWorkbook(): Promise<Buffer> {
     ['店舖回覆可調撥件數', '店舖填寫用，上載時請留空'],
     ['貨品年期 (MMYY)', '店舖填寫用（例：0827 = 2027 年 8 月），上載時請留空'],
     ['', ''],
+    ['回覆自定欄位', `在最後一欄之後加欄即可：以上欄位以外的每個表頭都會成為店舖要填的回覆欄位，最多 ${DESIGNATED_SKU_MAX_REPLY_FIELDS} 個；欄名就是店舖見到的標題，上載後仍可在後台改名。`],
+    ['每間店一套', '如果檔案只有 Site、沒有 Article，系統會當「每間店一套」：每間店只需回覆一次，不需要逐個 SKU（該批次不再要求年期及件數）。'],
+    ['', ''],
     ['事項編號', '系統於上載後自動產生（批次編號 + 店舖序號），供日後查閱'],
     ['多個 SKU', '同一店舖同一批次的多個 SKU 會歸入同一個事項，店舖一次過回覆'],
     ['多個年期', '同一店同一 SKU 存貨有 2 件或以上時，店舖可分成多個年期回覆'],
@@ -447,6 +633,10 @@ export interface DesignatedSkuExportItem {
   is_open: boolean;
   created_at: string;
   lines: DesignatedSkuExportLine[];
+  /** 自定回覆欄位（label + 已填值）；空白欄位不會出現 */
+  reply_fields?: Array<{ label: string; value: string }>;
+  /** matter = 每間店一套（SKU 欄留空） */
+  reply_scope?: string;
 }
 
 export type DesignatedSkuMatterType = 'stock_year_breakdown';
@@ -484,15 +674,8 @@ function lineSummary(lines: DesignatedSkuExportLine[]): string {
 export async function buildDesignatedSkuExportBuffer(items: DesignatedSkuExportItem[]): Promise<Buffer> {
   const workbook = new ExcelJS.Workbook();
 
-  const summaryCols = [
-    '事項編號',
-    '批次編號',
-    '批次主題',
-    '事項類型',
-    'Site',
-    '店舖',
-    'SKU',
-    '描述',
+  const summaryHead = ['事項編號', '批次編號', '批次主題', '事項類型', 'Site', '店舖', 'SKU', '描述'];
+  const summaryTail = [
     '存貨',
     '事項狀態',
     'SKU 狀態',
@@ -505,9 +688,23 @@ export async function buildDesignatedSkuExportBuffer(items: DesignatedSkuExportI
     '提交次數',
     '管理員修改人',
     '管理員修改時間',
-  ] as const;
+  ];
+  // 不同批次可以有不同自定欄位：匯出用 label 聯集，按首次出現排序
+  const reserved = new Set([...summaryHead, ...summaryTail]);
+  const customLabels: string[] = [];
+  for (const it of items) {
+    for (const field of it.reply_fields ?? []) {
+      if (field.label && !reserved.has(field.label) && !customLabels.includes(field.label)) {
+        customLabels.push(field.label);
+      }
+    }
+  }
+  const summaryCols = [...summaryHead, ...customLabels, ...summaryTail];
+
   const summary = workbook.addWorksheet('事項回覆');
   styleHeader(summary, summaryCols);
+  const fieldValue = (it: DesignatedSkuExportItem, label: string) =>
+    (it.reply_fields ?? []).find((f) => f.label === label)?.value ?? '';
   items.forEach((it) => {
     summary.addRow([
       it.matter_code,
@@ -516,8 +713,10 @@ export async function buildDesignatedSkuExportBuffer(items: DesignatedSkuExportI
       matterTypeLabel(it.matter_type),
       it.site_code,
       it.shop ?? '',
-      it.sku,
+      // 每間店一套：佔位 SKU（0）不顯示
+      it.reply_scope === 'matter' ? '' : it.sku,
       it.description,
+      ...customLabels.map((label) => fieldValue(it, label)),
       it.stock_qty === null || it.stock_qty === undefined ? '' : it.stock_qty,
       matterStatusLabel(it),
       itemStatusLabel(it),
@@ -532,28 +731,29 @@ export async function buildDesignatedSkuExportBuffer(items: DesignatedSkuExportI
       it.admin_edited_at ?? '',
     ]);
   });
-  summary.columns = [
-    { width: 26 },
-    { width: 20 },
-    { width: 28 },
-    { width: 20 },
-    { width: 10 },
-    { width: 18 },
-    { width: 16 },
-    { width: 38 },
-    { width: 9 },
-    { width: 18 },
-    { width: 16 },
-    { width: 10 },
-    { width: 14 },
-    { width: 34 },
-    { width: 30 },
-    { width: 18 },
-    { width: 20 },
-    { width: 10 },
-    { width: 18 },
-    { width: 20 },
-  ];
+  const widthOf: Record<string, number> = {
+    事項編號: 26,
+    批次編號: 20,
+    批次主題: 28,
+    事項類型: 20,
+    Site: 10,
+    店舖: 18,
+    SKU: 16,
+    描述: 38,
+    存貨: 9,
+    事項狀態: 18,
+    'SKU 狀態': 16,
+    無可調撥: 10,
+    '回覆合計（件）': 14,
+    年期明細: 34,
+    備註: 30,
+    回覆人: 18,
+    回覆時間: 20,
+    提交次數: 10,
+    管理員修改人: 18,
+    管理員修改時間: 20,
+  };
+  summary.columns = summaryCols.map((name) => ({ width: widthOf[name] ?? 20 }));
   if (items.length) {
     summary.autoFilter = { from: { row: 1, column: 1 }, to: { row: 1, column: summaryCols.length } };
   }
@@ -588,7 +788,7 @@ export async function buildDesignatedSkuExportBuffer(items: DesignatedSkuExportI
         it.matter_code,
         it.site_code,
         it.shop ?? '',
-        it.sku,
+        it.reply_scope === 'matter' ? '' : it.sku,
         it.description,
         it.stock_qty === null || it.stock_qty === undefined ? '' : it.stock_qty,
         it.created_at,

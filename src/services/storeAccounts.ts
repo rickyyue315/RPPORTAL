@@ -179,21 +179,75 @@ export async function syncOmPortalAccounts(createdBy: string): Promise<OmAccount
 
 export class StoreAccountError extends Error {}
 
+/** Site Code 只由英文字母、數字及連字號組成（現有店舖全部為 4 位，例如 HA02）。 */
+const SITE_CODE_PATTERN = /^[A-Z0-9][A-Z0-9-]{1,19}$/;
+
+/** 門店主檔 CSV 除 Site／Shop 以外的欄位（Regional、Class 1、Class 2、Size、OM、Type）。 */
+export interface StoreMasterFields {
+  regional?: string;
+  class1?: string;
+  class2?: string;
+  size?: string;
+  om?: string;
+  type?: string;
+}
+
 /** Creates (or re-activates) a single Store account from the store master.
- *  Login is Site Code + shared portal password; no password is stored or returned. */
+ *  Login is Site Code + shared portal password; no password is stored or returned.
+ *  A Site Code that is not in the master is added to it first (with the given
+ *  shop name and master columns), otherwise the next 「按門店主檔同步」 would
+ *  silently deactivate the brand-new account. Blank columns are written as ''
+ *  so a hand-made row is indistinguishable from a CSV row with empty cells. */
 export async function createSingleStoreAccount(input: {
   siteCode: string;
+  shopName?: string;
+  fields?: StoreMasterFields;
   adminUsername: string;
-}): Promise<{ username: string; site_code: string; reactivated: boolean }> {
+}): Promise<{ username: string; site_code: string; shop: string; reactivated: boolean; added_to_master: boolean }> {
   const siteCode = (input.siteCode ?? '').trim().toUpperCase();
   if (!siteCode) throw new StoreAccountError('請選擇店舖');
+  if (!SITE_CODE_PATTERN.test(siteCode)) {
+    throw new StoreAccountError('Site Code 只可包含英文字母、數字或連字號（2–20 個字元）');
+  }
   return withTransaction(async (client) => {
     const store = await client.query<{ site_code: string; shop: string }>(
       'SELECT site_code, shop FROM stores WHERE site_code = $1',
       [siteCode],
     );
-    const row = store.rows[0];
-    if (!row) throw new StoreAccountError('門店主檔沒有此 Site Code');
+    let row = store.rows[0];
+    let addedToMaster = false;
+    if (!row) {
+      const shopName = (input.shopName ?? '').trim().slice(0, 200);
+      const text = (value?: string) => (value ?? '').trim();
+      const fields = input.fields ?? {};
+      const inserted = await client.query<{ site_code: string; shop: string }>(
+        `INSERT INTO stores (site_code, shop, regional, class1, class2, size, om, type)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+         ON CONFLICT (site_code) DO NOTHING
+         RETURNING site_code, shop`,
+        [
+          siteCode,
+          shopName || siteCode,
+          text(fields.regional),
+          text(fields.class1),
+          text(fields.class2),
+          text(fields.size),
+          text(fields.om),
+          text(fields.type),
+        ],
+      );
+      row = inserted.rows[0];
+      addedToMaster = Boolean(row);
+      if (!row) {
+        // 同一時間有另一個請求建立了此店舖，改用該筆資料。
+        const again = await client.query<{ site_code: string; shop: string }>(
+          'SELECT site_code, shop FROM stores WHERE site_code = $1',
+          [siteCode],
+        );
+        row = again.rows[0];
+      }
+      if (!row) throw new StoreAccountError('門店主檔沒有此 Site Code');
+    }
     const existing = await client.query<{ id: string; active: boolean }>(
       `SELECT id, active FROM portal_users WHERE role = 'store' AND site_code = $1`,
       [siteCode],
@@ -207,7 +261,7 @@ export async function createSingleStoreAccount(input: {
         'UPDATE portal_users SET active = true, updated_at = now() WHERE id = $1',
         [found.id],
       );
-      return { username, site_code: siteCode, reactivated: true };
+      return { username, site_code: siteCode, shop: row.shop || siteCode, reactivated: true, added_to_master: addedToMaster };
     }
     const unusableHash = `unusable$${randomBytes(16).toString('hex')}`;
     await client.query(
@@ -216,6 +270,6 @@ export async function createSingleStoreAccount(input: {
        VALUES ($1, $2, 'store', $3, $4, NULL, false, true, $5)`,
       [username, row.shop || siteCode, siteCode, unusableHash, input.adminUsername],
     );
-    return { username, site_code: siteCode, reactivated: false };
+    return { username, site_code: siteCode, shop: row.shop || siteCode, reactivated: false, added_to_master: addedToMaster };
   });
 }

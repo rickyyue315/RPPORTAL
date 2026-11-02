@@ -2028,11 +2028,24 @@ adminRouter.get(
   }),
 );
 
+const storeMasterFieldsSchema = z.object({
+  regional: z.string().trim().max(100).optional().default(''),
+  class1: z.string().trim().max(100).optional().default(''),
+  class2: z.string().trim().max(100).optional().default(''),
+  size: z.string().trim().max(50).optional().default(''),
+  om: z.string().trim().max(200).optional().default(''),
+  type: z.string().trim().max(50).optional().default(''),
+});
+
 const portalUserCreateSchema = z.object({
   username: z.string().trim().max(40).optional().default(''),
   display_name: z.string().trim().max(200).optional().default(''),
   role: z.enum(['buyer', 'sct', 'store']),
   site_code: z.string().trim().max(20).optional().default(''),
+  /** 只在手動輸入一個未入門店主檔的 Site Code 時使用。 */
+  shop_name: z.string().trim().max(200).optional().default(''),
+  /** 門店主檔其餘欄位；留空的會寫成空字串，與 CSV 空白單元格一致。 */
+  store_fields: storeMasterFieldsSchema.optional(),
 });
 
 /** POST /api/admin/portal/users — create Buyer / SCT, or a single Store (from store master). All log in with the shared portal password; no password is stored or returned. */
@@ -2055,6 +2068,8 @@ adminRouter.post(
         }
         const account = await createSingleStoreAccount({
           siteCode,
+          shopName: parsed.data.shop_name,
+          fields: parsed.data.store_fields,
           adminUsername: req.adminUsername!,
         });
         await writeAuditEvent({
@@ -2062,7 +2077,13 @@ adminRouter.post(
           actorRole: 'admin',
           actor: req.adminUsername,
           ip: getClientIp(req),
-          metadata: { username: account.username, role: 'store', site_code: account.site_code, reactivated: account.reactivated },
+          metadata: {
+            username: account.username,
+            role: 'store',
+            site_code: account.site_code,
+            reactivated: account.reactivated,
+            added_to_master: account.added_to_master,
+          },
         });
         res.status(201).json({ ...account });
         return;

@@ -931,7 +931,7 @@
             </div>
           </div>
           <div class="card-body collapse show" id="portal-users-collapse">
-            <p class="text-secondary small">Portal 帳戶（Store／Buyer／SCT／OM）以「使用者名稱（Site Code 或 OM 名稱）＋密碼」登入；登入連結會自動帶出使用者名稱。Store 可單間建立（選店舖）或按門店主檔同步；Buyer／SCT 帳戶在此建立；OM 帳戶由門店主檔或最新存貨報表的 OM 欄自動建立。<b>Store 與 OM 可各自持有獨立密碼</b>：按「生成密碼」後該帳戶即改用新密碼（共用密碼對它即時失效），密碼可在此查看、複製、重設或匯出；未生成的帳戶仍用共用密碼（OM 用 OM 專用密碼）。Buyer／SCT 不受影響。</p>
+            <p class="text-secondary small">Portal 帳戶（Store／Buyer／SCT／OM）以「使用者名稱（Site Code 或 OM 名稱）＋密碼」登入；登入連結會自動帶出使用者名稱。Store 可單間建立（選店舖，或直接輸入未入門店主檔的 Site Code ── 該店會一併加入主檔，否則下次「按門店主檔同步」會把它停用）或按門店主檔同步；Buyer／SCT 帳戶在此建立；OM 帳戶由門店主檔或最新存貨報表的 OM 欄自動建立。<b>Store 與 OM 可各自持有獨立密碼</b>：按「生成密碼」後該帳戶即改用新密碼（共用密碼對它即時失效），密碼可在此查看、複製、重設或匯出；未生成的帳戶仍用共用密碼（OM 用 OM 專用密碼）。Buyer／SCT 不受影響。</p>
             <div class="d-flex gap-2 mb-3 flex-wrap align-items-end">
               <div>
                 <label class="form-label" for="pu_filter_role">角色</label>
@@ -965,8 +965,13 @@
                 <input type="text" id="pu_username" class="form-control" placeholder="例如 BUYER3">
               </div>
               <div class="flex-grow-1" id="pu_site_wrap" style="min-width:200px;display:none">
-                <label class="form-label">店舖（Store）</label>
+                <label class="form-label" for="pu_site">店舖（Store）</label>
                 <select id="pu_site" class="form-select"><option value="">請選擇店舖…</option></select>
+                <div class="form-text" id="pu_site_hint">清單只包括門店主檔內的店舖。</div>
+              </div>
+              <div class="flex-grow-1" id="pu_site_manual_wrap" style="min-width:180px;display:none">
+                <label class="form-label" for="pu_site_manual">或直接輸入 Site Code</label>
+                <input type="text" id="pu_site_manual" class="form-control" placeholder="例如 HA02 或 ZZ99" maxlength="20" autocomplete="off" spellcheck="false">
               </div>
               <div class="flex-grow-1" id="pu_display_wrap" style="min-width:200px">
                 <label class="form-label">顯示名稱</label>
@@ -979,6 +984,41 @@
               <div class="align-self-end">
                 <button class="btn btn-primary" id="btn_pu_create">建立帳戶</button>
               </div>
+            </div>
+            <div class="mb-3" id="pu_store_extra_wrap" style="display:none">
+              <div class="text-secondary small mb-2">以下欄位對應門店主檔模板，以 <b>HA02（駱克）</b> 為例 ── 灰字為填法示範；輸入已在主檔的 Site Code 會顯示現有資料（唯讀）。</div>
+              <div class="d-flex gap-2 flex-wrap align-items-end">
+                <div class="flex-grow-1" style="min-width:200px">
+                  <label class="form-label" for="pu_site_shop">Shop（店名）</label>
+                  <input type="text" id="pu_site_shop" class="form-control" placeholder="例如 駱克" maxlength="200" autocomplete="off">
+                </div>
+                <div style="min-width:110px">
+                  <label class="form-label" for="pu_store_regional">Regional</label>
+                  <input type="text" id="pu_store_regional" class="form-control" placeholder="例如 HK" maxlength="50" autocomplete="off">
+                </div>
+                <div style="min-width:110px">
+                  <label class="form-label" for="pu_store_class1">Class 1</label>
+                  <input type="text" id="pu_store_class1" class="form-control" placeholder="例如 B" maxlength="50" autocomplete="off">
+                </div>
+                <div style="min-width:110px">
+                  <label class="form-label" for="pu_store_class2">Class 2</label>
+                  <input type="text" id="pu_store_class2" class="form-control" placeholder="例如 B2" maxlength="50" autocomplete="off">
+                </div>
+                <div style="min-width:100px">
+                  <label class="form-label" for="pu_store_size">Size</label>
+                  <input type="text" id="pu_store_size" class="form-control" placeholder="例如 S" maxlength="20" autocomplete="off">
+                </div>
+                <div style="min-width:130px">
+                  <label class="form-label" for="pu_store_om">OM</label>
+                  <input type="text" id="pu_store_om" class="form-control" list="pu_store_om_list" placeholder="例如 Ivy" maxlength="100" autocomplete="off">
+                  <datalist id="pu_store_om_list"></datalist>
+                </div>
+                <div style="min-width:100px">
+                  <label class="form-label" for="pu_store_type">Type</label>
+                  <input type="text" id="pu_store_type" class="form-control" placeholder="例如 T" maxlength="20" autocomplete="off">
+                </div>
+              </div>
+              <div class="form-text">Shop 留空會用 Site Code；其餘留空即空白值，日後上載 CSV 會覆蓋。此區只在手動輸入 Site Code 時出現；已入主檔的店舖只供查看。</div>
             </div>
             <div class="d-flex gap-2 mb-3 flex-wrap">
               <button class="btn btn-outline-primary" id="btn_store_sync">按門店主檔同步 Store 帳戶</button>

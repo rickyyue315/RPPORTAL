@@ -1699,19 +1699,89 @@
     });
   }
 
+  let puStoreList = [];
+
   async function loadPuSiteOptions() {
     const sel = $('pu_site');
     if (!sel) return;
     try {
       const data = await adminFetch('/api/admin/stores');
-      const stores = data.stores || [];
-      sel.innerHTML = '<option value="">請選擇店舖…</option>' + stores.map((s) => {
+      puStoreList = data.stores || [];
+      sel.innerHTML = '<option value="">請選擇店舖…</option>' + puStoreList.map((s) => {
         const label = s.shop ? `${s.site_code} — ${s.shop}` : s.site_code;
         return `<option value="${escapeHtml(s.site_code)}">${escapeHtml(label)}</option>`;
       }).join('');
+      const omList = $('pu_store_om_list');
+      if (omList) {
+        const oms = [...new Set(puStoreList.map((s) => String(s.om || '').trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'zh-Hant'));
+        omList.innerHTML = oms.map((om) => `<option value="${escapeHtml(om)}"></option>`).join('');
+      }
+      updatePuSiteHint();
     } catch {
       sel.innerHTML = '<option value="">載入店舖失敗，請重試</option>';
     }
+  }
+
+  function findPuStore(code) {
+    const target = String(code || '').trim().toUpperCase();
+    if (!target) return null;
+    return puStoreList.find((s) => String(s.site_code || '').toUpperCase() === target) || null;
+  }
+
+  const PU_STORE_FIELDS = [
+    ['pu_site_shop', 'shop'],
+    ['pu_store_regional', 'regional'],
+    ['pu_store_class1', 'class1'],
+    ['pu_store_class2', 'class2'],
+    ['pu_store_size', 'size'],
+    ['pu_store_om', 'om'],
+    ['pu_store_type', 'type'],
+  ];
+  let puFieldsFromMaster = '';
+
+  /** 已在門店主檔的店舖：把現有欄位填入並設為唯讀；未入主檔：清空並可編輯。 */
+  function fillStoreFields(store) {
+    for (const [id, key] of PU_STORE_FIELDS) {
+      const el = $(id);
+      if (!el) continue;
+      if (store) {
+        el.value = String(store[key] || '');
+        el.disabled = true;
+      } else {
+        if (puFieldsFromMaster) el.value = '';
+        el.disabled = false;
+      }
+    }
+    puFieldsFromMaster = store ? String(store.site_code || '') : '';
+  }
+
+  function updatePuSiteHint() {
+    const hint = $('pu_site_hint');
+    if (!hint) return;
+    const manual = ($('pu_site_manual') ? $('pu_site_manual').value : '').trim().toUpperCase();
+    const found = findPuStore(manual);
+    const validCode = /^[A-Z0-9][A-Z0-9-]{1,19}$/.test(manual);
+    const extra = $('pu_store_extra_wrap');
+    const showExtras = Boolean(manual) && validCode;
+    if (extra) extra.style.display = showExtras ? '' : 'none';
+    fillStoreFields(showExtras ? found || null : null);
+    if (!manual) {
+      hint.className = 'form-text';
+      hint.textContent = '清單只包括門店主檔內的店舖；找不到可在右邊直接輸入 Site Code。';
+      return;
+    }
+    if (found) {
+      hint.className = 'form-text text-secondary';
+      hint.textContent = `已在門店主檔：${found.site_code}${found.shop ? ` — ${found.shop}` : ''}（下方為現有資料，唯讀；要修改請上載 CSV）`;
+      return;
+    }
+    if (!validCode) {
+      hint.className = 'form-text';
+      hint.textContent = 'Site Code 只可包含英文字母、數字或連字號（2–20 個字元）。';
+      return;
+    }
+    hint.className = 'form-text text-danger';
+    hint.textContent = `「${manual}」不在門店主檔，建立帳戶時會一併加入（可順手填下方欄位）。`;
   }
 
   function refreshPuFormByRole() {
@@ -1719,24 +1789,66 @@
     const isStore = role === 'store';
     if ($('pu_username_wrap')) $('pu_username_wrap').style.display = isStore ? 'none' : '';
     if ($('pu_site_wrap')) $('pu_site_wrap').style.display = isStore ? '' : 'none';
+    if ($('pu_site_manual_wrap')) $('pu_site_manual_wrap').style.display = isStore ? '' : 'none';
     if ($('pu_display_wrap')) $('pu_display_wrap').style.display = isStore ? 'none' : '';
+    if (!isStore && $('pu_store_extra_wrap')) $('pu_store_extra_wrap').style.display = 'none';
     if (isStore) loadPuSiteOptions();
   }
 
   if ($('pu_role')) $('pu_role').addEventListener('change', refreshPuFormByRole);
+  if ($('pu_site_manual')) $('pu_site_manual').addEventListener('input', updatePuSiteHint);
+  if ($('pu_site')) {
+    $('pu_site').addEventListener('change', () => {
+      if ($('pu_site').value && $('pu_site_manual')) $('pu_site_manual').value = '';
+      updatePuSiteHint();
+    });
+  }
 
   $('btn_pu_create').addEventListener('click', async () => {
     const role = $('pu_role').value;
     try {
       if (role === 'store') {
-        const siteCode = ($('pu_site') ? $('pu_site').value : '').trim().toUpperCase();
+        const manual = ($('pu_site_manual') ? $('pu_site_manual').value : '').trim().toUpperCase();
+        const siteCode = manual || ($('pu_site') ? $('pu_site').value : '').trim().toUpperCase();
         if (!siteCode) {
-          showAlert($('portal_users_result'), 'error', '請選擇店舖');
+          showAlert($('portal_users_result'), 'error', '請選擇店舖，或直接輸入 Site Code');
           return;
         }
-        const data = await adminFetch('/api/admin/portal/users', { method: 'POST', body: JSON.stringify({ role: 'store', site_code: siteCode, username: siteCode }) });
-        showAlert($('portal_users_result'), 'success', `店舖帳戶「${escapeHtml(data.username)}」已建立（登入時輸入 Site Code 及密碼）。`);
+        const known = findPuStore(siteCode);
+        const extraVisible = $('pu_store_extra_wrap') && $('pu_store_extra_wrap').style.display !== 'none';
+        const payload = { role: 'store', site_code: siteCode, username: siteCode };
+        if (!known && extraVisible) {
+          const field = (id) => ($(id) ? $(id).value.trim() : '');
+          payload.shop_name = field('pu_site_shop');
+          payload.store_fields = {
+            regional: field('pu_store_regional'),
+            class1: field('pu_store_class1'),
+            class2: field('pu_store_class2'),
+            size: field('pu_store_size'),
+            om: field('pu_store_om'),
+            type: field('pu_store_type'),
+          };
+        }
+        const data = await adminFetch('/api/admin/portal/users', {
+          method: 'POST',
+          body: JSON.stringify(payload),
+        });
+        let msg = data.reactivated
+          ? `店舖帳戶「${escapeHtml(data.username)}」已重新啟用`
+          : `店舖帳戶「${escapeHtml(data.username)}」已建立`;
+        if (data.added_to_master) msg += `，並已加入門店主檔（店名：${escapeHtml(data.shop || siteCode)}）`;
+        msg += '。登入時輸入 Site Code 及密碼。';
+        showAlert($('portal_users_result'), 'success', msg);
         if ($('pu_site')) $('pu_site').value = '';
+        if ($('pu_site_manual')) $('pu_site_manual').value = '';
+        for (const [id] of PU_STORE_FIELDS) {
+          if ($(id)) {
+            $(id).value = '';
+            $(id).disabled = false;
+          }
+        }
+        puFieldsFromMaster = '';
+        updatePuSiteHint();
         loadPortalUsers();
         return;
       }

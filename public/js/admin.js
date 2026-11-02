@@ -1219,6 +1219,15 @@
     ].join('\r\n');
   }
 
+  /**
+   * wa.me link with the text pre-filled. No phone number is stored for OMs
+   * (and the store contact number is not in the DB), so the link opens
+   * WhatsApp's contact picker instead of a fixed recipient.
+   */
+  function puWhatsAppUrl(user, password) {
+    return `https://wa.me/?text=${encodeURIComponent(puWhatsAppText(user, password))}`;
+  }
+
   function puMailText(user, password) {
     return [
       `${user.site_code || ''} ${user.display_name || ''} 負責人您好：`.trim(),
@@ -1242,6 +1251,7 @@
     return `<span class="pu-pw" data-id="${user.id}">••••••••</span>
       <button class="btn ghost btn-sm btn-pu-pw-toggle" data-id="${user.id}">顯示</button>
       <button class="btn ghost btn-sm btn-pu-pw-copy" data-id="${user.id}">複製</button>
+      <button class="btn ghost btn-sm btn-pu-wa-row" data-id="${user.id}">WhatsApp</button>
       ${notified}`;
   }
 
@@ -1320,6 +1330,17 @@
           }
         });
       });
+      tbody.querySelectorAll('.btn-pu-wa-row').forEach((btn) => {
+        btn.addEventListener('click', () => {
+          const user = data.users.find((entry) => entry.id === btn.dataset.id);
+          const password = puPasswordCache.get(btn.dataset.id) || '';
+          if (!user || !password) {
+            showAlert($('portal_users_result'), 'danger', '此帳戶未有可顯示的密碼，請先生成。');
+            return;
+          }
+          window.open(puWhatsAppUrl(user, password), '_blank', 'noopener');
+        });
+      });
       tbody.querySelectorAll('.btn-pu-pw-reset').forEach((btn) => {
         btn.addEventListener('click', () => resetPortalPassword(btn.dataset.id, btn.dataset.username));
       });
@@ -1361,7 +1382,8 @@
         <td>${item.role === 'om' ? 'OM' : 'Store'}</td>
         <td><code>${escapeHtml(item.password)}</code></td>
         <td>
-          <button class="btn ghost btn-sm btn-pu-wa" data-id="${escapeHtml(item.id)}">WhatsApp 文案</button>
+          <a class="btn ghost btn-sm" href="${escapeHtml(puWhatsAppUrl(item, item.password))}" target="_blank" rel="noopener">開啟 WhatsApp</a>
+          <button class="btn ghost btn-sm btn-pu-wa" data-id="${escapeHtml(item.id)}">複製文案</button>
           ${item.role === 'store' && item.contact_email ? `<button class="btn ghost btn-sm btn-pu-mail" data-id="${escapeHtml(item.id)}">開啟郵件</button>` : ''}
           <button class="btn ghost btn-sm btn-pu-notified" data-id="${escapeHtml(item.id)}">標記已通知</button>
         </td>

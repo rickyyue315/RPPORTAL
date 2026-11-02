@@ -299,8 +299,12 @@ describe('static asset freshness', () => {
     const indexPage = read('public/index.html');
     const publicRoutes = read('src/routes/public.ts');
 
-    // 退貨頁不再載入平台暫停腳本，開放與否只由退行貨申請期決定
-    expect(returnPage).not.toContain('/js/service-suspension.js');
+    // 退貨頁仍載入同一支暫停腳本，但它會因 returnReopened 自我豁免；
+    // 開放與否只由退行貨申請期決定（營運關掉開關時腳本會重新封鎖）。
+    expect(returnPage).toContain('/js/service-suspension.js');
+    const suspensionScript = read('public/js/service-suspension.js');
+    expect(suspensionScript).toContain("page === '/return.html' || page === '/return'");
+    expect(suspensionScript).toContain('cfg.returnReopened');
     expect(returnPage).toContain('<a href="/return.html" class="active" aria-current="page">行貨退貨</a>');
     expect(indexPage).not.toContain('行貨退貨報數<span class="badge-paused">');
 

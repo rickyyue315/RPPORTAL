@@ -14,6 +14,15 @@
     return current?.submission?.submission_type === 'return';
   }
 
+  // 平台暫停期間只放行行貨退貨（依退行貨申請期）；其餘申請只可查詢。
+  function suspendedFor(type) {
+    const cfg = globalThis.NDRF_OPTIONS?.publicWriteSuspension;
+    if (!cfg || !cfg.enabled) return false;
+    if (type === 'return' && cfg.returnReopened) return false;
+    const cutoff = Date.parse(cfg.suspendAt);
+    return Number.isFinite(cutoff) && Date.now() >= cutoff;
+  }
+
   function syncOtherReasonWrap() {
     const reason = $('f_u_urgent_reason').value;
     $('f_u_other_wrap').style.display = reason === '9' ? '' : 'none';
@@ -206,6 +215,10 @@
     if (s.locked) {
       $('lock_banner').innerHTML = '<div class="alert warning">此申報已被匯出並鎖定，不能修改。</div>';
       $('modify_box').style.display = 'none';
+    } else if (suspendedFor(s.submission_type)) {
+      $('lock_banner').innerHTML = '<div class="alert warning">申報服務已暫停，現時只可查詢。</div>';
+      $('modify_box').style.display = 'none';
+      $('save_note').textContent = '';
     } else if (isUrgent()) {
       $('modify_box').style.display = '';
       api('/api/public/urgent/window').then((w) => {

@@ -121,6 +121,7 @@ export function createApp() {
         publicWriteSuspension: {
           enabled: config.publicWriteSuspensionEnabled,
           suspendAt: config.publicWriteSuspensionAt,
+          returnReopened: config.publicReturnWritesReopened,
         },
       })};`);
   });

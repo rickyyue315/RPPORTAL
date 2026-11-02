@@ -142,6 +142,7 @@ railway config apply  # 確認後建立 Web + PostgreSQL
 | `CORS_ORIGINS` | 留空（同源）或填允許來源，逗號分隔 |
 | `PUBLIC_WRITE_SUSPENSION_ENABLED` | `true` 暫停公開提交／修改／Excel 匯入；重新開通時設 `false` |
 | `PUBLIC_WRITE_SUSPENSION_AT` | 暫停生效時間（預設 `2026-08-11T23:59:59+08:00`） |
+| `PUBLIC_RETURN_WRITES_REOPENED` | `true` 行貨退貨提交／匯入／申請期內修改不受平台暫停影響（依 `return-schedule.json`） |
 | `NORMAL_NDRF_PORTAL_ENABLED` | `true` 開放一般 NDRF Portal 新提交；Admin 管理及匯出不受影響 |
 | `NDRF_REJECT_COOLDOWN_HOURS` | Reject 後重新申請冷卻時數（預設 `720`） |
 | `NDRF_AUTO_APPROVE_ENABLED` | Buyer SLA 逾期自動批准開關（預設 `true`） |

@@ -32,6 +32,7 @@ services:
       TRUST_PROXY: "true"
       PUBLIC_WRITE_SUSPENSION_ENABLED: "true"
       PUBLIC_WRITE_SUSPENSION_AT: "2026-08-11T23:59:59+08:00"
+      PUBLIC_RETURN_WRITES_REOPENED: "true"
     ports:
       - "3000:3000"
 

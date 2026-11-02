@@ -475,12 +475,13 @@ describe('RP Connect 品牌鎖定', () => {
     expect(script).not.toContain('RP 連繫網（RP Connect）');
   });
 
-  it('announces the rename once on every shop page until the shop dismisses it', () => {
+  it('announces the rename once on every shop and OM page until it is dismissed', () => {
     // 公司另有系統叫 Portal，改名後要主動通知一次，且按 X 後不可再騷擾店舖。
     const pages = [
       'public/portal/zero-sales.html',
       'public/portal/store.html',
       'public/portal/designated-sku.html',
+      'public/portal/om.html',
       'public/urgent.html',
       'public/sales.html',
       'public/return.html',

@@ -1200,15 +1200,34 @@
     };
   }
 
+  /**
+   * 對外正式網址。登入連結會經 WhatsApp 轉發，收件人見到的不可以是
+   * Railway 的預覽網域（rpportal-production.up.railway.app），所以固定用
+   * 自訂網域，而不是 window.location.origin。
+   */
+  const PU_PUBLIC_ORIGIN = 'https://rpportal.bestohoh.com';
+
   function puLoginUrl(user) {
     return user.role === 'om'
-      ? `${window.location.origin}/portal/om.html?user=${encodeURIComponent(user.username)}`
-      : `${window.location.origin}/portal/?user=${encodeURIComponent(user.username)}`;
+      ? `${PU_PUBLIC_ORIGIN}/portal/om.html?user=${encodeURIComponent(user.username)}`
+      : `${PU_PUBLIC_ORIGIN}/portal/?user=${encodeURIComponent(user.username)}`;
   }
 
   function puWhatsAppText(user, password) {
+    const name = user.display_name || user.username;
+    if (user.role === 'om') {
+      // OM 可以代店舖回覆，權限比店舖帳戶大，所以文案特別註明不可轉發。
+      return [
+        `${name} 您好，`,
+        'NDRF Portal 已為您設定專屬登入帳號，詳情如下：',
+        `帳號：${user.username}`,
+        `密碼：${password}`,
+        `登入網址：${puLoginUrl(user)}`,
+        '此密碼只供您本人使用，因為可以代舖回覆，請勿轉發。如無法登入，請與我們聯絡。',
+      ].join('\r\n');
+    }
     return [
-      `${user.display_name || user.username} 您好：`,
+      `${name} 您好：`,
       '',
       'NDRF Portal 已為您設定專屬登入帳號，詳情如下：',
       `帳號：${user.username}`,

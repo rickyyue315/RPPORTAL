@@ -70,6 +70,7 @@ import { getUploadedFile, validateUploadedXlsx } from '../lib/upload.js';
 import { createImportBatch, findPortalImportBatchByIdempotencyKey, getPortalImportBatchRecord, importBatchResponse, lockImportIdempotencyKey, type ImportBatchRow } from '../services/importBatches.js';
 import { query, withTransaction } from '../db/pool.js';
 import {
+  countMyPendingItems as countMyZeroSalesPending,
   listMyBatches as listMyZeroSalesBatches,
   listMyItems as listMyZeroSalesItems,
   listReasons as listZeroSalesReasons,
@@ -1191,6 +1192,28 @@ portalRouter.get(
     res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
     res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
     res.send(buffer);
+  }),
+);
+
+// ---------------------------------------------------------------------------
+// 店舖導覽待辦數（導覽列徽章）
+//
+// 一次過回傳導覽列要顯示的所有數字，避免每個頁面打兩支 API。
+// 口徑＝「現在真的可以處理的」：已封存或「本週無須回覆」的週次不計，
+// 過期事項亦不計（詳見各服務的 count* 函式）。
+// ---------------------------------------------------------------------------
+portalRouter.get(
+  '/nav-badges',
+  requirePortalUser,
+  requireStoreSite,
+  adminActionLimiter,
+  asyncHandler(async (req: Request, res: Response) => {
+    const siteCode = req.storeSiteCode!;
+    const [zeroSales, designatedSku] = await Promise.all([
+      countMyZeroSalesPending(siteCode),
+      countDesignatedSkuPending(siteCode),
+    ]);
+    res.json({ zero_sales: zeroSales, designated_sku: designatedSku });
   }),
 );
 

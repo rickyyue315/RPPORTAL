@@ -27,27 +27,22 @@
     return;
   }
 
-  /** 導覽列「指定SKU回覆」待回覆事項數（後端只計仍開放的批次） */
-  async function refreshDesignatedBadge() {
-    try {
-      const data = await p.api('/api/portal/designated-sku/pending-count');
-      const n = Number(data.pending_count) || 0;
-      const badge = document.getElementById('nav_dsku_badge');
-      if (badge) {
-        badge.hidden = n <= 0;
-        badge.textContent = n > 9 ? '9+' : String(n);
-      }
-      const banner = document.getElementById('ds_pending_banner');
-      if (banner) {
-        banner.hidden = n <= 0;
-        banner.innerHTML = n > 0
-          ? `<div class="ds-pending-banner"><span>你有 <b>${n}</b> 個指定 SKU 事項需要回覆。</span><a href="/portal/designated-sku.html">立即前往填寫 →</a></div>`
-          : '';
-      }
-    } catch {
-      /* 徽章只屬提示，失敗不影響零銷售頁 */
-    }
+  /**
+   * 導覽列「指定SKU回覆」待回覆事項數：數字由 nav-badges.js 統一取（每頁一支 API），
+   * 這裡只訂閱結果來畫頁頂橫幅，避免同一頁重複打兩次。
+   */
+  function renderDesignatedBanner(n) {
+    const banner = $('ds_pending_banner');
+    if (!banner) return;
+    banner.hidden = n <= 0;
+    banner.innerHTML = n > 0
+      ? `<div class="ds-pending-banner"><span>你有 <b>${n}</b> 個指定 SKU 事項需要回覆。</span><a href="/portal/designated-sku.html">立即前往填寫 →</a></div>`
+      : '';
   }
+
+  document.addEventListener('portal:nav-badges', (e) => {
+    renderDesignatedBanner(Number(e.detail && e.detail.designated_sku) || 0);
+  });
 
   const COLS = [
     { key: 'Brand', label: 'Brand' },
@@ -504,7 +499,10 @@
       site = await p.ensureStoreSite();
     } catch { return; }
     $('store_header').textContent = `90日零銷售回覆 — ${site}`;
-    refreshDesignatedBadge();
+    // 徽章腳本若已跑完（快取較快／載入次序不同），補畫一次橫幅；未跑完就等 portal:nav-badges 事件
+    if (window.portalNavBadges && window.portalNavBadges.counts) {
+      renderDesignatedBanner(Number(window.portalNavBadges.counts.designated_sku) || 0);
+    }
     await loadReasons();
     await loadBatches();
     await loadList();

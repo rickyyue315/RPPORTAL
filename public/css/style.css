@@ -162,6 +162,21 @@ a:hover {
   outline-offset: 2px;
 }
 
+/* 導覽待辦徽章：有嘢等店舖處理時才出現，0 不出現（由 nav-badges.js 控制） */
+.nav-badge {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: #b42318;
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 17px;
+  vertical-align: middle;
+}
+.nav-badge[hidden] { display: none; }
+
 .announce-banner {
   background: #fff7e0;
   border-bottom: 3px solid var(--warning);

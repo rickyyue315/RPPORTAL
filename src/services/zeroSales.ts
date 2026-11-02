@@ -1154,6 +1154,27 @@ export async function listMyItems(siteCode: string, opts: { status?: string; bat
 }
 
 /**
+ * 店舖導覽徽章用：本店「仍然可以回覆」的未回覆 SKU 數。
+ *
+ * 口徑與店舖頁列表一致——只計仍開放的週次（未封存）且需要回覆；
+ * 已封存或設為「本週無須回覆」的週次不計，因為店舖根本無法回覆，
+ * 顯示出來只會變成永遠清不掉的數字。
+ */
+export async function countMyPendingItems(siteCode: string): Promise<number> {
+  const r = await query<{ count: string }>(
+    `SELECT count(*)::text AS count
+       FROM zero_sales_items i
+       JOIN zero_sales_batches b ON b.id = i.batch_id
+      WHERE i.site_code = $1
+        AND i.status = 'pending'
+        AND b.closed_at IS NULL
+        AND b.reply_required`,
+    [siteCode],
+  );
+  return Number(r.rows[0]?.count ?? 0);
+}
+
+/**
  * OM 版：一次取得多間店舖的零銷售行（site codes 由呼叫者按登入 OM 強制帶入）。
  * 篩選與店舖版一致：batch / site / status / 搜尋 SKU、Brand、描述。
  */

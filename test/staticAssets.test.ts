@@ -17,6 +17,7 @@ const VERSIONED_ASSETS = [
   '/portal/js/designated-sku.js',
   '/portal/js/portal.js',
   '/portal/js/portal-tabs.js',
+  '/portal/js/nav-badges.js',
   '/portal/js/dashboard.js',
   '/js/admin-designated-sku.js',
   '/js/chart-lite.js',
@@ -330,6 +331,41 @@ describe('static asset freshness', () => {
       // 站內所有店舖頁共用同一組導覽，只換 active；新增功能時要一次過改齊
       expect(navOf(page), page).toEqual(base);
     }
+  });
+
+  // 徽章只屬提示：每個店舖頁面（包括公開頁）都要有，否則店舖轉頁就漏做
+  it('shows the same pending-count badges on every store page', () => {
+    const pages = [
+      'portal/zero-sales.html',
+      'portal/designated-sku.html',
+      'portal/store.html',
+      'urgent.html',
+      'sales.html',
+      'return.html',
+      'lookup.html',
+      'help.html',
+    ];
+    for (const page of pages) {
+      const html = readFileSync(path.join(root, 'public', page), 'utf8');
+      expect(html, page).toContain('/portal/js/nav-badges.js');
+    }
+
+    const script = readFileSync(path.join(root, 'public/portal/js/nav-badges.js'), 'utf8');
+    // 一次過取兩個數字；0 不出現；9 以上收斂成 9+
+    expect(script).toContain('/api/portal/nav-badges');
+    expect(script).toContain("n > 9 ? '9+' : String(n)");
+    // 目前所在頁面不顯示（列表就在下面）
+    expect(script).toContain("link.getAttribute('aria-current') === 'page'");
+    // 未登入（公開頁面的訪客）不可被彈去登入頁
+    expect(script).not.toMatch(/window\.location\.(href|replace)/);
+    // 結果要廣播，讓頁面自己的橫幅重用同一份數字（避免重複打 API）
+    expect(script).toContain("'portal:nav-badges'");
+
+    // 公開頁面只載入 style.css，徽章樣式必須放在那裡才會生效
+    const style = readFileSync(path.join(root, 'public/css/style.css'), 'utf8');
+    expect(style).toMatch(/\.nav-badge\s*\{/);
+    const portalCss = readFileSync(path.join(root, 'public/portal/css/portal.css'), 'utf8');
+    expect(portalCss).not.toMatch(/\.nav-badge\s*\{/);
   });
 
   // 全站 CSRF 是雙重提交：POST 一定要帶 x-csrf-token。共用登入閘曾經完全

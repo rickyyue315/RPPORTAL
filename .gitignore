@@ -6,3 +6,5 @@ dist/
 vitest.config.ts.timestamp-*.mjs
 # 本機跑 vitest 時把 TMP 指到專案內，避免 Windows TEMP 權限問題
 .tmp-vitest/
+.vt/
+.vitest-tmp/

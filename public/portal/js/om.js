@@ -925,11 +925,35 @@
         </button>`;
       }).join('');
 
+      // 手機／平板（CSS ≤900px 才顯示）：一行一店，店號＋店名橫向排，毋須旋轉文字，
+      // 店名較長亦不會被 22px 闊的直排欄位擠到疊字；8 間店也不用橫向拖動。
+      const rowsHtml = sorted.map((row) => {
+        const ratio = pick(row);
+        const site = String(row.site_code || '');
+        const fullName = String(row.shop || '').trim();
+        const overflow = ratio !== null && capped && ratio > scaleMax * 1.02;
+        const barColor = ratio === null ? '#c8d3de' : ratio >= alert ? '#c0392b' : '#0f766e';
+        const widthStyle = ratio === null || scaleMax <= 0
+          ? '0'
+          : `${Math.max(1.5, Math.min(100, (ratio / scaleMax) * 100)).toFixed(1)}%`;
+        const label = `${site} ${fullName}`.trim();
+        const valueText = ratio === null ? '缺值' : fmtRatio(ratio);
+        return `<button type="button" class="om-share-row${ratio === null ? ' is-missing' : ''}${overflow ? ' is-capped' : ''}"
+          data-om-share-site="${esc(site)}" title="${esc(label)}" aria-label="${esc(`${label}｜${valueText}`)}">
+          <span class="om-share-row-line">
+            <span class="om-share-row-site">${esc(site)}</span>
+            <span class="om-share-row-shop">${esc(fullName)}</span>
+            <span class="om-share-row-value">${esc(valueText)}</span>
+          </span>
+          <span class="om-share-row-track"><i class="om-share-row-fill" style="width:${widthStyle};background:${barColor}"></i></span>
+        </button>`;
+      }).join('');
+
       const metaBits = [
         { text: `${group.rows.length} 店` },
         weighted === null ? { text: '加權 —' } : { text: `加權 ${fmtRatio(weighted)}`, total: true },
         ...(usable.length ? [{ text: `最高 ${fmtRatio(topValue)}` }] : []),
-        ...(capped ? [{ text: '最高柱截斷' }] : []),
+        ...(capped ? [{ text: '最高值截斷' }] : []),
         ...(group.rows.length - usable.length ? [{ text: `${group.rows.length - usable.length} 間缺值` }] : []),
       ];
 
@@ -939,7 +963,8 @@
           <span class="om-share-name">${esc(group.label)}</span>
           ${metaBits.map((item) => `<span class="om-share-meta${item.total ? ' om-share-meta--total' : ''}">${esc(item.text)}</span>`).join('')}
         </div>
-        <div class="om-share-scroll"><div class="om-share-plot">${cols}</div></div>
+        <div class="om-share-bars"><div class="om-share-scroll"><div class="om-share-plot">${cols}</div></div></div>
+        <div class="om-share-rows">${rowsHtml}</div>
       </section>`;
     }).join('')}</div>`;
 

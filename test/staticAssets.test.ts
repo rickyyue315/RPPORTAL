@@ -247,6 +247,7 @@ describe('static asset freshness', () => {
     const page = readFileSync(path.join(root, 'public', 'portal', 'om.html'), 'utf8');
     const script = readFileSync(path.join(root, 'public', 'portal', 'js', 'om.js'), 'utf8');
     const dskuScript = readFileSync(path.join(root, 'public', 'portal', 'js', 'om-designated-sku.js'), 'utf8');
+    const portalCss = readFileSync(path.join(root, 'public', 'portal', 'css', 'portal.css'), 'utf8');
     expect(page).toContain('id="om_login_form"');
     expect(page).toContain('id="panel_om_overview"');
     expect(page).toContain('id="panel_om_zero"');
@@ -262,6 +263,13 @@ describe('static asset freshness', () => {
     expect(script).toContain('renderOmShare');
     expect(script).toContain('data-om-stock-metric');
     expect(script).toContain('setStockMetric');
+    // 手機／平板（CSS ≤900px）不出直排柱底店名，改為「一行一店」清單：
+    // 直排店名只有 22px 闊，中文會疊字，睇唔到係邊間店
+    expect(script).toContain('om-share-rows');
+    expect(script).toContain('om-share-row-shop');
+    expect(portalCss).toContain('.om-share-rows { display: none; }');
+    expect(portalCss).toContain('.om-share-bars { display: none; }');
+    expect(portalCss).toContain('.om-share-rows { display: block; }');
     // 同一月份有月結時，週更點只留 tooltip、不畫數值標籤；月結後未有新月結的週更照標
     expect(script).toContain('weeklyLabelVisibility');
     expect(script).toContain('showLabel');

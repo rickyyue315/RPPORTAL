@@ -208,8 +208,9 @@
   border-left: 1px solid #e3eef8;
 }
 .om-share-group:first-child { border-left: none; }
-/* 窄螢幕不要出現「2 組一行、1 組掉下一行」的參差：直接改成上下排，分隔線轉為橫線 */
-@media (max-width: 720px) {
+/* 窄螢幕不要出現「2 組一行、1 組掉下一行」的參差：直接改成上下排，分隔線轉為橫線。
+   900px 起組與組上下排，配合下方「一行一店」清單，每組都有全闊可用。 */
+@media (max-width: 900px) {
   .om-share { flex-direction: column; }
   .om-share-group {
     border-left: none;
@@ -298,7 +299,8 @@
   overflow: hidden;
   writing-mode: vertical-rl;
   font-size: 10.5px;
-  line-height: 1.08;
+  /* 直排時行距 = 字欄間距；1.08 會令兩欄字貼住，遠看像疊字，1.2 才有清楚的一線之隔 */
+  line-height: 1.2;
   color: #5a6a78;
 }
 .om-share-col:hover .om-share-bar { filter: brightness(1.12); }
@@ -319,6 +321,83 @@
   height: 3px;
   background: #fff;
   box-shadow: 0 -1px 0 rgba(15, 92, 156, .45);
+}
+
+/* ---------- 窄螢幕（≤900px）：改用「一行一店」橫向清單 ----------
+   原本柱底的店名是直排（writing-mode: vertical-rl），只有 22px 闊，行距 1.08 又貼住，
+   手機上 9–12 個字的中文店名會疊字、甚至睇唔到係邊間；一組 8 間店還要橫向拖動。
+   所以手機／平板直接換成一行一店：店號 + 店名（橫向、可換行）+ 比率 + 比例條。 */
+.om-share-rows { display: none; }
+.om-share-row {
+  display: block;
+  width: 100%;
+  padding: 7px 2px 8px;
+  border: none;
+  border-top: 1px solid #eef4fa;
+  border-radius: 0;
+  background: none;
+  -webkit-appearance: none;
+  appearance: none;
+  font-family: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.om-share-row:first-child { border-top: none; }
+.om-share-row-line {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: baseline;
+  gap: 3px 8px;
+}
+.om-share-row-site {
+  font-family: Consolas, "Courier New", monospace;
+  font-size: 11px;
+  letter-spacing: -0.2px;
+  color: #41505e;
+}
+.om-share-row-shop {
+  font-size: 13px;
+  line-height: 1.35;
+  color: #26313d;
+  overflow-wrap: anywhere;
+}
+.om-share-row-value {
+  font-size: 13px;
+  font-weight: 700;
+  color: #26313d;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.om-share-row-track {
+  display: block;
+  height: 6px;
+  margin-top: 4px;
+  border-radius: 999px;
+  background: #eef4fa;
+  overflow: hidden;
+}
+.om-share-row-fill { display: block; height: 100%; border-radius: 999px; }
+.om-share-row.is-missing .om-share-row-shop,
+.om-share-row.is-missing .om-share-row-value { color: #8494a3; }
+.om-share-row.is-missing .om-share-row-track { background: #f2f5f8; }
+/* 截斷的高柱：比例條末端加斜紋，提示實際比率更高 */
+.om-share-row.is-capped .om-share-row-fill {
+  background-image: repeating-linear-gradient(45deg, rgba(255, 255, 255, .6) 0 4px, transparent 4px 8px);
+}
+.om-share-row:hover .om-share-row-shop,
+.om-share-row:hover .om-share-row-value { color: #0f5c9c; }
+.om-share-row:focus-visible {
+  outline: 2px solid rgba(15, 92, 156, .4);
+  outline-offset: 2px;
+  border-radius: 6px;
+}
+/* iPad 橫向也只有 1024px，柱底直排店名同樣擠；1100px 以下一律用清單，桌面才保留柱狀圖 */
+@media (max-width: 1100px) {
+  .om-share-bars { display: none; }
+  .om-share-rows { display: block; }
+}
+@media (max-width: 900px) {
+  .om-share-meta { font-size: 12px; }
 }
 
 /* ---------- 圖表本身（chart-lite.js） ---------- */

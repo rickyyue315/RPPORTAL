@@ -218,6 +218,132 @@ a:hover {
   }
 }
 
+/* 改名通知（rename-notice.js）：淺藍資訊卡，可關閉；店舖按 X 後不再出現。
+   放 style.css 而非 portal.css——公開頁（Urgent／銷售／退貨／查詢／說明）冇載入 portal.css。 */
+.rename-notice {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  margin: 0 0 20px;
+  padding: 14px 16px;
+  background: var(--brand-50);
+  border: 1px solid var(--brand-200);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-sm);
+}
+
+.rename-notice-icon {
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  background: var(--brand-100);
+  color: var(--brand);
+}
+
+.rename-notice-icon svg {
+  width: 18px;
+  height: 18px;
+  display: block;
+}
+
+.rename-notice-body {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.rename-notice-title {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 700;
+  line-height: 1.45;
+  color: var(--text);
+}
+
+.rename-notice-title strong {
+  color: var(--brand-dark);
+  font-weight: 800;
+}
+
+.rename-notice-desc {
+  margin: 3px 0 0;
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--muted);
+}
+
+.rename-notice-cta {
+  flex: 0 0 auto;
+  align-self: center;
+  padding: 6px 14px;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--brand-dark);
+  background: var(--card);
+  border: 1px solid var(--brand-200);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+
+.rename-notice-cta:hover {
+  background: var(--brand-100);
+}
+
+.rename-notice-close {
+  flex: 0 0 auto;
+  align-self: flex-start;
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  margin-left: 2px;
+  padding: 0;
+  color: var(--muted);
+  background: transparent;
+  border: 0;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+
+.rename-notice-close svg {
+  width: 16px;
+  height: 16px;
+  display: block;
+}
+
+.rename-notice-close:hover {
+  color: var(--text);
+  background: var(--brand-100);
+}
+
+@media (max-width: 640px) {
+  .rename-notice {
+    gap: 10px;
+    padding: 12px;
+  }
+
+  .rename-notice-icon {
+    width: 30px;
+    height: 30px;
+  }
+
+  .rename-notice-title {
+    font-size: 14px;
+  }
+
+  .rename-notice-desc {
+    font-size: 12.5px;
+  }
+
+  /* 手機上 X 已經好清楚，唔需要再擺一粒「知道了」爭位 */
+  .rename-notice-cta {
+    display: none;
+  }
+}
+
 @media (max-width: 640px) {
   .topbar-inner {
     padding: 12px 16px 0;

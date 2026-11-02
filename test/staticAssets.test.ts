@@ -474,4 +474,32 @@ describe('RP Connect 品牌鎖定', () => {
     // 舊寫法不可回頭
     expect(script).not.toContain('RP 連繫網（RP Connect）');
   });
+
+  it('announces the rename once on every shop page until the shop dismisses it', () => {
+    // 公司另有系統叫 Portal，改名後要主動通知一次，且按 X 後不可再騷擾店舖。
+    const pages = [
+      'public/portal/zero-sales.html',
+      'public/portal/store.html',
+      'public/portal/designated-sku.html',
+      'public/urgent.html',
+      'public/sales.html',
+      'public/return.html',
+      'public/lookup.html',
+      'public/help.html',
+    ];
+    for (const page of pages) {
+      expect(read(page), page).toContain('/js/rename-notice.js');
+    }
+
+    const script = read('public/js/rename-notice.js');
+    // 文案要有全名，並講明同「SASA Portal」無關
+    expect(script).toContain('RP Portal 已改名為');
+    expect(script).toContain('RP Connect — RP 連繫網申報平台');
+    expect(script).toContain('SASA Portal');
+    // 關閉記號寫入 localStorage（不是 sessionStorage：關掉瀏覽器再開不應重提）
+    expect(script).toContain('localStorage.setItem(STORAGE_KEY, DISMISSED)');
+    expect(script).not.toContain('sessionStorage.setItem');
+    // 樣式放在 style.css，公開頁（無載入 portal.css）才吃得到
+    expect(read('public/css/style.css')).toContain('.rename-notice {');
+  });
 });

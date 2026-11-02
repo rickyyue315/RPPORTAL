@@ -79,7 +79,8 @@ export type AuditEventType =
   | 'designated_sku_item_added'
   | 'designated_sku_item_updated'
   | 'om_zero_sales_reply'
-  | 'om_designated_sku_reply';
+  | 'om_designated_sku_reply'
+  | 'backup_downloaded';
 
 interface AuditInput {
   eventType: AuditEventType;

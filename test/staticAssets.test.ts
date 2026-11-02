@@ -216,6 +216,33 @@ describe('static asset freshness', () => {
     expect(script).not.toContain("tab === 'batches'");
   });
 
+  it('wires the database backup panel to backup_runs and the bucket download', () => {
+    const html = readFileSync(path.join(root, 'public', 'admin', 'index.html'), 'utf8');
+    const script = readFileSync(path.join(root, 'public', 'js', 'admin.js'), 'utf8');
+    const adminCss = readFileSync(path.join(root, 'public', 'css', 'admin.css'), 'utf8');
+
+    expect(html).toContain('data-lazy-section="backup"');
+    expect(html).toContain('id="btn_backup_download"');
+    expect(html).toContain('id="backup_runs_body"');
+    expect(script).toContain('backup: loadBackupStatus');
+    expect(script).toContain("'/api/admin/backup/status'");
+    expect(script).toContain("'/api/admin/backup/latest'");
+    // 「延遲」需要自己的黃色 badge，否則 .status-badge 只有藍／紅兩種
+    expect(adminCss).toContain('.status-badge.warn');
+  });
+
+  it('ships the backup cron service definition', () => {
+    const dockerfile = readFileSync(path.join(root, 'Dockerfile.backup'), 'utf8');
+    const backupScript = readFileSync(path.join(root, 'scripts', 'backup.sh'), 'utf8');
+
+    // pg_dump 版本必須 >= 伺服器（18），所以基底一定要 postgres:18-*
+    expect(dockerfile).toContain('FROM postgres:18-alpine');
+    expect(dockerfile).toContain('ENTRYPOINT []');
+    expect(backupScript).toContain('pg_dump --format=custom');
+    expect(backupScript).toContain("status = 'success'");
+    expect(backupScript).toContain('--min-age');
+  });
+
   it('wires the OM portal login, reply and stock views', () => {
     const page = readFileSync(path.join(root, 'public', 'portal', 'om.html'), 'utf8');
     const script = readFileSync(path.join(root, 'public', 'portal', 'js', 'om.js'), 'utf8');

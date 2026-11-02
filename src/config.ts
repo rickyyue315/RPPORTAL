@@ -100,6 +100,24 @@ export const config = {
   loginAttemptRetentionDays: Math.max(1, int('LOGIN_ATTEMPT_RETENTION_DAYS', 90)),
   importBatchRetentionDays: Math.max(1, int('IMPORT_BATCH_RETENTION_DAYS', 730)),
   exportBatchRetentionDays: Math.max(1, int('EXPORT_BATCH_RETENTION_DAYS', 730)),
+  // 每日備份：Railway cron service 用 pg_dump 寫入 Storage Bucket。應用程式只需
+  // 讀取權限（後台「下載最新備份」），上傳由 cron container 負責，所以這裡沒有
+  // 任何寫入路徑。BACKUP_S3_* 留空 = 未啟用，後台會顯示「未設定」而不是報錯。
+  backupScheduleHours: (process.env.BACKUP_SCHEDULE_HOURS ?? '2,14')
+    .split(',')
+    .map((s) => Number(s.trim()))
+    .filter((n) => Number.isInteger(n) && n >= 0 && n <= 23)
+    .sort((a, b) => a - b),
+  backupRetentionDays: Math.max(1, int('BACKUP_RETENTION_DAYS', 7)),
+  backupStorage: {
+    endpoint: (process.env.BACKUP_S3_ENDPOINT ?? '').trim(),
+    region: (process.env.BACKUP_S3_REGION ?? 'auto').trim() || 'auto',
+    bucket: (process.env.BACKUP_S3_BUCKET ?? '').trim(),
+    accessKeyId: (process.env.BACKUP_S3_ACCESS_KEY_ID ?? '').trim(),
+    secretAccessKey: (process.env.BACKUP_S3_SECRET_ACCESS_KEY ?? '').trim(),
+    // Railway 新 bucket 用 virtual-hosted style；較舊的 bucket 才需要 path-style。
+    forcePathStyle: bool('BACKUP_S3_FORCE_PATH_STYLE', false),
+  },
   returnSchedulePath: process.env.RETURN_SCHEDULE_PATH ?? path.join(__dirname, '..', 'return-schedule.json'),
   returnEnforcementStart: process.env.RETURN_ENFORCEMENT_START ?? '2026-08-01',
   storesCsvPath: process.env.STORES_CSV_PATH ?? path.join(__dirname, '..', 'stores-template.csv'),

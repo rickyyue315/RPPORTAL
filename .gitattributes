@@ -1,0 +1,5 @@
+# 容器內執行的檔案一律 LF。Windows checkout（core.autocrlf=true）若把
+# scripts/backup.sh 轉成 CRLF，cron container 會以
+# "/bin/sh^M: bad interpreter" 直接失敗，而 Railway 只會顯示部署失敗。
+*.sh text eol=lf
+Dockerfile* text eol=lf

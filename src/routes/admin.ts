@@ -62,6 +62,13 @@ import {
   listSkuMasterBatches,
   replaceSkuMaster,
 } from '../services/skuMaster.js';
+import {
+  backupDownloadFilename,
+  getBackupStatus,
+  getLatestSuccessfulBackup,
+  isBackupStorageConfigured,
+  openBackupObject,
+} from '../services/backup.js';
 import { query, withTransaction } from '../db/pool.js';
 import {
   generateTemplateWorkbook,
@@ -4983,5 +4990,74 @@ adminRouter.put(
       }
       throw err;
     }
+  }),
+);
+
+/* ------------------------------------------------------------------ */
+/* 資料庫備份（Railway cron service 寫入 backup_runs，此處只讀）        */
+/* ------------------------------------------------------------------ */
+
+/** GET /api/admin/backup/status — 最近備份紀錄與健康狀態。 */
+adminRouter.get(
+  '/backup/status',
+  requireAdmin,
+  adminActionLimiter,
+  asyncHandler(async (_req: Request, res: Response) => {
+    res.json(await getBackupStatus());
+  }),
+);
+
+/** GET /api/admin/backup/latest — 下載最新一份成功的 pg_dump（binary 串流）。 */
+adminRouter.get(
+  '/backup/latest',
+  requireAdmin,
+  adminActionLimiter,
+  asyncHandler(async (req: Request, res: Response) => {
+    if (!isBackupStorageConfigured()) {
+      res.status(503).json({ error: '未設定備份儲存空間，請先加 BACKUP_S3_* 環境變數' });
+      return;
+    }
+
+    const latest = await getLatestSuccessfulBackup();
+    if (!latest?.object_key) {
+      res.status(404).json({ error: '暫時未有成功的備份紀錄' });
+      return;
+    }
+
+    let object;
+    try {
+      object = await openBackupObject(latest.object_key);
+    } catch (err) {
+      const name = (err as { name?: string }).name ?? '';
+      if (name === 'NoSuchKey' || name === 'NotFound') {
+        res.status(404).json({ error: '備份檔案已不存在（可能已被保留期清理）' });
+        return;
+      }
+      console.error('[backup] 讀取失敗', latest.object_key, (err as Error).message);
+      res.status(502).json({ error: '無法讀取備份儲存空間' });
+      return;
+    }
+
+    const length = latest.dump_bytes ?? object.contentLength ?? null;
+    res.setHeader('Content-Type', 'application/octet-stream');
+    res.setHeader('Content-Disposition', `attachment; filename="${backupDownloadFilename(latest.object_key)}"`);
+    res.setHeader('Cache-Control', 'no-store, private');
+    if (length && length > 0) res.setHeader('Content-Length', String(length));
+
+    await writeAuditEvent({
+      eventType: 'backup_downloaded',
+      actorRole: 'admin',
+      actor: req.adminUsername,
+      ip: getClientIp(req),
+      metadata: { object_key: latest.object_key, bytes: length },
+    });
+
+    // 客戶端中途斷線時要銷毀上游串流，否則 S3 連線會一直掛住。
+    res.on('close', () => object.body.destroy());
+    object.body.on('error', (err: Error) => {
+      console.error('[backup] 串流中斷', latest.object_key, err.message);
+      res.destroy(err);
+    });
+    object.body.pipe(res);
   }),
 );

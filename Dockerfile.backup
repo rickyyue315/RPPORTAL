@@ -1,0 +1,18 @@
+# 每日備份 cron service（與 web app 分開部署，只用於 pg_dump → 上傳 → 清理）。
+#
+# 為何用 postgres:18-alpine 而不用 node:24-alpine：
+#   pg_dump 的版本必須 >= 伺服器版本，否則會直接報
+#   "server version 18.x, pg_dump version 17.x … aborting"。
+#   Alpine 的 apk repo 現時最多只到 postgresql17-client。
+FROM postgres:18-alpine
+
+# rclone 用環境變數即時組出 S3 remote，不需要 config 檔。
+RUN apk add --no-cache rclone
+
+COPY scripts/backup.sh /usr/local/bin/backup.sh
+RUN chmod +x /usr/local/bin/backup.sh
+
+# 基底 image 的 docker-entrypoint.sh 會嘗試初始化並啟動一個 Postgres 實例；
+# 這個 service 只想要自己的腳本，所以清空 ENTRYPOINT。
+ENTRYPOINT []
+CMD ["/usr/local/bin/backup.sh"]

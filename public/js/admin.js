@@ -1053,6 +1053,147 @@
     }
   });
 
+  /* ------------------------------------------------------------------ */
+  /* 資料庫備份（cron service 寫入 backup_runs，此處只讀）               */
+  /* ------------------------------------------------------------------ */
+
+  // 門檻由後端按排程密度回傳（兩次／日 → 14 / 26 小時），前端不重複硬編碼。
+  const BACKUP_HEALTH = {
+    ok: { label: '正常', cls: 'received' },
+    late: { label: '延遲', cls: 'warn' },
+    stale: { label: '需要檢查', cls: 'locked' },
+    never: { label: '未有備份', cls: 'locked' },
+  };
+
+  function formatFileSize(bytes) {
+    const v = Number(bytes);
+    if (!Number.isFinite(v) || v <= 0) return '—';
+    if (v >= 1073741824) return `${(v / 1073741824).toFixed(2)} GB`;
+    if (v >= 1048576) return `${(v / 1048576).toFixed(1)} MB`;
+    if (v >= 1024) return `${(v / 1024).toFixed(0)} KB`;
+    return `${v} B`;
+  }
+
+  function formatDuration(ms) {
+    const v = Number(ms);
+    if (!Number.isFinite(v) || v <= 0) return '—';
+    if (v >= 60000) return `${Math.floor(v / 60000)} 分 ${Math.round((v % 60000) / 1000)} 秒`;
+    return `${Math.max(1, Math.round(v / 1000))} 秒`;
+  }
+
+  function formatBackupTime(iso) {
+    if (!iso) return '—';
+    try {
+      return new Date(iso).toLocaleString('zh-HK', {
+        timeZone: 'Asia/Hong_Kong',
+        year: 'numeric', month: '2-digit', day: '2-digit',
+        hour: '2-digit', minute: '2-digit', hour12: false,
+      });
+    } catch {
+      return iso;
+    }
+  }
+
+  function formatBackupAge(hours) {
+    const v = Number(hours);
+    if (!Number.isFinite(v)) return '未有紀錄';
+    if (v < 1) return `${Math.max(1, Math.round(v * 60))} 分鐘前`;
+    if (v < 48) return `${v.toFixed(1)} 小時前`;
+    return `${Math.round(v / 24)} 日前`;
+  }
+
+  function loadBackupStatus() {
+    adminFetch('/api/admin/backup/status')
+      .then((data) => {
+        const health = BACKUP_HEALTH[data.health] || BACKUP_HEALTH.never;
+        const parts = [
+          `<span>上次備份：<b>${escapeHtml(formatBackupAge(data.age_hours))}</b></span>`,
+          `<span class="status-badge ${health.cls}">${escapeHtml(health.label)}</span>`,
+        ];
+        if (data.last_success) {
+          parts.push(`<span class="text-secondary small">${escapeHtml(formatBackupTime(data.last_success.finished_at))} · ${escapeHtml(formatFileSize(data.last_success.dump_bytes))}</span>`);
+        }
+        if (!data.configured) {
+          parts.push('<span class="status-badge locked">未接駁儲存空間</span>');
+        }
+        $('backup_summary').innerHTML = parts.join('');
+
+        if (data.retention_days) $('backup_retention_days').textContent = String(data.retention_days);
+
+        const btn = $('btn_backup_download');
+        if (btn) {
+          const downloadable = Boolean(data.last_success?.object_key) && Boolean(data.configured);
+          btn.disabled = !downloadable;
+          btn.title = downloadable ? '' : '暫時未有可下載的備份';
+        }
+
+        const tbody = $('backup_runs_body');
+        if (!data.recent?.length) {
+          tbody.innerHTML = '<tr><td colspan="5" class="text-center text-secondary">暫時未有備份紀錄，cron service 首次執行後會顯示在此。</td></tr>';
+          return;
+        }
+        tbody.innerHTML = data.recent.map((run) => {
+          const badge = run.status === 'success'
+            ? '<span class="status-badge received">成功</span>'
+            : run.status === 'failed'
+              ? '<span class="status-badge locked">失敗</span>'
+              : '<span class="status-badge warn">未完成</span>';
+          const file = run.object_key
+            ? `<code style="word-break:break-all">${escapeHtml(run.object_key.split('/').pop() || run.object_key)}</code>`
+            : '—';
+          return `<tr><td>${escapeHtml(formatBackupTime(run.started_at))}</td><td>${badge}</td><td>${escapeHtml(formatFileSize(run.dump_bytes))}</td><td>${escapeHtml(formatDuration(run.duration_ms))}</td><td>${file}</td></tr>`;
+        }).join('');
+      })
+      .catch((err) => {
+        $('backup_summary').innerHTML = `<span class="text-secondary small">載入失敗：${escapeHtml(err.message)}</span>`;
+        $('backup_runs_body').innerHTML = '<tr><td colspan="5" class="text-center text-secondary">—</td></tr>';
+      });
+  }
+
+  async function downloadLatestBackup() {
+    const btn = $('btn_backup_download');
+    if (!btn) return;
+    const original = btn.textContent;
+    btn.disabled = true;
+    btn.textContent = '下載中…';
+    showAlert($('backup_result'), '', '');
+    try {
+      const res = await fetch('/api/admin/backup/latest');
+      if (!res.ok) {
+        let message = `下載失敗 (${res.status})`;
+        try {
+          const data = await res.json();
+          if (data?.error) message = data.error;
+        } catch {}
+        throw new Error(message);
+      }
+      const blob = await res.blob();
+      const disposition = res.headers.get('Content-Disposition') || '';
+      const match = disposition.match(/filename="([^"]+)"/);
+      const filename = match ? match[1] : 'ndrf-backup.dump';
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement('a');
+      anchor.href = url;
+      anchor.download = filename;
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      URL.revokeObjectURL(url);
+      showAlert($('backup_result'), 'success', `已下載 ${escapeHtml(filename)}（${escapeHtml(formatFileSize(blob.size))}）。`);
+    } catch (err) {
+      showAlert($('backup_result'), 'error', escapeHtml(err.message));
+    } finally {
+      btn.textContent = original;
+      loadBackupStatus();
+    }
+  }
+
+  document.addEventListener('click', (event) => {
+    if (event.target instanceof Element && event.target.closest('#btn_backup_download')) {
+      downloadLatestBackup();
+    }
+  });
+
   let recoveryScope = null;
 
   function loadRecoveryCodes() {
@@ -2227,6 +2368,7 @@
     'rejection-reasons': loadRejectionReasons,
     stores: loadStoreCount,
     'recovery-codes': loadRecoveryCodes,
+    backup: loadBackupStatus,
   };
 
   function loadLazySection(key) {
@@ -2269,7 +2411,7 @@
     else if (tab === 'system') {
       loadReviewPending();
       if (manual) {
-        ['portal-users', 'sku-master', 'stores', 'store-routes', 'rejection-reasons', 'recovery-codes']
+        ['portal-users', 'sku-master', 'stores', 'store-routes', 'rejection-reasons', 'recovery-codes', 'backup']
           .forEach(loadLazySection);
       }
     } else if (tab === 'zero-sales') {

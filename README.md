@@ -137,6 +137,10 @@ railway config apply  # 確認後建立 Web + PostgreSQL
 | `LOGIN_ATTEMPT_RETENTION_DAYS` | `90` |
 | `IMPORT_BATCH_RETENTION_DAYS` | `730` |
 | `EXPORT_BATCH_RETENTION_DAYS` | `730` |
+| `BACKUP_SCHEDULE_HOURS` | 每日備份時間（香港時間，預設 `2,14`）；同時決定後台「延遲」門檻 |
+| `BACKUP_RETENTION_DAYS` | 備份保留日數（預設 `7`，兩次／日 = 最多 14 份） |
+| `BACKUP_S3_ENDPOINT` / `_REGION` / `_BUCKET` / `_ACCESS_KEY_ID` / `_SECRET_ACCESS_KEY` | Railway Storage Bucket 讀取憑證；留空 = 未接駁，後台顯示「未接駁儲存空間」 |
+| `BACKUP_S3_FORCE_PATH_STYLE` | `false`（只有較舊的 bucket 才需要改 `true`） |
 | `RETURN_SCHEDULE_PATH` | `./return-schedule.json` |
 | `RETURN_ENFORCEMENT_START` | `2026-08-01` |
 | `STORES_CSV_PATH` | 門店主檔位置（預設 `./stores-template.csv`，Dockerfile 會一併複製） |
@@ -164,6 +168,46 @@ railway config apply  # 確認後建立 Web + PostgreSQL
 - 應用程式處理 `SIGTERM`，並在 `SHUTDOWN_TIMEOUT_MS` 內完成關閉；配合 Railway draining 可減少部署期間中斷。
 - 健康檢查路徑：`/health`（會檢查資料庫，正常回 `200`，資料庫不可用回 `503`）。
 - 預設 1 個 replica 已足夠；如要水平擴展，session、rate limit 及 migration lock 都在 PostgreSQL，可直接增加 replica。
+
+### 每日備份（cron service）
+
+Railway 原生 volume backup 只限 Pro workspace，所以備份改為在**同一個 project** 加一個 cron service：每日 **02:00／14:00**（香港時間）執行 `pg_dump -Fc`，上傳到 Railway Storage Bucket，保留 **7 日**（最多 14 份）。
+
+**設定步驟**
+
+1. Project canvas → **Create → Bucket**，region 選與 app 相同的地區，命名例如 `ndrf-backup`。
+2. 開 bucket 的 **Credentials** 頁，記低 `ENDPOINT`／`ACCESS_KEY_ID`／`SECRET_ACCESS_KEY`／`BUCKET`。
+3. **Create → GitHub Repo** 指向同一個 repo，在 **Settings → Build → Dockerfile Path** 填 `Dockerfile.backup`。
+4. **Settings → Cron Schedule** 填 `0 6,18 * * *`（**UTC**；即 02:00 與 14:00 香港時間）。
+5. cron service 的 Variables：
+
+   ```
+   DATABASE_URL                = ${{Postgres.DATABASE_URL}}
+   BACKUP_S3_ENDPOINT          = ${{ndrf-backup.ENDPOINT}}
+   BACKUP_S3_REGION            = ${{ndrf-backup.REGION}}
+   BACKUP_S3_BUCKET            = ${{ndrf-backup.BUCKET}}
+   BACKUP_S3_ACCESS_KEY_ID     = ${{ndrf-backup.ACCESS_KEY_ID}}
+   BACKUP_S3_SECRET_ACCESS_KEY = ${{ndrf-backup.SECRET_ACCESS_KEY}}
+   BACKUP_RETENTION_DAYS       = 7
+   ```
+
+6. **rpportal 服務**加同一組 `BACKUP_S3_*`（唯讀：後台顯示狀態 + 下載最新一份）。留空不會令 app 出錯，只會顯示「未接駁儲存空間」並停用下載掣。
+
+**成本**：運算約 US$0.03／月（每次約 90 秒 × 0.5 vCPU）、儲存約 110 MB ≈ US$0.002／月，全部食落 Hobby 的 US$5 credit。
+
+**運作方式**
+
+- `scripts/backup.sh` 先 INSERT 一筆 `backup_runs`（`running`），`pg_dump` 完成並上傳成功後才 UPDATE 成 `success`；中途失敗標 `failed` 並以非 0 結束，Railway 會顯示部署失敗。
+- 後台「系統 → 資料庫備份」只讀 `backup_runs`。cron 靜靜死掉時，`running`／舊紀錄不會被誤當成「有備份」，「上次備份：X 小時前」會由藍轉黃（> 14 小時）再轉紅（> 26 小時）。
+- 「下載最新備份」由 app 串流 bucket 內的 dump，方便另存到 NAS／Dropbox 做離平台副本 —— bucket 與 DB 同一個 workspace，所以覆蓋不到「整個帳戶被刪」這類風險。
+
+**還原**
+
+```
+pg_restore -d "$DATABASE_URL" --clean --if-exists --no-owner --no-privileges ndrf-20261102T060000Z.dump
+```
+
+`pg_dump`／`pg_restore` 版本必須 **≥ 伺服器版本（18）**。本機 `docker-compose.yml` 的 `postgres:16-alpine` 不足以還原 18 的 dump，試還原要用 `postgres:18-alpine`。建議每月抽一份試還原，未試過的備份等於沒有。
 
 ### 由 Zeabur 搬遷資料
 

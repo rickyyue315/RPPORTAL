@@ -1169,7 +1169,26 @@
         </div>
 
         <div class="admin-group-title admin-section" id="sec-tools">系統工具</div>
-        <p class="subnav-hint">Recovery Code（公開頁「搵返申請編號」驗證用）。</p>
+        <p class="subnav-hint">資料庫備份（每日 02:00／14:00）與 Recovery Code（公開頁「搵返申請編號」驗證用）。</p>
+        <div class="card" data-lazy-section="backup">
+          <div class="card-header">
+            <h3 class="card-title">資料庫備份</h3>
+            <div class="card-actions">
+              <button class="btn btn-sm btn-primary" id="btn_backup_download" type="button" disabled>下載最新備份</button>
+            </div>
+          </div>
+          <div class="card-body">
+            <p class="text-secondary small mb-3">每日 <b>02:00</b> 及 <b>14:00</b>（香港時間）由獨立 cron service 執行 <code>pg_dump</code> 全庫備份，存放於 Storage Bucket，保留最近 <b id="backup_retention_days">7</b> 日（最多 14 份）。此面板只讀，不會觸發備份。</p>
+            <div id="backup_summary" class="d-flex flex-wrap gap-2 align-items-center mb-2">
+              <span class="text-secondary small">載入中…</span>
+            </div>
+            <div id="backup_result"></div>
+            <div class="table-responsive">
+              <table class="table table-vcenter"><thead><tr><th>開始時間</th><th>狀態</th><th>大小</th><th>耗時</th><th>檔案</th></tr></thead><tbody id="backup_runs_body"><tr><td colspan="5" class="text-center text-secondary">捲動到此處自動載入…</td></tr></tbody></table>
+            </div>
+            <p class="text-secondary small mb-0">表格時間為香港時間。下載檔案為 <code>pg_dump -Fc</code> 格式，還原用：<code>pg_restore -d &lt;DATABASE_URL&gt; --clean --if-exists ndrf-*.dump</code></p>
+          </div>
+        </div>
         <div class="card" data-lazy-section="recovery-codes">
           <div class="card-header">
             <h3 class="card-title">Recovery Code 管理</h3>

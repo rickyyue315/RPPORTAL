@@ -240,6 +240,8 @@ body.drawer-open { overflow: hidden; }
 .status-badge { display: inline-block; padding: 3px 10px; border-radius: 12px; font-size: 12px; font-weight: 600; line-height: 1.4; white-space: nowrap; }
 .status-badge.received { background: #eaf2fb; color: #0a3d69; border: 1px solid #a9c7e8; }
 .status-badge.locked { background: #fdecea; color: #c0392b; border: 1px solid #f5c6c2; }
+/* 備份「延遲」：介乎正常（藍）與需要檢查（紅）之間的黃色狀態 */
+.status-badge.warn { background: #fef9e7; color: #7a4d00; border: 1px solid #f9e79f; }
 
 /* 狀態膠囊（零銷售後台）：Tabler 的 .badge 文字色預設 = var(--tblr-secondary) #6c7a91，
    配 bg-secondary 會變成「灰字灰底」完全看不到字，所以這裡自帶前景色，確保對比度約 7:1 */

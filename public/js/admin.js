@@ -1275,7 +1275,8 @@
     if (user.password_status !== 'issued') return '<span class="status-badge locked">未發放</span>';
     const notified = user.password_notified_at
       ? `<div class="small text-secondary">已通知 ${escapeHtml(user.password_notified_at)}</div>`
-      : '<div class="small text-secondary">未通知</div>';
+      : `<div class="small text-secondary">未通知</div>
+        <button class="btn ghost btn-sm btn-pu-notified-row" data-id="${user.id}">標記已通知</button>`;
     return `<span class="pu-pw" data-id="${user.id}">••••••••</span>
       <button class="btn ghost btn-sm btn-pu-pw-toggle" data-id="${user.id}">顯示</button>
       <button class="btn ghost btn-sm btn-pu-pw-copy" data-id="${user.id}">複製</button>
@@ -1369,6 +1370,12 @@
           window.open(puWhatsAppUrl(user, password), '_blank', 'noopener');
         });
       });
+      tbody.querySelectorAll('.btn-pu-notified-row').forEach((btn) => {
+        btn.addEventListener('click', async () => {
+          const ok = await markPuNotified(btn.dataset.id);
+          if (!ok) showAlert($('portal_users_result'), 'danger', '標記失敗，請重試。');
+        });
+      });
       tbody.querySelectorAll('.btn-pu-pw-reset').forEach((btn) => {
         btn.addEventListener('click', () => resetPortalPassword(btn.dataset.id, btn.dataset.username));
       });
@@ -1392,8 +1399,10 @@
     try {
       await adminFetch(`/api/admin/portal/users/${id}/password/notified`, { method: 'POST' });
       loadPortalUsers();
+      return true;
     } catch {
-      /* 標記「已通知」失敗不應擋住真正要做的事（把密碼交給對方）。 */
+      // 標記失敗不應擋住真正要做的事（把密碼交給對方），但要讓操作者知道。
+      return false;
     }
   }
 
@@ -1448,8 +1457,8 @@
     });
     box.querySelectorAll('.btn-pu-notified').forEach((btn) => {
       btn.addEventListener('click', async () => {
-        await markPuNotified(btn.dataset.id);
-        showAlert(box, 'success', '已標記為已通知。');
+        const ok = await markPuNotified(btn.dataset.id);
+        showAlert(box, ok ? 'success' : 'danger', ok ? '已標記為已通知。' : '標記失敗，請重試。');
       });
     });
   }

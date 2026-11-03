@@ -94,7 +94,7 @@
       const shopLevelCount = matters.filter((m) => m.reply_scope === 'matter').length;
       const parts = [];
       if (skuCount) parts.push(`${skuCount} 個 SKU`);
-      if (shopLevelCount) parts.push(`${shopLevelCount} 個店舖層事項`);
+      if (shopLevelCount) parts.push(`${shopLevelCount} 個全店回覆事項`);
       $('ds_site_info').innerHTML =
         `<div class="site-banner">${p.escapeHtml(data.site_code)}${data.shop ? ` ${p.escapeHtml(data.shop)}` : ''}</div>` +
         `<div>共 ${matters.length} 個事項${parts.length ? `（${parts.join('｜')}）` : ''}${data.pending_count ? `｜<b class="ds-pending-count">${data.pending_count} 個事項未回覆</b>` : '｜全部已回覆'}</div>`;
@@ -137,7 +137,7 @@
       const label = closed ? '查看回覆' : replied ? '修改回覆' : '回覆';
       const shopLevel = matter.reply_scope === 'matter';
       const facts = [
-        shopLevel ? '<b>每間店一套</b>（不需逐個 SKU）' : `<b>${matter.item_count}</b> 個 SKU`,
+        shopLevel ? '<b>全店回覆一次</b>（不需逐個 SKU）' : `<b>${matter.item_count}</b> 個 SKU`,
         `批次 <span class="ds-code">${p.escapeHtml(matter.batch_code)}</span>`,
         matter.due_at ? `截止 <b>${p.escapeHtml(matter.due_at)}</b>（香港時間）` : '',
         matter.reference ? `參考 ${p.escapeHtml(matter.reference)}` : '',
@@ -309,7 +309,7 @@
 
     const headHtml = currentScope === 'matter'
       ? `<div class="ds-sku-head">
-          <div class="ds-sku-id"><b>本店回覆</b><span>套用於事項內 ${currentMatter.item_count} 個 SKU</span></div>
+          <div class="ds-sku-id"><b>本店回覆</b><span>適用於此事項的 ${currentMatter.item_count} 個 SKU</span></div>
         </div>`
       : `<div class="ds-sku-head">
           <div class="ds-sku-id"><b class="ds-code">${p.escapeHtml(item.sku)}</b><span>${p.escapeHtml(item.description || '')}</span></div>
@@ -385,7 +385,7 @@
       ? `事項回覆（已截止） — ${matter.matter_code}`
       : matter.status === 'replied' ? `修改回覆 — ${matter.matter_code}` : `回覆事項 — ${matter.matter_code}`;
     $('ds_reply_matter').textContent = `${matter.subject}｜批次 ${matter.batch_code}`;
-    $('ds_reply_sub').textContent = (currentScope === 'matter' ? '每間店一套' : `${matter.item_count} 個 SKU`) +
+    $('ds_reply_sub').textContent = (currentScope === 'matter' ? '全店回覆一次' : `${matter.item_count} 個 SKU`) +
       (currentFields.length ? `｜${currentFields.length} 個回覆欄位` : '') +
       (matter.due_at ? `｜截止 ${matter.due_at}（香港時間）` : '') +
       (matter.reference ? `｜參考 ${matter.reference}` : '');

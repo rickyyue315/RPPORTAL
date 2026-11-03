@@ -80,7 +80,7 @@ export interface DesignatedSkuMatter {
   status: 'pending' | 'replied';
   /** 回覆內容：年期／可調撥件數、純自定欄位、或兩者 */
   reply_mode: DesignatedSkuReplyMode;
-  /** 欄位套用層級：每個 SKU 一套 / 每間店（事項）一套 */
+  /** 欄位套用層級：逐個 SKU 回覆 / 全店回覆一次 */
   reply_scope: DesignatedSkuReplyScope;
   /** 批次定義的回覆欄位（最多 10 個） */
   reply_fields: DesignatedSkuReplyField[];
@@ -305,7 +305,7 @@ export interface CreateDesignatedSkuBatchInput {
   settings?: Record<string, unknown>;
   /** 回覆內容模式；預設 stock_year（與舊批次一致） */
   replyMode?: DesignatedSkuReplyMode;
-  /** item = 每個 SKU 一套（預設）；matter = 每間店一套 */
+  /** item = 逐個 SKU 回覆（預設）；matter = 全店回覆一次 */
   replyScope?: DesignatedSkuReplyScope;
   /** 自定回覆欄位（最多 10 個） */
   replyFields?: DesignatedSkuReplyField[];
@@ -738,7 +738,7 @@ interface NormalizedItemReply {
 interface ReplyRules {
   mode: DesignatedSkuReplyMode;
   fields: DesignatedSkuReplyField[];
-  /** 每間店一套：錯誤訊息用「本店回覆」，不顯示佔位 SKU */
+  /** 全店回覆一次：錯誤訊息用「本店回覆」，不顯示佔位 SKU */
   shopLevel: boolean;
 }
 
@@ -1136,7 +1136,7 @@ export async function addItem(
       throw new DesignatedSkuError('批次已封存，請先「重開」再加入 SKU');
     }
     if (batchRow.reply_scope === 'matter') {
-      throw new DesignatedSkuError('此批次為「每間店一套」回覆，不可加入個別 SKU；如要逐個 SKU 回覆，請另建批次');
+      throw new DesignatedSkuError('此批次為「全店回覆一次」，不可加入個別 SKU；如要逐個 SKU 回覆，請另建批次');
     }
 
     const site = await client.query<{ site_code: string }>('SELECT site_code FROM stores WHERE site_code = $1', [
@@ -1230,7 +1230,7 @@ export async function updateItem(input: UpdateDesignatedSkuItemInput): Promise<{
     if (!batchRow) throw new DesignatedSkuNotFoundError('找不到批次，可能已被刪除');
     if (batchRow.closed_at) throw new DesignatedSkuError('批次已封存，請先「重開」再修改');
     if (batchRow.reply_scope === 'matter') {
-      throw new DesignatedSkuError('此批次為「每間店一套」回覆，沒有個別 SKU 可修改');
+      throw new DesignatedSkuError('此批次為「全店回覆一次」，沒有個別 SKU 可修改');
     }
 
     const nextStock = input.stockQty === undefined ? item.stock_qty : input.stockQty;

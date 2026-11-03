@@ -917,7 +917,7 @@ describe('回覆自定欄位（每批次不同，上限 10 個）', () => {
     return Buffer.from(await wb.xlsx.writeBuffer());
   }
 
-  it('只有 Shop 的檔案：4 個表頭自動成為回覆欄位，每間店一套（SKU 0）', async () => {
+  it('只有 Shop 的檔案：4 個表頭自動成為回覆欄位，全店回覆一次（SKU 0）', async () => {
     const admin = await adminAgent();
     const res = await uploadBatch(admin, await buildSurvey([
       ['HB20', 3, 2, 5, '門口陳列架'],
@@ -942,7 +942,7 @@ describe('回覆自定欄位（每批次不同，上限 10 個）', () => {
     const hb20 = matters.find((m) => m.site_code === 'HB20')!;
     shopMatterCode = hb20.matter_code;
     shopItemId = hb20.items[0]!.id;
-    // 佔位 SKU：店舖層回覆，無存貨
+    // 佔位 SKU：全店回覆，無存貨
     expect(hb20.items[0]!.sku).toBe('0');
     expect(hb20.items[0]!.stock_qty).toBeNull();
   });
@@ -1019,14 +1019,14 @@ describe('回覆自定欄位（每批次不同，上限 10 個）', () => {
     expect(blocked.body.error).toContain('不可刪除');
   });
 
-  it('每間店一套的批次不可補加個別 SKU', async () => {
+  it('全店回覆一次的批次不可補加個別 SKU', async () => {
     const admin = await adminAgent();
     const res = await admin
       .post(`/api/admin/designated-sku/batches/${shopBatchId}/items`)
       .set('x-csrf-token', admin._csrf ?? '')
       .send({ site_code: 'HB20', sku: '107668017004', stock_qty: 1 });
     expect(res.status).toBe(400);
-    expect(res.body.error).toContain('每間店一套');
+    expect(res.body.error).toContain('全店回覆一次');
   });
 
   it('匯出：自定欄位成為表格欄，SKU 欄留空', async () => {
@@ -1041,7 +1041,7 @@ describe('回覆自定欄位（每批次不同，上限 10 個）', () => {
     expect(headers.indexOf('Wall 架行數（新名）')).toBeLessThan(headers.indexOf('存貨'));
     const row = (ws.getRow(2).values as unknown[]).slice(1);
     expect(row[2]).toBe('11 月門店陳列調查');
-    expect(row[6]).toBe(''); // SKU 欄：每間店一套，不顯示佔位 0
+    expect(row[6]).toBe(''); // SKU 欄：全店回覆一次，不顯示佔位 0
     expect(row[8]).toBe('3');
     expect(row[9]).toBe('0');
   });

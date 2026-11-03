@@ -29,7 +29,7 @@ export const DESIGNATED_SKU_MAX_REPLY_FIELDS = 10;
 export const DESIGNATED_SKU_REPLY_TEXT_MAX = 300;
 
 /**
- * 「每間店一套」模式的佔位 SKU。
+ * 「全店回覆一次」模式的佔位 SKU。
  * 真實 SaSa Article 為 9–12 位數字，不會撞上單一個 0；
  * 店舖端不會顯示此編號，匯出時 SKU 欄留空。
  */
@@ -263,7 +263,7 @@ export interface DesignatedSkuParsed {
   contentHash?: string;
   /** 由表頭自動抽出的回覆欄位（最多 10 個） */
   replyFields?: DesignatedSkuReplyField[];
-  /** item = 每個 SKU 一套；matter = 每間店一套（檔案無 Article 欄） */
+  /** item = 逐個 SKU 回覆；matter = 全店回覆一次（檔案無 Article 欄） */
   replyScope?: DesignatedSkuReplyScope;
   replyMode?: DesignatedSkuReplyMode;
 }
@@ -320,7 +320,7 @@ export async function parseDesignatedSkuWorkbook(
         if (field && !map.has(field)) map.set(field, c);
       }
       const score = HEADER_FIELDS.filter((f) => map.has(f)).length;
-      // Article 可以不出現（= 每間店一套）；但 Site 一定要有
+      // Article 可以不出現（= 全店回覆一次）；但 Site 一定要有
       if (map.has('site') && score > bestScore) {
         sheet = ws;
         headerRowNum = r;
@@ -428,7 +428,7 @@ export async function parseDesignatedSkuWorkbook(
       return;
     }
 
-    // 沒有 Article 欄 = 每間店一套；用佔位 SKU 代表店舖層（不顯示、不匯出）
+    // 沒有 Article 欄 = 全店回覆一次；用佔位 SKU 代表全店回覆（不顯示、不匯出）
     const sku = headerMap.has('sku')
       ? normalizeText(cellText(row.getCell(headerMap.get('sku')!)))
       : DESIGNATED_SKU_PLACEHOLDER_SKU;
@@ -463,14 +463,14 @@ export async function parseDesignatedSkuWorkbook(
     }
 
     if (siteCode && sku) {
-      // 每間店一套：同一店舖只可以一行；逐個 SKU：店舖 + SKU 不可重複
+      // 全店回覆一次：同一店舖只可以一行；逐個 SKU 回覆：店舖 + SKU 不可重複
       const key = replyScope === 'matter' ? siteCode : `${siteCode}|${sku}`;
       if (seen.has(key)) {
         errors.push({
           row: rowNumber,
           field: replyScope === 'matter' ? 'Site' : 'SKU',
           reason: replyScope === 'matter'
-            ? '此檔為「每間店一套」，同一店舖只可以有一行'
+            ? '此檔為「全店回覆一次」，同一店舖只可以有一行'
             : '檔案內 Site Code + Article 重複',
           siteCode,
         });
@@ -586,7 +586,7 @@ export async function generateDesignatedSkuTemplateWorkbook(): Promise<Buffer> {
     ['貨品年期 (MMYY)', '店舖填寫用（例：0827 = 2027 年 8 月），上載時請留空'],
     ['', ''],
     ['回覆自定欄位', `在最後一欄之後加欄即可：以上欄位以外的每個表頭都會成為店舖要填的回覆欄位，最多 ${DESIGNATED_SKU_MAX_REPLY_FIELDS} 個；欄名就是店舖見到的標題，上載後仍可在後台改名。`],
-    ['每間店一套', '如果檔案只有 Site、沒有 Article，系統會當「每間店一套」：每間店只需回覆一次，不需要逐個 SKU（該批次不再要求年期及件數）。'],
+    ['全店回覆一次', '如果檔案只有 Site、沒有 Article，系統會當「全店回覆一次」：每間店只需回覆一次，不需要逐個 SKU（該批次不再要求年期及件數）。'],
     ['', ''],
     ['事項編號', '系統於上載後自動產生（批次編號 + 店舖序號），供日後查閱'],
     ['多個 SKU', '同一店舖同一批次的多個 SKU 會歸入同一個事項，店舖一次過回覆'],
@@ -635,7 +635,7 @@ export interface DesignatedSkuExportItem {
   lines: DesignatedSkuExportLine[];
   /** 自定回覆欄位（label + 已填值）；空白欄位不會出現 */
   reply_fields?: Array<{ label: string; value: string }>;
-  /** matter = 每間店一套（SKU 欄留空） */
+  /** matter = 全店回覆一次（SKU 欄留空） */
   reply_scope?: string;
 }
 
@@ -713,7 +713,7 @@ export async function buildDesignatedSkuExportBuffer(items: DesignatedSkuExportI
       matterTypeLabel(it.matter_type),
       it.site_code,
       it.shop ?? '',
-      // 每間店一套：佔位 SKU（0）不顯示
+      // 全店回覆一次：佔位 SKU（0）不顯示
       it.reply_scope === 'matter' ? '' : it.sku,
       it.description,
       ...customLabels.map((label) => fieldValue(it, label)),

@@ -78,7 +78,7 @@
     const shopLevelCount = matters.filter((m) => m.reply_scope === 'matter').length;
     const parts = [];
     if (totalSku) parts.push(`${totalSku} 個 SKU`);
-    if (shopLevelCount) parts.push(`${shopLevelCount} 個店舖層事項`);
+    if (shopLevelCount) parts.push(`${shopLevelCount} 個全店回覆事項`);
     const pendingMatters = matters.filter((m) => m.status === 'pending' && m.is_open).length;
     if ($('om_ds_info')) {
       const site = $('om_ds_site')?.value || '';
@@ -96,7 +96,7 @@
       const label = closed ? '查看回覆' : replied ? '修改代覆' : 'OM 代覆';
       const shopLevel = matter.reply_scope === 'matter';
       const facts = [
-        shopLevel ? '<b>每間店一套</b>' : `<b>${matter.item_count}</b> 個 SKU`,
+        shopLevel ? '<b>全店回覆一次</b>' : `<b>${matter.item_count}</b> 個 SKU`,
         `批次 <span class="ds-code">${esc(matter.batch_code)}</span>`,
         matter.due_at ? `截止 <b>${esc(matter.due_at)}</b>（香港時間）` : '',
         matter.reference ? `參考 ${esc(matter.reference)}` : '',
@@ -316,7 +316,7 @@
 
     const headHtml = currentScope === 'matter'
       ? `<div class="ds-sku-head">
-          <div class="ds-sku-id"><b>本店回覆</b><span>套用於事項內 ${currentMatter.item_count} 個 SKU</span></div>
+          <div class="ds-sku-id"><b>本店回覆</b><span>適用於此事項的 ${currentMatter.item_count} 個 SKU</span></div>
         </div>`
       : `<div class="ds-sku-head">
           <div class="ds-sku-id"><b class="ds-code">${esc(item.sku)}</b><span>${esc(item.description || '')}</span></div>
@@ -390,7 +390,7 @@
       $('om_ds_dialog_info').textContent = `${matter.site_code} ${matter.shop || ''}｜${matter.subject}｜批次 ${matter.batch_code}`;
     }
     if ($('om_ds_dialog_sub')) {
-      $('om_ds_dialog_sub').textContent = (currentScope === 'matter' ? '每間店一套' : `${matter.item_count} 個 SKU`)
+      $('om_ds_dialog_sub').textContent = (currentScope === 'matter' ? '全店回覆一次' : `${matter.item_count} 個 SKU`)
         + (currentFields.length ? `｜${currentFields.length} 個回覆欄位` : '')
         + (matter.due_at ? `｜截止 ${matter.due_at}（香港時間）` : '')
         + (matter.reference ? `｜參考 ${matter.reference}` : '');

@@ -4302,7 +4302,7 @@ adminRouter.post(
     }
 
     const replyFields = parsed.replyFields ?? [];
-    // 每間店一套：佔位 SKU 沒有存貨／年期，一律以自定欄位回覆
+    // 全店回覆一次：佔位 SKU 沒有存貨／年期，一律以自定欄位回覆
     const replyMode = parsed.replyScope === 'matter'
       ? 'custom'
       : (meta.data.reply_mode === 'auto' ? (parsed.replyMode ?? 'stock_year') : meta.data.reply_mode);

@@ -100,7 +100,7 @@
     return `${fmtLines(item.lines)}<span class="text-secondary small">合計 ${item.reply_total ?? 0} 件</span>`;
   }
 
-  /** 自定欄位回覆摘要（每間店一套時用） */
+  /** 自定欄位回覆摘要（全店回覆一次時用） */
   function customReplySummary(item, matter) {
     if (!item || item.status !== 'replied') return '<span class="text-danger small">未回覆</span>';
     const fields = (matter && matter.reply_fields) || [];
@@ -330,7 +330,7 @@
         : batch.is_expired
           ? '<span class="badge-zs badge-zs-warn">已逾期</span>'
           : '<span class="badge-zs badge-zs-muted">已封存</span>',
-      `${batch.matter_count} 個事項 / ${batch.reply_scope === 'matter' ? '每間店一套' : `${batch.row_count} 個 SKU`} / ${batch.store_count} 間店`,
+      `${batch.matter_count} 個事項 / ${batch.reply_scope === 'matter' ? '全店回覆一次' : `${batch.row_count} 個 SKU`} / ${batch.store_count} 間店`,
       `${batch.replied_count} 個事項已回覆`,
       `${batch.pending_count} 個未回覆`,
       `建立：${esc(batch.created_by)} ${esc(batch.created_at)}`,
@@ -349,7 +349,7 @@
     const mode = batch.reply_mode || 'stock_year';
     const fields = batch.reply_fields || [];
     const modeText = mode === 'custom' ? '自定欄位' : mode === 'mixed' ? '年期 + 自定欄位' : '年期／可調撥件數';
-    const scopeText = batch.reply_scope === 'matter' ? '每間店一套' : '每個 SKU 一套';
+    const scopeText = batch.reply_scope === 'matter' ? '全店回覆一次' : '逐個 SKU 回覆';
     html += `<div class="mt-2 dsku-fields-meta"><b>回覆內容</b>：${modeText}｜${scopeText}`
       + (fields.length ? `｜欄位 <b>${fields.length}</b> / 10` : '')
       + '</div>';
@@ -655,7 +655,7 @@
 
     const head = shopLevel
       ? `<div class="dsku-sku-head">
-          <div><b>本店回覆</b> <span>套用於 ${matter.item_count} 個 SKU</span></div>
+          <div><b>本店回覆</b> <span>適用於此事項的 ${matter.item_count} 個 SKU</span></div>
         </div>`
       : `<div class="dsku-sku-head">
           <div><b class="dsku-code">${esc(item.sku)}</b> <span>${esc(item.description || '')}</span></div>
@@ -718,7 +718,7 @@
     overlay.innerHTML = `<div class="modal-box" role="dialog" aria-modal="true" aria-label="${entering ? '代店舖輸入回覆' : '編輯店舖回覆'}">
       <h3>${entering ? '代店舖輸入回覆' : '編輯店舖回覆'}</h3>
       <p class="text-secondary small" style="margin:6px 0">
-        事項：<b class="dsku-code">${esc(matter.matter_code)}</b>｜${esc(matter.site_code)} ${esc(matter.shop || '')}｜${matter.reply_scope === 'matter' ? '每間店一套' : `${matter.item_count} 個 SKU`}｜${matter.is_open ? '批次開放中' : '<b class="text-warning">批次已封存</b>'}
+        事項：<b class="dsku-code">${esc(matter.matter_code)}</b>｜${esc(matter.site_code)} ${esc(matter.shop || '')}｜${matter.reply_scope === 'matter' ? '全店回覆一次' : `${matter.item_count} 個 SKU`}｜${matter.is_open ? '批次開放中' : '<b class="text-warning">批次已封存</b>'}
         ${matter.replied_by ? `<br>原回覆人：${esc(matter.replied_by)}${matter.replied_at ? `（${esc(matter.replied_at)}）` : ''}` : ''}
       </p>
       <div id="dsku_admin_sections"></div>
@@ -1153,7 +1153,7 @@
     if (!currentBatch) return;
     fieldDraft = (currentBatch.reply_fields || []).map((f) => ({ ...f }));
     $('dsku_fields_hint').textContent =
-      `${currentBatch.batch_code}｜${currentBatch.reply_scope === 'matter' ? '每間店一套' : '每個 SKU 一套'}`;
+      `${currentBatch.batch_code}｜${currentBatch.reply_scope === 'matter' ? '全店回覆一次' : '逐個 SKU 回覆'}`;
     $('dsku_fields_mode').value = currentBatch.reply_mode || 'stock_year';
     setBox('dsku_fields_error', '');
     renderFieldDraft();
@@ -1224,7 +1224,7 @@
       const warnRows = (data.warnings || []).slice(0, 8).map((w) =>
         `<li>第 ${esc(String(w.row))} 行${w.siteCode ? `（${esc(w.siteCode)}）` : ''}：${esc(w.reason)}</li>`).join('');
       const replyInfo = (data.replyFields || []).length
-        ? `｜回覆欄位 <b>${data.replyFields.length}</b> 個（${data.replyScope === 'matter' ? '每間店一套' : '每個 SKU 一套'}）`
+        ? `｜回覆欄位 <b>${data.replyFields.length}</b> 個（${data.replyScope === 'matter' ? '全店回覆一次' : '逐個 SKU 回覆'}）`
         : '｜只有年期／可調撥件數';
       res.innerHTML = `
         <div class="alert alert-success">

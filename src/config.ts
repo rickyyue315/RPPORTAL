@@ -21,10 +21,76 @@ function int(name: string, fallback: number): number {
   return Number.isFinite(n) ? n : fallback;
 }
 
-function bool(name: string, fallback = false): boolean {
-  const v = process.env[name];
+function envBool(env: NodeJS.ProcessEnv, name: string, fallback = false): boolean {
+  const v = env[name];
   if (v === undefined || v === '') return fallback;
   return ['1', 'true', 'yes', 'on'].includes(v.toLowerCase());
+}
+
+function bool(name: string, fallback = false): boolean {
+  return envBool(process.env, name, fallback);
+}
+
+/**
+ * Values that used to be shipped as defaults, plus obvious placeholders.
+ * They are rejected in production so a missing Railway variable can never
+ * silently fall back to a publicly known password.
+ */
+const KNOWN_WEAK_PORTAL_SECRETS = new Set([
+  'SASA1234',
+  'SASAOM178',
+  'change-me',
+  'change-me-to-a-long-password',
+  'local-dev-password-change-me',
+  'test-password',
+  'password',
+  'admin',
+]);
+
+/** True when a Portal secret is missing, too short, or a known default. */
+export function isWeakPortalSecret(value: string): boolean {
+  const normalized = value.trim();
+  return !normalized || normalized.length < 16 || KNOWN_WEAK_PORTAL_SECRETS.has(normalized);
+}
+
+function requireStrongPortalSecret(name: string, value: string): void {
+  if (isWeakPortalSecret(value)) {
+    throw new Error(
+      `${name} 必須設定為至少 16 個字元的唯一密碼；空白、預設值及常見密碼一律拒絕`,
+    );
+  }
+}
+
+/**
+ * Production guard: fail closed instead of silently using a default password.
+ *
+ * Store / OM shared login is opt-in (default false). If an operator re-enables
+ * it, the corresponding shared secret must be explicitly configured and strong.
+ * A weak leftover value is ignored at runtime even when shared login is off.
+ */
+export function assertProductionSecrets(env: NodeJS.ProcessEnv = process.env): void {
+  if ((env.NODE_ENV ?? 'development') !== 'production') return;
+
+  const storeSharedEnabled = envBool(env, 'PORTAL_STORE_SHARED_PASSWORD_ENABLED', false);
+  const omSharedEnabled = envBool(env, 'PORTAL_OM_SHARED_PASSWORD_ENABLED', false);
+  const shared = (env.PORTAL_SHARED_PASSWORD ?? '').trim();
+  const om = (env.PORTAL_OM_PASSWORD ?? '').trim();
+
+  if (storeSharedEnabled) {
+    requireStrongPortalSecret('PORTAL_SHARED_PASSWORD', shared);
+  } else if (shared && isWeakPortalSecret(shared)) {
+    console.warn(
+      '[security] PORTAL_SHARED_PASSWORD 仍是預設／弱密碼；Store 共用登入已停用，Buyer/SCT 亦不會接受此值。請移除或改為強密碼。',
+    );
+  }
+
+  if (omSharedEnabled) {
+    requireStrongPortalSecret('PORTAL_OM_PASSWORD', om);
+  } else if (om && isWeakPortalSecret(om)) {
+    console.warn(
+      '[security] PORTAL_OM_PASSWORD 仍是預設／弱密碼；OM 共用登入已停用，此值不會被接受。請移除或改為強密碼。',
+    );
+  }
 }
 
 function isoDate(name: string, fallback: string): string {
@@ -63,21 +129,18 @@ export const config = {
   shutdownTimeoutMs: Math.max(1000, int('SHUTDOWN_TIMEOUT_MS', 25_000)),
   adminUsername: process.env.ADMIN_USERNAME ?? 'admin',
   adminPassword: process.env.ADMIN_PASSWORD ?? '',
-  // One shared password for all Portal accounts (Store / Buyer / SCT): after
-  // entering their Site Code, everyone types this same password. It is a light
-  // "outsider" gate (the portal only records SKU/QTY-level data), not a
-  // per-account secret.
-  portalSharedPassword: process.env.PORTAL_SHARED_PASSWORD ?? 'SASA1234',
-  // OM（營運經理）專用密碼。OM 以「OM 名稱」登入，只可查看／代覆自己
-  // 管理的店舖；與店舖共用密碼分開，避免店舖帳戶登入 OM 介面。
-  // 這把密碼只對「尚未發放個人密碼」的 OM 帳戶有效；全部發放完之後
-  // 應把 PORTAL_OM_SHARED_PASSWORD_ENABLED 設為 false。
-  portalOmPassword: process.env.PORTAL_OM_PASSWORD || 'SASAOM178',
-  // 逐帳戶密碼的相容開關。true = 未發放個人密碼的帳戶仍可用共用密碼登入；
-  // false = 只有已發放個人密碼的帳戶才可登入（各自獨立，互不相通）。
-  // 只影響 store 與 om；buyer／sct 永遠走共用密碼。
-  portalStoreSharedPasswordEnabled: bool('PORTAL_STORE_SHARED_PASSWORD_ENABLED', true),
-  portalOmSharedPasswordEnabled: bool('PORTAL_OM_SHARED_PASSWORD_ENABLED', true),
+  // 沒有硬編碼預設值。production 由 assertProductionSecrets() 把關。
+  // Buyer／SCT 仍使用此共用密碼；Store／OM 只在對應 shared 開關為 true
+  // 且尚未發放個人密碼時才會用到。
+  portalSharedPassword: (process.env.PORTAL_SHARED_PASSWORD ?? '').trim(),
+  // OM（營運經理）專用密碼；只在 PORTAL_OM_SHARED_PASSWORD_ENABLED=true
+  // 且該 OM 尚未發放個人密碼時使用。沒有硬編碼預設值。
+  portalOmPassword: (process.env.PORTAL_OM_PASSWORD ?? '').trim(),
+  // 逐帳戶密碼的相容開關。false（預設）= 未發放個人密碼的 Store／OM 一律
+  // 不可登入，杜絕任何共用密碼 fallback。true 只應在過渡期短暫開啟。
+  // Buyer／SCT 不受這兩個開關影響。
+  portalStoreSharedPasswordEnabled: bool('PORTAL_STORE_SHARED_PASSWORD_ENABLED', false),
+  portalOmSharedPasswordEnabled: bool('PORTAL_OM_SHARED_PASSWORD_ENABLED', false),
   // 登入防爆破：以「最後一次成功登入之後」的失敗次數計算。
   portalLoginFailWindowMinutes: Math.max(1, int('PORTAL_LOGIN_FAIL_WINDOW_MINUTES', 30)),
   portalLoginFailPerUserIp: Math.max(1, int('PORTAL_LOGIN_FAIL_PER_USER_IP', 10)),
@@ -136,3 +199,7 @@ export const config = {
   // Reject cooldown before the same Site + SKU + RP Type can be re-applied.
   ndrfRejectCooldownHours: Math.max(1, int('NDRF_REJECT_COOLDOWN_HOURS', 30 * 24)),
 };
+
+// Run once at import time. In production this refuses to start with a
+// missing/default shared secret when the corresponding shared login is on.
+assertProductionSecrets();

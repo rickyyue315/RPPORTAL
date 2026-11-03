@@ -18,7 +18,7 @@ SASA RP Team 的店舖申報與回覆平台。主名 **RP Connect**，中文名 
 - 90 日零銷售：每週派發每店 Top 10 零銷售 SKU 給店舖逐條回覆原因；新一週上載即自動封存舊週次。**支援「本週無須回覆」**（銷售繁忙期）：批次照樣派發（店舖仍看見本店 Top 10 清單可搜尋／匯出），但店舖不可回覆，亦不計入待回覆／逾期／回覆率；可隨時切回需要回覆
 - 後台導航收斂為 7 個分頁：總覽／申報清單／**匯出**（含匯出批次及重新下載）／零銷售／存貨 Dashboard／指定SKU回覆／**系統**（含帳戶與主檔、審批設定、系統工具）。合併頁面頂部有頁內分組導覽；舊連結 `?tab=batches|accounts|review` 及 `#sec-batches|sec-accounts|sec-review` 書籤會自動跳到對應分頁的分組，不會失效
 - 指定 SKU 回覆：批次可用**Excel 上載**或**人手輸入**建立（一個批次可含多間店舖 × 多個 SKU），系統按 Site Code 建立**事項**（同一店舖的多個 SKU 歸入同一事項）；店舖為每個 SKU 的各個貨品年期 (MMYY) 回覆可調撥件數，或標示「無可調撥」，一次過提交整份事項。每個事項有獨立事項編號、批次編號及直 link（只限涉及店舖，後端強制核對）。**截止日期及時間（香港時間）到點即自動截止**，管理員可延長期限、補加／修改 SKU、代店舖補錄或更正回覆（不佔店舖修改次數，會寫入審計日誌）
-- **OM（營運經理）Portal**（`/portal/om.html`）：OM 以自己名稱＋OM 專用密碼（`PORTAL_OM_PASSWORD`，預設 `SASAOM178`）登入，只會看到最新上載存貨報表 OM 等於自己名稱的店舖（從未出現在報表的店舖 fallback 到 `stores.om`）。提供管轄店舖總覽（零銷售待回覆、指定 SKU 待回事項、最新不良存貨佔比及 SKU 比率）、零銷售逐 SKU 代覆、指定 SKU 事項代覆，以及存貨走勢（**單一圖卡**，用按鈕切換「每週不良存貨佔比」／「每週不良存貨 SKU ÷ Carry SKU」，兩個口徑都含全公司加權平均對比，OM／全公司線直接標示數值；同一月份已有月結時，月結前的週更只保留 tooltip；揀單一店舖時同時顯示所選店舖（綠線）、OM 管轄合計（藍線）及全公司合計（灰虛線），legend 的 OM／全公司加權有 tooltip「Σ分子 ÷ Σ分母，不是各店平均」）＋**管轄店舖不良佔比排名**（只列自己 OM 的店，按最新一期分區柱狀排列，按柱可切走勢圖到該店）；所有代覆寫入審計日誌，已封存的週次／事項不可代覆
+- **OM（營運經理）Portal**（`/portal/om.html`）：OM 以自己名稱＋個人密碼登入（未發放個人密碼時才可使用 OM 共用密碼，且必須在環境變數明確開啟）；只會看到最新上載存貨報表 OM 等於自己名稱的店舖（從未出現在報表的店舖 fallback 到 `stores.om`）。提供管轄店舖總覽（零銷售待回覆、指定 SKU 待回事項、最新不良存貨佔比及 SKU 比率）、零銷售逐 SKU 代覆、指定 SKU 事項代覆，以及存貨走勢（**單一圖卡**，用按鈕切換「每週不良存貨佔比」／「每週不良存貨 SKU ÷ Carry SKU」，兩個口徑都含全公司加權平均對比，OM／全公司線直接標示數值；同一月份已有月結時，月結前的週更只保留 tooltip；揀單一店舖時同時顯示所選店舖（綠線）、OM 管轄合計（藍線）及全公司合計（灰虛線），legend 的 OM／全公司加權有 tooltip「Σ分子 ÷ Σ分母，不是各店平均」）＋**管轄店舖不良佔比排名**（只列自己 OM 的店，按最新一期分區柱狀排列，按柱可切走勢圖到該店）；所有代覆寫入審計日誌，已封存的週次／事項不可代覆
 - **OM 歸屬自動更新**：存貨報表（I14 By Shop）的 OM 欄以「最後上載的報表」為準；店舖轉交新 OM 後，所有歷史期數會自動歸入最新 OM，不需逐期修改。OM Portal 的店舖範圍及存貨／零銷售／指定 SKU 畫面、後台存貨 Dashboard 的 OM Group、每期明細／匯出，以及零銷售後台的 OM 匯總／OM 下鑽／重複上榜均同步跟隨；上載新報表時會自動建立新 OM 帳戶
 - SAP 匯出只包含一般 NDRF，Urgent Order 使用獨立 6 欄匯出（Application No. | Site Code | SKU | QTY | Urgent Reason | Other Reason）；突發性銷售使用獨立 4 欄匯出（Application Date | Requested by | Shop Code | SKU）；匯出成功後鎖定該批申報，申請人不能再修改；匯出失敗不鎖定。管理員於 14:30 後開始匯出處理，期間 Urgent Order 申請人不可修改（查詢不受限）
 - Submission、version history 及 audit event 的 IP 按 `IP_RETENTION_DAYS` 自動匿名化；login attempts、import/export batches、expired sessions 及 rate-limit counters 按各自 retention 設定清理
@@ -42,7 +42,10 @@ SASA RP Team 的店舖申報與回覆平台。主名 **RP Connect**，中文名 
 docker compose up -d db
 
 # 2. 設定環境變數
-cp .env.example .env                   # 填入 DATABASE_URL
+cp .env.example .env                   # 填入 DATABASE_URL、ADMIN_PASSWORD
+# Store／OM 登入需要個人密碼；本機如未發放，可暫時把
+# PORTAL_STORE_SHARED_PASSWORD_ENABLED / PORTAL_OM_SHARED_PASSWORD_ENABLED 設為 true
+# 並設定 PORTAL_SHARED_PASSWORD / PORTAL_OM_PASSWORD（僅限本機）。
 
 # 3. 執行 migration + 啟動
 npm run migrate
@@ -57,7 +60,7 @@ npm run dev
 - 查詢／修改：<http://localhost:3000/lookup.html>
 - 圖文使用說明：<http://localhost:3000/help.html>
 - 管理後台：<http://localhost:3000/admin/login.html>（需登入，成功後進入 `/admin/index.html`）
-- OM 營運經理：<http://localhost:3000/portal/om.html>（OM 名稱＋`PORTAL_OM_PASSWORD`，預設 `SASAOM178`）
+- OM 營運經理：<http://localhost:3000/portal/om.html>（OM 名稱＋個人密碼；未發放時才用 `PORTAL_OM_PASSWORD`，且需開啟 `PORTAL_OM_SHARED_PASSWORD_ENABLED`）
 
 每次啟動都會讀 `stores-template.csv` 並 upsert 入 `stores`（預設路徑可由 `STORES_CSV_PATH` 覆寫）：只新增／更新店舖，不會刪除，所以改主檔後 push 部署就等於發佈——新店（例如 HBB2）不會再因為「資料表非空」而被跳過。`STORES_MASTER_SYNC_ON_BOOT=false` 可關掉，改為只在後台上載 CSV 或按「重新同步內建主檔」。
 
@@ -94,12 +97,22 @@ railway config plan   # 預覽會建立的資源，不會改動 Railway
 railway config apply  # 確認後建立 Web + PostgreSQL
 ```
 
-首次 apply 後，到 Railway Dashboard → `web` → **Variables** 設定以下 secrets（IaC 以 `preserve()` 保留，不會寫入 repo；如 `railway config plan` 提示這兩個變數未設定，可先在 Dashboard 建立再 apply）：
+首次 apply 後，到 Railway Dashboard → `web` → **Variables** 設定以下 secrets（IaC 以 `preserve()` 保留，不會寫入 repo；如 `railway config plan` 提示變數未設定，可先在 Dashboard 建立再 apply）：
 
 - `ADMIN_PASSWORD`
-- `PORTAL_SHARED_PASSWORD`
+- `PORTAL_SHARED_PASSWORD`（只有 Buyer／SCT 仍使用；Store／OM 已改用個人密碼）
 
-設定後 Railway 會自動重新部署。未設定 `ADMIN_PASSWORD` 時管理員登入會停用；未設定 `PORTAL_SHARED_PASSWORD` 時會用預設 `SASA1234`，正式環境必須更改。
+設定後 Railway 會自動重新部署。**程式已移除所有硬編碼預設密碼**：
+
+- 未設定 `ADMIN_PASSWORD` → 管理員登入停用（fail-closed）。
+- `PORTAL_STORE_SHARED_PASSWORD_ENABLED`／`PORTAL_OM_SHARED_PASSWORD_ENABLED` 預設 `false`；未發放個人密碼的 Store／OM 一律不可登入，不會 fallback 到共用密碼。
+- 如仍需啟用 Store／OM 共用登入，必須同時設定對應的共用密碼；production 會拒絕少於 16 字元或舊預設值（`SASA1234`／`SASAOM178`）。
+- `PORTAL_SHARED_PASSWORD` 留空時，Buyer／SCT 亦不可用共用密碼登入。
+
+> **現有 Railway service 注意**：如果之前已在 Dashboard 手動設定
+> `PORTAL_STORE_SHARED_PASSWORD_ENABLED=true` 或 `PORTAL_OM_SHARED_PASSWORD_ENABLED=true`，
+> 程式碼的預設值不會覆蓋它；請先手動改為 `false`（或執行 `railway config apply`），再部署本次版本。
+> 如啟用共用登入但沒有強密碼，production 會拒絕啟動。
 
 > `.railway/railway.ts` 只由 Railway CLI 讀取，部署時不會使用。若你已在 Railway 手動建立服務，請先 `railway config pull` 匯入現有設定再修改；直接 apply 有機會建立重複資源，或刪除未列出的資源。
 
@@ -121,7 +134,10 @@ railway config apply  # 確認後建立 Web + PostgreSQL
 | `NODE_ENV` | `production` |
 | `ADMIN_USERNAME` | 管理員使用者名稱（預設 `admin`） |
 | `ADMIN_PASSWORD` | 管理員密碼（重要：直接填寫密碼字串，不需要 bcrypt hash） |
-| `PORTAL_SHARED_PASSWORD` | Portal（Store／Buyer／SCT）密碼（預設 `SASA1234`）：所有店舖頁面（零銷售回覆、一般 NDRF、Urgent、突發性銷售、行貨退貨）共用「Site Code＋此密碼」一次登入；Urgent／突發性銷售／行貨退貨的提交及 Excel 匯入 API 亦要求此 Store session，且只接受登入店舖自己的 Site Code |
+| `PORTAL_SHARED_PASSWORD` | 共用密碼（**沒有預設值**）。Store／OM 已發放個人密碼時不需要；Buyer／SCT 目前仍使用。production 會拒絕少於 16 字元或舊預設值；留空 = 相關共用登入停用 |
+| `PORTAL_STORE_SHARED_PASSWORD_ENABLED` | `false`（預設）。未發放個人密碼的 Store 不可登入，不會 fallback 到共用密碼；只在過渡期短暫設 `true` |
+| `PORTAL_OM_SHARED_PASSWORD_ENABLED` | `false`（預設）。未發放個人密碼的 OM 不可登入；只在過渡期短暫設 `true` |
+| `PORTAL_OM_PASSWORD` | OM 共用密碼，只在 `PORTAL_OM_SHARED_PASSWORD_ENABLED=true` 時需要；**沒有預設值** |
 | `SESSION_TTL_HOURS` | 登入 session 有效期（小時，預設 8） |
 | `LOGIN_LOCK_THRESHOLD` | 失敗登入鎖定次數（預設 5，按 IP 計算） |
 | `LOGIN_LOCK_MINUTES` | 鎖定分鐘數（預設 15） |

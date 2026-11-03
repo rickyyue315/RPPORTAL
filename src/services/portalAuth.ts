@@ -1,6 +1,6 @@
 import { createHash, randomBytes, scrypt as scryptCb, timingSafeEqual } from 'node:crypto';
 import { query, withTransaction } from '../db/pool.js';
-import { config } from '../config.js';
+import { config, isWeakPortalSecret } from '../config.js';
 
 export type PortalUserRole = 'store' | 'buyer' | 'sct' | 'om';
 
@@ -64,16 +64,28 @@ export function normalizePortalUsername(raw: string): string {
   return raw.trim().toUpperCase();
 }
 
-/** Constant-time comparison against the shared portal password (default SASA1234). */
+/**
+ * Constant-time comparison against the shared Portal password.
+ *
+ * The shared password has no hard-coded default. In production a missing,
+ * too-short or known-default value is treated as disabled, even if an old
+ * Railway variable is still present.
+ */
 export function verifySharedPassword(given: string): boolean {
+  if (config.env === 'production' && isWeakPortalSecret(config.portalSharedPassword)) {
+    return false;
+  }
   const expected = Buffer.from(config.portalSharedPassword, 'utf8');
   const actual = Buffer.from(given ?? '', 'utf8');
   if (expected.length === 0 || expected.length !== actual.length) return false;
   return timingSafeEqual(expected, actual);
 }
 
-/** Constant-time comparison against the OM-only password (default SASAOM178). */
+/** Constant-time comparison against the OM-only shared password. */
 export function verifyOmPassword(given: string): boolean {
+  if (config.env === 'production' && isWeakPortalSecret(config.portalOmPassword)) {
+    return false;
+  }
   const expected = Buffer.from(config.portalOmPassword, 'utf8');
   const actual = Buffer.from(given ?? '', 'utf8');
   if (expected.length === 0 || expected.length !== actual.length) return false;

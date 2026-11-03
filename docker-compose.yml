@@ -7,7 +7,7 @@ services:
       POSTGRES_PASSWORD: ndrf
       POSTGRES_DB: ndrf
     ports:
-      - "5432:5432"
+      - "127.0.0.1:5432:5432"
     volumes:
       - ndrf_pgdata:/var/lib/postgresql/data
     healthcheck:
@@ -27,13 +27,18 @@ services:
       PORT: 3000
       DATABASE_URL: postgres://ndrf:ndrf@db:5432/ndrf
       ADMIN_USERNAME: admin
-      ADMIN_PASSWORD: local-dev-password-change-me
-      PORTAL_SHARED_PASSWORD: SASA1234
-      TRUST_PROXY: "true"
+      # 不提供預設密碼；留空 = 管理員登入停用（fail-closed）。
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-}
+      # 沒有預設值；Store／OM 已改用個人密碼，共用登入預設關閉。
+      PORTAL_SHARED_PASSWORD: ${PORTAL_SHARED_PASSWORD:-}
+      PORTAL_OM_PASSWORD: ${PORTAL_OM_PASSWORD:-}
+      PORTAL_STORE_SHARED_PASSWORD_ENABLED: "false"
+      PORTAL_OM_SHARED_PASSWORD_ENABLED: "false"
+      TRUST_PROXY: "false"
       PUBLIC_WRITE_SUSPENSION_ENABLED: "true"
       PUBLIC_WRITE_SUSPENSION_AT: "2026-08-11T23:59:59+08:00"
     ports:
-      - "3000:3000"
+      - "127.0.0.1:3000:3000"
 
 volumes:
   ndrf_pgdata:

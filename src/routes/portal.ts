@@ -133,8 +133,8 @@ const businessFieldSchema = z.object({
 
 const loginSchema = z.object({
   username: z.string().trim().min(1),
-  // One shared password for every Portal account (default SASA1234): shops
-  // enter their Site Code plus this same password.
+  // Store／OM normally use their own issued password. The shared password is
+  // opt-in (default off) and has no hard-coded fallback.
   password: z.string().optional().default(''),
 });
 

@@ -1,8 +1,8 @@
 import { createApp } from './app.js';
 import { existsSync } from 'node:fs';
-import { config } from './config.js';
+import { config, isWeakPortalSecret } from './config.js';
 import { migrate } from './db/migrate.js';
-import { pool, waitForDatabase, withAdvisoryLock } from './db/pool.js';
+import { pool, query, waitForDatabase, withAdvisoryLock } from './db/pool.js';
 import { writeAuditEvent } from './lib/audit.js';
 import { syncStoresFromFile } from './services/stores.js';
 import { syncOmPortalAccounts } from './services/storeAccounts.js';
@@ -72,6 +72,50 @@ async function syncStoreMasterOnBoot(): Promise<void> {
   }
 }
 
+/**
+ * Fail-closed visibility check. The app intentionally does not fall back to a
+ * shared password, so an active Store/OM account without an individual
+ * password simply cannot log in. Surface that at boot instead of leaving the
+ * shop locked out silently.
+ */
+async function warnAboutPortalCredentialReadiness(): Promise<void> {
+  try {
+    const { rows } = await query<{ role: string; count: string }>(
+      `SELECT role, count(*)::text AS count
+         FROM portal_users
+        WHERE active = true
+          AND (
+            (role IN ('store', 'om')
+              AND (initial_password IS NULL OR password_hash NOT LIKE 'scrypt$%'))
+            OR role IN ('buyer', 'sct')
+          )
+        GROUP BY role`,
+    );
+    const counts = new Map(rows.map((row) => [row.role, Number(row.count)]));
+
+    for (const role of ['store', 'om'] as const) {
+      const missing = counts.get(role) ?? 0;
+      const sharedEnabled = role === 'store'
+        ? config.portalStoreSharedPasswordEnabled
+        : config.portalOmSharedPasswordEnabled;
+      if (missing > 0 && !sharedEnabled) {
+        console.error(
+          `[security] ${missing} active ${role} account(s) have no individual password and shared login is disabled; they cannot log in until an admin issues one.`,
+        );
+      }
+    }
+
+    const buyerSct = (counts.get('buyer') ?? 0) + (counts.get('sct') ?? 0);
+    if (buyerSct > 0 && isWeakPortalSecret(config.portalSharedPassword)) {
+      console.error(
+        `[security] ${buyerSct} active Buyer/SCT account(s) exist but PORTAL_SHARED_PASSWORD is missing/weak; their login will be refused.`,
+      );
+    }
+  } catch (err) {
+    console.error('[security] portal credential readiness check failed', err);
+  }
+}
+
 async function main(): Promise<void> {
   console.log(`[boot] NDRF Portal (${config.env})`);
 
@@ -95,6 +139,7 @@ async function main(): Promise<void> {
     console.error('[boot] OM account sync failed', err);
   }
 
+  await warnAboutPortalCredentialReadiness();
 
 /**
  * Company SLA: Buyer must review ND within the configured days; otherwise the

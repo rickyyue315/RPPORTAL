@@ -8,6 +8,10 @@ const defaults: Record<string, string> = {
   ADMIN_USERNAME: 'admin',
   ADMIN_PASSWORD: 'test-password',
   PORTAL_SHARED_PASSWORD: 'SASA1234',
+  PORTAL_OM_PASSWORD: 'SASAOM178',
+  // Tests exercise the legacy shared-password path; production defaults off.
+  PORTAL_STORE_SHARED_PASSWORD_ENABLED: 'true',
+  PORTAL_OM_SHARED_PASSWORD_ENABLED: 'true',
   NODE_ENV: 'test',
 };
 

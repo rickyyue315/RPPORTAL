@@ -11,6 +11,10 @@
 process.env.ADMIN_USERNAME = process.env.ADMIN_USERNAME ?? 'admin';
 process.env.ADMIN_PASSWORD = process.env.ADMIN_PASSWORD ?? 'smoke-password';
 process.env.PORTAL_SHARED_PASSWORD = process.env.PORTAL_SHARED_PASSWORD ?? 'SASA1234';
+// Smoke test exercises the legacy shared-password path; production defaults off.
+process.env.PORTAL_OM_PASSWORD = process.env.PORTAL_OM_PASSWORD ?? 'SASAOM178';
+process.env.PORTAL_STORE_SHARED_PASSWORD_ENABLED = 'true';
+process.env.PORTAL_OM_SHARED_PASSWORD_ENABLED = 'true';
 // The production suspension window is time-based; exercise the real write
 // paths regardless of the current date (matches .env.test).
 process.env.PUBLIC_WRITE_SUSPENSION_ENABLED =

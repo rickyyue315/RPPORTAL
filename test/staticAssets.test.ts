@@ -21,6 +21,8 @@ const VERSIONED_ASSETS = [
   '/portal/js/dashboard.js',
   '/js/admin-designated-sku.js',
   '/js/chart-lite.js',
+  '/js/chart-export.js',
+  '/css/chart-export.css',
   '/portal/css/portal.css',
   '/css/style.css',
   '/js/api.js',
@@ -148,6 +150,37 @@ describe('static asset freshness', () => {
     expect(html).toContain('id="stk_rank_scope"');
     expect(script).toContain('filterRankRows');
     expect(script).toContain('syncRankOmOptions');
+  });
+
+  it('wires chart export on every dashboard chart card', () => {
+    const adminHtml = readFileSync(path.join(root, 'public', 'admin', 'index.html'), 'utf8');
+    const adminScript = readFileSync(path.join(root, 'public', 'js', 'admin-stock.js'), 'utf8');
+    const omHtml = readFileSync(path.join(root, 'public', 'portal', 'om.html'), 'utf8');
+    const omScript = readFileSync(path.join(root, 'public', 'portal', 'js', 'om.js'), 'utf8');
+    const storeHtml = readFileSync(path.join(root, 'public', 'portal', 'zero-sales.html'), 'utf8');
+    const storeScript = readFileSync(path.join(root, 'public', 'portal', 'js', 'dashboard.js'), 'utf8');
+
+    // 後台：店舖佔比棒圖、佔比趨勢線圖、RF SKU 走勢線圖
+    expect(adminHtml).toContain('/js/chart-export.js');
+    expect(adminHtml).toContain('/css/chart-export.css');
+    expect(adminHtml).toContain('id="stk_share_export"');
+    expect(adminHtml).toContain('id="stk_trend_export"');
+    expect(adminHtml).toContain('id="stk_rf_chart_export"');
+    expect(adminScript).toContain("cx.mount('stk_share_export'");
+    expect(adminScript).toContain("cx.mount('stk_trend_export'");
+    expect(adminScript).toContain("cx.mount('stk_rf_chart_export'");
+
+    // OM：存貨走勢 + 管轄店舖排名
+    expect(omHtml).toContain('/js/chart-export.js');
+    expect(omHtml).toContain('id="om_stock_export"');
+    expect(omHtml).toContain('id="om_share_export"');
+    expect(omScript).toContain("cx.mount('om_stock_export'");
+    expect(omScript).toContain("cx.mount('om_share_export'");
+
+    // 店舖端：每週存貨走勢
+    expect(storeHtml).toContain('/js/chart-export.js');
+    expect(storeHtml).toContain('id="dash_chart_export"');
+    expect(storeScript).toContain("ChartExport.mount('dash_chart_export'");
   });
 
   it('wires the designated SKU reply page, admin tab and direct link', () => {

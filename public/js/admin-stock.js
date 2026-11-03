@@ -960,7 +960,7 @@
         data-stk-mtd-site="${escAttr(site)}" data-stk-mtd-date="${escAttr(mtdWeekDate)}"
         title="${escAttr(tip)}" aria-label="${escAttr(tip)}">
         <span class="stk-share-plotarea">
-          <i class="stk-share-bar" style="height:${heightStyle};background:${barColor}">${ratio === null ? '' : `<b class="stk-share-tip">${fmtRatio(ratio)}</b>`}</i>
+          <i class="stk-share-bar" style="height:${heightStyle};background-color:${barColor}">${ratio === null ? '' : `<b class="stk-share-tip">${fmtRatio(ratio)}</b>`}</i>
         </span>
         <span class="stk-share-site">${esc(site)}</span>
         <span class="stk-share-shop" title="${escAttr(fullName)}">${esc(shortShop(fullName))}</span>
@@ -1194,6 +1194,38 @@
       btn.textContent = '匯出 Excel';
       btn.title = '匯出目前顯示期間的完整數字（Excel）';
     }
+  }
+
+  /* ==================== 圖表匯出（PDF／SVG／JPG／PNG） ==================== */
+
+  function mountChartExports() {
+    const cx = globalThis.ChartExport;
+    if (!cx) return;
+
+    cx.mount('stk_share_export', {
+      target: () => $('stk_share_body'),
+      title: () => ($('stk_mtd_title')?.textContent || '當月 MTD 不良 SKU 佔比排名').trim(),
+      subtitle: () => {
+        const metric = groupMetric === 'sku' ? '不良 SKU ÷ SKU Carry' : '不良存貨值 ÷ 存貨值';
+        const scope = ($('stk_share_note')?.textContent || '').replace(/ · 左右滑動$/, '').trim();
+        return [mtdWeekDate, metric, scope].filter(Boolean).join(' · ');
+      },
+      filename: () => `NDRF_店舖佔比_${mtdWeekDate || 'MTD'}_${groupMetric === 'sku' ? 'SKU' : '存貨值'}`,
+    });
+
+    cx.mount('stk_trend_export', {
+      target: () => $('stk_chart'),
+      title: '佔比趨勢（不良存貨 ÷ 店舖存貨）',
+      subtitle: () => `${chartStoreSite ? chartStoreLabel(chartStoreSite) : '全公司（加權）'} · 最近 ${chartMonths} 個月`,
+      filename: () => `NDRF_佔比趨勢_${chartStoreSite || '全公司'}`,
+    });
+
+    cx.mount('stk_rf_chart_export', {
+      target: () => $('stk_rf_chart'),
+      title: () => (rfMetric === 'count' ? 'No. of RF SKU 走勢' : '不良存貨 SKU ÷ SKU Carry 走勢'),
+      subtitle: () => `${rfMetric === 'count' ? 'RF SKU 數' : '不良 ÷ SKU Carry'} · 最近 ${chartMonths} 個月`,
+      filename: () => `NDRF_RF_SKU走勢_${rfMetric === 'count' ? 'RF數' : '不良比率'}`,
+    });
   }
 
   async function loadChartStoreOptions() {
@@ -2312,6 +2344,7 @@
       if (saved === 'share' || saved === 'rank') mtdView = saved;
     } catch { /* 私隱模式不可讀，用預設值 */ }
     bindEvents();
+    mountChartExports();
 
     // 供程式呼叫重新整理用；admin-ui 的「立即更新」只會呼叫 __zsRefresh（故意不改現有檔案）
     globalThis.__stkRefresh = () => {

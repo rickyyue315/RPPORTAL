@@ -7,6 +7,7 @@
   <title>管理後台 — RP 連繫網</title>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/core@1.1.1/dist/css/tabler.min.css">
   <link rel="stylesheet" href="/css/admin.css">
+  <link rel="stylesheet" href="/css/chart-export.css">
 </head>
 <body>
 <div class="page">
@@ -586,6 +587,7 @@
                     <button class="seg-switch-btn" type="button" data-stk-share-nature="tourist" aria-pressed="false">遊客區</button>
                   </div>
                   <span class="text-secondary small" id="stk_share_note"></span>
+                  <span class="ms-auto" id="stk_share_export"></span>
                 </div>
                 <div id="stk_share_body"><div class="text-secondary small">載入中…</div></div>
               </div>
@@ -603,6 +605,7 @@
                   <option value="">全公司（加權）</option>
                 </select>
               </div>
+              <span id="stk_trend_export" class="chart-export-host"></span>
               <button class="btn btn-sm btn-primary" id="btn_stk_export" type="button" title="匯出目前顯示期間的完整數字（Excel）">匯出 Excel</button>
               <div class="stk-range" id="stk_range" role="group" aria-label="顯示期間">
                 <button class="btn btn-sm" type="button" data-stk-months="3">3 個月</button>
@@ -663,6 +666,7 @@
                 <button class="btn btn-sm" type="button" data-stk-rf-metric="count" aria-pressed="true">RF SKU 數</button>
                 <button class="btn btn-sm" type="button" data-stk-rf-metric="ratio" aria-pressed="false">不良÷SKU Carry</button>
               </div>
+              <span id="stk_rf_chart_export" class="chart-export-host"></span>
               <button class="btn btn-sm btn-primary" id="btn_stk_rf_export" type="button" title="匯出 RF SKU 走勢同兩張店舖排名（Excel）">匯出 Excel</button>
             </div>
           </div>
@@ -1427,6 +1431,7 @@
 <script src="/js/admin-designated-sku.js"></script>
 <script src="/js/admin-notices.js"></script>
 <script src="/js/chart-lite.js"></script>
+<script src="/js/chart-export.js"></script>
 <script src="/js/admin-stock.js"></script>
 <script src="/js/admin-ui.js"></script>
 <script src="/js/version.js"></script>

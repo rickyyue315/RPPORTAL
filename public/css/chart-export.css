@@ -1,0 +1,111 @@
+/* ===========================================================================
+   圖表匯出（chart-export.js）：後台與 Portal 共用
+   =========================================================================== */
+.chart-export-host {
+  display: inline-flex;
+  align-items: center;
+  flex: 0 0 auto;
+}
+
+.cx-wrap {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+}
+
+.cx-btn {
+  list-style: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 5px 10px;
+  border: 1px solid #cfe0f2;
+  border-radius: 7px;
+  background: #fff;
+  color: #0f5c9c;
+  font-family: inherit;
+  font-size: 12.5px;
+  font-weight: 600;
+  line-height: 1.4;
+  white-space: nowrap;
+  cursor: pointer;
+  user-select: none;
+}
+.cx-btn::-webkit-details-marker { display: none; }
+.cx-btn::after {
+  content: "▾";
+  font-size: 10px;
+  opacity: .7;
+}
+.cx-btn:hover { background: #f4f8fc; border-color: #9fc2df; }
+.cx-btn:focus-visible {
+  outline: 2px solid rgba(15, 92, 156, .4);
+  outline-offset: 2px;
+}
+.cx-wrap[open] .cx-btn {
+  background: #eef4fb;
+  border-color: #9fc2df;
+}
+
+.cx-menu {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 6px);
+  z-index: 80;
+  min-width: 208px;
+  padding: 6px;
+  border: 1px solid #d8e3ee;
+  border-radius: 10px;
+  background: #fff;
+  box-shadow: 0 12px 30px rgba(15, 23, 42, .16);
+}
+
+.cx-item {
+  display: flex;
+  width: 100%;
+  align-items: baseline;
+  gap: 8px;
+  padding: 7px 9px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: #253543;
+  font-family: inherit;
+  font-size: 12.5px;
+  line-height: 1.35;
+  text-align: left;
+  cursor: pointer;
+}
+.cx-item:hover,
+.cx-item:focus-visible {
+  background: #f2f7fd;
+  outline: none;
+}
+.cx-item b {
+  min-width: 38px;
+  color: #0f5c9c;
+  font-size: 12px;
+}
+.cx-item span {
+  color: #7a8894;
+  font-size: 11.5px;
+}
+
+.cx-toast {
+  position: fixed;
+  left: 50%;
+  bottom: 26px;
+  z-index: 9999;
+  max-width: min(520px, calc(100vw - 32px));
+  padding: 10px 16px;
+  transform: translateX(-50%);
+  border-radius: 10px;
+  background: rgba(15, 23, 42, .92);
+  color: #fff;
+  font-family: inherit;
+  font-size: 13px;
+  line-height: 1.45;
+  box-shadow: 0 10px 26px rgba(15, 23, 42, .28);
+}
+.cx-toast.is-error { background: #8b1e1e; }
+.cx-toast[hidden] { display: none; }

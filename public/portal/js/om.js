@@ -934,7 +934,7 @@
         return `<button type="button" class="om-share-col${ratio === null ? ' is-missing' : ''}${overflow ? ' is-capped' : ''}"
           data-om-share-site="${esc(site)}" title="${esc(tipParts.join('｜'))}" aria-label="${esc(tipParts.join('｜'))}">
           <span class="om-share-plotarea">
-            <i class="om-share-bar" style="height:${heightStyle};background:${barColor}">${ratio === null ? '' : `<b class="om-share-tip">${fmtRatio(ratio)}</b>`}</i>
+            <i class="om-share-bar" style="height:${heightStyle};background-color:${barColor}">${ratio === null ? '' : `<b class="om-share-tip">${fmtRatio(ratio)}</b>`}</i>
           </span>
           <span class="om-share-site">${esc(site)}</span>
           <span class="om-share-shop" title="${esc(fullName)}">${esc(fullName.length > 16 ? `${fullName.slice(0, 16)}…` : fullName)}</span>
@@ -1057,6 +1057,37 @@
   }
 
   /* ------------------------------------------------------------------ */
+  /* 圖表匯出（PDF／SVG／JPG／PNG）                                      */
+  /* ------------------------------------------------------------------ */
+
+  function mountChartExports() {
+    const cx = globalThis.ChartExport;
+    if (!cx) return;
+
+    cx.mount('om_stock_export', {
+      target: () => $('om_stock_chart'),
+      title: '存貨走勢',
+      subtitle: () => {
+        const period = $('om_stock_period')?.textContent || '';
+        const metric = omStockMetric === 'sku' ? '不良存貨 SKU ÷ Carry SKU' : '每週不良存貨佔比';
+        return [metric, period].filter(Boolean).join(' · ');
+      },
+      filename: () => `NDRF_OM存貨走勢_${state.user?.display_name || state.user?.username || 'OM'}`,
+    });
+
+    cx.mount('om_share_export', {
+      target: () => $('om_share_chart'),
+      title: () => (omStockMetric === 'sku' ? '管轄店舖不良 SKU 比率排名' : '管轄店舖不良佔比排名'),
+      subtitle: () => {
+        const scope = $('om_share_note')?.textContent || '';
+        const metric = omStockMetric === 'sku' ? '不良 SKU ÷ Carry SKU' : '不良存貨佔比';
+        return [scope, metric].filter(Boolean).join(' · ');
+      },
+      filename: () => `NDRF_OM店舖排名_${state.user?.display_name || state.user?.username || 'OM'}`,
+    });
+  }
+
+  /* ------------------------------------------------------------------ */
   /* 初始化                                                              */
   /* ------------------------------------------------------------------ */
 
@@ -1108,6 +1139,7 @@
 
   async function init() {
     bindEvents();
+    mountChartExports();
     const name = new URLSearchParams(window.location.search).get('user');
     if (name && $('om_login_name')) $('om_login_name').value = name;
     await checkSession();

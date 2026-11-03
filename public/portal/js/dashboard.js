@@ -391,6 +391,20 @@
     }
   }
 
+  /* ---------- 圖表匯出（PDF／SVG／JPG／PNG） ---------- */
+
+  if (globalThis.ChartExport && $('dash_chart_export')) {
+    globalThis.ChartExport.mount('dash_chart_export', {
+      target: () => $('dash_chart'),
+      title: '每週不良存貨佔比',
+      subtitle: () => {
+        const period = $('dash_chart_period')?.textContent || '';
+        return [currentSite, period].filter(Boolean).join(' · ');
+      },
+      filename: () => `NDRF_存貨走勢_${currentSite || '本店'}`,
+    });
+  }
+
   document.addEventListener('portal:tab', (e) => {
     const tab = e && e.detail ? e.detail.tab : '';
     if (tab !== 'stock') return;

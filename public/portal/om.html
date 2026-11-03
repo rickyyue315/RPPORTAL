@@ -7,6 +7,7 @@
   <title>OM 營運經理 — RP 連繫網</title>
   <link rel="stylesheet" href="/css/style.css">
   <link rel="stylesheet" href="/portal/css/portal.css">
+  <link rel="stylesheet" href="/css/chart-export.css">
 </head>
 <body class="zs-page dash-page om-page">
   <header class="topbar">
@@ -199,7 +200,10 @@
         <div class="card dash-card" id="om_stock_chart_card">
           <div class="dash-card-head">
             <h3>存貨走勢</h3>
-            <span class="hint" id="om_stock_period"></span>
+            <div class="dash-head-tools">
+              <span class="hint" id="om_stock_period"></span>
+              <span id="om_stock_export" class="chart-export-host"></span>
+            </div>
           </div>
           <div class="om-metric-switch" id="om_stock_metric" role="group" aria-label="走勢口徑">
             <button class="om-metric-btn is-active" type="button" data-om-stock-metric="value" aria-pressed="true">每週不良存貨佔比</button>
@@ -226,7 +230,10 @@
         <div class="card dash-card" id="om_share_card">
           <div class="dash-card-head">
             <h3>管轄店舖不良佔比排名</h3>
-            <span class="hint" id="om_share_note"></span>
+            <div class="dash-head-tools">
+              <span class="hint" id="om_share_note"></span>
+              <span id="om_share_export" class="chart-export-host"></span>
+            </div>
           </div>
           <p class="hint om-share-intro">只列你管轄的店舖，按最新一期比率由高至低；每組比例獨立縮放，跨組比較請看百分比數字。手機及平板以「一行一店」列出，按任何一間店可切換上方走勢圖到該店。</p>
           <div id="om_share_chart"><div class="ct-empty">載入中…</div></div>
@@ -306,6 +313,7 @@
   <script src="/js/api.js"></script>
   <script src="/portal/js/portal.js"></script>
   <script src="/js/chart-lite.js"></script>
+  <script src="/js/chart-export.js"></script>
   <script src="/portal/js/om.js"></script>
   <script src="/portal/js/om-designated-sku.js"></script>
   <script src="/js/portal-notice.js"></script>

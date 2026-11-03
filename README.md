@@ -333,6 +333,8 @@ pg_restore --no-owner --no-privileges --clean --if-exists \
 
 **店舖佔比（MTD 的另一個視圖）**：同一張卡的右上角可切換「排行榜／店舖佔比」（`#stk_mtd_switch`，選擇會記在 `localStorage.ndrf_admin_stock_mtd_view_v2`）。店舖佔比照 Excel「店舖佔比」報表排版：視圖頂部有 **全部／民生區／混合區／遊客區** 四個按鈕（`#stk_share_nature`），預設全部；選中的分區該期沒有店舖時退回全部並在旁邊說明。此選擇不寫入 localStorage，每次開頁都回到「全部」。「全部」時上方顯示 **民生區（Local／Non Tourist）／混合區（Mix）／遊客區（Tourist）** 三張摘要卡（店數、**組加權比率** Σ 分子 ÷ Σ 分母、最高值），下面是一條**連續棒圖**：全部店舖（不篩 Top 15）按比率由高至低排、**共用同一比例尺**，可橫向滑動睇全部，柱頂顯示百分比、柱底顯示店號與店名；棒圖不再用分隔線分組。只有選單一分區時，才在棒圖上方顯示該組標題（店數、加權、最高、截斷／新店／缺值）及獨立縮放的棒圖。若某店遠高於同一比例尺（最大 > 次大 × 2），柱高改以次高值為滿格、超出的柱頂加白線標示（避免一間離群店把其餘店壓成貼底矮柱，柱頂數字仍是真值）。新店／上期無數據以斜紋顯示並排在百分比序列中，缺 SKU Carry／不良 SKU 數的店排最後、畫 2px 灰柱，兩者都不當 0% 參與比較。按任何一條柱與排行榜同一行為：切到該 MTD 期並在每店明細只顯示該店。
 
+**圖表匯出（PDF／SVG／JPG／PNG）**：MTD「店舖佔比」棒圖、佔比趨勢線圖、RF SKU 走勢線圖、OM 存貨走勢／管轄店舖排名、店舖端每週存貨走勢都有「匯出圖表」選單。SVG 由現有 ChartLite SVG 或柱狀圖的 DOM 幾何重建成**真正向量圖**（不是截圖）；JPG／PNG 以 2 倍光柵化；PDF 以 2.5 倍高解析 JPEG 嵌入 A4（橫向／直向自動判斷）。檔名自動加 `YYYYMMDD_HHmm`，不會覆蓋舊檔；匯出只讀目前畫面已載入的資料，不會額外打 API，也不影響任何數據。模組位於 `public/js/chart-export.js`，樣式在 `public/css/chart-export.css`。
+
 1. 選報表日期（可從檔名 `25Oct2026` 類格式自動填入）、報表類型、備註，再選 `.xlsx` 上載。
 2. **同一日期重上 = 整批取代**：同一 transaction 內先 `DELETE FROM shop_stock_batches WHERE report_date = $1`（FK CASCADE 清走明細），再建立新批次（**新批次有新 id**，不會出現「同一 id 先後代表兩份檔案」）；audit 會記下舊 batch id、行數與 `content_hash`。內容完全相同（`content_hash` 一致）則視為重複上載，不做任何寫入。
 3. 匯入清洗順序：①剔除 Column A = `Total` 的全公司合計列 → ②跳過全空白列 → ③跳過頁腳列（`Applied filters: …`）→ ④重複 Site Code 才報錯。`Total` 列的 Site Code 會撞真店（例：HA02），所以必須先整列剔除。

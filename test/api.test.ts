@@ -1,6 +1,5 @@
 import { describe, expect, it, beforeAll, afterEach, vi } from 'vitest';
 import request from 'supertest';
-import { createHash } from 'node:crypto';
 import { PGlite } from '@electric-sql/pglite';
 import ExcelJS from 'exceljs';
 import type { Express } from 'express';
@@ -12,7 +11,6 @@ import { setPoolForTesting } from '../src/db/pool.js';
 import { createApp } from '../src/app.js';
 import { replaceStores } from '../src/services/stores.js';
 import { cleanupExpiredExportFiles } from '../src/services/exportFiles.js';
-import { MASTER_RECOVERY_OM } from '../src/lib/recovery.js';
 import { TEMPLATE_COLUMNS, RP_TEAM_SHEET, SHOP_CODE_HEADER, URGENT_COLUMNS, URGENT_SHEET, SALES_COLUMNS, SALES_SHEET, RETURN_COLUMNS, RETURN_SHEET } from '../src/lib/fields.js';
 import * as time from '../src/lib/time.js';
 import { hashPassword } from '../src/services/portalAuth.js';
@@ -21,29 +19,9 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 let app: Express;
 let db: PGlite;
 let timeSpy: ReturnType<typeof vi.spyOn>;
-const MASTER_RECOVERY_CODE = 'test-master-code';
-const IVY_RECOVERY_CODE = 'test-ivy-code';
-const VIOLET_RECOVERY_CODE = 'test-violet-code';
 const STORE_TEST_PASSWORD = 'StoreTest1!ABCD';
 // Portal logins must present the shared password (see PORTAL_SHARED_PASSWORD).
 const PORTAL_SHARED_PASSWORD = 'SASA1234';
-
-function recoveryHash(code: string): string {
-  return createHash('sha256').update(code).digest('hex');
-}
-
-async function seedRecoveryCodes(): Promise<void> {
-  const insert = (om: string, code: string) =>
-    db.query(
-      `INSERT INTO om_recovery_codes (om, code, code_hash, updated_by, updated_at)
-       VALUES ($1, $2, $3, 'test', now())
-       ON CONFLICT (om) DO UPDATE SET code = EXCLUDED.code, code_hash = EXCLUDED.code_hash, updated_by = EXCLUDED.updated_by, updated_at = now()`,
-      [om, code, recoveryHash(code)],
-    );
-  await insert(MASTER_RECOVERY_OM, MASTER_RECOVERY_CODE);
-  await insert('Ivy', IVY_RECOVERY_CODE);
-  await insert('Violet', VIOLET_RECOVERY_CODE);
-}
 
 /** Seeds Store/Buyer/SCT portal accounts plus a SKU Master covering the SKUs the suite uses. */
 async function seedPortalUsers(): Promise<void> {
@@ -135,6 +113,12 @@ async function storeCookie(site: string): Promise<string> {
   return cookie;
 }
 
+/** GET with the store session matching the site_code in the URL (defaults to HA02). */
+function storeGet(url: string) {
+  const site = (new URL(url, 'http://localhost').searchParams.get('site_code') || 'HA02').trim().toUpperCase();
+  return request(app).get(url).set('Cookie', storeCookieCache.get(site) ?? '');
+}
+
 function storePost(url: string, explicitSite?: string) {
   const base: any = request(app).post(url);
   const wrap = (obj: any): any => {
@@ -221,7 +205,6 @@ beforeAll(async () => {
       { site_code: 'HBA7', shop: 'AIRSIDE', regional: 'HK', class1: 'C', class2: 'C2', size: 'XS', om: 'Hippo', type: 'M' },
     ],
   );
-  await seedRecoveryCodes();
   await seedPortalUsers();
   app = createApp();
   // Freeze the clock at 09:00 HK so tests are independent of the real wall-clock
@@ -281,12 +264,12 @@ describe('public API', () => {
     const duplicate = await storePost('/api/public/return/submit').send(payload);
     expect(duplicate.status).toBe(409);
 
-    const queried = await request(app).get(`/api/public/query?application_no=${created.body.submission.application_no}&site_code=HA02`);
+    const queried = await storeGet(`/api/public/query?application_no=${created.body.submission.application_no}&site_code=HA02`);
     expect(queried.status).toBe(200);
     expect(queried.body.submission.submission_type).toBe('return');
     expect(queried.body.submission.return_window_open).toBe(true);
 
-    const modified = await request(app).post('/api/public/modify').send({
+    const modified = await storePost('/api/public/modify').send({
       application_no: created.body.submission.application_no, site_code: 'HA02', sku: '1008002', return_qty: 9,
       return_reason: '2', return_confirmer_name: '新確認人', return_confirmer_phone: '新電話',
     });
@@ -511,7 +494,7 @@ describe('public API', () => {
     });
     const no = created.body.submission.application_no;
 
-    const blocked = await request(app).get(`/api/public/query?application_no=${no}&site_code=HA06`);
+    const blocked = await storeGet(`/api/public/query?application_no=${no}&site_code=HA06`);
     expect(blocked.status).toBe(403);
 
     const list = await agent.get('/api/portal/store/submissions');
@@ -528,12 +511,12 @@ describe('public API', () => {
   });
 
   it('does not reveal whether an application number exists', async () => {
-    const res = await request(app).get('/api/public/query?application_no=NDRF-NOPE-00000000&site_code=HA02');
+    const res = await storeGet('/api/public/query?application_no=NDRF-NOPE-00000000&site_code=HA02');
     expect(res.status).toBe(404);
     expect(res.body.error).toContain('找不到相符申報');
   });
 
-  it('recovers application numbers by site code + date range', async () => {
+  it('lists the logged-in store application numbers by date range', async () => {
     const created = await storePost('/api/public/urgent/submit').send({
       site_code: 'HA06',
       sku: '1000888',
@@ -544,88 +527,45 @@ describe('public API', () => {
     const no = created.body.submission.application_no;
     const date = String(created.body.submission.application_date).slice(0, 10);
 
-    const found = await request(app)
-      .get(`/api/public/my-applications?site_code=HA06&from=${date}&to=${date}`)
-      .set('x-recovery-code', IVY_RECOVERY_CODE);
+    const agent = await storeAgent('HA06');
+    const found = await agent.get(`/api/public/my-applications?from=${date}&to=${date}`);
     expect(found.status).toBe(200);
     expect(found.body.store.shop).toBe('北角');
-    expect(found.body.rows.some((r) => r.application_no === no)).toBe(true);
+    expect(found.body.rows.some((r: { application_no: string }) => r.application_no === no)).toBe(true);
     expect(found.body.rows[0].submission_type).toBe('urgent');
     expect(found.body.rows[0].sku).toBe('1000888');
     expect(found.body.rows[0].qty).toBe(5);
 
-    const other = await request(app)
-      .get(`/api/public/my-applications?site_code=HA02&from=${date}&to=${date}`)
-      .set('x-recovery-code', IVY_RECOVERY_CODE);
-    expect(other.status).toBe(200);
-    expect(other.body.rows.some((r) => r.application_no === no)).toBe(false);
+    const other = await storeAgent('HA02');
+    const otherRows = await other.get(`/api/public/my-applications?from=${date}&to=${date}`);
+    expect(otherRows.status).toBe(200);
+    expect(otherRows.body.rows.some((r: { application_no: string }) => r.application_no === no)).toBe(false);
 
-    const missing = await request(app)
-      .get('/api/public/my-applications?site_code=ZZ99')
-      .set('x-recovery-code', IVY_RECOVERY_CODE);
-    expect(missing.status).toBe(400);
+    const mismatch = await agent.get(`/api/public/my-applications?site_code=HA02&from=${date}&to=${date}`);
+    expect(mismatch.status).toBe(403);
+    expect(mismatch.body.code).toBe('STORE_SITE_MISMATCH');
 
-    const badRange = await request(app)
-      .get('/api/public/my-applications?site_code=HA06&from=2026-12-31&to=2026-01-01')
-      .set('x-recovery-code', IVY_RECOVERY_CODE);
+    const badRange = await agent.get('/api/public/my-applications?from=2026-12-31&to=2026-01-01');
     expect(badRange.status).toBe(400);
 
-    const invalidDate = await request(app)
-      .get('/api/public/my-applications?site_code=HA06&from=2026-02-31&to=2026-02-31')
-      .set('x-recovery-code', IVY_RECOVERY_CODE);
+    const invalidDate = await agent.get('/api/public/my-applications?from=2026-02-31&to=2026-02-31');
     expect(invalidDate.status).toBe(400);
   });
 
-  it('requires the recovery code before listing application numbers', async () => {
-    const missing = await request(app).get('/api/public/my-applications?site_code=HA06');
-    expect(missing.status).toBe(403);
-    const invalid = await request(app)
-      .get('/api/public/my-applications?site_code=HA06')
-      .set('x-recovery-code', 'wrong-code');
-    expect(invalid.status).toBe(403);
+  it('requires a store login before listing application numbers', async () => {
+    const res = await request(app).get('/api/public/my-applications');
+    expect(res.status).toBe(401);
+    expect(res.body.code).toBe('STORE_LOGIN_REQUIRED');
   });
 
-  it('rejects a recovery code from a different OM group', async () => {
-    const res = await request(app)
-      .get('/api/public/my-applications?site_code=HA02')
-      .set('x-recovery-code', VIOLET_RECOVERY_CODE);
-    expect(res.status).toBe(403);
-    expect(res.body.error).toBe('Recovery Code 無效');
-  });
+  it('requires a store login for lookup query and modify', async () => {
+    const query = await request(app).get('/api/public/query?application_no=URGENT-NOPE-00000000&site_code=HA02');
+    expect(query.status).toBe(401);
+    expect(query.body.code).toBe('STORE_LOGIN_REQUIRED');
 
-  it('accepts the master recovery code for any store', async () => {
-    const res = await request(app)
-      .get('/api/public/my-applications?site_code=HA19')
-      .set('x-recovery-code', MASTER_RECOVERY_CODE);
-    expect(res.status).toBe(200);
-    expect(res.body.store.shop).toBe('康山');
-  });
-
-  it('rejects recovery for an OM without a configured code', async () => {
-    // 'om-not-configured' only applies when neither the master nor this OM has
-    // a code; temporarily remove the master code to exercise that path.
-    await db.query('DELETE FROM om_recovery_codes WHERE om = $1', [MASTER_RECOVERY_OM]);
-    try {
-      const res = await request(app)
-        .get('/api/public/my-applications?site_code=HBA7')
-        .set('x-recovery-code', IVY_RECOVERY_CODE);
-      expect(res.status).toBe(403);
-      expect(res.body.error).toBe('此 OM 未設定 Recovery Code');
-    } finally {
-      await seedRecoveryCodes();
-    }
-  });
-
-  it('returns 503 when no recovery codes are configured at all', async () => {
-    await db.query('DELETE FROM om_recovery_codes');
-    try {
-      const res = await request(app)
-        .get('/api/public/my-applications?site_code=HA02')
-        .set('x-recovery-code', IVY_RECOVERY_CODE);
-      expect(res.status).toBe(503);
-    } finally {
-      await seedRecoveryCodes();
-    }
+    const modify = await request(app).post('/api/public/modify').send({});
+    expect(modify.status).toBe(401);
+    expect(modify.body.code).toBe('STORE_LOGIN_REQUIRED');
   });
 
   it('downloads the template workbook without login', async () => {
@@ -641,7 +581,7 @@ describe('public API', () => {
     expect(page.text).toContain('跟著圖示，一步一步完成回覆');
     expect(page.text).toContain('進入 RP 連繫網');
     expect(page.text).toContain('/images/help/recover.svg');
-    expect(page.text).toContain('Recovery Code 每組 OM 一個，請向管理員索取');
+    expect(page.text).toContain('登入後搵返');
 
     const image = await request(app).get('/images/help/normal-site.svg');
     expect(image.status).toBe(200);
@@ -686,115 +626,6 @@ describe('admin API', () => {
     expect(logout.status).toBe(200);
     const me = await agent.get('/api/admin/me');
     expect(me.status).toBe(401);
-  });
-
-  describe('recovery code management', () => {
-    it('requires login for every endpoint', async () => {
-      const list = await request(app).get('/api/admin/recovery-codes');
-      expect(list.status).toBe(401);
-      // Mutations need a valid CSRF pair before the session is checked.
-      const agent = request.agent(app);
-      const token = await csrf(agent);
-      const put = await agent
-        .put('/api/admin/recovery-codes/Ivy')
-        .set('x-csrf-token', token)
-        .send({ code: 'test-ivy-code' });
-      expect(put.status).toBe(401);
-      const del = await agent.delete('/api/admin/recovery-codes/Ivy').set('x-csrf-token', token);
-      expect(del.status).toBe(401);
-    });
-
-    it('lists scopes and returns the plaintext codes for admins', async () => {
-      const agent = request.agent(app);
-      await adminLogin(agent);
-      const res = await agent.get('/api/admin/recovery-codes');
-      expect(res.status).toBe(200);
-      expect(res.body.master.set).toBe(true);
-      expect(res.body.master.code).toBe(MASTER_RECOVERY_CODE);
-      const ivy = res.body.om_codes.find((c: { om: string }) => c.om === 'Ivy');
-      expect(ivy.set).toBe(true);
-      expect(ivy.code).toBe(IVY_RECOVERY_CODE);
-      const hippo = res.body.om_codes.find((c: { om: string }) => c.om === 'Hippo');
-      expect(hippo.set).toBe(false);
-      expect(hippo.code).toBeNull();
-      expect(JSON.stringify(res.body)).not.toContain('code_hash');
-    });
-
-    it('sets and rotates a code for an OM, enabling recovery for its stores', async () => {
-      const agent = request.agent(app);
-      await adminLogin(agent);
-      const token = await csrf(agent);
-
-      const setRes = await agent
-        .put('/api/admin/recovery-codes/Hippo')
-        .set('x-csrf-token', token)
-        .send({ code: 'hippo-om-code-123' });
-      expect(setRes.status).toBe(200);
-
-      const list = await agent.get('/api/admin/recovery-codes');
-      const hippoRow = list.body.om_codes.find((c: { om: string }) => c.om === 'Hippo');
-      expect(hippoRow.code).toBe('hippo-om-code-123');
-
-      const recovery = await request(app)
-        .get('/api/public/my-applications?site_code=HBA7')
-        .set('x-recovery-code', 'hippo-om-code-123');
-      expect(recovery.status).toBe(200);
-      expect(recovery.body.store.shop).toBe('AIRSIDE');
-
-      const audit = await db.query(`SELECT metadata FROM audit_events WHERE event_type = 'recovery_code_set'`);
-      expect(audit.rows.length).toBeGreaterThan(0);
-
-      const delRes = await agent
-        .delete('/api/admin/recovery-codes/Hippo')
-        .set('x-csrf-token', token);
-      expect(delRes.status).toBe(200);
-
-      const after = await request(app)
-        .get('/api/public/my-applications?site_code=HBA7')
-        .set('x-recovery-code', 'hippo-om-code-123');
-      expect(after.status).toBe(403);
-    });
-
-    it('rejects codes that are too short or not printable ASCII', async () => {
-      const agent = request.agent(app);
-      await adminLogin(agent);
-      const token = await csrf(agent);
-      const short = await agent
-        .put('/api/admin/recovery-codes/Ivy')
-        .set('x-csrf-token', token)
-        .send({ code: 'short' });
-      expect(short.status).toBe(400);
-      const nonAscii = await agent
-        .put('/api/admin/recovery-codes/Ivy')
-        .set('x-csrf-token', token)
-        .send({ code: '測試密碼測試密碼測試密碼' });
-      expect(nonAscii.status).toBe(400);
-    });
-
-    it('supports the master scope through the admin API', async () => {
-      const agent = request.agent(app);
-      await adminLogin(agent);
-      const token = await csrf(agent);
-      const setRes = await agent
-        .put('/api/admin/recovery-codes/master')
-        .set('x-csrf-token', token)
-        .send({ code: 'new-master-code-123' });
-      expect(setRes.status).toBe(200);
-      const ok = await request(app)
-        .get('/api/public/my-applications?site_code=HA02')
-        .set('x-recovery-code', 'new-master-code-123');
-      expect(ok.status).toBe(200);
-      // restore the original master code for the rest of the suite
-      const restore = await agent
-        .put('/api/admin/recovery-codes/master')
-        .set('x-csrf-token', token)
-        .send({ code: MASTER_RECOVERY_CODE });
-      expect(restore.status).toBe(200);
-      const restoredOk = await request(app)
-        .get('/api/public/my-applications?site_code=HA02')
-        .set('x-recovery-code', MASTER_RECOVERY_CODE);
-      expect(restoredOk.status).toBe(200);
-    });
   });
 
   it('lists, exports and locks submissions after login', async () => {
@@ -1470,7 +1301,7 @@ describe('urgent public API', () => {
       urgent_reason_other: 'roadshow 加單',
     });
     const no = created.body.submission.application_no;
-    const res = await request(app).get(`/api/public/query?application_no=${no}&site_code=HA02`);
+    const res = await storeGet(`/api/public/query?application_no=${no}&site_code=HA02`);
     expect(res.status).toBe(200);
     expect(res.body.submission.submission_type).toBe('urgent');
     expect(res.body.submission.qty).toBe(4);
@@ -1482,9 +1313,8 @@ describe('urgent public API', () => {
     expect(res.body.versions).toHaveLength(1);
 
     const date = String(created.body.submission.application_date).slice(0, 10);
-    const recovered = await request(app)
-      .get(`/api/public/my-applications?site_code=HA02&from=${date}&to=${date}`)
-      .set('x-recovery-code', IVY_RECOVERY_CODE);
+    const agent = await storeAgent('HA02');
+    const recovered = await agent.get(`/api/public/my-applications?from=${date}&to=${date}`);
     expect(recovered.status).toBe(200);
     const urgentRow = recovered.body.rows.find((r) => r.application_no === no);
     expect(urgentRow.qty).toBe(4);
@@ -1499,7 +1329,7 @@ describe('urgent public API', () => {
       urgent_reason: '1',
     });
     const no = created.body.submission.application_no;
-    const res = await request(app).get(`/api/public/query?application_no=${no}&site_code=HA06`);
+    const res = await storeGet(`/api/public/query?application_no=${no}&site_code=HA06`);
     expect(res.status).toBe(404);
   });
 
@@ -1511,7 +1341,7 @@ describe('urgent public API', () => {
       urgent_reason: '1',
     });
     const no = created.body.submission.application_no;
-    const res = await request(app).post('/api/public/modify').send({
+    const res = await storePost('/api/public/modify').send({
       application_no: no,
       site_code: 'HA02',
       sku: '1006019',
@@ -1525,7 +1355,7 @@ describe('urgent public API', () => {
     expect(res.body.submission.urgent_reason).toBe('9');
     expect(res.body.submission.urgent_reason_other).toBe('改單加量');
 
-    const queried = await request(app).get(`/api/public/query?application_no=${no}&site_code=HA02`);
+    const queried = await storeGet(`/api/public/query?application_no=${no}&site_code=HA02`);
     expect(queried.body.submission.qty).toBe(7);
     expect(queried.body.versions).toHaveLength(2);
   });
@@ -1539,7 +1369,7 @@ describe('urgent public API', () => {
     });
     const no = created.body.submission.application_no;
     timeSpy.mockReturnValue(14 * 60 + 30);
-    const res = await request(app).post('/api/public/modify').send({
+    const res = await storePost('/api/public/modify').send({
       application_no: no,
       site_code: 'HA02',
       sku: '1006022',
@@ -1560,7 +1390,7 @@ describe('urgent public API', () => {
     });
     const no = created.body.submission.application_no;
     timeSpy.mockReturnValue(23 * 60 + 59);
-    const res = await request(app).get(`/api/public/query?application_no=${no}&site_code=HA02`);
+    const res = await storeGet(`/api/public/query?application_no=${no}&site_code=HA02`);
     expect(res.status).toBe(200);
     expect(res.body.submission.qty).toBe(4);
     timeSpy.mockReturnValue(9 * 60);
@@ -1574,7 +1404,7 @@ describe('urgent public API', () => {
       urgent_reason: '1',
     });
     const no = created.body.submission.application_no;
-    const res = await request(app).post('/api/public/modify').send({
+    const res = await storePost('/api/public/modify').send({
       application_no: no,
       site_code: 'HA02',
       sku: '1006020',
@@ -1593,7 +1423,7 @@ describe('urgent public API', () => {
       urgent_reason: '1',
     });
     const no = created.body.submission.application_no;
-    const res = await request(app).post('/api/public/modify').send({
+    const res = await storePost('/api/public/modify').send({
       application_no: no,
       site_code: 'HA02',
       sku: '1006021',
@@ -1618,7 +1448,7 @@ describe('urgent public API', () => {
       urgent_reason: '2',
     });
     const no = created.body.submission.application_no;
-    const res = await request(app).post('/api/public/modify').send({
+    const res = await storePost('/api/public/modify').send({
       application_no: no,
       site_code: 'HA02',
       sku: '1006006',
@@ -1638,7 +1468,7 @@ describe('urgent public API', () => {
     });
     const no = created.body.submission.application_no;
     await db.query('UPDATE submissions SET locked_at = now(), exported_at = now() WHERE application_no = $1', [no]);
-    const res = await request(app).post('/api/public/modify').send({
+    const res = await storePost('/api/public/modify').send({
       application_no: no,
       site_code: 'HA02',
       sku: '1006023',
@@ -1968,7 +1798,7 @@ describe('sales public API', () => {
       sku: '1005017',
     });
     const no = created.body.submission.application_no;
-    const res = await request(app).get(`/api/public/query?application_no=${no}&site_code=HA02`);
+    const res = await storeGet(`/api/public/query?application_no=${no}&site_code=HA02`);
     expect(res.status).toBe(200);
     expect(res.body.submission.submission_type).toBe('sales');
     expect(res.body.submission.sku).toBe('1005017');
@@ -1982,14 +1812,14 @@ describe('sales public API', () => {
       sku: '1005018',
     });
     const no = created.body.submission.application_no;
-    const res = await request(app).post('/api/public/modify').send({
+    const res = await storePost('/api/public/modify').send({
       application_no: no,
       site_code: 'HA02',
       sku: '1005019',
     });
     expect(res.status).toBe(200);
     expect(res.body.submission.sku).toBe('1005019');
-    const queried = await request(app).get(`/api/public/query?application_no=${no}&site_code=HA02`);
+    const queried = await storeGet(`/api/public/query?application_no=${no}&site_code=HA02`);
     expect(queried.body.submission.sku).toBe('1005019');
     expect(queried.body.versions).toHaveLength(2);
   });
@@ -2001,7 +1831,7 @@ describe('sales public API', () => {
     });
     const no = created.body.submission.application_no;
     await db.query('UPDATE submissions SET locked_at = now(), exported_at = now() WHERE application_no = $1', [no]);
-    const res = await request(app).post('/api/public/modify').send({
+    const res = await storePost('/api/public/modify').send({
       application_no: no,
       site_code: 'HA02',
       sku: '1005016',
@@ -2225,14 +2055,12 @@ describe('general NDRF active/duplicate rules', () => {
     await storePost('/api/public/sales/submit').send({ site_code: 'HA02', sku: '1003012' });
     const no = a.body.submission.application_no;
 
-    const blocked = await request(app)
-      .post('/api/public/modify')
+    const blocked = await storePost('/api/public/modify')
       .send({ application_no: no, site_code: 'HA02', sku: '1003012' });
     expect(blocked.status).toBe(409);
     expect(blocked.body.field).toBe('sku');
 
-    const ok = await request(app)
-      .post('/api/public/modify')
+    const ok = await storePost('/api/public/modify')
       .send({ application_no: no, site_code: 'HA02', sku: '1003013' });
     expect(ok.status).toBe(200);
     expect(ok.body.submission.sku).toBe('1003013');

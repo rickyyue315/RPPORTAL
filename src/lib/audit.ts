@@ -20,8 +20,6 @@ export type AuditEventType =
   | 'export_locked'
   | 'store_master_updated'
   | 'store_master_synced'
-  | 'recovery_code_set'
-  | 'recovery_code_deleted'
   | 'ip_cleanup'
   | 'portal_login'
   | 'portal_logout'

@@ -73,7 +73,6 @@ import { ipExpiryIso } from '../lib/ip.js';
 import { RETURN_SCHEDULE, RETURN_WINDOWS, getActiveReturnWindow, isReturnModificationOpen } from '../lib/returnSchedule.js';
 import { fingerprintPayload, getIdempotencyKey, hasInvalidIdempotencyKey } from '../lib/idempotency.js';
 import { createImportBatch, findImportBatchByIdempotencyKey, findImportBatchByKey, getPublicImportBatchRecord, importBatchResponse, lockImportIdempotencyKey, type ImportSubmissionType } from '../services/importBatches.js';
-import { checkRecoveryCodeHashes, listRecoveryCodeHashes, parseRecoveryCodeHeader, recoveryCodeVia } from '../lib/recovery.js';
 import { getUploadedFile, validateUploadedXlsx } from '../lib/upload.js';
 
 export const publicRouter = Router();
@@ -1537,16 +1536,22 @@ publicRouter.post(
     });
   }),
 );
-/** GET /api/public/query?application_no=&site_code= — view submission. */
+/** GET /api/public/query?application_no=&site_code= — view a submission belonging to the logged-in store. */
 publicRouter.get(
   '/query',
+  requireStoreSessionForPublic,
   publicLookupLimiter,
   asyncHandler(async (req: Request, res: Response) => {
     const applicationNo = String(req.query.application_no ?? '').trim().toUpperCase();
-    const siteCode = normalizeSiteCode(String(req.query.site_code ?? ''));
+    const siteCode = req.storeSiteCode!;
+    const requestedSite = normalizeSiteCode(String(req.query.site_code ?? ''));
 
-    if (!applicationNo || !siteCode) {
-      res.status(400).json({ error: '申請編號及 Site Code 為必填' });
+    if (!applicationNo) {
+      res.status(400).json({ error: '申請編號為必填' });
+      return;
+    }
+    if (requestedSite && requestedSite !== siteCode) {
+      res.status(403).json({ error: '只可查詢已登入店舖的申請', code: 'STORE_SITE_MISMATCH' });
       return;
     }
 
@@ -1606,18 +1611,20 @@ publicRouter.get(
   }),
 );
 
-/** GET /api/public/my-applications?site_code=&from=&to=&sku= — recover application numbers by Site Code + date range. */
+/** GET /api/public/my-applications?from=&to=&sku= — list the logged-in store's application numbers by date range. */
 publicRouter.get(
   '/my-applications',
+  requireStoreSessionForPublic,
   publicLookupLimiter,
   asyncHandler(async (req: Request, res: Response) => {
-    const siteCode = normalizeSiteCode(String(req.query.site_code ?? ''));
+    const siteCode = req.storeSiteCode!;
+    const requestedSite = normalizeSiteCode(String(req.query.site_code ?? ''));
     const rawFrom = String(req.query.from ?? '').trim();
     const rawTo = String(req.query.to ?? '').trim();
     const rawSku = String(req.query.sku ?? '').trim();
 
-    if (!siteCode) {
-      res.status(400).json({ error: 'Site Code 為必填' });
+    if (requestedSite && requestedSite !== siteCode) {
+      res.status(403).json({ error: '只可查詢已登入店舖的申請', code: 'STORE_SITE_MISMATCH' });
       return;
     }
     const store = await getStore(siteCode);
@@ -1625,23 +1632,6 @@ publicRouter.get(
       res.status(400).json({ error: `Site Code「${siteCode}」不存在於門店主檔` });
       return;
     }
-
-    const recoveryCode = parseRecoveryCodeHeader(req.get('x-recovery-code'));
-    const recoveryHashes = await listRecoveryCodeHashes();
-    const recoveryStatus = checkRecoveryCodeHashes(recoveryHashes, store.om, recoveryCode);
-    if (recoveryStatus === 'disabled') {
-      res.status(503).json({ error: '申請編號恢復功能尚未設定' });
-      return;
-    }
-    if (recoveryStatus === 'om-not-configured') {
-      res.status(403).json({ error: '此 OM 未設定 Recovery Code' });
-      return;
-    }
-    if (recoveryStatus !== 'ok') {
-      res.status(403).json({ error: 'Recovery Code 無效' });
-      return;
-    }
-    const recoveryVia = recoveryCodeVia(recoveryHashes, store.om, recoveryCode);
 
     let from: string | null = null;
     let to: string | null = null;
@@ -1706,9 +1696,10 @@ publicRouter.get(
 
     await writeAuditEvent({
       eventType: 'application_no_recovered',
-      actorRole: 'applicant',
+      actorRole: 'store',
+      actor: req.portalUser?.username,
       ip: getClientIp(req),
-      metadata: { site_code: siteCode, om: store.om, via: recoveryVia, from, to, count: result.rows.length },
+      metadata: { site_code: siteCode, om: store.om, from, to, count: result.rows.length },
     });
 
     res.json({
@@ -1747,9 +1738,10 @@ const modifySchema = z.object({
   return_confirmer_phone: z.string().trim().max(200).optional().default(''),
 });
 
-/** POST /api/public/modify — modify before export lock. */
+/** POST /api/public/modify — modify a submission belonging to the logged-in store before export lock. */
 publicRouter.post(
   '/modify',
+  requireStoreSessionForPublic,
   requirePublicWritesOpen,
   publicSubmitLimiter,
   asyncHandler(async (req: Request, res: Response) => {
@@ -1760,7 +1752,12 @@ publicRouter.post(
       return;
     }
     const data = parsed.data;
-    const siteCode = normalizeSiteCode(data.site_code);
+    const siteCode = req.storeSiteCode!;
+    const requestedSite = normalizeSiteCode(data.site_code);
+    if (requestedSite && requestedSite !== siteCode) {
+      res.status(403).json({ error: '只可修改已登入店舖的申請', field: 'site_code', code: 'STORE_SITE_MISMATCH' });
+      return;
+    }
     const store = await getStore(siteCode);
     if (!store) {
       res.status(400).json({ error: `Site Code「${siteCode}」不存在於門店主檔`, field: 'site_code' });

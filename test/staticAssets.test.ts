@@ -232,7 +232,6 @@ describe('static asset freshness', () => {
     expect(html).toContain('data-lazy-section="portal-users"');
     expect(html).toContain('data-lazy-section="sku-master"');
     expect(html).toContain('data-lazy-section="stores"');
-    expect(html).toContain('data-lazy-section="recovery-codes"');
     expect(script).toContain("tab === 'export'");
     expect(script).not.toContain("tab === 'batches'");
   });

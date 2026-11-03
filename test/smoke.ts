@@ -54,17 +54,6 @@ for (const file of await listMigrationFiles()) {
 }
 console.log('[smoke] migrations applied');
 
-// Seed a master recovery code (works for every store) plus an Ivy group code.
-const { createHash } = await import('node:crypto');
-await db.query(
-  `INSERT INTO om_recovery_codes (om, code, code_hash, updated_by, updated_at) VALUES ($1, $2, $3, 'smoke', now())`,
-  ['__MASTER__', 'smoke-recovery-code', createHash('sha256').update('smoke-recovery-code').digest('hex')],
-);
-await db.query(
-  `INSERT INTO om_recovery_codes (om, code, code_hash, updated_by, updated_at) VALUES ($1, $2, $3, 'smoke', now())`,
-  ['Ivy', 'smoke-ivy-code', createHash('sha256').update('smoke-ivy-code').digest('hex')],
-);
-
 // Seed stores from the CSV.
 const csvPath = path.join(root, 'stores-template.csv');
 await syncStoresFromFile(csvPath);
@@ -175,7 +164,9 @@ const server = app.listen(0, async () => {
     const storeListJson = await storeList.json();
     check('store dashboard list', storeList.status === 200 && storeListJson.submissions.some((s: { application_no: string }) => s.application_no === appNo));
 
-    const blockedPublicQuery = await fetch(`${base}/api/public/query?application_no=${appNo}&site_code=HA02`);
+    const blockedPublicQuery = await fetch(`${base}/api/public/query?application_no=${appNo}&site_code=HA02`, {
+      headers: { cookie: cookieJar },
+    });
     check('normal query blocked on public API', blockedPublicQuery.status === 403);
 
     const urgent = await fetch(`${base}/api/public/urgent/submit`, {
@@ -222,11 +213,11 @@ const server = app.listen(0, async () => {
     const salesJson = await sales.json();
     check('sales web submit', sales.status === 201 && /^SALES-/.test(salesJson.submission.application_no));
 
-    const recovery = await fetch(`${base}/api/public/my-applications?site_code=HA02`, {
-      headers: { 'x-recovery-code': 'smoke-recovery-code' },
+    const listing = await fetch(`${base}/api/public/my-applications`, {
+      headers: { cookie: cookieJar },
     });
-    const recoveryJson = await recovery.json();
-    check('public recovery with code', recovery.status === 200 && recoveryJson.store?.shop === '駱克');
+    const listingJson = await listing.json();
+    check('store application number listing', listing.status === 200 && listingJson.store?.shop === '駱克');
 
     const returnWb = new ExcelJS.Workbook();
     const returnWs = returnWb.addWorksheet(RETURN_SHEET);

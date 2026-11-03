@@ -132,7 +132,7 @@
       overlay.innerHTML =
         '<div class="site-gate-card">' +
           '<h1>選擇店舖</h1>' +
-          '<p class="hint">請輸入你店舖嘅 Site Code（例如 HA02）及密碼，輸入一次後所有頁面（90日零銷售、Urgent、突發性銷售、行貨退貨）會自動認到係你嘅店舖。店舖首頁為「90日零銷售回覆」。</p>' +
+          '<p class="hint">請輸入你店舖嘅 Site Code（例如 HA02）及密碼，輸入一次後所有頁面（90日零銷售、Urgent、突發性銷售、行貨退貨、查詢／修改）會自動認到係你嘅店舖。店舖首頁為「90日零銷售回覆」。</p>' +
           '<div id="site_gate_error"></div>' +
           '<label for="site_gate_input">Site Code</label>' +
           '<input type="text" id="site_gate_input" autocomplete="off" placeholder="例如 HA02">' +
@@ -272,6 +272,15 @@
         info.innerHTML = `<b>${esc(shop)}</b>`;
       }
     }
+    // The lookup page has no #site_code input; it shows the session store in
+    // the two Site Code boxes instead (both read-only).
+    for (const id of ['q_site', 'r_site']) {
+      const field = document.getElementById(id);
+      if (!field) continue;
+      field.value = site;
+      field.readOnly = true;
+      field.setAttribute('aria-readonly', 'true');
+    }
     renderLockBar(site, shop);
     // Excel hint: rows must belong to the locked shop.
     const drop = document.getElementById('file_drop');
@@ -303,6 +312,9 @@
   async function initPublicSiteGate() {
     bindLogoutLink();
     const hasSiteInput = !!document.getElementById('site_code');
+    // Pages that must always be logged in (e.g. 查詢／修改) opt in with
+    // <body data-require-store-login="true">.
+    const forceLogin = document.body.dataset.requireStoreLogin === 'true';
     const qSite = document.getElementById('q_site');
     const rSite = document.getElementById('r_site');
 
@@ -314,8 +326,9 @@
     }
     const sessionSite = me && me.user && me.user.role === 'store' ? me.user.site_code : '';
 
-    // Lookup page: auto-fill from session or remembered shop, no forced gate.
-    if (!hasSiteInput) {
+    // Other public pages (help/index): auto-fill from session or remembered
+    // shop without forcing a login.
+    if (!hasSiteInput && !forceLogin) {
       const site = sessionSite || storedSite();
       if (site) {
         if (qSite && !qSite.value) qSite.value = site;

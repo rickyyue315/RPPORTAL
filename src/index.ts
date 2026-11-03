@@ -4,7 +4,6 @@ import { config } from './config.js';
 import { migrate } from './db/migrate.js';
 import { pool, waitForDatabase, withAdvisoryLock } from './db/pool.js';
 import { writeAuditEvent } from './lib/audit.js';
-import { countRecoveryCodes } from './lib/recovery.js';
 import { syncStoresFromFile } from './services/stores.js';
 import { syncOmPortalAccounts } from './services/storeAccounts.js';
 import { cleanupExpiredExportFiles } from './services/exportFiles.js';
@@ -82,11 +81,6 @@ async function main(): Promise<void> {
 
   await waitForDatabase();
   await migrate();
-
-  const recoveryCodeCount = await countRecoveryCodes();
-  if (recoveryCodeCount === 0) {
-    console.warn('[boot] 未設定任何 Recovery Code（om_recovery_codes 表為空）— 公開申請編號恢復功能將回 503');
-  }
 
   await syncStoreMasterOnBoot();
 

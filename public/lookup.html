@@ -7,7 +7,7 @@
   <title>查詢／修改 — RP 連繫網</title>
   <link rel="stylesheet" href="/css/style.css">
 </head>
-<body>
+<body data-require-store-login="true">
   <header class="topbar">
     <div class="topbar-inner">
       <div class="topbar-brand">
@@ -35,7 +35,7 @@
   <main class="container">
     <div class="card" id="search_card">
       <h2>查詢申報</h2>
-      <p class="hint">適用於 <b>URGENT-</b>、<b>SALES-</b> 及 <b>RETURN-</b> 開頭的申請。一般 NDRF 請登入 <a href="/portal/">RP 連繫網</a> 於「我的申請」查看。</p>
+      <p class="hint">請先登入店舖帳戶。此頁適用於 <b>URGENT-</b>、<b>SALES-</b> 及 <b>RETURN-</b> 開頭的申請；一般 NDRF 請登入 <a href="/portal/">RP 連繫網</a> 於「我的申請」查看。</p>
       <div id="search_error"></div>
       <form id="search_form">
         <div class="form-grid">
@@ -44,8 +44,8 @@
             <input type="text" id="q_no" placeholder="URGENT-...、SALES-... 或 RETURN-...">
           </div>
           <div>
-            <label for="q_site">Site Code</label>
-            <input type="text" id="q_site" placeholder="例如 HA02">
+            <label for="q_site">Site Code（已登入店舖）</label>
+            <input type="text" id="q_site" readonly placeholder="登入後自動填入">
           </div>
         </div>
         <div class="btn-row">
@@ -58,17 +58,13 @@
       <div id="recover_box" style="display:none">
         <hr>
         <h3>搵返申請編號</h3>
-         <p class="hint">輸入提交時使用嘅 <b>Site Code</b>、Recovery Code 及日期範圍（預設為今日），可列出該日嘅申請編號，撳申請編號即可前往查詢／修改。<b>Recovery Code 每組 OM 一個，可向管理員索取。</b></p>
+         <p class="hint">輸入日期範圍（預設為今日）及可選 SKU，系統會列出已登入店舖嘅申請編號，撳申請編號即可前往查詢／修改。只會顯示自己店舖的申請。</p>
         <div id="recover_error"></div>
         <form id="recover_form">
           <div class="form-grid">
             <div>
-              <label for="r_site">Site Code <span class="optional">（必填）</span></label>
-              <input type="text" id="r_site" autocomplete="off" placeholder="例如 HA02">
-            </div>
-            <div>
-              <label for="r_recovery_code">Recovery Code <span class="optional">（必填）</span></label>
-              <input type="password" id="r_recovery_code" autocomplete="off">
+              <label for="r_site">Site Code（已登入店舖）</label>
+              <input type="text" id="r_site" readonly placeholder="登入後自動填入">
             </div>
             <div class="full">
               <label for="r_sku">SKU <span class="optional">（可選）</span></label>

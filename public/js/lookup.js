@@ -32,8 +32,12 @@
     e.preventDefault();
     const no = $('q_no').value.trim().toUpperCase();
     const site = $('q_site').value.trim().toUpperCase();
-    if (!no || !site) {
-      showAlert($('search_error'), 'error', '請輸入申請編號及 Site Code');
+    if (!no) {
+      showAlert($('search_error'), 'error', '請輸入申請編號');
+      return;
+    }
+    if (!site) {
+      showAlert($('search_error'), 'error', '請先登入店舖帳戶');
       return;
     }
     showAlert($('search_error'), '', '');
@@ -61,13 +65,8 @@
   $('recover_form').addEventListener('submit', async (e) => {
     e.preventDefault();
     const site = $('r_site').value.trim().toUpperCase();
-    const recoveryCode = $('r_recovery_code').value;
     if (!site) {
-      showAlert($('recover_error'), 'error', '請輸入 Site Code');
-      return;
-    }
-    if (!recoveryCode) {
-      showAlert($('recover_error'), 'error', '請輸入 Recovery Code');
+      showAlert($('recover_error'), 'error', '請先登入店舖帳戶');
       return;
     }
     showAlert($('recover_error'), '', '');
@@ -81,9 +80,7 @@
     btn.disabled = true;
     btn.textContent = '查詢中…';
     try {
-      const data = await api(`/api/public/my-applications?${params.toString()}`, {
-        headers: { 'x-recovery-code': encodeURIComponent(recoveryCode) },
-      });
+      const data = await api(`/api/public/my-applications?${params.toString()}`);
       const rows = data.rows || [];
       const TYPE_LABEL = { normal: '一般 NDRF', urgent: 'Urgent Order', sales: '突發性銷售', return: '行貨退貨' };
       if (!rows.length) {
@@ -324,7 +321,6 @@
     $('detail_card').style.display = 'none';
     $('search_card').style.display = '';
     $('q_no').value = '';
-    $('q_site').value = '';
     showAlert($('search_error'), '', '');
   });
 

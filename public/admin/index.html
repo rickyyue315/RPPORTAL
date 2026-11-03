@@ -1317,7 +1317,7 @@
         </div>
 
         <div class="admin-group-title admin-section" id="sec-tools">系統工具</div>
-        <p class="subnav-hint">資料庫備份（每日 02:00／14:00）與 Recovery Code（公開頁「搵返申請編號」驗證用）。</p>
+        <p class="subnav-hint">資料庫備份（每日 02:00／14:00）。</p>
         <div class="card" data-lazy-section="backup">
           <div class="card-header">
             <h3 class="card-title">資料庫備份</h3>
@@ -1335,23 +1335,6 @@
               <table class="table table-vcenter"><thead><tr><th>開始時間</th><th>狀態</th><th>大小</th><th>耗時</th><th>檔案</th></tr></thead><tbody id="backup_runs_body"><tr><td colspan="5" class="text-center text-secondary">捲動到此處自動載入…</td></tr></tbody></table>
             </div>
             <p class="text-secondary small mb-0">表格時間為香港時間。下載檔案為 <code>pg_dump -Fc</code> 格式，還原用：<code>pg_restore -d &lt;DATABASE_URL&gt; --clean --if-exists ndrf-*.dump</code></p>
-          </div>
-        </div>
-        <div class="card" data-lazy-section="recovery-codes">
-          <div class="card-header">
-            <h3 class="card-title">Recovery Code 管理</h3>
-            <div class="card-actions">
-              <a href="#" class="btn-action" data-bs-toggle="collapse" data-bs-target="#recovery-collapse" aria-expanded="true" aria-label="摺疊Recovery">
-                <svg xmlns="http://www.w3.org/2000/svg" class="icon" width="24" height="24" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none" stroke-linecap="round" stroke-linejoin="round"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><polyline points="6 9 12 15 18 9" /></svg>
-              </a>
-            </div>
-          </div>
-          <div class="card-body collapse show" id="recovery-collapse">
-            <p class="text-secondary small">「搵返申請編號」功能按每組 OM 獨立設定 Recovery Code（master code 適用於所有店舖）。原碼只會喺後台顯示，公開查詢驗證用 SHA-256 hash 比對。</p>
-            <div class="table-responsive">
-              <table class="table table-vcenter"><thead><tr><th>範圍</th><th>狀態</th><th>Recovery Code</th><th>最後更新</th><th>更新人</th><th>操作</th></tr></thead><tbody id="recovery_codes_body"><tr><td colspan="6" class="text-center text-secondary">捲動到此處自動載入…</td></tr></tbody></table>
-            </div>
-            <div id="recovery_code_result" class="mt-2"></div>
           </div>
         </div>
         </section>
@@ -1423,19 +1406,6 @@
 </aside>
 
 <button id="btn_back_top" type="button" aria-label="回到頂部">↑</button>
-
-<div id="recovery_code_overlay" style="display:none">
-  <div class="modal-box">
-    <h3 id="recovery_code_title">設定 Recovery Code</h3>
-    <p class="text-secondary small">範圍：<b id="recovery_code_scope"></b></p>
-    <input type="password" class="form-control" id="recovery_code_input" autocomplete="off" placeholder="12 至 128 位可顯示 ASCII 字符（不含空格）">
-    <div id="recovery_code_form_error" class="mt-2"></div>
-    <div class="d-flex gap-2 justify-content-end mt-4">
-      <button class="btn btn-primary" id="recovery_code_ok">儲存</button>
-      <button class="btn" id="recovery_code_cancel">取消</button>
-    </div>
-  </div>
-</div>
 
 <div id="export_confirm_overlay" style="display:none">
   <div class="modal-box">

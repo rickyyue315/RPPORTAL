@@ -165,8 +165,11 @@
   /* ---------------- 總覽 KPI ---------------- */
 
   async function loadSummary() {
-    const box = $('dsku_kpi');
-    if (!box) return;
+    const targets = [
+      { box: $('dsku_kpi'), note: $('dsku_kpi_note'), error: 'dsku_kpi_error' },
+      { box: $('ov_dsku_kpi'), note: $('ov_dsku_kpi_note'), error: 'ov_dsku_kpi_error' },
+    ].filter((t) => t.box);
+    if (!targets.length) return;
     try {
       const s = await gFetch('/api/admin/designated-sku/summary');
       const rate = s.matter_count ? Math.round((s.replied_count / s.matter_count) * 100) : 0;
@@ -176,16 +179,19 @@
         ['已回覆', s.replied_count, `${rate}% 完成`],
         ['未回覆', s.pending_count, s.pending_count ? `${s.pending_store_count} 間店待回覆` : '全部完成'],
       ];
-      box.innerHTML = items.map(([label, value, note]) => `
+      const html = items.map(([label, value, note]) => `
         <div class="stk-kpi">
           <div class="stk-kpi-value">${esc(String(value))}</div>
           <div class="stk-kpi-label">${esc(label)}</div>
           <div class="stk-kpi-sub">${esc(note)}</div>
         </div>`).join('');
-      $('dsku_kpi_note').textContent = '即時統計全部批次';
-      setBox('dsku_kpi_error', '');
+      targets.forEach(({ box, note, error }) => {
+        box.innerHTML = html;
+        if (note) note.textContent = '即時統計全部批次';
+        setBox(error, '');
+      });
     } catch (err) {
-      setBox('dsku_kpi_error', alertHtml('danger', esc(err.message)));
+      targets.forEach(({ error }) => setBox(error, alertHtml('danger', esc(err.message))));
     }
   }
 
@@ -1373,6 +1379,8 @@
       await loadBatches();
       await loadSummary();
     };
+    // 總覽（首頁）的「事項總覽」卡：切換到總覽或「立即更新」時同步刷新
+    globalThis.__dskuSummaryRefresh = loadSummary;
   }
 
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init);

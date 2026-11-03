@@ -2405,7 +2405,11 @@
   // 切換到分頁時不會一次過打 6 個 API，只有「立即更新」才會全部重拉。
   function refreshActiveTab(manual = false) {
     const tab = globalThis.__adminActiveTab || 'overview';
-    if (tab === 'overview') loadSummary();
+    if (tab === 'overview') {
+      loadSummary();
+      // 首頁的「指定 SKU 回覆 — 事項總覽」與指定 SKU 頁共用同一支 summary API
+      try { globalThis.__dskuSummaryRefresh?.(); } catch {}
+    }
     else if (tab === 'list') loadList();
     else if (tab === 'export') loadExportBatches();
     else if (tab === 'system') {

@@ -1235,6 +1235,7 @@
       title: '佔比趨勢（不良存貨 ÷ 店舖存貨）',
       subtitle: () => `${chartStoreSite ? chartStoreLabel(chartStoreSite) : '全公司（加權）'} · 最近 ${chartMonths} 個月`,
       filename: () => `NDRF_佔比趨勢_${chartStoreSite || '全公司'}`,
+      dataTable: true,
     });
 
     cx.mount('stk_rf_chart_export', {
@@ -1242,6 +1243,7 @@
       title: () => (rfMetric === 'count' ? 'No. of RF SKU 走勢' : '不良存貨 SKU ÷ SKU Carry 走勢'),
       subtitle: () => `${rfMetric === 'count' ? 'RF SKU 數' : '不良 ÷ SKU Carry'} · 最近 ${chartMonths} 個月`,
       filename: () => `NDRF_RF_SKU走勢_${rfMetric === 'count' ? 'RF數' : '不良比率'}`,
+      dataTable: true,
     });
   }
 

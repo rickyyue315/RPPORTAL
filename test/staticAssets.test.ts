@@ -171,6 +171,7 @@ describe('static asset freshness', () => {
     expect(adminScript).toContain("cx.mount('stk_share_export'");
     expect(adminScript).toContain("cx.mount('stk_trend_export'");
     expect(adminScript).toContain("cx.mount('stk_rf_chart_export'");
+    expect(adminScript).toContain('dataTable: true');
     expect(adminScript).toContain("cz.mount('stk_share_export'");
     expect(adminScript).toContain("cz.mount('stk_trend_export'");
     expect(adminScript).toContain("cz.mount('stk_rf_chart_export'");
@@ -182,6 +183,7 @@ describe('static asset freshness', () => {
     expect(omHtml).toContain('id="om_share_export"');
     expect(omScript).toContain("cx.mount('om_stock_export'");
     expect(omScript).toContain("cx.mount('om_share_export'");
+    expect(omScript).toContain('dataTable: true');
     expect(omScript).toContain("cz.mount('om_stock_export'");
     expect(omScript).toContain("cz.mount('om_share_export'");
 
@@ -191,6 +193,14 @@ describe('static asset freshness', () => {
     expect(storeHtml).toContain('id="dash_chart_export"');
     expect(storeScript).toContain("ChartExport.mount('dash_chart_export'");
     expect(storeScript).toContain("ChartZoom.mount('dash_chart_export'");
+    expect(storeScript).toContain('dataTable: true');
+
+    // 線圖匯出／畫面數據表：逐期日期 + 每條線數值
+    const exportScript = readFileSync(path.join(root, 'public', 'js', 'chart-export.js'), 'utf8');
+    expect(exportScript).toContain('lineTableModel');
+    expect(exportScript).toContain('buildTableSvg');
+    expect(exportScript).toContain('數據明細');
+    expect(exportScript).toContain('cx-data-details');
   });
 
   it('wires the designated SKU reply page, admin tab and direct link', () => {

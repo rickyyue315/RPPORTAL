@@ -21,6 +21,7 @@
  *   filename:  String | () => String  不含副檔名；會自動加 _YYYYMMDD_HHmm
  *   formats:   Array<'pdf'|'svg'|'jpg'|'png'>  預設全部
  *   buttonLabel: String          預設「匯出圖表」
+ *   dataTable: Boolean           線圖下方加「查看數據表」（匯出圖亦會自動包含）
  */
 (() => {
   'use strict';
@@ -91,6 +92,85 @@
       .replace(/\s+/g, '_')
       .replace(/^[._\s]+|[._\s]+$/g, '')
       .slice(0, 80) || 'NDRF_chart';
+  }
+
+  /** 'YYYY-MM-DD' / Date / timestamp → UTC 毫秒（日期粒度）；無法解析回 NaN。 */
+  function pointTime(value) {
+    if (typeof value === 'number' && Number.isFinite(value)) return value;
+    if (value instanceof Date) {
+      const t = value.getTime();
+      if (!Number.isFinite(t)) return NaN;
+      return Date.UTC(value.getFullYear(), value.getMonth(), value.getDate());
+    }
+    const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(value == null ? '' : value));
+    if (!m) return NaN;
+    return Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+  }
+
+  function fmtPointDate(t) {
+    const d = new Date(t);
+    if (Number.isNaN(d.getTime())) return '';
+    return `${d.getUTCFullYear()}-${pad2(d.getUTCMonth() + 1)}-${pad2(d.getUTCDate())}`;
+  }
+
+  /** 把 formatter 的輸出壓成純文字（表格用；避免 tooltip 的 HTML 走進 SVG／表格）。 */
+  function plainText(value) {
+    return String(value == null ? '' : value)
+      .replace(/<[^>]*>/g, '')
+      .replace(/\s+/g, ' ')
+      .trim();
+  }
+
+  /**
+   * 把 ChartLite 的 series 整理成「日期 × 每條線」的表格模型。
+   * 只在有 label 的 series 上工作；回傳 null 代表沒有可列出的數據。
+   */
+  function lineTableModel(opts) {
+    const o = opts || {};
+    const columns = (Array.isArray(o.series) ? o.series : [])
+      .filter((spec) => spec && spec.label)
+      .map((spec) => {
+        const points = (Array.isArray(spec.points) ? spec.points : []).map((p) => {
+          if (!p) return null;
+          const dateValue = p.date != null ? p.date : (p.report_date != null ? p.report_date : p.x);
+          const t = pointTime(dateValue);
+          const rawValue = p.value != null ? p.value : (p.ratio != null ? p.ratio : p.y);
+          const n = rawValue == null || rawValue === '' ? NaN : Number(rawValue);
+          return { t, v: Number.isFinite(n) ? n : null };
+        }).filter((p) => p && Number.isFinite(p.t));
+        return { label: plainText(spec.label), points };
+      })
+      .filter((spec) => spec.points.some((p) => p.v !== null));
+
+    if (!columns.length) return null;
+    const times = [...new Set(columns.flatMap((spec) => spec.points.map((p) => p.t)))]
+      .sort((a, b) => a - b);
+    if (!times.length) return null;
+
+    const rows = times.map((t) => ({
+      date: fmtPointDate(t),
+      values: columns.map((spec) => {
+        const hit = spec.points.find((p) => p.t === t && p.v !== null) || spec.points.find((p) => p.t === t);
+        return hit ? hit.v : null;
+      }),
+    }));
+
+    const formatter = typeof o.tipFormat === 'function'
+      ? o.tipFormat
+      : (typeof o.yFormat === 'function' ? o.yFormat : (v) => fmt(v));
+    return {
+      columns: columns.map((spec) => spec.label),
+      rows,
+      format: (v) => {
+        if (v == null) return '—';
+        try {
+          const text = plainText(formatter(v));
+          return text || '—';
+        } catch {
+          return fmt(v);
+        }
+      },
+    };
   }
 
   function textWidth(text, font) {
@@ -188,7 +268,59 @@
     box._cxTimer = setTimeout(() => { box.hidden = true; }, isError ? 6500 : 3000);
   }
 
-  /* ==================== 線圖：原生 SVG + 標題列 ==================== */
+  /* ==================== 線圖：原生 SVG + 標題列 + 數據表 ==================== */
+
+  /** 把表格模型畫成 SVG 片段（放在線圖下方，讓匯出圖自己解釋得通）。 */
+  function buildTableSvg(model, x, y, width) {
+    const rows = model && Array.isArray(model.rows) ? model.rows : [];
+    const cols = model && Array.isArray(model.columns) ? model.columns : [];
+    if (!rows.length || !cols.length) return { parts: [], height: 0 };
+
+    const compact = rows.length > 40;
+    const rowH = compact ? 15 : 17;
+    const headH = compact ? 22 : 24;
+    const fontSize = compact ? 9 : 10;
+    const headFont = compact ? 9 : (cols.length >= 3 ? 9 : 10);
+    const dateW = Math.max(88, Math.min(160, width * 0.24));
+    const valueW = (width - dateW) / cols.length;
+    const top = y + 20;
+    const tableH = headH + rows.length * rowH;
+    const parts = [];
+
+    parts.push(`<text x="${fmt(x)}" y="${fmt(y + 13)}" fill="#0a3d69" font-size="12.5" font-weight="700">數據明細</text>`);
+    parts.push(`<line x1="${fmt(x)}" y1="${fmt(y + 18)}" x2="${fmt(x + width)}" y2="${fmt(y + 18)}" stroke="#e3eef8" stroke-width="1"/>`);
+    parts.push(`<rect x="${fmt(x)}" y="${fmt(top)}" width="${fmt(width)}" height="${fmt(headH)}" fill="#eef4fb"/>`);
+    parts.push(`<text x="${fmt(x + 8)}" y="${fmt(top + headH * 0.68)}" fill="#0a3d69" font-size="${headFont}" font-weight="700">日期</text>`);
+
+    cols.forEach((label, i) => {
+      const cx = x + dateW + valueW * (i + 1) - 8;
+      parts.push(`<text x="${fmt(cx)}" y="${fmt(top + headH * 0.68)}" fill="#0a3d69" font-size="${headFont}" font-weight="700" text-anchor="end">${esc(label)}</text>`);
+    });
+
+    rows.forEach((row, i) => {
+      const ry = top + headH + i * rowH;
+      if (i % 2 === 1) {
+        parts.push(`<rect x="${fmt(x)}" y="${fmt(ry)}" width="${fmt(width)}" height="${fmt(rowH)}" fill="#f8fbfe"/>`);
+      }
+      parts.push(`<line x1="${fmt(x)}" y1="${fmt(ry + rowH)}" x2="${fmt(x + width)}" y2="${fmt(ry + rowH)}" stroke="#eef2f6" stroke-width="1"/>`);
+      const baseline = ry + rowH * 0.7;
+      parts.push(`<text x="${fmt(x + 8)}" y="${fmt(baseline)}" fill="#41505e" font-size="${fontSize}">${esc(row.date)}</text>`);
+      row.values.forEach((value, vi) => {
+        const cx = x + dateW + valueW * (vi + 1) - 8;
+        parts.push(`<text x="${fmt(cx)}" y="${fmt(baseline)}" fill="#253543" font-size="${fontSize}" font-weight="600" text-anchor="end">${esc(model.format(value))}</text>`);
+      });
+    });
+
+    // 欄位分隔線放在最上層，避免被偶數列的底色蓋住
+    parts.push(`<line x1="${fmt(x + dateW)}" y1="${fmt(top)}" x2="${fmt(x + dateW)}" y2="${fmt(top + tableH)}" stroke="#e3eef8" stroke-width="1"/>`);
+    for (let i = 1; i < cols.length; i += 1) {
+      const vx = x + dateW + valueW * i;
+      parts.push(`<line x1="${fmt(vx)}" y1="${fmt(top)}" x2="${fmt(vx)}" y2="${fmt(top + tableH)}" stroke="#eef2f6" stroke-width="1"/>`);
+    }
+
+    parts.push(`<rect x="${fmt(x)}" y="${fmt(top)}" width="${fmt(width)}" height="${fmt(tableH)}" fill="none" stroke="#dbe7f2" stroke-width="1" rx="4"/>`);
+    return { parts, height: 20 + tableH + 4 };
+  }
 
   function buildLineSvg(svgEl, hostEl, meta) {
     const vb = svgEl.viewBox && svgEl.viewBox.baseVal;
@@ -223,7 +355,9 @@
     });
     if (legendW) legendW -= legendGap;
 
-    const totalW = Math.ceil(Math.max(W + pad * 2, titleW + pad * 2, subW + pad * 2, legendW + pad * 2));
+    const table = lineTableModel(opts);
+    const minTableW = table ? Math.max(320, 110 + table.columns.length * 92) : 0;
+    const totalW = Math.ceil(Math.max(W + pad * 2, titleW + pad * 2, subW + pad * 2, legendW + pad * 2, minTableW + pad * 2));
     let y = pad + titleSize + 4;
     const titleBaseline = y;
     if (meta.subtitle) y += 17;
@@ -231,7 +365,9 @@
     if (legend.length) y += 20;
     const legendBaseline = legend.length ? y : 0;
     const chartTop = y + 8;
-    const footerBaseline = chartTop + H + 20;
+    const tableTop = chartTop + H + 26;
+    const tableBlock = table ? buildTableSvg(table, pad, tableTop, totalW - pad * 2) : { parts: [], height: 0 };
+    const footerBaseline = tableBlock.height ? tableTop + tableBlock.height + 22 : chartTop + H + 20;
     const totalH = Math.ceil(footerBaseline + 14);
 
     const out = [];
@@ -267,6 +403,7 @@
     clone.setAttribute('overflow', 'visible');
     const cloneText = new XMLSerializer().serializeToString(clone);
     out.push(cloneText);
+    tableBlock.parts.forEach((part) => out.push(part));
 
     out.push(`<text x="${pad}" y="${fmt(footerBaseline)}" fill="#8a96a3" font-size="10">RP Connect · NDRF Portal</text>`);
     out.push(`<text x="${totalW - pad}" y="${fmt(footerBaseline)}" fill="#8a96a3" font-size="10" text-anchor="end">${esc(meta.stamp)}</text>`);
@@ -842,6 +979,44 @@
     }
   }
 
+  /* ==================== 畫面用「查看數據表」 ==================== */
+
+  function renderScreenTable(details, target) {
+    const body = details.querySelector('.cx-data-body');
+    const summary = details.querySelector('summary');
+    if (!body || !summary) return;
+    const model = lineTableModel(target && target.__ctOpts);
+    if (!model || !model.rows.length) {
+      summary.textContent = '暫無數據表';
+      body.innerHTML = '<p class="cx-data-empty">此圖表暫時沒有可列出的每期數據。</p>';
+      return;
+    }
+    summary.textContent = `查看數據表（${model.rows.length} 期）`;
+    const head = `<tr><th scope="col">日期</th>${model.columns.map((label) => `<th scope="col">${esc(label)}</th>`).join('')}</tr>`;
+    const rows = model.rows.map((row) => `<tr><td>${esc(row.date)}</td>${row.values.map((value) => `<td>${esc(model.format(value))}</td>`).join('')}</tr>`).join('');
+    body.innerHTML = `<div class="cx-data-scroll"><table class="cx-data-table"><thead>${head}</thead><tbody>${rows}</tbody></table></div>`;
+  }
+
+  function mountDataTable(targetRef) {
+    const target = $(targetRef);
+    if (!target || !target.parentNode || target.dataset.cxTableMounted === '1') return null;
+    target.dataset.cxTableMounted = '1';
+    const details = document.createElement('details');
+    details.className = 'cx-data-details';
+    details.innerHTML = '<summary>查看數據表</summary><div class="cx-data-body"></div>';
+    target.insertAdjacentElement('afterend', details);
+    details.addEventListener('toggle', () => {
+      if (details.open) renderScreenTable(details, target);
+    });
+    if (typeof MutationObserver === 'function') {
+      const observer = new MutationObserver(() => {
+        if (details.open) renderScreenTable(details, target);
+      });
+      observer.observe(target, { childList: true });
+    }
+    return details;
+  }
+
   function mount(hostRef, options) {
     const host = $(hostRef);
     if (!host || host.dataset.cxMounted === '1') return null;
@@ -876,6 +1051,7 @@
 
     wrap.append(trigger, menu);
     host.appendChild(wrap);
+    if (resolve(opts.dataTable)) mountDataTable(opts.target);
 
     menu.addEventListener('click', (e) => {
       const item = e.target instanceof Element ? e.target.closest('[data-cx-format]') : null;

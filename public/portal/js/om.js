@@ -1086,6 +1086,7 @@
         return [metric, period].filter(Boolean).join(' · ');
       },
       filename: () => `NDRF_OM存貨走勢_${state.user?.display_name || state.user?.username || 'OM'}`,
+      dataTable: true,
     });
 
     cx.mount('om_share_export', {

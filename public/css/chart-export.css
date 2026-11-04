@@ -217,6 +217,64 @@ body.cx-zoom-lock { overflow: hidden !important; }
   .cx-zoom-stage { border-radius: 10px; }
 }
 
+/* ===========================================================================
+   畫面用「查看數據表」（匯出圖會自動包含同一個表）
+   =========================================================================== */
+.cx-data-details {
+  margin-top: 10px;
+  padding-top: 8px;
+  border-top: 1px solid #e8eef5;
+}
+.cx-data-details > summary {
+  cursor: pointer;
+  color: #0f5c9c;
+  font-size: 12.5px;
+  font-weight: 600;
+  list-style-position: inside;
+}
+.cx-data-details > summary:hover { color: #0a3d69; }
+.cx-data-details > summary:focus-visible {
+  outline: 2px solid rgba(15, 92, 156, .4);
+  outline-offset: 2px;
+}
+.cx-data-body { margin-top: 8px; }
+.cx-data-scroll {
+  max-height: 340px;
+  overflow: auto;
+  border: 1px solid #e3eef8;
+  border-radius: 8px;
+}
+.cx-data-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-family: inherit;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  background: #fff;
+}
+.cx-data-table th,
+.cx-data-table td {
+  padding: 5px 8px;
+  border-bottom: 1px solid #eef2f6;
+  text-align: right;
+  white-space: nowrap;
+}
+.cx-data-table th:first-child,
+.cx-data-table td:first-child { text-align: left; }
+.cx-data-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: #eef4fb;
+  color: #0a3d69;
+  font-weight: 700;
+}
+.cx-data-table tbody tr:nth-child(even) { background: #f8fbfe; }
+.cx-data-table tbody tr:last-child td { border-bottom: 0; }
+.cx-data-table td { color: #41505e; }
+.cx-data-table td:not(:first-child) { color: #253543; font-weight: 600; }
+.cx-data-empty { margin: 0; padding: 8px 0; color: #7a8894; font-size: 12px; }
+
 .cx-toast {
   position: fixed;
   left: 50%;

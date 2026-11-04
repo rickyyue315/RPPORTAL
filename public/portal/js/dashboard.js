@@ -409,6 +409,7 @@
         return [currentSite, period].filter(Boolean).join(' · ');
       },
       filename: () => `NDRF_存貨走勢_${currentSite || '本店'}`,
+      dataTable: true,
     });
   }
 

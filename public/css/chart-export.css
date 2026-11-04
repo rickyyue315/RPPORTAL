@@ -1,9 +1,11 @@
 /* ===========================================================================
-   圖表匯出（chart-export.js）：後台與 Portal 共用
+   圖表工具（chart-export.js / chart-zoom.js）：後台與 Portal 共用
    =========================================================================== */
-.chart-export-host {
+.chart-export-host,
+.chart-zoom-host {
   display: inline-flex;
   align-items: center;
+  gap: 6px;
   flex: 0 0 auto;
 }
 
@@ -13,7 +15,9 @@
   align-items: center;
 }
 
-.cx-btn {
+/* 「匯出圖表」與「放大」共用同一套按鈕外觀 */
+.cx-btn,
+.cx-zoom-btn {
   list-style: none;
   display: inline-flex;
   align-items: center;
@@ -37,10 +41,16 @@
   font-size: 10px;
   opacity: .7;
 }
-.cx-btn:hover { background: #f4f8fc; border-color: #9fc2df; }
-.cx-btn:focus-visible {
+.cx-btn:hover,
+.cx-zoom-btn:hover { background: #f4f8fc; border-color: #9fc2df; }
+.cx-btn:focus-visible,
+.cx-zoom-btn:focus-visible {
   outline: 2px solid rgba(15, 92, 156, .4);
   outline-offset: 2px;
+}
+.cx-zoom-btn[aria-pressed="true"] {
+  background: #eef4fb;
+  border-color: #9fc2df;
 }
 .cx-wrap[open] .cx-btn {
   background: #eef4fb;
@@ -89,6 +99,122 @@
 .cx-item span {
   color: #7a8894;
   font-size: 11.5px;
+}
+
+/* ===========================================================================
+   放大圖表 overlay（直接搬移原卡片，保留 tooltip／點按／橫向滑動）
+   =========================================================================== */
+body.cx-zoom-lock { overflow: hidden !important; }
+
+.cx-zoom-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 3000;
+  display: flex;
+  align-items: stretch;
+  justify-content: center;
+  padding: clamp(8px, 2vw, 20px);
+  background: rgba(9, 20, 33, .64);
+  overflow: hidden;
+}
+
+.cx-zoom-shell {
+  display: flex;
+  flex-direction: column;
+  width: min(1800px, 100%);
+  min-height: 0;
+  margin: auto;
+}
+
+.cx-zoom-bar {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 0 2px 10px;
+  color: #fff;
+}
+.cx-zoom-title { font-size: 14px; font-weight: 700; }
+.cx-zoom-hint {
+  margin-left: auto;
+  font-size: 11.5px;
+  color: rgba(255, 255, 255, .72);
+}
+.cx-zoom-close {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 34px;
+  padding: 5px 14px;
+  border: 1px solid rgba(255, 255, 255, .35);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, .12);
+  color: #fff;
+  font-family: inherit;
+  font-size: 12.5px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.cx-zoom-close:hover { background: rgba(255, 255, 255, .22); }
+.cx-zoom-close:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
+
+.cx-zoom-stage {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
+  background: #fff;
+  border-radius: 14px;
+  box-shadow: 0 24px 70px rgba(0, 0, 0, .35);
+}
+.cx-zoom-stage > * {
+  width: 100% !important;
+  max-width: none !important;
+  margin-top: 0 !important;
+  margin-bottom: 0 !important;
+}
+.cx-zoom-stage > .card {
+  border: 0 !important;
+  border-radius: 14px !important;
+  box-shadow: none !important;
+}
+
+/* 放大後的圖表尺寸：線圖拉高、棒圖拉高並顯示更多直排店名 */
+.cx-zoomed .stk-chart {
+  height: clamp(280px, 50vh, 600px);
+}
+.cx-zoomed .dash-chart {
+  aspect-ratio: auto;
+  max-height: none;
+  height: clamp(280px, 50vh, 600px);
+}
+.cx-zoomed .stk-share-plot {
+  height: clamp(240px, 42vh, 520px);
+}
+.cx-zoomed .stk-share-plot-wrap {
+  padding-top: clamp(54px, 7vh, 72px);
+}
+.cx-zoomed .stk-share-shop {
+  flex-basis: clamp(64px, 9vh, 92px);
+  height: auto;
+}
+.cx-zoomed .om-share-plot {
+  height: clamp(240px, 42vh, 520px);
+}
+.cx-zoomed .om-share-scroll {
+  padding-top: clamp(54px, 7vh, 72px);
+}
+.cx-zoomed .om-share-shop {
+  flex-basis: clamp(64px, 9vh, 92px);
+  height: auto;
+}
+
+@media (max-width: 640px) {
+  .cx-zoom-overlay { padding: 6px; }
+  .cx-zoom-bar { padding-bottom: 7px; }
+  .cx-zoom-hint { display: none; }
+  .cx-zoom-stage { border-radius: 10px; }
 }
 
 .cx-toast {

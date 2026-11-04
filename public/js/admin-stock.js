@@ -1196,10 +1196,27 @@
     }
   }
 
-  /* ==================== 圖表匯出（PDF／SVG／JPG／PNG） ==================== */
+  /* ==================== 圖表放大／匯出（PDF／SVG／JPG／PNG） ==================== */
 
   function mountChartExports() {
     const cx = globalThis.ChartExport;
+    const cz = globalThis.ChartZoom;
+
+    if (cz) {
+      cz.mount('stk_share_export', {
+        target: () => $('stk_group_dashboard'),
+        dialogLabel: '當月 MTD 不良 SKU 佔比排名',
+      });
+      cz.mount('stk_trend_export', {
+        target: () => $('stk_chart')?.closest('.card'),
+        dialogLabel: '佔比趨勢（不良存貨 ÷ 店舖存貨）',
+      });
+      cz.mount('stk_rf_chart_export', {
+        target: () => $('stk_rf_dashboard'),
+        dialogLabel: 'No. of RF SKU Dashboard',
+      });
+    }
+
     if (!cx) return;
 
     cx.mount('stk_share_export', {

@@ -10,7 +10,7 @@
  *  4. tooltip / 點按（pointer 事件），觸控目標由 CSS 保證 ≥20px。
  *
  * 對外 API：
- *   globalThis.ChartLite = { renderLine, renderBarGrid, clear, barLabelIndices, weeklyLabelVisibility, dateTicks, niceMax, scaleX, toTime, buildPath, splitIndex, fmtDay }
+ *   globalThis.ChartLite = { renderLine, renderBarGrid, redraw, clear, barLabelIndices, weeklyLabelVisibility, dateTicks, niceMax, scaleX, toTime, buildPath, splitIndex, fmtDay }
  *
  * renderLine(el, opts) 的 opts：
  *   series: [{ key, label, color, dashed, splitDate, colorBefore, points: [{ date:'YYYY-MM-DD', value:Number|null, showLabel?:Boolean }] }]  // 最多 3 條
@@ -277,6 +277,7 @@
     if (!el || typeof document === 'undefined') return null;
     const o = opts || {};
     el.__ctOpts = o;
+    el.__ctRenderer = renderLine;
     stopObserving(el);
     el.innerHTML = '';
 
@@ -576,6 +577,7 @@
     if (!el || typeof document === 'undefined') return null;
     const o = opts || {};
     el.__ctOpts = o;
+    el.__ctRenderer = renderBarGrid;
     stopObserving(el);
     el.innerHTML = '';
 
@@ -802,12 +804,20 @@
     if (!el) return;
     stopObserving(el);
     el.__ctOpts = null;
+    el.__ctRenderer = null;
     el.innerHTML = '';
+  }
+
+  /** 用最後一次 render 的 opts 重畫（尺寸改變／由放大模式返回時用）。 */
+  function redraw(el) {
+    if (!el || !el.__ctOpts) return null;
+    return (el.__ctRenderer || renderLine)(el, el.__ctOpts);
   }
 
   const ChartLite = {
     renderLine,
     renderBarGrid,
+    redraw,
     clear,
     barLabelIndices,
     weeklyLabelVisibility,

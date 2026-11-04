@@ -22,6 +22,7 @@ const VERSIONED_ASSETS = [
   '/js/admin-designated-sku.js',
   '/js/chart-lite.js',
   '/js/chart-export.js',
+  '/js/chart-zoom.js',
   '/css/chart-export.css',
   '/portal/css/portal.css',
   '/css/style.css',
@@ -162,6 +163,7 @@ describe('static asset freshness', () => {
 
     // 後台：店舖佔比棒圖、佔比趨勢線圖、RF SKU 走勢線圖
     expect(adminHtml).toContain('/js/chart-export.js');
+    expect(adminHtml).toContain('/js/chart-zoom.js');
     expect(adminHtml).toContain('/css/chart-export.css');
     expect(adminHtml).toContain('id="stk_share_export"');
     expect(adminHtml).toContain('id="stk_trend_export"');
@@ -169,18 +171,26 @@ describe('static asset freshness', () => {
     expect(adminScript).toContain("cx.mount('stk_share_export'");
     expect(adminScript).toContain("cx.mount('stk_trend_export'");
     expect(adminScript).toContain("cx.mount('stk_rf_chart_export'");
+    expect(adminScript).toContain("cz.mount('stk_share_export'");
+    expect(adminScript).toContain("cz.mount('stk_trend_export'");
+    expect(adminScript).toContain("cz.mount('stk_rf_chart_export'");
 
     // OM：存貨走勢 + 管轄店舖排名
     expect(omHtml).toContain('/js/chart-export.js');
+    expect(omHtml).toContain('/js/chart-zoom.js');
     expect(omHtml).toContain('id="om_stock_export"');
     expect(omHtml).toContain('id="om_share_export"');
     expect(omScript).toContain("cx.mount('om_stock_export'");
     expect(omScript).toContain("cx.mount('om_share_export'");
+    expect(omScript).toContain("cz.mount('om_stock_export'");
+    expect(omScript).toContain("cz.mount('om_share_export'");
 
     // 店舖端：每週存貨走勢
     expect(storeHtml).toContain('/js/chart-export.js');
+    expect(storeHtml).toContain('/js/chart-zoom.js');
     expect(storeHtml).toContain('id="dash_chart_export"');
     expect(storeScript).toContain("ChartExport.mount('dash_chart_export'");
+    expect(storeScript).toContain("ChartZoom.mount('dash_chart_export'");
   });
 
   it('wires the designated SKU reply page, admin tab and direct link', () => {

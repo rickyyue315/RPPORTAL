@@ -1057,11 +1057,24 @@
   }
 
   /* ------------------------------------------------------------------ */
-  /* 圖表匯出（PDF／SVG／JPG／PNG）                                      */
+  /* 圖表放大／匯出（PDF／SVG／JPG／PNG）                                  */
   /* ------------------------------------------------------------------ */
 
   function mountChartExports() {
     const cx = globalThis.ChartExport;
+    const cz = globalThis.ChartZoom;
+
+    if (cz) {
+      cz.mount('om_stock_export', {
+        target: () => $('om_stock_chart_card'),
+        dialogLabel: '存貨走勢',
+      });
+      cz.mount('om_share_export', {
+        target: () => $('om_share_card'),
+        dialogLabel: '管轄店舖不良佔比排名',
+      });
+    }
+
     if (!cx) return;
 
     cx.mount('om_stock_export', {

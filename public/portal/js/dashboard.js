@@ -391,7 +391,14 @@
     }
   }
 
-  /* ---------- 圖表匯出（PDF／SVG／JPG／PNG） ---------- */
+  /* ---------- 圖表放大／匯出（PDF／SVG／JPG／PNG） ---------- */
+
+  if (globalThis.ChartZoom && $('dash_chart_export')) {
+    globalThis.ChartZoom.mount('dash_chart_export', {
+      target: () => $('dash_chart_card'),
+      dialogLabel: '每週不良存貨佔比',
+    });
+  }
 
   if (globalThis.ChartExport && $('dash_chart_export')) {
     globalThis.ChartExport.mount('dash_chart_export', {

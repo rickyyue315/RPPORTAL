@@ -191,6 +191,15 @@ export interface ZeroSalesSummary {
   no_reply_batches: number;
   locked: number;
   reply_rate: number;
+  /**
+   * 已回覆之中，仍屬「系統自動套用上次回覆」的行數（店舖未確認、未修改）。
+   * 這些行計入 replied / reply_rate，但唔係店舖今週真的跟進過。
+   */
+  auto_filled: number;
+  /** 店舖自行提交（或已確認／修改）的回覆行數 = replied − auto_filled */
+  store_confirmed: number;
+  /** 只計店舖自行回覆的回覆率（分母與 reply_rate 相同），用來看真實跟進程度 */
+  reply_rate_confirmed: number;
   stores_total: number;
   stores_pending: number;
   stores_overdue: number;
@@ -204,6 +213,8 @@ export interface ZeroSalesSummary {
     week_label: string;
     total: number;
     replied: number;
+    /** 該週次已回覆之中，仍屬系統自動套用的行數 */
+    auto_filled: number;
     pending: number;
     stores_total: number;
     stores_pending: number;
@@ -259,6 +270,7 @@ export async function getZeroSalesSummary(batchId?: string): Promise<ZeroSalesSu
     no_reply_batches: string;
     total: string;
     replied: string;
+    auto_filled: string;
     replied_required: string;
     no_reply: string;
     pending: string;
@@ -275,6 +287,8 @@ export async function getZeroSalesSummary(batchId?: string): Promise<ZeroSalesSu
         ${batchId ? 'AND b.id = $1' : ''}) AS no_reply_batches,
       (SELECT count(*)::text FROM zero_sales_items i WHERE TRUE ${batchFilter}) AS total,
       (SELECT count(*)::text FROM zero_sales_items i WHERE i.status = 'replied' ${batchFilter}) AS replied,
+      (SELECT count(*)::text FROM zero_sales_items i
+        WHERE i.status = 'replied' AND i.auto_filled_at IS NOT NULL ${batchFilter}) AS auto_filled,
       (SELECT count(*)::text FROM zero_sales_items i WHERE i.status = 'replied' AND NOT (${noReplyFilter}) ${batchFilter}) AS replied_required,
       (SELECT count(*)::text FROM zero_sales_items i WHERE TRUE AND (${noReplyFilter}) ${batchFilter}) AS no_reply,
       (SELECT count(*)::text FROM zero_sales_items i WHERE i.status = 'pending' AND (${openFilter}) ${batchFilter}) AS pending,
@@ -289,10 +303,13 @@ export async function getZeroSalesSummary(batchId?: string): Promise<ZeroSalesSu
   const o = overall.rows[0]!;
   const total = Number(o.total ?? 0);
   const replied = Number(o.replied ?? 0);
+  const autoFilled = Number(o.auto_filled ?? 0);
   const noReply = Number(o.no_reply ?? 0);
   // 回覆率只針對「需要回覆」的行，避免無須回覆的週次拖低比率
   const requiredTotal = Math.max(0, total - noReply);
   const repliedRequired = Number(o.replied_required ?? 0);
+  // 扣除系統自動套用後，才是店舖今週真的提交過的數目（自動套用只會出現在需要回覆的週次）
+  const confirmedRequired = Math.max(0, repliedRequired - autoFilled);
   const pending = Number(o.pending ?? 0);
   const storesTotal = Number(o.stores_total ?? 0);
   const storesPending = Number(o.stores_pending ?? 0);
@@ -380,6 +397,7 @@ export async function getZeroSalesSummary(batchId?: string): Promise<ZeroSalesSu
     week_label: string;
     total: string;
     replied: string;
+    auto_filled: string;
     pending: string;
     stores_total: string;
     stores_pending: string;
@@ -390,6 +408,8 @@ export async function getZeroSalesSummary(batchId?: string): Promise<ZeroSalesSu
     `SELECT b.id, b.week_label, b.created_at, b.closed_at, b.reply_required,
             (SELECT count(*)::text FROM zero_sales_items i WHERE i.batch_id = b.id) AS total,
             (SELECT count(*)::text FROM zero_sales_items i WHERE i.batch_id = b.id AND i.status = 'replied') AS replied,
+            (SELECT count(*)::text FROM zero_sales_items i
+              WHERE i.batch_id = b.id AND i.status = 'replied' AND i.auto_filled_at IS NOT NULL) AS auto_filled,
             (SELECT count(*)::text FROM zero_sales_items i WHERE i.batch_id = b.id AND i.status = 'pending') AS pending,
             (SELECT count(DISTINCT i.site_code)::text FROM zero_sales_items i WHERE i.batch_id = b.id) AS stores_total,
             (SELECT count(DISTINCT i.site_code)::text FROM zero_sales_items i WHERE i.batch_id = b.id AND i.status = 'pending') AS stores_pending
@@ -419,6 +439,11 @@ export async function getZeroSalesSummary(batchId?: string): Promise<ZeroSalesSu
     no_reply_batches: Number(o.no_reply_batches ?? 0),
     locked: Number(o.locked ?? 0),
     reply_rate: requiredTotal ? Math.min(100, Math.round((repliedRequired / requiredTotal) * 1000) / 10) : 0,
+    auto_filled: autoFilled,
+    store_confirmed: Math.max(0, replied - autoFilled),
+    reply_rate_confirmed: requiredTotal
+      ? Math.min(100, Math.round((confirmedRequired / requiredTotal) * 1000) / 10)
+      : 0,
     stores_total: storesTotal,
     stores_pending: storesPending,
     stores_overdue: storesOverdue,
@@ -431,6 +456,7 @@ export async function getZeroSalesSummary(batchId?: string): Promise<ZeroSalesSu
           week_label: lb.week_label,
           total: Number(lb.total ?? 0),
           replied: Number(lb.replied ?? 0),
+          auto_filled: Number(lb.auto_filled ?? 0),
           // 無須回覆的週次：pending 一律顯示 0，避免變成清不完的待辦
           pending: lb.reply_required === false ? 0 : Number(lb.pending ?? 0),
           stores_total: Number(lb.stores_total ?? 0),

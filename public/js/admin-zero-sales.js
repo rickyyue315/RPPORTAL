@@ -61,6 +61,15 @@
     const el = $(id);
     if (el) el.textContent = v;
   }
+  /** 只供本檔自己砌的 HTML（數字 + 說明小字），所有文字必須先經 esc() */
+  function setHtml(id, html) {
+    const el = $(id);
+    if (el) el.innerHTML = html;
+  }
+  /** KPI 主數字 + 可選第二行小字（例如「其中 210 自動套用」） */
+  function kpiWithSub(value, sub) {
+    return `${esc(String(value))}${sub ? `<span class="zs-kpi-sub">${esc(sub)}</span>` : ''}`;
+  }
 
   /* ISO 8601 週次（星期一開始，適用 2026/2027/2028 及任何年份） */
   function parseDateInput(str) {
@@ -413,10 +422,11 @@
       const o = overall;
       setText('s_zs_total_batches', `${o.batches ?? 0} 個批次`);
       setText('s_zs_total', String(o.total ?? 0));
-      setText('s_zs_replied', String(o.replied ?? 0));
+      // 自動套用的行計入「已回覆」，但店舖今週其實未跟進過，所以另開一行講清楚
+      setHtml('s_zs_replied', kpiWithSub(o.replied ?? 0, o.auto_filled ? `其中 ${o.auto_filled} 自動套用` : ''));
       setText('s_zs_pending', String(o.pending ?? 0));
       setText('s_zs_overdue', String(o.overdue ?? 0));
-      setText('s_zs_rate', `${o.reply_rate ?? 0}%`);
+      setHtml('s_zs_rate', kpiWithSub(`${o.reply_rate ?? 0}%`, o.auto_filled ? `店舖自行 ${o.reply_rate_confirmed ?? 0}%` : ''));
       setText('s_zs_stores', `${o.stores_total ?? 0} / ${o.stores_pending ?? 0}`);
       const lbOverall = o.latest_batch;
       if (lbOverall) {
@@ -425,13 +435,22 @@
         const noReply = lbOverall.reply_required === false;
         setText('s_zs_latest_week', `${lbOverall.week_label} · ${noReply ? '本週無須回覆' : (open ? '開放中' : '已封存')}`);
         setText('l_zs_total', String(lbOverall.total ?? 0));
-        setText('l_zs_replied', String(lbOverall.replied ?? 0));
+        setHtml('l_zs_replied', kpiWithSub(
+          lbOverall.replied ?? 0,
+          lbOverall.auto_filled ? `其中 ${lbOverall.auto_filled} 自動套用` : '',
+        ));
         setText('l_zs_pending', noReply ? '—' : (open ? String(lbOverall.pending ?? 0) : '—'));
         setText('l_zs_overdue', noReply ? '—' : (open ? '—' : String(lbOverall.pending ?? 0)));
         const lbRate = (lbOverall.total && !noReply)
           ? Math.round((lbOverall.replied / lbOverall.total) * 1000) / 10
           : null;
-        setText('l_zs_rate', lbRate === null ? '—' : `${lbRate}%`);
+        const lbAuto = Number(lbOverall.auto_filled ?? 0);
+        const lbConfirmedRate = (lbRate !== null && lbAuto > 0)
+          ? Math.round(((lbOverall.replied - lbAuto) / lbOverall.total) * 1000) / 10
+          : null;
+        setHtml('l_zs_rate', lbRate === null
+          ? '—'
+          : kpiWithSub(`${lbRate}%`, lbConfirmedRate === null ? '' : `店舖自行 ${lbConfirmedRate}%`));
         setText('l_zs_stores', `${lbOverall.stores_total ?? 0} / ${(open && !noReply) ? (lbOverall.stores_pending ?? 0) : '—'}`);
       } else {
         setText('s_zs_latest_week', '暫無批次');
@@ -458,7 +477,7 @@
         const head = scopeBatch
           ? `批次 <b>${esc(scopeLabel || scopeBatch.slice(0, 8))}</b>｜`
           : `共 <b>${s.batches}</b> 個批次｜`;
-        statBox.innerHTML = `${head}總 <b>${s.total}</b> 行${s.no_reply ? `（含 <b>${s.no_reply}</b> 行無須回覆）` : ''}｜已回覆 <b class="text-success">${s.replied}</b>｜未回覆 <b class="text-danger">${s.pending}</b>${s.overdue ? `｜逾期未回覆 <b class="text-secondary">${s.overdue}</b>（已封存）` : ''}｜回覆率 <b>${s.reply_rate}%</b>｜涉及 <b>${s.stores_total}</b> 間店（<b>${s.stores_pending}</b> 間仍有待回覆${s.stores_overdue ? `，<b>${s.stores_overdue}</b> 間有逾期未回覆` : ''}，<b>${s.stores_done}</b> 間已完成）｜已鎖定（用完修改） <b>${s.locked}</b> 行`
+        statBox.innerHTML = `${head}總 <b>${s.total}</b> 行${s.no_reply ? `（含 <b>${s.no_reply}</b> 行無須回覆）` : ''}｜已回覆 <b class="text-success">${s.replied}</b>${s.auto_filled ? `（其中 <b>${s.auto_filled}</b> 行系統自動套用，店舖未確認）` : ''}｜未回覆 <b class="text-danger">${s.pending}</b>${s.overdue ? `｜逾期未回覆 <b class="text-secondary">${s.overdue}</b>（已封存）` : ''}｜回覆率 <b>${s.reply_rate}%</b>${s.auto_filled ? `（店舖自行 <b>${s.reply_rate_confirmed}%</b>）` : ''}｜涉及 <b>${s.stores_total}</b> 間店（<b>${s.stores_pending}</b> 間仍有待回覆${s.stores_overdue ? `，<b>${s.stores_overdue}</b> 間有逾期未回覆` : ''}，<b>${s.stores_done}</b> 間已完成）｜已鎖定（用完修改） <b>${s.locked}</b> 行`
           + (scopeBatch ? '' : (s.repeat_groups ? `｜重複上榜 <b class="text-danger">${s.repeat_groups}</b> 組（${s.repeat_rows} 行）` : '｜重複上榜 0 組'))
           + (!scopeBatch && lb ? `<br>最新批次：<b>${esc(lb.week_label)}</b> ${lb.reply_required === false ? '（本週無須回覆）' : `${lb.replied}/${lb.total}（未 ${lb.pending}）`}｜${esc(lb.created_at)}` : '');
       }

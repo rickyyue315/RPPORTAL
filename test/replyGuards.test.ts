@@ -8,6 +8,7 @@ import { setPoolForTesting } from '../src/db/pool.js';
 import { replaceStores } from '../src/services/stores.js';
 import {
   createBatch as createZeroSalesBatch,
+  getZeroSalesSummary,
   replyItem as replyZeroSalesItem,
   ZeroSalesDuplicateBatchError,
   ZeroSalesReplyError,
@@ -419,5 +420,68 @@ describe('平台通告重新推送', () => {
     const result = await republishNotice(live.id, 'test');
     expect(result?.clearedEndsAt).toBe(false);
     expect(result?.notice.ends_at).not.toBeNull();
+  });
+});
+
+/* ------------------------------------------------------------------ */
+/* 統計：系統自動套用不可當成店舖真的回覆                              */
+/* ------------------------------------------------------------------ */
+
+describe('零銷售統計：自動套用分行列出', () => {
+  it('auto_filled 獨立計數，店舖自行回覆率會扣掉它', async () => {
+    const { batchId, itemId } = await seedOpenBatch('2026-W58-guard', 'hash-summary');
+    // 同一批次多一個 SKU，令分母 = 2
+    await db.query(
+      `INSERT INTO zero_sales_items (batch_id, site_code, sku, payload)
+       VALUES ($1, 'HA02', '1000002', '{}'::jsonb)`,
+      [batchId],
+    );
+    // 一行系統自動套用、一行店舖自己回覆
+    await db.query(
+      `UPDATE zero_sales_items
+          SET status = 'replied', reason_code = 'seasonal', reason_label = '4.季節性/非當季產品',
+              replied_at = now(), replied_by = '系統自動套用（2026-W40）',
+              reply_count = 1, reply_limit = 3,
+              auto_filled_at = now(), auto_filled_from_week = '2026-W40'
+        WHERE id = $1`,
+      [itemId],
+    );
+    await db.query(
+      `UPDATE zero_sales_items
+          SET status = 'replied', reason_code = 'no_display', reason_label = '1.無陳列/陳列位置不佳',
+              replied_at = now(), replied_by = 'HA02', reply_count = 1
+        WHERE batch_id = $1 AND sku = '1000002'`,
+      [batchId],
+    );
+
+    const summary = await getZeroSalesSummary(batchId);
+    expect(summary.replied).toBe(2);
+    expect(summary.auto_filled).toBe(1);
+    expect(summary.store_confirmed).toBe(1);
+    // 舊口徑維持不變（含自動套用），另給扣除此數的口徑
+    expect(summary.reply_rate).toBe(100);
+    expect(summary.reply_rate_confirmed).toBe(50);
+    expect(summary.latest_batch?.auto_filled).toBeGreaterThanOrEqual(0);
+  });
+
+  it('店舖確認／修改自動套用的行之後，該行不再計入 auto_filled', async () => {
+    const { batchId, itemId } = await seedOpenBatch('2026-W59-guard', 'hash-summary2');
+    await db.query(
+      `UPDATE zero_sales_items
+          SET status = 'replied', reason_code = 'seasonal', reason_label = '4.季節性/非當季產品',
+              replied_at = now(), replied_by = '系統自動套用（2026-W40）',
+              reply_count = 1, reply_limit = 3,
+              auto_filled_at = now(), auto_filled_from_week = '2026-W40'
+        WHERE batch_id = $1`,
+      [batchId],
+    );
+    expect((await getZeroSalesSummary(batchId)).auto_filled).toBe(1);
+
+    await storeReply(itemId, 'price_promo');
+
+    const summary = await getZeroSalesSummary(batchId);
+    expect(summary.auto_filled).toBe(0);
+    expect(summary.store_confirmed).toBe(1);
+    expect(summary.reply_rate_confirmed).toBe(100);
   });
 });

@@ -675,14 +675,12 @@
 
   function renderMtdRanking() {
     const wrap = $('stk_mtd_rank_body') || $('stk_mtd_rank');
-    const title = $('stk_mtd_title');
     const note = $('stk_mtd_note');
     if (!wrap) return;
     setResult('stk_mtd_error', 'info', '');
 
     const isSku = groupMetric === 'sku';
     const metricLabel = isSku ? '不良 SKU 佔比' : '不良存貨值佔比';
-    if (title) title.textContent = `當月 MTD ${metricLabel}排名`;
 
     if (!mtdWeekDate) {
       const hasSeries = normalizedSeries(summaryCache).length > 0;
@@ -696,11 +694,6 @@
       month: mtdWeekDate.slice(0, 7),
       is_current_month: true,
     };
-    if (title) {
-      title.textContent = period.is_current_month
-        ? `當月 MTD ${metricLabel}排名`
-        : `最新月份 MTD ${metricLabel}排名（${period.month}）`;
-    }
     const pick = isSku ? (row) => num(row.ovs_carry_ratio) : (row) => num(row.ratio);
     const wowOf = isSku ? (row) => num(row.ovs_carry_delta_pt) : (row) => num(row.wow_delta_pt);
     const allRows = Array.isArray(mtdWeekRows) ? mtdWeekRows : [];
@@ -797,6 +790,7 @@
 
   const MTD_RANK_DESC = '以本月最新一期快照計（MTD）；每店比率 = 該店分子 ÷ 分母，<b>不是全公司加權</b>（全公司加權見上方 KPI）。新店／上期無數據不參與排名，但仍計入全公司合計。';
   const MTD_SHARE_DESC = '以本月最新一期快照計（MTD）；按報表 Shop Nature（Local／Mix／Tourist）分成民生區／混合區／遊客區，可用 OM 下拉只看某位 OM 管轄的店舖。「全部」時上方顯示三組的店數／加權／最高摘要，下面用一條連續棒圖列出全部店舖（按比率由高至低、共用同一比例尺），可用分區按鈕只看其中一組。柱頂為百分比，整張圖可橫向滑動睇全部店舖；斜紋柱為新店／上期無數據，仍列出但不宜直接比較。';
+  const MTD_OM_DESC = '以本月最新一期快照計（MTD）；每位 OM 的比率 = <b>Σ轄下所有店舖分子 ÷ Σ所有店舖分母</b>（加權，不是各店平均），新店照計入加權合計。排行榜按上方口徑由高至低（第 1 位比率最高）；表內同時列出另一口徑與其名次作參考。按「看店舖」會切到店舖佔比並只顯示該 OM 管轄的店舖。';
   const MTD_SHARE_GROUPS = [
     { key: 'local', label: '民生區' },
     { key: 'mix', label: '混合區' },
@@ -826,10 +820,17 @@
   function applyMtdView() {
     const rank = $('stk_mtd_rank');
     const share = $('stk_mtd_share');
+    const om = $('stk_mtd_om');
     const desc = $('stk_mtd_desc');
     if (rank) rank.hidden = mtdView !== 'rank';
     if (share) share.hidden = mtdView !== 'share';
-    if (desc) desc.innerHTML = mtdView === 'share' ? MTD_SHARE_DESC : MTD_RANK_DESC;
+    if (om) om.hidden = mtdView !== 'om';
+    if (desc) {
+      desc.innerHTML = mtdView === 'share' ? MTD_SHARE_DESC
+        : mtdView === 'om' ? MTD_OM_DESC
+          : MTD_RANK_DESC;
+    }
+    updateMtdTitle();
     applyShareNature();
     document.querySelectorAll('[data-stk-mtd-view]').forEach((btn) => {
       const active = btn.dataset.stkMtdView === mtdView;
@@ -838,10 +839,32 @@
     });
   }
 
-  /** 兩個 MTD 視圖一齊畫，最後只顯示 mtdView 揀嘅一個 */
+  /** 標題跟隨視圖與口徑：OM 綜合排名標題固定，其餘顯示目前口徑。 */
+  function updateMtdTitle() {
+    const title = $('stk_mtd_title');
+    if (!title) return;
+    const isSku = groupMetric === 'sku';
+    const metricLabel = isSku ? '不良 SKU 佔比' : '不良存貨值佔比';
+    const viewLabel = mtdView === 'om' ? 'OM 綜合排名' : `${metricLabel}排名`;
+    if (!mtdWeekDate) {
+      title.textContent = `最新月份 MTD ${viewLabel}`;
+      return;
+    }
+    const period = mtdPeriodInfo || {
+      date: mtdWeekDate,
+      month: mtdWeekDate.slice(0, 7),
+      is_current_month: true,
+    };
+    title.textContent = period.is_current_month
+      ? `當月 MTD ${viewLabel}`
+      : `最新月份 MTD ${viewLabel}（${period.month}）`;
+  }
+
+  /** 三個 MTD 視圖一齊畫，最後只顯示 mtdView 揀嘅一個 */
   function renderMtd() {
     renderMtdRanking();
     renderMtdShare();
+    renderMtdOm();
     applyMtdView();
   }
 
@@ -1069,6 +1092,205 @@
       : '全部店舖按比率由高至低排，柱高共用同一比例尺；上方顯示各 Shop Nature 的店數／加權／最高。若某店遠高於全體，柱高改以次高值為滿格、超出者頂部加白線標示。斜紋柱為新店／上期無數據，仍列出但不宜直接比較。按一下任何一條柱可跳到該店明細。');
 
     target.innerHTML = `${chartHtml}<p class="text-secondary small mt-2 mb-0">${plotNote}</p>`;
+  }
+
+  /* ---- OM 綜合排名：每位 OM 轄下所有店舖的分子／分母相加後排名 ---- */
+
+  /**
+   * 每位 OM 一行；比率一律用「Σ分子 ÷ Σ分母」加權（與全公司 KPI／group trend 一致），
+   * 不是各店比率平均。新店照計入加權合計（與全公司 KPI 一致），只在店數旁標示。
+   */
+  function renderMtdOm() {
+    const body = $('stk_om_body');
+    const scope = $('stk_om_scope');
+    if (!body) return;
+
+    const isSku = groupMetric === 'sku';
+    const defs = {
+      sku: {
+        key: 'sku',
+        label: '不良 SKU 佔比',
+        hint: 'Σ不良 SKU ÷ ΣSKU Carry',
+        alert: OVS_CARRY_RATIO_ALERT,
+        color: COLOR_RF,
+        pick: (g) => g.skuRatio,
+        detail: (g) => (g.hasSkuDen ? `${fmtInt(g.skuNum)} ÷ ${fmtInt(g.skuDen)}` : '—'),
+      },
+      value: {
+        key: 'value',
+        label: '不良存貨值佔比',
+        hint: 'Σ不良存貨值 ÷ Σ存貨值',
+        alert: 0.1,
+        color: COLOR_MAIN,
+        pick: (g) => g.valueRatio,
+        detail: (g) => (g.hasValueDen ? `${fmtMoney(g.valueNum)} ÷ ${fmtMoney(g.valueDen)}` : '—'),
+      },
+    };
+    const current = isSku ? defs.sku : defs.value;
+    const other = isSku ? defs.value : defs.sku;
+    const allRows = Array.isArray(mtdWeekRows) ? mtdWeekRows : [];
+
+    if (!mtdWeekDate || !allRows.length) {
+      if (scope) scope.textContent = '';
+      body.innerHTML = `<div class="text-secondary small">${mtdWeekDate
+        ? '此期沒有店舖數據。'
+        : '上載存貨報表後會顯示 OM 綜合排名。'}</div>`;
+      return;
+    }
+
+    // 以該期每店明細即時分組；未設定 OM 的店舖照列，避免加總與全公司數字對不上
+    const unassignedKey = '\u0000unassigned';
+    const groupMap = new Map();
+    for (const row of allRows) {
+      const om = String(row.om || '').trim();
+      const key = om || unassignedKey;
+      let group = groupMap.get(key);
+      if (!group) {
+        group = {
+          key,
+          om,
+          isUnassigned: !om,
+          label: om || '未設定 OM',
+          rows: [],
+          newCount: 0,
+          skuNum: 0,
+          skuDen: 0,
+          hasSkuDen: false,
+          valueNum: 0,
+          valueDen: 0,
+          hasValueDen: false,
+        };
+        groupMap.set(key, group);
+      }
+      group.rows.push(row);
+      if (row.is_new) group.newCount += 1;
+
+      const skuCount = num(row.sku_count_0sale);
+      if (skuCount !== null) group.skuNum += skuCount;
+      const carry = num(row.sku_carry_count);
+      if (carry !== null && carry > 0) {
+        group.skuDen += carry;
+        group.hasSkuDen = true;
+      }
+
+      // 與後端 group trend 一致：分母只計 SOH > 0，缺值分子不會當成 0 以外的數
+      const soh = num(row.shop_stock_value);
+      if (soh !== null && soh > 0) {
+        group.valueDen += soh;
+        group.hasValueDen = true;
+        const excess = num(row.deadstock_value);
+        if (excess !== null) group.valueNum += excess;
+      }
+    }
+
+    const groups = [...groupMap.values()];
+    for (const group of groups) {
+      group.skuRatio = group.hasSkuDen ? group.skuNum / group.skuDen : null;
+      group.valueRatio = group.hasValueDen ? group.valueNum / group.valueDen : null;
+    }
+
+    const labelCompare = (a, b) => String(a.label).localeCompare(String(b.label), 'zh-Hant');
+    const assignRanks = (def) => {
+      const ranked = groups
+        .filter((group) => def.pick(group) !== null)
+        .sort((a, b) => (def.pick(b) || 0) - (def.pick(a) || 0) || labelCompare(a, b));
+      let lastValue = null;
+      let lastRank = 0;
+      ranked.forEach((group, index) => {
+        const value = def.pick(group);
+        if (lastValue !== null && value === lastValue) {
+          group[`${def.key}Rank`] = lastRank;
+        } else {
+          group[`${def.key}Rank`] = index + 1;
+          lastValue = value;
+          lastRank = index + 1;
+        }
+      });
+    };
+    assignRanks(defs.sku);
+    assignRanks(defs.value);
+
+    const sorted = groups.slice().sort((a, b) => {
+      const av = current.pick(a);
+      const bv = current.pick(b);
+      if (av === null && bv === null) return labelCompare(a, b);
+      if (av === null) return 1;
+      if (bv === null) return -1;
+      if (bv !== av) return bv - av;
+      return labelCompare(a, b);
+    });
+
+    const companySkuNum = groups.reduce((sum, group) => sum + group.skuNum, 0);
+    const companySkuDen = groups.reduce((sum, group) => sum + group.skuDen, 0);
+    const companyValueNum = groups.reduce((sum, group) => sum + group.valueNum, 0);
+    const companyValueDen = groups.reduce((sum, group) => sum + group.valueDen, 0);
+    const companySku = companySkuDen > 0 ? companySkuNum / companySkuDen : null;
+    const companyValue = companyValueDen > 0 ? companyValueNum / companyValueDen : null;
+    const omCount = groups.filter((group) => !group.isUnassigned).length;
+    const totalStores = groups.reduce((sum, group) => sum + group.rows.length, 0);
+    const totalNew = groups.reduce((sum, group) => sum + group.newCount, 0);
+
+    if (scope) {
+      scope.textContent = [
+        `${omCount} 位 OM${groups.some((group) => group.isUnassigned) ? '＋未設定' : ''} · ${totalStores} 店`,
+        `全公司加權：SKU ${fmtRatio(companySku)} · 存貨值 ${fmtRatio(companyValue)}`,
+        `按${current.label}由高至低（第 1 位比率最高）`,
+        totalNew ? `${totalNew} 間新店已計入加權` : '',
+      ].filter(Boolean).join('｜');
+    }
+
+    const currentMax = Math.max(0, ...groups.map((group) => current.pick(group) ?? 0));
+    const otherMax = Math.max(0, ...groups.map((group) => other.pick(group) ?? 0));
+
+    const metricCell = (group, def, max, isCurrent) => {
+      const ratio = def.pick(group);
+      const rank = group[`${def.key}Rank`];
+      const width = ratio === null || max <= 0
+        ? 0
+        : Math.max(1.5, Math.min(100, (ratio / max) * 100));
+      const alarm = ratio !== null && ratio >= def.alert;
+      return `<td class="text-end stk-om-metric${isCurrent ? ' is-current' : ''}">
+        <div class="stk-om-ratio-line">
+          <span class="stk-om-ratio${alarm ? ' text-danger' : ''}">${fmtRatio(ratio)}</span>
+          <span class="stk-om-rank${rank ? '' : ' is-empty'}" title="${escAttr(`${def.label}名次（1 = 最高）`)}">${rank ? `#${rank}` : '—'}</span>
+        </div>
+        <span class="stk-om-track"><i style="width:${width.toFixed(1)}%;background:${alarm ? '#c0392b' : def.color}"></i></span>
+        <div class="stk-om-detail">${def.detail(group)}</div>
+      </td>`;
+    };
+
+    body.innerHTML = `<div class="table-responsive stk-om-wrap">
+      <table class="table table-vcenter table-hover card-table stk-om-table">
+        <thead><tr>
+          <th scope="col">#</th>
+          <th scope="col">OM</th>
+          <th scope="col" class="text-end">店數</th>
+          <th scope="col" class="text-end${isSku ? ' is-current' : ''}">${defs.sku.label}<small>${defs.sku.hint}</small></th>
+          <th scope="col" class="text-end${isSku ? '' : ' is-current'}">${defs.value.label}<small>${defs.value.hint}</small></th>
+          <th scope="col"></th>
+        </tr></thead>
+        <tbody>
+          ${sorted.map((group) => {
+            const rank = group[`${current.key}Rank`];
+            const newHint = group.newCount ? `${group.newCount} 間新店` : '';
+            return `<tr class="stk-om-row${group.isUnassigned ? ' is-unassigned' : ''}">
+              <td class="stk-om-pos">${rank ? `#${rank}` : '—'}</td>
+              <td>
+                <div class="stk-om-name">${esc(group.label)}</div>
+                ${newHint ? `<div class="stk-om-meta">${newHint}</div>` : ''}
+              </td>
+              <td class="text-end stk-om-stores">${group.rows.length}</td>
+              ${metricCell(group, defs.sku, currentMax, isSku)}
+              ${metricCell(group, defs.value, otherMax, !isSku)}
+              <td class="text-end">${group.isUnassigned
+                ? '<span class="text-secondary small">—</span>'
+                : `<button class="btn btn-sm" type="button" data-stk-om-share="${escAttr(group.om)}">看店舖</button>`}</td>
+            </tr>`;
+          }).join('')}
+        </tbody>
+      </table>
+    </div>
+    <p class="text-secondary small mt-2 mb-0">加權比率會把大店舖的影響放大，與「各店比率平均」不同；新店首期存貨通常偏高，已照計入加權並在店數旁標示。按「看店舖」可切到店舖佔比並只顯示該 OM 的店舖。</p>`;
   }
 
   async function loadMtdWeek() {
@@ -2273,17 +2495,35 @@
       });
     }
 
-    // MTD 顯示方式切換：排行榜（Top 15 表格）／店舖佔比（分區柱狀排名）
+    // MTD 顯示方式切換：排行榜（Top 15 表格）／店舖佔比（分區柱狀排名）／OM 綜合排名
     const mtdSwitch = $('stk_mtd_switch');
     if (mtdSwitch) {
       mtdSwitch.addEventListener('click', (e) => {
         const btn = e.target instanceof Element ? e.target.closest('[data-stk-mtd-view]') : null;
         if (!btn) return;
-        const next = btn.dataset.stkMtdView === 'share' ? 'share' : 'rank';
+        const next = ['share', 'om', 'rank'].includes(btn.dataset.stkMtdView)
+          ? btn.dataset.stkMtdView
+          : 'rank';
         if (next === mtdView) return;
         mtdView = next;
         try { localStorage.setItem('ndrf_admin_stock_mtd_view_v2', mtdView); } catch { /* 私隱模式不可寫，照用記憶體狀態 */ }
         applyMtdView();
+      });
+    }
+
+    // OM 綜合排名：「看店舖」切到店舖佔比並以該 OM 篩選
+    const mtdOm = $('stk_mtd_om');
+    if (mtdOm) {
+      mtdOm.addEventListener('click', (e) => {
+        const btn = e.target instanceof Element ? e.target.closest('[data-stk-om-share]') : null;
+        if (!btn) return;
+        const om = String(btn.dataset.stkOmShare || '').trim();
+        if (!om) return;
+        shareOm = om;
+        mtdView = 'share';
+        try { localStorage.setItem('ndrf_admin_stock_mtd_view_v2', mtdView); } catch { /* 私隱模式不可寫，照用記憶體狀態 */ }
+        applyMtdView();
+        renderMtdShare();
       });
     }
 
@@ -2398,10 +2638,10 @@
   function init() {
     const panel = $('panel-stock');
     if (!panel) return;
-    // 上次揀嘅 MTD 視圖（排行榜／店舖佔比）；讀不到就維持預設排行榜
+    // 上次揀嘅 MTD 視圖（排行榜／店舖佔比／OM 綜合排名）；讀不到就維持預設排行榜
     try {
       const saved = localStorage.getItem('ndrf_admin_stock_mtd_view_v2');
-      if (saved === 'share' || saved === 'rank') mtdView = saved;
+      if (saved === 'share' || saved === 'rank' || saved === 'om') mtdView = saved;
     } catch { /* 私隱模式不可讀，用預設值 */ }
     bindEvents();
     mountChartExports();

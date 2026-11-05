@@ -127,6 +127,14 @@ describe('static asset freshness', () => {
     expect(script).toContain('renderMtdShare');
     expect(script).toContain('stk-share-col');
     expect(script).toContain('natureGroupKey');
+    // OM 綜合排名：第三個 MTD 視圖，按 OM 加總轄下店舖分子／分母後排名
+    expect(html).toContain('data-stk-mtd-view="om"');
+    expect(html).toContain('id="stk_mtd_om"');
+    expect(html).toContain('id="stk_om_body"');
+    expect(html).toContain('id="stk_om_scope"');
+    expect(script).toContain('renderMtdOm');
+    expect(script).toContain('data-stk-om-share');
+    expect(script).toContain('Σ轄下所有店舖分子');
     // 分區篩選：全部／民生區／混合區／遊客區，預設全部
     expect(html).toContain('id="stk_share_nature"');
     expect(html).toContain('id="stk_share_body"');
@@ -150,6 +158,8 @@ describe('static asset freshness', () => {
     expect(adminCss).toContain('.stk-share-summary');
     expect(adminCss).toContain('flex-wrap: nowrap');
     expect(adminCss).toContain('scrollbar-width: thin');
+    expect(adminCss).toContain('.stk-om-table');
+    expect(adminCss).toContain('.stk-om-metric.is-current');
     // 排行榜篩選：OM／Shop Nature（預設全部）；表格本體要獨立容器，否則重畫會洗掉篩選列
     expect(html).toContain('id="stk_mtd_rank_body"');
     expect(html).toContain('id="stk_rank_om"');

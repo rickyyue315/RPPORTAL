@@ -972,6 +972,83 @@ body.stk-modal-open { overflow: hidden; }
   box-shadow: 0 -1px 0 rgba(15, 92, 156, .45);
 }
 
+/* OM 綜合排名：每位 OM 一行，兩個口徑並列；目前口徑欄加底色，排名仍以該口徑為準 */
+#stk_mtd_om[hidden] { display: none !important; }
+.stk-om-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px 12px;
+  flex-wrap: wrap;
+  margin-bottom: 8px;
+}
+.stk-om-wrap { overflow-x: auto; }
+.stk-om-table { width: 100%; margin-bottom: 0; }
+.stk-om-table th,
+.stk-om-table td { padding: 7px 10px; }
+.stk-om-table thead th {
+  white-space: nowrap;
+  font-size: 12.5px;
+  text-align: left;
+  background: #eef2f6;
+}
+.stk-om-table thead th small {
+  display: block;
+  margin-top: 1px;
+  font-size: 10.5px;
+  font-weight: 400;
+  color: #7a8894;
+}
+.stk-om-table thead th.is-current { background: #e3f2ef; color: #0b5f59; }
+.stk-om-table thead th.is-current small { color: #3b7d76; }
+.stk-om-table tbody td { vertical-align: middle; font-variant-numeric: tabular-nums; }
+.stk-om-table th:nth-child(1) { width: 52px; }
+.stk-om-table th:nth-child(2) { min-width: 150px; }
+.stk-om-table th:nth-child(3) { width: 92px; }
+.stk-om-table th:nth-child(4),
+.stk-om-table th:nth-child(5) { width: 210px; }
+.stk-om-table th:nth-child(6) { width: 92px; }
+.stk-om-pos { font-weight: 700; color: #0a3d69; }
+.stk-om-name { font-weight: 700; color: #1f2d3d; }
+.stk-om-row.is-unassigned .stk-om-name { color: #7a8894; font-weight: 600; }
+.stk-om-meta,
+.stk-om-detail { font-size: 11.5px; color: #66727f; }
+.stk-om-stores { color: #41505e; }
+.stk-om-metric.is-current { background: #f5fbf9; }
+.stk-om-table tbody tr:hover td { background: #f2f7fd; }
+.stk-om-table tbody tr:hover td.stk-om-metric.is-current { background: #eaf7f4; }
+.stk-om-ratio-line {
+  display: flex;
+  align-items: baseline;
+  justify-content: flex-end;
+  gap: 6px;
+}
+.stk-om-ratio { font-weight: 700; }
+.stk-om-metric:not(.is-current) .stk-om-ratio { font-weight: 600; color: #5a6a78; }
+.stk-om-rank {
+  flex: 0 0 auto;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: #eef2f6;
+  font-size: 10.5px;
+  color: #5a6a78;
+  white-space: nowrap;
+}
+.stk-om-rank.is-empty { color: #9aa7b3; }
+.stk-om-track {
+  display: block;
+  height: 5px;
+  margin-top: 3px;
+  border-radius: 999px;
+  background: #eef2f6;
+  overflow: hidden;
+}
+.stk-om-track i { display: block; height: 100%; border-radius: 999px; }
+@media (max-width: 720px) {
+  .stk-om-table th:nth-child(4),
+  .stk-om-table th:nth-child(5) { width: 170px; }
+  .stk-om-table th:nth-child(2) { min-width: 110px; }
+}
+
 /* No. of RF SKU Dashboard：青色系與上方不良存貨區塊（佔比趨勢、每店明細）區分，但同屬存貨頁 */
 .stk-rf-kpi-grid { margin-bottom: 16px; }
 /* 卡頭淨係得標題同口徑切換（說明文字已搬落卡身，貼住佢描述嘅圖表）。

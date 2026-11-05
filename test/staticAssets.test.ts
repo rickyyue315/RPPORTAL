@@ -135,6 +135,12 @@ describe('static asset freshness', () => {
     expect(html).toContain('data-stk-share-nature="mix"');
     expect(html).toContain('data-stk-share-nature="tourist"');
     expect(script).toContain('applyShareNature');
+    // 店舖佔比 OM 篩選：與排行榜的 OM 下拉獨立，選項由該期資料自動產生
+    expect(html).toContain('id="stk_share_om"');
+    expect(html).toContain('全部 OM');
+    expect(script).toContain('syncShareOmOptions');
+    expect(script).toContain('filterRankRows');
+    expect(script).toContain('shareOm');
     // OM 式整合：三組 Nature 並排在同一張圖，外層橫向滑動（不再分開三張卡）
     expect(script).toContain('class="stk-share" role="region"');
     expect(script).toContain('橫向滑動睇全部店舖');

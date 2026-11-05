@@ -557,7 +557,7 @@
                   </div>
                 </div>
               </div>
-              <p class="text-secondary small mt-1 mb-2" id="stk_mtd_desc">以本月最新一期快照計（MTD）；按報表 Shop Nature（Local／Mix／Tourist）分成民生區／混合區／遊客區。「全部」時上方顯示三組的店數／加權／最高摘要，下面用一條連續棒圖列出全部店舖（按比率由高至低、共用同一比例尺），可用分區按鈕只看其中一組。柱頂為百分比，整張圖可橫向滑動；斜紋柱為新店／上期無數據，仍列出但不宜直接比較。</p>
+              <p class="text-secondary small mt-1 mb-2" id="stk_mtd_desc">以本月最新一期快照計（MTD）；按報表 Shop Nature（Local／Mix／Tourist）分成民生區／混合區／遊客區，另可用 OM 下拉只看某位 OM 管轄的店舖。「全部」時上方顯示三組的店數／加權／最高摘要，下面用一條連續棒圖列出全部店舖（按比率由高至低、共用同一比例尺），可用分區按鈕只看其中一組。柱頂為百分比，整張圖可橫向滑動；斜紋柱為新店／上期無數據，仍列出但不宜直接比較。</p>
               <div id="stk_mtd_error"></div>
               <div id="stk_mtd_rank" hidden>
                 <div class="stk-mtd-filter">
@@ -585,6 +585,12 @@
                     <button class="seg-switch-btn" type="button" data-stk-share-nature="local" aria-pressed="false">民生區</button>
                     <button class="seg-switch-btn" type="button" data-stk-share-nature="mix" aria-pressed="false">混合區</button>
                     <button class="seg-switch-btn" type="button" data-stk-share-nature="tourist" aria-pressed="false">遊客區</button>
+                  </div>
+                  <div class="stk-share-om">
+                    <label class="form-label" for="stk_share_om">OM</label>
+                    <select id="stk_share_om" class="form-select form-select-sm" aria-label="以 OM 篩選店舖佔比">
+                      <option value="">全部 OM</option>
+                    </select>
                   </div>
                   <span class="text-secondary small" id="stk_share_note"></span>
                   <span class="ms-auto" id="stk_share_export"></span>

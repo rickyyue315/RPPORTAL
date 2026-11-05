@@ -767,6 +767,21 @@ body.stk-modal-open { overflow: hidden; }
   margin: 0;
   flex-wrap: wrap;
 }
+/* 店舖佔比的 OM 下拉：同分區按鈕同一行，窄螢幕自動換行 */
+.stk-share-om {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.stk-share-om .form-label {
+  margin: 0;
+  font-size: 12px;
+  color: #5a6a78;
+}
+.stk-share-om select {
+  width: auto;
+  min-width: 120px;
+}
 /* 「全部」時只保留各 Shop Nature 摘要，棒圖本身唔再分組 */
 .stk-share-summary {
   display: grid;

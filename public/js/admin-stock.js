@@ -44,6 +44,8 @@
   let mtdView = 'share';
   /** 店舖佔比只顯示邊個分區：all = 全部（預設）／local／mix／tourist；不寫 localStorage，每次載入都回到全部 */
   let shareNature = 'all';
+  /** 店舖佔比 OM 篩選（空 = 全部 OM）；同樣不寫 localStorage，選項由該期資料自動產生 */
+  let shareOm = '';
   /** 排行榜篩選：OM 名（空 = 全部）／Shop Nature key（空 = 全部）；同樣不寫 localStorage */
   let rankOm = '';
   let rankNature = '';
@@ -647,6 +649,22 @@
     sel.value = rankOm;
   }
 
+  /** 用該期資料重建店舖佔比的 OM 下拉；與排行榜的 OM 篩選各自獨立，選中 OM 消失時回落全部 */
+  function syncShareOmOptions(rows) {
+    const sel = $('stk_share_om');
+    if (!sel) return;
+    const oms = [...new Set(rows.map((row) => String(row.om || '').trim()).filter(Boolean))]
+      .sort((a, b) => a.localeCompare(b, 'en'));
+    if (!oms.includes(shareOm)) shareOm = '';
+    const signature = oms.join('\u0000');
+    if (sel.dataset.signature !== signature) {
+      sel.innerHTML = '<option value="">全部 OM</option>'
+        + oms.map((om) => `<option value="${escAttr(om)}">${esc(om)}</option>`).join('');
+      sel.dataset.signature = signature;
+    }
+    sel.value = shareOm;
+  }
+
   function filterRankRows(rows) {
     return rows.filter((row) => {
       if (rankOm && String(row.om || '').trim() !== rankOm) return false;
@@ -778,7 +796,7 @@
   /* ---- 店舖佔比：按 Shop Nature 分組的柱狀排名（OM 式三組並排、整張圖橫向滑動） ---- */
 
   const MTD_RANK_DESC = '以本月最新一期快照計（MTD）；每店比率 = 該店分子 ÷ 分母，<b>不是全公司加權</b>（全公司加權見上方 KPI）。新店／上期無數據不參與排名，但仍計入全公司合計。';
-  const MTD_SHARE_DESC = '以本月最新一期快照計（MTD）；按報表 Shop Nature（Local／Mix／Tourist）分成民生區／混合區／遊客區。「全部」時上方顯示三組的店數／加權／最高摘要，下面用一條連續棒圖列出全部店舖（按比率由高至低、共用同一比例尺），可用分區按鈕只看其中一組。柱頂為百分比，整張圖可橫向滑動睇全部店舖；斜紋柱為新店／上期無數據，仍列出但不宜直接比較。';
+  const MTD_SHARE_DESC = '以本月最新一期快照計（MTD）；按報表 Shop Nature（Local／Mix／Tourist）分成民生區／混合區／遊客區，可用 OM 下拉只看某位 OM 管轄的店舖。「全部」時上方顯示三組的店數／加權／最高摘要，下面用一條連續棒圖列出全部店舖（按比率由高至低、共用同一比例尺），可用分區按鈕只看其中一組。柱頂為百分比，整張圖可橫向滑動睇全部店舖；斜紋柱為新店／上期無數據，仍列出但不宜直接比較。';
   const MTD_SHARE_GROUPS = [
     { key: 'local', label: '民生區' },
     { key: 'mix', label: '混合區' },
@@ -841,13 +859,22 @@
     const pick = isSku ? (row) => num(row.ovs_carry_ratio) : (row) => num(row.ratio);
     const numOf = isSku ? (row) => num(row.sku_count_0sale) : (row) => num(row.deadstock_value);
     const denOf = isSku ? (row) => num(row.sku_carry_count) : (row) => num(row.shop_stock_value);
-    const rows = Array.isArray(mtdWeekRows) ? mtdWeekRows : [];
+    const allRows = Array.isArray(mtdWeekRows) ? mtdWeekRows : [];
+    syncShareOmOptions(allRows);
+    const rows = shareOm
+      ? allRows.filter((row) => String(row.om || '').trim() === shareOm)
+      : allRows;
     if (note) note.textContent = '';
 
-    if (!mtdWeekDate || !rows.length) {
+    if (!mtdWeekDate || !allRows.length) {
       target.innerHTML = `<div class="text-secondary small">${mtdWeekDate
         ? '此期沒有店舖數據。'
         : '上載存貨報表後會顯示店舖佔比。'}</div>`;
+      return;
+    }
+    if (!rows.length) {
+      if (note) note.textContent = `OM ${shareOm} 此期沒有店舖`;
+      target.innerHTML = `<div class="text-secondary small">此期 OM ${esc(shareOm)} 沒有店舖數據。</div>`;
       return;
     }
 
@@ -951,6 +978,7 @@
       const reason = row.new_reason === 'new_store' ? '新店（觀察期內）' : '上期無數據';
       const tip = [
         `${site} ${fullName}`.trim(),
+        String(row.om || '').trim() ? `OM：${String(row.om || '').trim()}` : '',
         `Shop Nature：${shareNatureLabel(row)}`,
         ratio === null ? '比率缺值' : fmtRatio(ratio),
         `${detailLabel}：${isSku ? `${fmtInt(n)} ÷ ${fmtInt(d)}` : `${fmtMoney(n)} ÷ ${fmtMoney(d)}`}`,
@@ -1011,7 +1039,7 @@
         : topValue;
       const capped = scaleMax < topValue;
       const cols = allSorted.map((row) => colHtml(row, scaleMax, capped)).join('');
-      chartHtml = `<div class="stk-share-summary" role="list" aria-label="各 Shop Nature 摘要">
+      chartHtml = `<div class="stk-share-summary" role="list" aria-label="${escAttr(shareOm ? `OM ${shareOm} 各 Shop Nature 摘要` : '各 Shop Nature 摘要')}">
         ${groupStats.map(summaryHtml).join('')}
       </div>
       <div class="stk-share" role="region" aria-label="店舖佔比，全部店舖按比率排序" tabindex="0">
@@ -1022,19 +1050,23 @@
     }
 
     if (selected && !selectedExists && note) {
-      note.textContent = `此期沒有${selected.label}店舖，已顯示全部分區。`;
+      note.textContent = shareOm
+        ? `OM ${shareOm} 此期沒有${selected.label}店舖，已顯示此 OM 的全部分區。`
+        : `此期沒有${selected.label}店舖，已顯示全部分區。`;
     }
     if (note && !note.textContent) {
       const storeCount = groups.reduce((sum, group) => sum + group.rows.length, 0);
       const scrollHint = (!selectedExists || storeCount > 25) ? ' · 左右滑動' : '';
-      note.textContent = (selectedExists
+      const omPrefix = shareOm ? `OM ${shareOm} · ` : '';
+      note.textContent = omPrefix + (selectedExists
         ? `${groups[0].label} · ${storeCount} 店`
         : `全部分區 · ${storeCount} 店`) + scrollHint;
     }
 
-    const plotNote = selectedExists
+    const plotScope = shareOm ? `OM ${esc(shareOm)} 管轄店舖；` : '';
+    const plotNote = plotScope + (selectedExists
       ? '此分區柱高獨立縮放；若某店遠高於同組，柱高改以次高值為滿格、超出者頂部加白線標示。斜紋柱為新店／上期無數據，仍列出但不宜直接比較。按一下任何一條柱可跳到該店明細。'
-      : '全部店舖按比率由高至低排，柱高共用同一比例尺；上方顯示各 Shop Nature 的店數／加權／最高。若某店遠高於全體，柱高改以次高值為滿格、超出者頂部加白線標示。斜紋柱為新店／上期無數據，仍列出但不宜直接比較。按一下任何一條柱可跳到該店明細。';
+      : '全部店舖按比率由高至低排，柱高共用同一比例尺；上方顯示各 Shop Nature 的店數／加權／最高。若某店遠高於全體，柱高改以次高值為滿格、超出者頂部加白線標示。斜紋柱為新店／上期無數據，仍列出但不宜直接比較。按一下任何一條柱可跳到該店明細。');
 
     target.innerHTML = `${chartHtml}<p class="text-secondary small mt-2 mb-0">${plotNote}</p>`;
   }
@@ -2212,6 +2244,15 @@
         if (next === shareNature) return;
         shareNature = next;
         applyShareNature();
+        renderMtdShare();
+      });
+    }
+
+    // 店舖佔比：OM 下拉（只重畫佔比圖，不重新打 API；與排行榜的 OM 篩選獨立）
+    const shareOmEl = $('stk_share_om');
+    if (shareOmEl) {
+      shareOmEl.addEventListener('change', () => {
+        shareOm = String(shareOmEl.value || '');
         renderMtdShare();
       });
     }

@@ -750,7 +750,11 @@ body.stk-modal-open { overflow: hidden; }
   flex-wrap: wrap;
   min-width: 0;
 }
-.stk-mtd-switch { margin: 0; }
+/* 兩個 pill 切換同一高度、同一視覺語言；窄螢幕各自換行，不會一高一低。
+   選擇器要壓過較後面的 .seg-switch { margin: 0 0 16px }。 */
+.stk-mtd-head .stk-mtd-switch,
+.stk-mtd-head .stk-mtd-metric { margin: 0; }
+.stk-mtd-head .seg-switch { flex: 0 0 auto; }
 #stk_mtd_share[hidden] { display: none !important; }
 
 /* 店舖佔比：按 Shop Nature 分組的柱狀排名（OM 式三組並排）

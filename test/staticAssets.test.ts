@@ -103,6 +103,9 @@ describe('static asset freshness', () => {
     expect(html).toContain('id="stk_group_dashboard"');
     expect(html).toContain('id="stk_mtd_section"');
     expect(html).toContain('data-stk-group-metric="sku"');
+    // 口徑與視圖切換共用同一套 pill 樣式，避免兩個控件一高一低
+    expect(html).toContain('class="seg-switch stk-mtd-metric"');
+    expect(script).toContain("b.classList.toggle('is-active', active)");
     // 舊分組小圖已移除，MTD 排名直接成為卡面內容
     expect(html).not.toContain('id="stk_group_chart"');
     expect(html).not.toContain('data-stk-group-dim');

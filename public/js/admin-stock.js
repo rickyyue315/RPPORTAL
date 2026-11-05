@@ -2598,7 +2598,9 @@
         if (metric === groupMetric) return;
         groupMetric = metric;
         groupMetricEl.querySelectorAll('[data-stk-group-metric]').forEach((b) => {
-          b.setAttribute('aria-pressed', String(b.dataset.stkGroupMetric === metric));
+          const active = b.dataset.stkGroupMetric === metric;
+          b.setAttribute('aria-pressed', String(active));
+          b.classList.toggle('is-active', active);
         });
         renderMtd();
       });

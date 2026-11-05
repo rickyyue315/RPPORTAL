@@ -1099,7 +1099,7 @@ portalRouter.put(
       return;
     }
     try {
-      const item = await replyZeroSalesItem({
+      const { item, before, replacedBy } = await replyZeroSalesItem({
         itemId: req.params.id as string,
         siteCode: req.storeSiteCode!,
         reasonCode: parsed.data.reason_code,
@@ -1112,9 +1112,18 @@ portalRouter.put(
         actorRole: 'store',
         actor: req.portalUser!.username,
         ip: getClientIp(req),
-        metadata: { item_id: item.id, batch_id: item.batch_id, site_code: item.site_code, sku: item.sku, reason_code: item.reason_code },
+        metadata: {
+          item_id: item.id,
+          batch_id: item.batch_id,
+          site_code: item.site_code,
+          sku: item.sku,
+          reason_code: item.reason_code,
+          // 店舖可以覆蓋 OM／管理員代覆的內容：舊值必須留在審計，否則無從追查
+          before,
+          replaced_by: replacedBy,
+        },
       });
-      res.json({ ok: true, item });
+      res.json({ ok: true, item, replaced_by: replacedBy });
     } catch (err) {
       if (err instanceof ZeroSalesReplyNotRequiredError) {
         // 409 = 本週無須回覆（只供參考），前端據 code 轉為唯讀並重新載入

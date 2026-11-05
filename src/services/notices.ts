@@ -138,17 +138,35 @@ export async function deleteNotice(id: string): Promise<boolean> {
  *
  * 店舖的 localStorage 記號是 `notice:<id>:r<revision>`，所以 +1 之後所有店舖
  * （包括之前按過 X 的）都會再見到一次。用遞增而不是重置，才不會與舊記號碰撞。
+ *
+ * **已完結（ends_at 已過）的通告會被一併改為「長期生效」**：否則 revision 雖然加了，
+ * `listActiveNotices` 仍然把它過濾掉，管理員見到「已重新推送」但店舖一條都收不到。
+ * 回傳 `clearedEndsAt` 讓介面講清楚做了什麼，而不是靜靜改期。
  */
-export async function republishNotice(id: string, actor: string): Promise<NoticeRow | null> {
+export async function republishNotice(
+  id: string,
+  actor: string,
+): Promise<{ notice: NoticeRow; clearedEndsAt: boolean } | null> {
+  const before = await query<{ ends_at: string | Date | null }>(
+    'SELECT ends_at FROM portal_notices WHERE id = $1',
+    [id],
+  );
+  const row = before.rows[0];
+  if (!row) return null;
+  const ended = row.ends_at !== null && new Date(row.ends_at).getTime() <= Date.now();
+
   const result = await query<NoticeRow>(
     `UPDATE portal_notices
         SET revision = revision + 1,
             is_active = true,
+            ends_at = CASE WHEN ends_at IS NOT NULL AND ends_at <= now() THEN NULL ELSE ends_at END,
             updated_by = $2,
             updated_at = now()
       WHERE id = $1
       RETURNING ${COLUMNS}`,
     [id, actor],
   );
-  return result.rows[0] ?? null;
+  const notice = result.rows[0];
+  if (!notice) return null;
+  return { notice, clearedEndsAt: ended };
 }

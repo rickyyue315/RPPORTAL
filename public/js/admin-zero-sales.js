@@ -29,7 +29,13 @@
     if (opts.body && !(opts.body instanceof FormData)) headers['Content-Type'] = 'application/json';
     const res = await fetch(url, { ...opts, headers, credentials: 'same-origin' });
     const data = await res.json().catch(() => null);
-    if (!res.ok) throw new Error(data?.error || `請求失敗 (${res.status})`);
+    if (!res.ok) {
+      const err = new Error(data?.error || `請求失敗 (${res.status})`);
+      // 保留 status / code：上載批次要靠 409 + DUPLICATE_* 決定是否問「仍要上載」
+      err.status = res.status;
+      err.data = data;
+      throw err;
+    }
     return data;
   }
   // 統計/匯出用 GET：不經 CSRF（與現有批次匯出 <a href> 一致，只帶 cookie）
@@ -346,8 +352,27 @@
       fd.append('reply_required', '1');
     }
     res.innerHTML = '<div class="alert alert-info">上載中…</div>';
+    // 上載期間停用按鈕：連按兩下會在後端留下兩個同週批次，而新批次會即時封存舊批次
+    // （舊批次未回覆的行從此變成永久「逾期」）。後端亦有同週次／同檔案檢查，兩邊一齊擋。
+    const btn = $('btn_zs_upload');
+    if (btn) { btn.disabled = true; btn.textContent = '上載中…'; }
     try {
-      const data = await aFetch('/api/admin/zero-sales/batches', { method: 'POST', body: fd });
+      let data;
+      try {
+        data = await aFetch('/api/admin/zero-sales/batches', { method: 'POST', body: fd });
+      } catch (err) {
+        const code = String(err.data?.code || '');
+        if (err.status !== 409 || !code.startsWith('DUPLICATE_')) throw err;
+        const ok = window.confirm(
+          `${err.message}\n\n仍要上載多一個批次？（新批次會即時封存舊批次，舊批次未回覆的行會變成「逾期」）`,
+        );
+        if (!ok) {
+          res.innerHTML = '<div class="alert alert-warning">已停止上載，沒有建立任何批次。</div>';
+          return;
+        }
+        fd.append('force', '1');
+        data = await aFetch('/api/admin/zero-sales/batches', { method: 'POST', body: fd });
+      }
       const closed = (data.closedBatches || []);
       const closedText = closed.length
         ? `；已自動封存 ${closed.map((b) => `「${esc(b.week_label)}」（${b.pending} 個未回覆 SKU）`).join('、')}`
@@ -363,6 +388,8 @@
       refreshRepeatsIfOpen();
     } catch (err) {
       res.innerHTML = `<div class="alert alert-danger">${esc(err.message)}</div>`;
+    } finally {
+      if (btn) { btn.disabled = false; btn.textContent = '上載開新批次'; }
     }
   }
 

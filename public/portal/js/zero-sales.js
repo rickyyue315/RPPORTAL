@@ -79,6 +79,19 @@
     return editCount(it) < replyLimit(it);
   }
 
+  /**
+   * 現有回覆是否由其他人（OM 代覆／管理員代填）提交。
+   * 店舖自己提交時 replied_by = 自己的帳號（即 Site Code），所以不同就代表被人改過。
+   * 系統自動套用的行已在介面標示「自動套用」，不算「被別人改過」。
+   */
+  function replacedByOther(it) {
+    if (isAutoFilled(it)) return '';
+    const by = String(it.replied_by || '').trim();
+    if (!by) return '';
+    const self = String(it.site_code || '').trim().toUpperCase();
+    return by.toUpperCase() === self ? '' : by;
+  }
+
   function payloadVal(it, key) {
     return (it.payload && it.payload[key]) || (key === 'SKU' ? it.sku : key === 'Brand' ? '' : '');
   }
@@ -404,6 +417,11 @@
       } else {
         histEl.textContent = '此 SKU 首次上榜。';
       }
+      // 現有回覆由 OM／管理員代提交：店舖仍可修改，但要提交前講清楚會取代誰的內容
+      const replacedBy = replacedByOther(it);
+      if (replacedBy) {
+        histEl.textContent += ` 原有回覆由「${replacedBy}」提交，你儲存後會取代它。`;
+      }
     }
     setAutoNotice(auto
       ? `<b>系統已自動套用上次回覆。</b>請確認內容是否仍適用；如不適用，請直接修改後按「儲存回覆」。你仍可修改 <b>${left}</b> 次。`
@@ -432,7 +450,7 @@
     const btn = $('btn_reply_save');
     btn.disabled = true;
     try {
-      await p.api(`/api/portal/zero-sales/items/${currentId}/reply`, {
+      const data = await p.api(`/api/portal/zero-sales/items/${currentId}/reply`, {
         method: 'PUT',
         body: JSON.stringify({ reason_code: $('reply_reason').value, reason_note: $('reply_note').value }),
       });
@@ -440,6 +458,10 @@
       // 回覆後更新週次計數，但保留店舖正睇緊嘅週次選擇
       await loadBatches(true);
       await loadList();
+      // 覆蓋了 OM／管理員代覆的內容：事後再確認一次，唔好靜靜蓋過
+      if (data && data.replaced_by) {
+        p.showAlert($('list_error'), 'info', `已儲存，並取代「${p.escapeHtml(data.replaced_by)}」原有的回覆。`);
+      }
     } catch (err) {
       // 週次在開啟彈出視窗後被新批次封存 / 被設為無須回覆：關窗、重新載入並顯示原因
       if (err.status === 409 && (err.data?.code === 'BATCH_CLOSED' || err.data?.code === 'REPLY_NOT_REQUIRED')) {

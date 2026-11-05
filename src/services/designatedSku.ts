@@ -1391,6 +1391,35 @@ export async function updateReplyFields(input: UpdateReplyFieldsInput): Promise<
   const batch = await getBatch(input.batchId);
   if (!batch) return null;
 
+  const nextMode = input.mode ?? batch.reply_mode;
+
+  // 只有「轉為純自定欄位（custom）」會令店舖已填的年期／件數消失：
+  // 店舖下次儲存時前端會送空 lines，submitMatterReply 的 replaceLines() 直接 DELETE，
+  // reply_total 變 NULL，而審計只記新值 —— 事後追唔返。
+  // 所以只擋這一個方向：
+  //   * stock_year → mixed 是最常見的「加一個自定欄位」，不刪任何資料，必須繼續可用；
+  //   * custom → stock_year / mixed 只是暫時不顯示自定欄位值（仍在 DB），亦可放行。
+  if (nextMode === 'custom' && batch.reply_mode !== 'custom') {
+    const replied = await query<{ count: string }>(
+      `SELECT count(*)::text AS count
+         FROM designated_sku_items i
+         JOIN designated_sku_matters m ON m.id = i.matter_id
+        WHERE m.batch_id = $1
+          AND (i.status = 'replied'
+               OR i.reply_line_count > 0
+               OR i.reply_total IS NOT NULL
+               OR i.reply_values <> '{}'::jsonb)`,
+      [input.batchId],
+    );
+    const repliedCount = Number(replied.rows[0]?.count ?? 0);
+    if (repliedCount > 0) {
+      throw new DesignatedSkuError(
+        `此批次已有 ${repliedCount} 個 SKU 回覆，不可改為「純自定欄位」模式（會清空已填的年期／件數或「無可調撥」記錄）。`
+          + '如要加入自定欄位，請選「年期＋自定欄位」；此批次的回覆會保持不變。',
+      );
+    }
+  }
+
   const nextKeys = new Set(fields.map((f) => f.key));
   const removed = batch.reply_fields.filter((f) => !nextKeys.has(f.key));
   if (removed.length) {
@@ -1413,7 +1442,7 @@ export async function updateReplyFields(input: UpdateReplyFieldsInput): Promise<
 
   await query(
     `UPDATE designated_sku_batches SET reply_fields = $2::jsonb, reply_mode = $3 WHERE id = $1`,
-    [input.batchId, JSON.stringify(fields), input.mode ?? batch.reply_mode],
+    [input.batchId, JSON.stringify(fields), nextMode],
   );
   return getBatch(input.batchId);
 }

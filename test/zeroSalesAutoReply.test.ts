@@ -203,12 +203,12 @@ describe('zero-sales auto apply previous reply', () => {
   it('allows two modifications on an auto-filled row, then locks it', async () => {
     const itemId = await itemIdOf(w42Id, 'HA02', 'A1');
     const first = await repliedByStore(itemId, 'no_display', '第一次修改');
-    expect(first.reply_count).toBe(2);
-    expect(first.auto_filled).toBe(false);
+    expect(first.item.reply_count).toBe(2);
+    expect(first.item.auto_filled).toBe(false);
     expect((await getItem(w42Id, 'HA02', 'A1')).auto_filled_at).toBeNull();
 
     const second = await repliedByStore(itemId, 'in_warehouse', '第二次修改');
-    expect(second.reply_count).toBe(3);
+    expect(second.item.reply_count).toBe(3);
 
     await expect(repliedByStore(itemId, 'price_promo', '第三次')).rejects.toBeInstanceOf(ZeroSalesReplyError);
     const after = await getItem(w42Id, 'HA02', 'A1');
@@ -219,9 +219,9 @@ describe('zero-sales auto apply previous reply', () => {
   it('keeps the original limit of one modification for non-auto rows', async () => {
     const itemId = await itemIdOf(w42Id, 'HA02', 'A2');
     const first = await repliedByStore(itemId, 'seasonal', '首次回覆');
-    expect(first.reply_count).toBe(1);
+    expect(first.item.reply_count).toBe(1);
     const second = await repliedByStore(itemId, 'no_display', '修改一次');
-    expect(second.reply_count).toBe(2);
+    expect(second.item.reply_count).toBe(2);
     await expect(repliedByStore(itemId, 'price_promo', '再改')).rejects.toBeInstanceOf(ZeroSalesReplyError);
   });
 

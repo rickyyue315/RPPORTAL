@@ -695,6 +695,29 @@ export async function autoFillZeroSalesReplies(
   );
 }
 
+/**
+ * 上載零銷售批次時偵測到重複：同一週次或同一份檔案再上載一次。
+ *
+ * 為什麼要擋：新批次會即時封存所有舊批次（見 createBatch），所以重複上載會令
+ * 第一個批次未回覆的行永久變成「逾期」，統計與店舖清單亦會出現兩個同名週次。
+ * 管理員確認要重新派發時帶 force=true 略過。
+ */
+export class ZeroSalesDuplicateBatchError extends Error {
+  constructor(
+    readonly kind: 'week' | 'file',
+    readonly existing: { id: string; week_label: string; created_at: string },
+  ) {
+    super(
+      kind === 'week'
+        ? `週次「${existing.week_label}」已於 ${existing.created_at} 建立過批次。`
+          + '同一週再上載會令舊批次即時封存，未回覆的行會變成「逾期」。如要修正資料，請先刪除該批次。'
+        : `此檔案已於 ${existing.created_at} 上載過（${existing.week_label}）。`
+          + '如要重新派發，請確認「仍要上載」。',
+    );
+    this.name = 'ZeroSalesDuplicateBatchError';
+  }
+}
+
 export async function createBatch(input: {
   weekLabel: string;
   note: string;
@@ -707,9 +730,38 @@ export async function createBatch(input: {
   replyRequired?: boolean;
   /** 給店舖看的說明（空白 = 前端用預設文案） */
   replyNotice?: string;
+  /** true = 略過「同週次／同檔案」重複上載檢查（管理員在確認對話框按確定後才帶上） */
+  force?: boolean;
 }): Promise<{ batchId: string; closedBatches: ZeroSalesClosedBatch[]; autoFilled: number; replyRequired: boolean }> {
   const replyRequired = input.replyRequired !== false;
   return withTransaction(async (client) => {
+    // 重複上載防護：與插入同一個交易，避免「檢查後、插入前」被另一個請求穿過。
+    // 注意這是軟檢查（不加 UNIQUE 約束），所以不會影響任何既有資料或歷史重複批次。
+    if (input.force !== true) {
+      // 週次以不分大小寫比對：手打成 2026-w47 亦算同一週，避免靜靜開多一個批次。
+      const dup = await client.query<{
+        id: string;
+        week_label: string;
+        created_at: string;
+        same_week: boolean;
+      }>(
+        `SELECT id, week_label, created_at::text AS created_at, (lower(week_label) = lower($1)) AS same_week
+           FROM zero_sales_batches
+          WHERE lower(week_label) = lower($1) OR ($2 <> '' AND content_hash = $2)
+          ORDER BY (lower(week_label) = lower($1)) DESC, created_at DESC
+          LIMIT 1`,
+        [input.weekLabel, input.contentHash ?? ''],
+      );
+      const existing = dup.rows[0];
+      if (existing) {
+        throw new ZeroSalesDuplicateBatchError(existing.same_week ? 'week' : 'file', {
+          id: existing.id,
+          week_label: existing.week_label,
+          created_at: toHKString(existing.created_at),
+        });
+      }
+    }
+
     const ins = await client.query<{ id: string }>(
       `INSERT INTO zero_sales_batches (week_label, note, row_count, store_count, content_hash, created_by, reply_required, reply_notice)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id`,
@@ -734,7 +786,9 @@ export async function createBatch(input: {
       );
     }
     // 即時封存：新批次上載後，之前所有仍開放的批次立刻轉為唯讀。
-    // 先插入新批次再封存其他批次，可避免兩個並行上載同時保持開放。
+    // 先插入新批次再封存其他批次，確保「新批次不會被自己封存」；但這一步不能取代
+    // 上面的重複上載檢查 —— 兩個真正並行的上載在 READ COMMITTED 下互相看不見，
+    // 仍可能同時保持開放。主要防線是前端停用按鈕 + 本函式開頭的同週次／同檔案檢查。
     const closed = await client.query<{ id: string; week_label: string; pending: string }>(
       `UPDATE zero_sales_batches b
           SET closed_at = now(), closed_by = $1, close_reason = 'auto'
@@ -1526,7 +1580,13 @@ export async function replyItem(input: {
   reasonNote: string;
   repliedBy: string;
   repliedByUserId: string;
-}): Promise<ZeroSalesItemRow> {
+}): Promise<{
+  /** 提交前的內容（審計用：店舖覆蓋 OM／管理員代覆時，舊值不會消失） */
+  before: { status: string; reason_code: string | null; reason_note: string; replied_by: string | null };
+  item: ZeroSalesItemRow;
+  /** 原本由其他人提交的回覆（OM 代覆／管理員代填）；null = 首次回覆、自己改自己、或系統自動套用 */
+  replacedBy: string | null;
+}> {
   const reasons = await listReasons(true);
   const found = reasons.find((r) => r.code === input.reasonCode);
   if (!found) throw new ZeroSalesReplyError('回覆原因無效，請重新選擇');
@@ -1536,6 +1596,9 @@ export async function replyItem(input: {
   const current = await query<{
     id: string;
     status: string;
+    reason_code: string | null;
+    reason_note: string;
+    replied_by: string | null;
     reply_count: number;
     reply_limit: number;
     auto_filled_at: string | null;
@@ -1543,7 +1606,8 @@ export async function replyItem(input: {
     reply_required: boolean;
     week_label: string;
   }>(
-    `SELECT i.id, i.status, i.reply_count, i.reply_limit, i.auto_filled_at,
+    `SELECT i.id, i.status, i.reason_code, i.reason_note, i.replied_by,
+            i.reply_count, i.reply_limit, i.auto_filled_at,
             b.closed_at, b.reply_required, b.week_label
        FROM zero_sales_items i
        JOIN zero_sales_batches b ON b.id = i.batch_id
@@ -1565,7 +1629,16 @@ export async function replyItem(input: {
     const edits = Math.max(1, limit - 1);
     throw new ZeroSalesReplyError(`此 SKU 已用完修改機會（可修改 ${edits} 次），如需再更改請聯絡 RP Team`);
   }
-  // UPDATE 同時檢查批次仍開放且需要回覆，避免「檢查後剛好被新批次封存／改為無須回覆」的競態
+  // 原本由其他人提交的回覆（店舖自己的 replied_by = 自己的帳號）。系統自動套用的行
+  // 已經在介面標示「自動套用」，不算「被別人改過」，所以不計。
+  const replacedBy =
+    cur.auto_filled_at === null && cur.replied_by && cur.replied_by !== input.repliedBy
+      ? cur.replied_by
+      : null;
+  // UPDATE 同時檢查：
+  //   1. 批次仍開放且需要回覆（避免「檢查後剛好被新批次封存／改為無須回覆」的競態）
+  //   2. 修改次數仍未用完（reply_count < reply_limit）—— 上面的 SELECT 檢查只擋正常情況，
+  //      兩個分頁同時提交時會一齊通過，只有寫進 WHERE 才真正原子。
   const r = await query<ZeroSalesItemRow>(
     `UPDATE zero_sales_items i SET status = 'replied', reason_code = $1, reason_label = $2, reason_note = $3,
       replied_at = now(), replied_by = $4, replied_by_user_id = $5, updated_at = now(),
@@ -1573,6 +1646,7 @@ export async function replyItem(input: {
       -- 店舖一經儲存（確認或修改），此行即變成店舖回覆，不再算「系統自動套用」
       auto_filled_at = NULL
      WHERE i.id = $6 AND i.site_code = $7
+       AND i.reply_count < COALESCE(i.reply_limit, CASE WHEN i.auto_filled_at IS NOT NULL THEN 3 ELSE 2 END)
        AND EXISTS (SELECT 1 FROM zero_sales_batches b
                     WHERE b.id = i.batch_id AND b.closed_at IS NULL AND b.reply_required = true)
      RETURNING i.*`,
@@ -1581,30 +1655,54 @@ export async function replyItem(input: {
   const row = r.rows[0];
   if (!row) {
     // 競態：查一下真正原因，回傳對應錯誤碼（前端才能給正確引導）
-    const st = await query<{ closed_at: string | null; reply_required: boolean; week_label: string }>(
-      `SELECT b.closed_at, b.reply_required, b.week_label
+    const st = await query<{
+      closed_at: string | null;
+      reply_required: boolean;
+      week_label: string;
+      reply_limit: number | null;
+      auto_filled_at: string | null;
+    }>(
+      `SELECT b.closed_at, b.reply_required, b.week_label, i.reply_limit, i.auto_filled_at
          FROM zero_sales_items i JOIN zero_sales_batches b ON b.id = i.batch_id
         WHERE i.id = $1`,
       [input.itemId],
     );
     const s = st.rows[0];
-    if (s && s.reply_required === false) {
+    if (!s) throw new ZeroSalesReplyError('找不到此 SKU 指派');
+    if (s.reply_required === false) {
       throw new ZeroSalesReplyNotRequiredError(`「${s.week_label}」本週無須回覆，只顯示你店舖的 Top 10 SKU 作銷售參考。`);
     }
-    throw new ZeroSalesBatchClosedError(
-      `「${cur.week_label}」已截止回覆（新一週已派發），此週次只供查閱。請到最新一週回覆。`,
+    if (s.closed_at) {
+      throw new ZeroSalesBatchClosedError(
+        `「${cur.week_label}」已截止回覆（新一週已派發），此週次只供查閱。請到最新一週回覆。`,
+      );
+    }
+    // 只剩一個可能：另一個請求剛好用了最後一次修改機會（唔可以誤報 BATCH_CLOSED，
+    // 否則前端會把對話框關掉並跳去最新一週）
+    const raceLimit = s.reply_limit ?? (s.auto_filled_at ? 3 : 2);
+    throw new ZeroSalesReplyError(
+      `此 SKU 已用完修改機會（可修改 ${Math.max(1, raceLimit - 1)} 次），如需再更改請聯絡 RP Team`,
     );
   }
   return {
-    ...row,
-    payload: typeof row.payload === 'string' ? JSON.parse(row.payload as unknown as string) : (row.payload ?? {}),
-    replied_at: row.replied_at ? toHKString(row.replied_at) : null,
-    auto_filled_at: row.auto_filled_at ? toHKString(row.auto_filled_at as unknown as string) : null,
-    auto_filled: Boolean(row.auto_filled_at),
-    auto_filled_from_week: row.auto_filled_from_week ?? '',
-    reply_limit: row.reply_limit ?? 2,
-    is_open: true,
-    batch_date: undefined,
+    before: {
+      status: cur.status,
+      reason_code: cur.reason_code,
+      reason_note: cur.reason_note ?? '',
+      replied_by: cur.replied_by,
+    },
+    item: {
+      ...row,
+      payload: typeof row.payload === 'string' ? JSON.parse(row.payload as unknown as string) : (row.payload ?? {}),
+      replied_at: row.replied_at ? toHKString(row.replied_at) : null,
+      auto_filled_at: row.auto_filled_at ? toHKString(row.auto_filled_at as unknown as string) : null,
+      auto_filled: Boolean(row.auto_filled_at),
+      auto_filled_from_week: row.auto_filled_from_week ?? '',
+      reply_limit: row.reply_limit ?? 2,
+      is_open: true,
+      batch_date: undefined,
+    },
+    replacedBy,
   };
 }
 

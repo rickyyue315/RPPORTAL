@@ -204,7 +204,11 @@
     if (!window.confirm(`重新推送「${notice?.title ?? ''}」？\n\n所有店舖（包括之前已按 X 關閉的）都會再見一次這條通告。`)) return;
     try {
       const data = await aFetch(`/api/admin/notices/${id}/republish`, { method: 'POST' });
-      $('notice_result').innerHTML = alertHtml('success', `已重新推送（版本 v${data.notice?.revision ?? ''}）。`);
+      // 已完結的通告會被改為「長期生效」，否則店舖根本收不到（要講清楚，不可靜靜改期）
+      const cleared = data.cleared_ends_at
+        ? '原本的結束時間已過，已一併改為「長期生效」，否則店舖不會見到。'
+        : '';
+      $('notice_result').innerHTML = alertHtml('success', `已重新推送（版本 v${data.notice?.revision ?? ''}）。${cleared}`);
       await loadNotices();
     } catch (err) {
       $('notice_result').innerHTML = alertHtml('danger', err.message);

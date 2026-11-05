@@ -153,6 +153,7 @@ import {
   closeZeroSalesBatch,
   reopenZeroSalesBatch,
   setZeroSalesBatchReplyRequired,
+  ZeroSalesDuplicateBatchError,
   ZeroSalesReplyError,
 } from '../services/zeroSales.js';
 import {
@@ -3126,16 +3127,34 @@ adminRouter.post(
     }
     const autoFillRepeats = String(req.body.auto_fill_repeats ?? '1') !== '0';
     const replyRequired = String(req.body.reply_required ?? '1') !== '0';
-    const { batchId, closedBatches, autoFilled } = await createZeroSalesBatch({
-      weekLabel: meta.data.week_label,
-      note: meta.data.note ?? '',
-      rows: parsed.rows.map((r) => ({ siteCode: r.siteCode, sku: r.sku, data: r.data })),
-      contentHash: parsed.contentHash ?? '',
-      createdBy: req.adminUsername!,
-      autoFillRepeats,
-      replyRequired,
-      replyNotice: meta.data.reply_notice ?? '',
-    });
+    // 前端在「此週次／此檔案已上載過」的確認框按確定後，會帶 force=1 再送一次
+    const force = String(req.body.force ?? '') === '1';
+    let created: Awaited<ReturnType<typeof createZeroSalesBatch>>;
+    try {
+      created = await createZeroSalesBatch({
+        weekLabel: meta.data.week_label,
+        note: meta.data.note ?? '',
+        rows: parsed.rows.map((r) => ({ siteCode: r.siteCode, sku: r.sku, data: r.data })),
+        contentHash: parsed.contentHash ?? '',
+        createdBy: req.adminUsername!,
+        autoFillRepeats,
+        replyRequired,
+        replyNotice: meta.data.reply_notice ?? '',
+        force,
+      });
+    } catch (err) {
+      // 重複上載：回 409 + 既有批次資料，前端可以問「仍要上載嗎？」
+      if (err instanceof ZeroSalesDuplicateBatchError) {
+        res.status(409).json({
+          error: err.message,
+          code: err.kind === 'week' ? 'DUPLICATE_WEEK' : 'DUPLICATE_FILE',
+          existing: err.existing,
+        });
+        return;
+      }
+      throw err;
+    }
+    const { batchId, closedBatches, autoFilled } = created;
     await writeAuditEvent({
       eventType: 'zero_sales_batch_created',
       actorRole: 'admin',
@@ -5176,8 +5195,8 @@ adminRouter.post(
       res.status(400).json({ error: '通告編號格式不正確' });
       return;
     }
-    const notice = await republishNotice(id.data, req.adminUsername ?? 'admin');
-    if (!notice) {
+    const result = await republishNotice(id.data, req.adminUsername ?? 'admin');
+    if (!result) {
       res.status(404).json({ error: '找不到通告' });
       return;
     }
@@ -5186,9 +5205,14 @@ adminRouter.post(
       actorRole: 'admin',
       actor: req.adminUsername,
       ip: getClientIp(req),
-      metadata: { notice_id: notice.id, title: notice.title, revision: notice.revision },
+      metadata: {
+        notice_id: result.notice.id,
+        title: result.notice.title,
+        revision: result.notice.revision,
+        cleared_ends_at: result.clearedEndsAt,
+      },
     });
-    res.json({ notice });
+    res.json({ notice: result.notice, cleared_ends_at: result.clearedEndsAt });
   }),
 );
 

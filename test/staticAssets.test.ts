@@ -161,6 +161,10 @@ describe('static asset freshness', () => {
     expect(adminCss).toContain('.stk-share-summary');
     expect(adminCss).toContain('flex-wrap: nowrap');
     expect(adminCss).toContain('scrollbar-width: thin');
+    // 分區 pill 與 OM 下拉同高，避免一高一低
+    expect(adminCss).toContain('.stk-share-filter .seg-switch-btn { align-self: stretch; }');
+    expect(adminCss).toContain('height: 38px;');
+    expect(adminCss).toContain('#stk_share_export .cx-btn');
     expect(adminCss).toContain('.stk-om-table');
     expect(adminCss).toContain('.stk-om-metric.is-current');
     // 排行榜篩選：OM／Shop Nature（預設全部）；表格本體要獨立容器，否則重畫會洗掉篩選列

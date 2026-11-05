@@ -766,12 +766,15 @@ body.stk-modal-open { overflow: hidden; }
   flex-wrap: wrap;
   margin-bottom: 10px;
 }
-/* 四個分區按鈕：窄螢幕容許換行，不然會撐爆卡片 */
+/* 四個分區按鈕：窄螢幕容許換行，不然會撐爆卡片；高度跟 OM 下拉一致 */
 .stk-share-filter {
   margin: 0;
+  min-height: 38px;
+  align-items: center;
   flex-wrap: wrap;
 }
-/* 店舖佔比的 OM 下拉：同分區按鈕同一行，窄螢幕自動換行 */
+.stk-share-filter .seg-switch-btn { align-self: stretch; }
+/* 店舖佔比的 OM 下拉：同分區按鈕同一行，窄螢幕自動換行；高度、圓角跟 pill 一致 */
 .stk-share-om {
   display: flex;
   align-items: center;
@@ -785,7 +788,15 @@ body.stk-modal-open { overflow: hidden; }
 .stk-share-om select {
   width: auto;
   min-width: 120px;
+  height: 38px;
+  padding-top: 0;
+  padding-bottom: 0;
+  border-radius: 999px;
+  font-size: 12.5px;
 }
+/* 右邊「放大／匯出圖表」同左邊 pill／下拉同一高度 */
+#stk_share_export .cx-btn,
+#stk_share_export .cx-zoom-btn { min-height: 38px; }
 /* 「全部」時只保留各 Shop Nature 摘要，棒圖本身唔再分組 */
 .stk-share-summary {
   display: grid;

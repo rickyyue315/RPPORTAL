@@ -1009,7 +1009,7 @@
         </nav>
 
         <div class="admin-group-title admin-section" id="sec-accounts">帳戶與主檔</div>
-        <p class="subnav-hint">店舖登入帳戶、SKU 對 Buyer 的分工，以及門店主檔（Store 帳戶同步來源）。</p>
+        <p class="subnav-hint">店舖登入帳戶、登入統計、SKU 對 Buyer 的分工，以及門店主檔（Store 帳戶同步來源）。</p>
         <div class="card" data-lazy-section="portal-users">
           <div class="card-header">
             <h3 class="card-title">店舖帳戶管理（一般 NDRF）</h3>
@@ -1138,6 +1138,77 @@
               <nav id="pu_page_numbers" class="page-numbers" aria-label="店舖帳戶分頁"></nav>
               <label class="page-size">每頁 <select id="pu_page_size" class="form-select form-select-sm"><option value="20">20</option><option value="50">50</option><option value="100">100</option></select></label>
             </div>
+          </div>
+        </div>
+
+        <div class="card" data-lazy-section="login-stats">
+          <div class="card-header">
+            <h3 class="card-title">店舖登入統計</h3>
+            <div class="card-actions">
+              <a href="#" class="btn-action" data-bs-toggle="collapse" data-bs-target="#login-stats-collapse" aria-expanded="true" aria-label="摺疊登入統計">
+                <svg xmlns="http://www.w3.org/2000/svg" class="icon" width="24" height="24" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none" stroke-linecap="round" stroke-linejoin="round"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><polyline points="6 9 12 15 18 9" /></svg>
+              </a>
+            </div>
+          </div>
+          <div class="card-body collapse show" id="login-stats-collapse">
+            <p class="text-secondary small">按 <code>portal_login</code> 審計事件統計。成功登入可追溯 730 日；失敗登入只保留 90 日。預設顯示最近 30 日，日期以香港時間為準。統計以帳戶為單位；共用密碼模式下無法區分實際使用者。</p>
+            <div class="d-flex gap-2 mb-3 flex-wrap align-items-end">
+              <div>
+                <label class="form-label" for="ls_from">由 (日期)</label>
+                <input type="date" id="ls_from" class="form-control">
+              </div>
+              <div>
+                <label class="form-label" for="ls_to">至 (日期)</label>
+                <input type="date" id="ls_to" class="form-control">
+              </div>
+              <div>
+                <label class="form-label" for="ls_role">角色</label>
+                <select id="ls_role" class="form-select">
+                  <option value="store">Store</option>
+                  <option value="om">OM</option>
+                  <option value="all">全部</option>
+                </select>
+              </div>
+              <div class="d-flex gap-1 align-self-end">
+                <button class="btn btn-sm btn-outline-secondary" type="button" data-ls-range="7">7 日</button>
+                <button class="btn btn-sm btn-outline-secondary" type="button" data-ls-range="30">30 日</button>
+                <button class="btn btn-sm btn-outline-secondary" type="button" data-ls-range="90">90 日</button>
+              </div>
+              <div class="align-self-end">
+                <button class="btn btn-outline-primary" id="btn_ls_apply" type="button">查詢</button>
+              </div>
+              <div class="align-self-end">
+                <button class="btn btn-outline-secondary" id="btn_ls_export" type="button">匯出 CSV</button>
+              </div>
+            </div>
+            <div id="login_stats_result"></div>
+            <div class="row g-2 mb-3">
+              <div class="col-6 col-md-3"><div class="card card-sm"><div class="card-body text-center"><div class="h1 mb-1" id="ls_logins">—</div><div class="text-secondary small">成功登入次數</div></div></div></div>
+              <div class="col-6 col-md-3"><div class="card card-sm"><div class="card-body text-center"><div class="h1 mb-1" id="ls_accounts">—</div><div class="text-secondary small">有登入／啟用帳戶</div></div></div></div>
+              <div class="col-6 col-md-3"><div class="card card-sm"><div class="card-body text-center"><div class="h1 mb-1" id="ls_never">—</div><div class="text-secondary small">期間內未登入</div></div></div></div>
+              <div class="col-6 col-md-3"><div class="card card-sm"><div class="card-body text-center"><div class="h1 mb-1 text-orange" id="ls_failed">—</div><div class="text-secondary small">失敗登入次數</div></div></div></div>
+            </div>
+            <div class="row g-3">
+              <div class="col-lg-5">
+                <h6 class="text-secondary">每日趨勢</h6>
+                <div class="table-responsive" style="max-height:360px;overflow:auto">
+                  <table class="table table-sm table-vcenter">
+                    <thead><tr><th>日期</th><th>登入次數</th><th>登入帳戶</th></tr></thead>
+                    <tbody id="login_stats_daily_body"><tr><td colspan="3" class="text-center text-secondary">載入中…</td></tr></tbody>
+                  </table>
+                </div>
+              </div>
+              <div class="col-lg-7">
+                <h6 class="text-secondary">每店／帳戶明細</h6>
+                <div class="table-responsive" style="max-height:360px;overflow:auto">
+                  <table class="table table-sm table-vcenter">
+                    <thead><tr><th>Site／帳戶</th><th>店舖／名稱</th><th>角色</th><th>登入次數</th><th>最後登入</th><th>失敗</th><th>狀態</th></tr></thead>
+                    <tbody id="login_stats_body"><tr><td colspan="7" class="text-center text-secondary">載入中…</td></tr></tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+            <div class="text-secondary small mt-2" id="login_stats_note"></div>
           </div>
         </div>
 

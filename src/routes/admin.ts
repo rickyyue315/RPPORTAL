@@ -55,6 +55,7 @@ import {
   issuePasswordsBulk,
   markPasswordNotified,
 } from '../services/portalAuth.js';
+import { getPortalLoginStats, type PortalLoginStatsRole } from '../services/loginStats.js';
 import {
   assertBuyerHasNoSkus,
   assertSctHasNoPending,
@@ -101,7 +102,14 @@ import {
   syncStoresFromFile,
   listStores,
 } from '../services/stores.js';
-import { toHKString, toHKDateString, hkTodayForDateColumn, monthsBeforeDateOnly } from '../lib/time.js';
+import {
+  toHKString,
+  toHKDateString,
+  hkTodayForDateColumn,
+  monthsBeforeDateOnly,
+  shiftDateOnly,
+  daysBetweenDateOnly,
+} from '../lib/time.js';
 import { generateApplicationNo } from '../lib/applicationNo.js';
 import { ipExpiryIso } from '../lib/ip.js';
 import {
@@ -2390,6 +2398,58 @@ adminRouter.post(
       failed: results.length - succeeded,
       results,
     });
+  }),
+);
+
+const portalLoginStatsQuerySchema = z.object({
+  from: z.string().trim().refine(isValidIsoDate, '起始日期格式應為 YYYY-MM-DD').optional(),
+  to: z.string().trim().refine(isValidIsoDate, '結束日期格式應為 YYYY-MM-DD').optional(),
+  role: z.enum(['store', 'om', 'all']).optional().default('store'),
+});
+
+/**
+ * GET /api/admin/portal/login-stats — Portal login counts by day and account.
+ *
+ * Successful logins are read from `audit_events` (`portal_login`); failed
+ * attempts come from `portal_login_attempts` and are therefore limited to the
+ * shorter retention window. The response exposes `failed_from` so the UI can
+ * label that limitation instead of silently showing a partial count.
+ */
+adminRouter.get(
+  '/portal/login-stats',
+  requireAdmin,
+  adminActionLimiter,
+  asyncHandler(async (req: Request, res: Response) => {
+    const parsed = portalLoginStatsQuerySchema.safeParse(req.query);
+    if (!parsed.success) {
+      res.status(400).json({ error: parsed.error.issues[0]?.message ?? '查詢條件無效' });
+      return;
+    }
+    const today = hkTodayForDateColumn();
+    const to = parsed.data.to ?? today;
+    const from = parsed.data.from ?? shiftDateOnly(to, -29);
+    if (!from) {
+      res.status(400).json({ error: '起始日期格式應為 YYYY-MM-DD' });
+      return;
+    }
+    if (from > to) {
+      res.status(400).json({ error: '起始日期不可晚於結束日期' });
+      return;
+    }
+    if (to > today) {
+      res.status(400).json({ error: '結束日期不可晚於今日' });
+      return;
+    }
+    if (daysBetweenDateOnly(from, to) > 729) {
+      res.status(400).json({ error: '查詢範圍不可超過 730 日' });
+      return;
+    }
+    const stats = await getPortalLoginStats({
+      from,
+      to,
+      role: parsed.data.role as PortalLoginStatsRole,
+    });
+    res.json(stats);
   }),
 );
 

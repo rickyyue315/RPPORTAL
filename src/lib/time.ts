@@ -48,6 +48,24 @@ export function monthsBeforeDateOnly(dateOnly: string, months: number): string {
   return `${target.getUTCFullYear()}-${mm}-${dd}`;
 }
 
+/** date-only（YYYY-MM-DD）加減 n 日，回傳 date-only；格式不合法回空字串。 */
+export function shiftDateOnly(dateOnly: string, days: number): string {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(dateOnly ?? '').trim());
+  if (!m) return '';
+  const target = new Date(Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3]) + days));
+  const mm = String(target.getUTCMonth() + 1).padStart(2, '0');
+  const dd = String(target.getUTCDate()).padStart(2, '0');
+  return `${target.getUTCFullYear()}-${mm}-${dd}`;
+}
+
+/** 兩個 date-only（YYYY-MM-DD）相差的日數（to - from）；格式不合法回 0。 */
+export function daysBetweenDateOnly(from: string, to: string): number {
+  const start = Date.parse(`${String(from ?? '').trim()}T00:00:00Z`);
+  const end = Date.parse(`${String(to ?? '').trim()}T00:00:00Z`);
+  if (Number.isNaN(start) || Number.isNaN(end)) return 0;
+  return Math.round((end - start) / 86_400_000);
+}
+
 function hkHourMinute(date: Date): { hour: number; minute: number } {
   const s = formatInTimeZone(date, {
     hour: '2-digit',

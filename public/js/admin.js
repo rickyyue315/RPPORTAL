@@ -2016,6 +2016,148 @@
     }
   });
 
+  /* Portal login stats ------------------------------------------------ */
+
+  let lastLoginStats = null;
+
+  function shiftDateOnlyClient(dateOnly, days) {
+    const parts = String(dateOnly || '').split('-').map(Number);
+    if (parts.length !== 3 || parts.some((n) => !Number.isFinite(n))) return '';
+    const d = new Date(Date.UTC(parts[0], parts[1] - 1, parts[2] + days));
+    const mm = String(d.getUTCMonth() + 1).padStart(2, '0');
+    const dd = String(d.getUTCDate()).padStart(2, '0');
+    return `${d.getUTCFullYear()}-${mm}-${dd}`;
+  }
+
+  function setLoginStatsRange(days) {
+    const to = todayInHongKong();
+    const from = shiftDateOnlyClient(to, -(Math.max(1, days) - 1));
+    if ($('ls_from')) $('ls_from').value = from;
+    if ($('ls_to')) $('ls_to').value = to;
+  }
+
+  function renderLoginStats(data) {
+    lastLoginStats = data;
+    const summary = data.summary || {};
+    if ($('ls_logins')) $('ls_logins').textContent = Number(summary.logins || 0).toLocaleString('en-US');
+    if ($('ls_accounts')) $('ls_accounts').textContent = `${Number(summary.logged_in_accounts || 0)} / ${Number(summary.active_accounts || 0)}`;
+    if ($('ls_never')) $('ls_never').textContent = Number(summary.never_logged_in_accounts || 0).toLocaleString('en-US');
+    if ($('ls_failed')) $('ls_failed').textContent = Number(summary.failed_attempts || 0).toLocaleString('en-US');
+
+    const dailyBody = $('login_stats_daily_body');
+    if (dailyBody) {
+      const daily = [...(data.daily || [])].reverse();
+      dailyBody.innerHTML = daily.length
+        ? daily.map((d) => `<tr><td>${escapeHtml(d.date)}</td><td>${Number(d.logins) || 0}</td><td>${Number(d.accounts) || 0}</td></tr>`).join('')
+        : '<tr><td colspan="3" class="text-center text-secondary">此期間沒有登入記錄。</td></tr>';
+    }
+
+    const tbody = $('login_stats_body');
+    if (tbody) {
+      const roleLabels = { store: 'Store', om: 'OM' };
+      const rows = data.accounts || [];
+      tbody.innerHTML = rows.length
+        ? rows.map((a) => {
+          const status = a.never_logged_in
+            ? '<span class="status-badge locked">期間內未登入</span>'
+            : a.active
+              ? '<span class="status-badge received">啟用</span>'
+              : '<span class="status-badge locked">已停用</span>';
+          return `<tr>
+            <td>${escapeHtml(a.site_code || a.username)}</td>
+            <td>${escapeHtml(a.shop || a.display_name || '—')}</td>
+            <td>${escapeHtml(roleLabels[a.role] || a.role)}</td>
+            <td>${Number(a.logins) || 0}</td>
+            <td>${escapeHtml(a.last_login_at || '—')}</td>
+            <td>${Number(a.failed_attempts) || 0}</td>
+            <td>${status}</td>
+          </tr>`;
+        }).join('')
+        : '<tr><td colspan="7" class="text-center text-secondary">沒有符合條件的帳戶。</td></tr>';
+    }
+
+    const note = $('login_stats_note');
+    if (note) {
+      const retentionDays = Number(data.failed_retention_days) || 90;
+      const auditRetentionDays = Number(data.audit_retention_days) || 730;
+      if (data.failed_from && data.failed_from > data.range.to) {
+        note.textContent = `此期間的失敗登入記錄已超出保留期（只保留最近 ${retentionDays} 日）；成功登入可追溯 ${auditRetentionDays} 日。`;
+      } else if (data.failed_from && data.failed_from > data.range.from) {
+        note.textContent = `失敗登入次數只涵蓋 ${data.failed_from} 起（保留 ${retentionDays} 日，只計可對應到帳戶的嘗試）；成功登入可追溯 ${auditRetentionDays} 日。`;
+      } else {
+        note.textContent = `成功登入可追溯 ${auditRetentionDays} 日；失敗登入只保留 ${retentionDays} 日（只計可對應到帳戶的嘗試）。`;
+      }
+    }
+  }
+
+  async function loadLoginStats() {
+    const fromEl = $('ls_from');
+    const toEl = $('ls_to');
+    if (!fromEl || !toEl) return;
+    if (!fromEl.value || !toEl.value) setLoginStatsRange(30);
+    const from = fromEl.value;
+    const to = toEl.value;
+    const role = $('ls_role')?.value || 'store';
+    const resultEl = $('login_stats_result');
+    if (!from || !to) {
+      showAlert(resultEl, 'error', '請選擇日期範圍');
+      return;
+    }
+    if (from > to) {
+      showAlert(resultEl, 'error', '起始日期不可晚於結束日期');
+      return;
+    }
+    try {
+      const params = new URLSearchParams({ from, to, role });
+      const data = await adminFetch(`/api/admin/portal/login-stats?${params.toString()}`);
+      if (resultEl) resultEl.innerHTML = '';
+      renderLoginStats(data);
+    } catch (err) {
+      showAlert(resultEl, 'error', escapeHtml(err.message));
+      if ($('login_stats_daily_body')) $('login_stats_daily_body').innerHTML = '<tr><td colspan="3" class="text-center text-secondary">載入失敗</td></tr>';
+      if ($('login_stats_body')) $('login_stats_body').innerHTML = '<tr><td colspan="7" class="text-center text-secondary">載入失敗</td></tr>';
+    }
+  }
+
+  function exportLoginStatsCsv() {
+    if (!lastLoginStats) {
+      showAlert($('login_stats_result'), 'info', '請先查詢登入統計。');
+      return;
+    }
+    const cell = (v) => `"${String(v ?? '').replace(/"/g, '""')}"`;
+    const lines = ['Site Code / 帳戶,店舖／名稱,角色,登入次數,最後登入,失敗次數,狀態'];
+    for (const a of lastLoginStats.accounts || []) {
+      const status = a.never_logged_in ? '期間內未登入' : a.active ? '啟用' : '已停用';
+      lines.push([
+        a.site_code || a.username,
+        a.shop || a.display_name || '',
+        a.role === 'store' ? 'Store' : 'OM',
+        Number(a.logins) || 0,
+        a.last_login_at || '',
+        Number(a.failed_attempts) || 0,
+        status,
+      ].map(cell).join(','));
+    }
+    const blob = new Blob(['\ufeff' + lines.join('\r\n')], { type: 'text/csv;charset=utf-8' });
+    const anchor = document.createElement('a');
+    anchor.href = URL.createObjectURL(blob);
+    anchor.download = `portal-login-stats_${lastLoginStats.range.from}_${lastLoginStats.range.to}.csv`;
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+    setTimeout(() => URL.revokeObjectURL(anchor.href), 5000);
+    showAlert($('login_stats_result'), 'success', `已匯出 ${(lastLoginStats.accounts || []).length} 個帳戶的登入統計（CSV）。`);
+  }
+
+  if ($('btn_ls_apply')) $('btn_ls_apply').addEventListener('click', loadLoginStats);
+  if ($('btn_ls_export')) $('btn_ls_export').addEventListener('click', exportLoginStatsCsv);
+  document.querySelectorAll('[data-ls-range]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      setLoginStatsRange(Number(btn.dataset.lsRange) || 30);
+      loadLoginStats();
+    });
+  });
+
   /* SKU Master -------------------------------------------------------- */
 
   async function loadSkuMaster() {
@@ -2263,6 +2405,7 @@
   const lazyLoaded = new Set();
   const lazyLoaders = {
     'portal-users': loadPortalUsers,
+    'login-stats': loadLoginStats,
     'sku-master': loadSkuMaster,
     'store-routes': loadStoreRoutes,
     'rejection-reasons': loadRejectionReasons,
@@ -2314,7 +2457,7 @@
     else if (tab === 'system') {
       loadReviewPending();
       if (manual) {
-        ['portal-users', 'sku-master', 'stores', 'store-routes', 'rejection-reasons', 'backup']
+        ['portal-users', 'login-stats', 'sku-master', 'stores', 'store-routes', 'rejection-reasons', 'backup']
           .forEach(loadLazySection);
       }
     } else if (tab === 'zero-sales') {

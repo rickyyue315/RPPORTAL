@@ -777,6 +777,64 @@ td.cell-appno {
   white-space: nowrap;
 }
 
+/* Urgent Order：RP Team 審核安排（合理落貨數量／D001 庫存量） */
+.urgent-review {
+  margin: 0 0 16px;
+  padding: 14px 16px;
+  background: var(--brand-50);
+  border: 1px solid var(--brand-200);
+  border-left: 4px solid var(--brand);
+  border-radius: var(--radius);
+}
+.urgent-review h3 {
+  margin: 0 0 6px;
+  font-size: 15px;
+  color: var(--brand-dark);
+}
+.urgent-review p {
+  margin: 0;
+  font-size: 13.5px;
+  color: var(--text);
+}
+.urgent-review-table {
+  margin-top: 10px;
+  background: #fff;
+  font-size: 13px;
+}
+.urgent-review-table th,
+.urgent-review-table td {
+  border-color: var(--brand-200);
+  padding: 8px 10px;
+}
+.urgent-review-table thead th {
+  background: var(--brand-100);
+  color: var(--brand-dark);
+}
+/* D001 庫存量 → Limit Qty 對照表：短表置中，數值欄對齊 */
+.urgent-review-table--limit {
+  max-width: 480px;
+  margin-left: auto;
+  margin-right: auto;
+}
+.urgent-review-table--limit th:first-child,
+.urgent-review-table--limit td:first-child {
+  text-align: left;
+  font-weight: 600;
+  color: var(--brand-dark);
+  white-space: nowrap;
+}
+.urgent-review-table--limit th:last-child,
+.urgent-review-table--limit td:last-child {
+  text-align: center;
+  font-weight: 600;
+  white-space: nowrap;
+}
+@media (max-width: 640px) {
+  .urgent-review-table--limit {
+    max-width: none;
+  }
+}
+
 .urgent-item {
   border-top: 1px solid var(--border);
   padding-top: 16px;

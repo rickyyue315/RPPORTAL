@@ -496,6 +496,36 @@ describe('static asset freshness', () => {
     expect(read('public/help.html')).toContain('9. 行貨退貨報數（暫停收單，仍可進入查看）');
   });
 
+  it('shows the RP Team review policy on the Urgent Order page', () => {
+    // 服務暫停期間仍可進入 Urgent 頁；重開前先講清楚 RP Team 會按合理落貨數量
+    // 及 D001 庫存量調整或取消，避免店舖以為申報數量一定全數落貨。
+    const page = readFileSync(path.join(root, 'public/urgent.html'), 'utf8');
+    expect(page).toContain('RP Team 審核安排');
+    expect(page).toContain('RP Team 將會評估');
+    expect(page).toContain('合理落貨數量');
+    expect(page).toContain('D001 庫存量');
+    expect(page).toContain('調整或取消');
+    expect(page).toContain('class="urgent-review-table urgent-review-table--limit"');
+    // 實際對照表：D001 庫存量 → Limit Qty，五個級別缺一不可
+    expect(page).toContain('Limit Qty');
+    expect(page).toContain('&gt; 10,000');
+    expect(page).toContain('≤ 492');
+    expect(page).toContain('&gt; 5,000');
+    expect(page).toContain('≤ 192');
+    expect(page).toContain('&gt; 1,000');
+    expect(page).toContain('≤ 96');
+    expect(page).toContain('&gt; 500');
+    expect(page).toContain('≤ 24');
+    expect(page).toContain('≤ 500');
+    expect(page).toContain('≤ 12');
+
+    // 公開頁只載入 style.css，表格樣式必須放在那裡
+    const style = readFileSync(path.join(root, 'public/css/style.css'), 'utf8');
+    expect(style).toContain('.urgent-review {');
+    expect(style).toContain('.urgent-review-table {');
+    expect(style).toContain('.urgent-review-table--limit {');
+  });
+
   it('shop-facing password boxes do not invite browser autofill, and trim before sending', () => {
     const read = (file: string) => readFileSync(path.join(root, file), 'utf8');
     // 一台電腦會輪流登入多間店（RP Team）或多個 OM。Chrome 會把上一個帳戶的

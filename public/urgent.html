@@ -39,6 +39,28 @@
   <main class="container">
     <div class="card">
       <h2>Urgent Order 網頁申報</h2>
+      <section class="urgent-review" aria-labelledby="urgent_review_title">
+        <h3 id="urgent_review_title">RP Team 審核安排</h3>
+        <p>RP Team 將會評估<b>合理落貨數量</b>及 <b>D001 庫存量</b>而作出調整或取消，詳情如下：</p>
+        <div class="table-scroll">
+          <table class="urgent-review-table urgent-review-table--limit">
+            <thead>
+              <tr>
+                <th scope="col">D001 庫存量</th>
+                <th scope="col">Limit Qty</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr><td>&gt; 10,000</td><td>≤ 492</td></tr>
+              <tr><td>&gt; 5,000</td><td>≤ 192</td></tr>
+              <tr><td>&gt; 1,000</td><td>≤ 96</td></tr>
+              <tr><td>&gt; 500</td><td>≤ 24</td></tr>
+              <tr><td>≤ 500</td><td>≤ 12</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p class="hint" style="margin-top:8px">申報數量大於對應的 Limit Qty 時，RP Team 會按上表調整至 Limit Qty 或取消申請，最終安排以 RP Team 處理為準。</p>
+      </section>
       <p class="hint">可一次填寫 <b>1 至 5 個 SKU</b>。每個 SKU 都必須填寫 <b>SKU</b>、<b>QTY</b>（1 至 1000 的整數）及 <b>Urgent Reason</b>；選擇「9. 其他」時必須填寫 Other Reason。</p>
       <div class="alert warning" style="margin-top:0">
         所有 Urgent Order 申請都預設為 <b>T+1</b>，非緊急 Order 請使用 SAP 打 PR 單。<br>

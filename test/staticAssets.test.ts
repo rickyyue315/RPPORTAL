@@ -24,6 +24,7 @@ const VERSIONED_ASSETS = [
   '/js/chart-export.js',
   '/js/chart-zoom.js',
   '/css/chart-export.css',
+  '/css/tokens.css',
   '/portal/css/portal.css',
   '/css/style.css',
   '/js/api.js',

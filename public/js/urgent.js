@@ -3,7 +3,7 @@
   const options = globalThis.NDRF_OPTIONS || {};
   const SKU_RE = new RegExp(options.skuPattern || '^(?:\\d{7}|\\d{12})$');
   const QTY_MIN = options.urgentQtyMin ?? 1;
-  const QTY_MAX = options.urgentQtyMax ?? 1000;
+  let QTY_MAX = options.urgentQtyMax ?? 1000;
   const MAX_ITEMS = options.urgentWebMaxItems ?? 5;
   const URGENT_OTHER_CODE = options.urgentReasonOtherCode ?? '9';
   const URGENT_REASONS = options.urgentReasons || [];
@@ -49,8 +49,8 @@
           <div class="hint">7 位或 12 位數字，只可一個 SKU。</div>
         </div>
         <div>
-          <label for="item_${n}_qty">QTY <span class="optional">（必填，1 至 1000）</span></label>
-          <input type="number" id="item_${n}_qty" min="1" max="1000" step="1" inputmode="numeric" autocomplete="off" class="item-qty">
+          <label for="item_${n}_qty">QTY <span class="optional">（必填，1 至 <span class="qty-max">${QTY_MAX}</span>）</span></label>
+          <input type="number" id="item_${n}_qty" min="1" max="${QTY_MAX}" step="1" inputmode="numeric" autocomplete="off" class="item-qty">
         </div>
         <div class="full">
           <label for="item_${n}_reason">Urgent Reason <span class="optional">（必填）</span></label>
@@ -90,6 +90,22 @@
         if (other) other.value = '';
       }
     }
+  }
+
+  /** 旺季上限由 API 回來後，同步更新所有 QTY 輸入框、標籤及頁面提示。 */
+  function syncQtyMax() {
+    document.querySelectorAll('.urgent-item .qty-max').forEach((el) => {
+      el.textContent = String(QTY_MAX);
+    });
+    document.querySelectorAll('.item-qty').forEach((el) => {
+      el.max = String(QTY_MAX);
+    });
+    for (const id of ['urgent_qty_max_hint', 'urgent_qty_max_over']) {
+      const el = $(id);
+      if (el) el.textContent = String(QTY_MAX);
+    }
+    const text = $('urgent_qty_max_text');
+    if (text) text.textContent = `${QTY_MAX} 件`;
   }
 
   $('item_count').addEventListener('change', renderItems);
@@ -322,6 +338,54 @@
     }
   }
   loadWindowStatus();
+
+  /** 旺季限額：正常顯示 HTML 基本表；生效期間由 API 換成調高後的 Limit Qty。 */
+  async function loadLimitSettings() {
+    const tbody = $('urgent_limit_body');
+    const peak = $('urgent_limit_peak');
+    if (!tbody) return;
+    try {
+      const data = await api('/api/public/urgent/limits');
+      const limits = Array.isArray(data?.limits) ? data.limits : [];
+      if (limits.length) {
+        tbody.textContent = '';
+        limits.forEach((row) => {
+          const tr = document.createElement('tr');
+          const label = document.createElement('td');
+          label.textContent = row.label;
+          const value = document.createElement('td');
+          value.textContent = `≤ ${row.limit}`;
+          tr.append(label, value);
+          tbody.appendChild(tr);
+        });
+      }
+      const apiQtyMax = Number(data?.qtyMax);
+      if (Number.isFinite(apiQtyMax) && apiQtyMax >= QTY_MIN) {
+        QTY_MAX = apiQtyMax;
+        syncQtyMax();
+      }
+      if (!peak) return;
+      const multiplier = Number(data?.multiplier);
+      const multLabel = Number.isFinite(multiplier) ? String(multiplier) : '1';
+      const range = data?.effectiveFrom && data?.effectiveTo
+        ? `${data.effectiveFrom} 至 ${data.effectiveTo}`
+        : '';
+      const note = data?.note ? ` · ${data.note}` : '';
+      if (data?.phase === 'active') {
+        peak.textContent = `旺季限額生效中：×${multLabel}（${range}）${note}`;
+        peak.hidden = false;
+      } else if (data?.phase === 'scheduled') {
+        peak.textContent = `旺季限額將於 ${data.effectiveFrom} 起生效：×${multLabel}（至 ${data.effectiveTo}）${note}`;
+        peak.hidden = false;
+      } else {
+        peak.hidden = true;
+        peak.textContent = '';
+      }
+    } catch {
+      // 保留 HTML 的基本表；限額只是參考，不影響申報。
+    }
+  }
+  loadLimitSettings();
 
   const CUTOFF_HOUR = 14;
   const CUTOFF_MINUTE = 30;

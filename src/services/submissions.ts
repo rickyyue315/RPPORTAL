@@ -64,6 +64,8 @@ export interface CreateSubmissionInput {
   submissionType?: SubmissionType;
   fields: SubmissionBusinessFields;
   qty?: number | null;
+  /** 目前生效的每筆 QTY 上限；預設基本 1000，旺季由呼叫端傳入。 */
+  maxQty?: number;
   urgentReason?: string | null;
   urgentReasonOther?: string | null;
   returnQty?: number | null;
@@ -379,12 +381,13 @@ export async function createSubmission(
   const submissionType: SubmissionType = input.submissionType ?? 'normal';
   const isUrgent = submissionType === 'urgent';
   const qty = isUrgent ? (input.qty ?? null) : null;
+  const maxQty = input.maxQty ?? URGENT_QTY_MAX;
   const urgentReason = isUrgent && normalizeText(input.urgentReason)
     ? resolveUrgentReasonCode(input.urgentReason)
     : null;
   if (isUrgent) {
-    if (!(typeof qty === 'number' && Number.isInteger(qty) && qty >= URGENT_QTY_MIN && qty <= URGENT_QTY_MAX)) {
-      throw new Error(`QTY 必須為 ${URGENT_QTY_MIN} 至 ${URGENT_QTY_MAX} 的整數`);
+    if (!(typeof qty === 'number' && Number.isInteger(qty) && qty >= URGENT_QTY_MIN && qty <= maxQty)) {
+      throw new Error(`QTY 必須為 ${URGENT_QTY_MIN} 至 ${maxQty} 的整數`);
     }
     const reasonErrors = validateUrgentReason(input.urgentReason, input.urgentReasonOther);
     if (reasonErrors.length) {
@@ -483,6 +486,8 @@ export interface UrgentBatchItemInput {
 export interface CreateUrgentBatchInput {
   siteCode: string;
   items: UrgentBatchItemInput[];
+  /** 目前生效的每筆 QTY 上限；預設基本 1000，旺季由呼叫端傳入。 */
+  maxQty?: number;
   ip: string;
   changeSource: string;
   idempotencyKey?: string;
@@ -518,6 +523,7 @@ export async function createUrgentBatch(
   }
   const siteCode = normalizeSiteCode(input.siteCode);
   const applicationDate = hkTodayForDateColumn();
+  const maxQty = input.maxQty ?? URGENT_QTY_MAX;
   const items = input.items.map((item) => ({
     sku: normalizeText(item.sku),
     qty: item.qty,
@@ -527,8 +533,8 @@ export async function createUrgentBatch(
 
   // Defense in depth: mirror the route-level item validation before opening a transaction.
   for (const item of items) {
-    if (!(Number.isInteger(item.qty) && item.qty >= URGENT_QTY_MIN && item.qty <= URGENT_QTY_MAX)) {
-      throw new Error(`QTY 必須為 ${URGENT_QTY_MIN} 至 ${URGENT_QTY_MAX} 的整數`);
+    if (!(Number.isInteger(item.qty) && item.qty >= URGENT_QTY_MIN && item.qty <= maxQty)) {
+      throw new Error(`QTY 必須為 ${URGENT_QTY_MIN} 至 ${maxQty} 的整數`);
     }
     const reasonErrors = validateUrgentReason(item.urgentReason, item.urgentReasonOther);
     if (reasonErrors.length) throw new Error(reasonErrors[0]!.message);
@@ -925,6 +931,8 @@ export interface ModifyUrgentSubmissionInput {
   qty: number;
   urgentReason: string | null;
   urgentReasonOther: string | null;
+  /** 目前生效的每筆 QTY 上限；預設基本 1000，旺季由呼叫端傳入。 */
+  maxQty?: number;
   ip: string;
   changeSource: string;
 }
@@ -933,8 +941,9 @@ export async function modifyUrgentSubmission(
   input: ModifyUrgentSubmissionInput,
 ): Promise<SubmissionRow> {
   const siteCode = normalizeSiteCode(input.siteCode);
-  if (!(Number.isInteger(input.qty) && input.qty >= URGENT_QTY_MIN && input.qty <= URGENT_QTY_MAX)) {
-    throw new Error(`QTY 必須為 ${URGENT_QTY_MIN} 至 ${URGENT_QTY_MAX} 的整數`);
+  const maxQty = input.maxQty ?? URGENT_QTY_MAX;
+  if (!(Number.isInteger(input.qty) && input.qty >= URGENT_QTY_MIN && input.qty <= maxQty)) {
+    throw new Error(`QTY 必須為 ${URGENT_QTY_MIN} 至 ${maxQty} 的整數`);
   }
   const reasonErrors = validateUrgentReason(input.urgentReason, input.urgentReasonOther);
   if (reasonErrors.length) {
@@ -1051,11 +1060,14 @@ export async function adminUpdateUrgentSubmission(input: {
   qty: number;
   urgentReason: string | null;
   urgentReasonOther: string | null;
+  /** 目前生效的每筆 QTY 上限；預設基本 1000，旺季由呼叫端傳入。 */
+  maxQty?: number;
   ip: string;
   username: string;
 }): Promise<SubmissionRow> {
-  if (!Number.isInteger(input.qty) || input.qty < URGENT_QTY_MIN || input.qty > URGENT_QTY_MAX) {
-    throw new Error(`QTY 必須為 ${URGENT_QTY_MIN} 至 ${URGENT_QTY_MAX} 的整數`);
+  const maxQty = input.maxQty ?? URGENT_QTY_MAX;
+  if (!Number.isInteger(input.qty) || input.qty < URGENT_QTY_MIN || input.qty > maxQty) {
+    throw new Error(`QTY 必須為 ${URGENT_QTY_MIN} 至 ${maxQty} 的整數`);
   }
   const reasonErrors = validateUrgentReason(input.urgentReason, input.urgentReasonOther);
   if (reasonErrors.length) {

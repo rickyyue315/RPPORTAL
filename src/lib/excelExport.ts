@@ -142,7 +142,7 @@ export function buildSapExportBuffer(rows: SubmissionRow[]): Promise<Buffer> {
 }
 
 /** Generates the Urgent Order import template (Site Code | SKU | QTY | Urgent Reason | Other Reason). */
-export async function generateUrgentTemplateWorkbook(): Promise<Buffer> {
+export async function generateUrgentTemplateWorkbook(maxQty: number = URGENT_QTY_MAX): Promise<Buffer> {
   const workbook = new ExcelJS.Workbook();
   const sheet = workbook.addWorksheet(URGENT_SHEET);
 
@@ -168,7 +168,7 @@ export async function generateUrgentTemplateWorkbook(): Promise<Buffer> {
     type: 'whole',
     operator: 'between',
     allowBlank: true,
-    formulae: [URGENT_QTY_MIN, URGENT_QTY_MAX],
+    formulae: [URGENT_QTY_MIN, maxQty],
   });
   vSheet.dataValidations.add('D2:D2001', {
     type: 'list',

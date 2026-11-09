@@ -90,6 +90,26 @@
     }
   }
 
+  /** 旺季期間每筆 QTY 上限會提高；後台編輯表單跟隨後端即時上限。 */
+  async function refreshUrgentQtyMax() {
+    try {
+      const data = await api('/api/admin/urgent-limits');
+      const max = Number(data?.qtyMax);
+      if (!Number.isFinite(max) || max < 1) return;
+      globalThis.__setUrgentQtyMax?.(max);
+      const input = $('a_qty');
+      if (input) input.max = String(max);
+      const label = $('a_qty_max');
+      if (label) label.textContent = String(max);
+      const note = $('urgent_note');
+      if (note) {
+        note.textContent = `Urgent Order：可修改 SKU、QTY（1 至 ${max}）及 Urgent Reason，Site Code 不可修改。選擇「9. 其他」時必須填寫 Other Reason。`;
+      }
+    } catch {
+      // 保留 1000 的基本上限；儲存時伺服器仍會用即時上限驗證。
+    }
+  }
+
   async function getCsrf() {
     if (!csrfToken) {
       const data = await api('/api/csrf');
@@ -2408,6 +2428,7 @@
     'login-stats': loadLoginStats,
     'sku-master': loadSkuMaster,
     'store-routes': loadStoreRoutes,
+    'urgent-limits': () => globalThis.__urgentLimitsRefresh?.(),
     'rejection-reasons': loadRejectionReasons,
     stores: loadStoreCount,
     backup: loadBackupStatus,
@@ -2457,7 +2478,7 @@
     else if (tab === 'system') {
       loadReviewPending();
       if (manual) {
-        ['portal-users', 'login-stats', 'sku-master', 'stores', 'store-routes', 'rejection-reasons', 'backup']
+        ['portal-users', 'login-stats', 'sku-master', 'stores', 'store-routes', 'urgent-limits', 'rejection-reasons', 'backup']
           .forEach(loadLazySection);
       }
     } else if (tab === 'zero-sales') {
@@ -2487,7 +2508,9 @@
   ensureAuth().then((username) => {
     if (!username) {
       window.location.replace('/admin/login.html');
+      return;
     }
+    refreshUrgentQtyMax();
   });
 
   setInterval(() => {

@@ -78,6 +78,7 @@ import {
   updateNotice,
 } from '../services/notices.js';
 import { query, withTransaction } from '../db/pool.js';
+import { getUrgentLimitSettings, getUrgentQtyMax, saveUrgentLimitSettings } from '../services/urgentLimits.js';
 import {
   generateTemplateWorkbook,
   buildSapExportBuffer,
@@ -114,7 +115,8 @@ import { generateApplicationNo } from '../lib/applicationNo.js';
 import { ipExpiryIso } from '../lib/ip.js';
 import {
   URGENT_QTY_MIN,
-  URGENT_QTY_MAX,
+  URGENT_QTY_HARD_MAX,
+  URGENT_LIMIT_MAX_MULTIPLIER,
   urgentReasonLabel,
   RETURN_QTY_MIN,
   RETURN_QTY_MAX,
@@ -788,7 +790,7 @@ adminRouter.put(
           .number({ invalid_type_error: 'QTY 必須為整數' })
           .int('QTY 必須為整數')
           .min(URGENT_QTY_MIN, `QTY 最少為 ${URGENT_QTY_MIN}`)
-          .max(URGENT_QTY_MAX, `QTY 最多為 ${URGENT_QTY_MAX}`),
+          .max(URGENT_QTY_HARD_MAX, 'QTY 超出上限'),
         urgent_reason: z.string().trim().max(100).optional().default(''),
         urgent_reason_other: z.string().max(2000).optional().default(''),
       });
@@ -796,6 +798,11 @@ adminRouter.put(
       if (!parsed.success) {
         const first = parsed.error.issues[0];
         res.status(400).json({ error: first?.message ?? '輸入資料無效', field: first?.path[0] ?? null });
+        return;
+      }
+      const qtyMax = await getUrgentQtyMax();
+      if (parsed.data.qty > qtyMax) {
+        res.status(400).json({ error: `QTY 最多為 ${qtyMax}`, field: 'qty' });
         return;
       }
       const reasonErrors = validateUrgentReason(parsed.data.urgent_reason, parsed.data.urgent_reason_other);
@@ -815,6 +822,7 @@ adminRouter.put(
           qty: parsed.data.qty,
           urgentReason: parsed.data.urgent_reason,
           urgentReasonOther: parsed.data.urgent_reason_other,
+          maxQty: qtyMax,
           ip,
           username: req.adminUsername!,
         });
@@ -1124,7 +1132,7 @@ adminRouter.get(
   requireAdmin,
   excelExportLimiter,
   asyncHandler(async (_req: Request, res: Response) => {
-    const buffer = await generateUrgentTemplateWorkbook();
+    const buffer = await generateUrgentTemplateWorkbook(await getUrgentQtyMax());
     res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
     res.setHeader('Content-Disposition', `attachment; filename="Urgent Order Template.xlsx"`);
     res.send(buffer);
@@ -1148,7 +1156,10 @@ adminRouter.post(
     const stores = await query<{ site_code: string }>('SELECT site_code FROM stores');
     const storeCodes = new Set(stores.rows.map((s) => s.site_code));
 
-    const parsed = await parseUrgentImportWorkbook(file.buffer, storeCodes, config.maxImportRows, { validateSku: false });
+    const parsed = await parseUrgentImportWorkbook(file.buffer, storeCodes, config.maxImportRows, {
+      validateSku: false,
+      maxQty: await getUrgentQtyMax(),
+    });
     if (!parsed.ok || !parsed.rows) {
       await writeAuditEvent({
         eventType: 'excel_import_error',
@@ -2640,6 +2651,96 @@ adminRouter.delete(
   }),
 );
 
+
+const urgentLimitSettingsSchema = z.object({
+  multiplier: z.number().min(1).max(URGENT_LIMIT_MAX_MULTIPLIER),
+  effectiveFrom: z.string().trim().max(10).nullable().optional(),
+  effectiveTo: z.string().trim().max(10).nullable().optional(),
+  note: z.string().trim().max(200).optional().default(''),
+});
+
+/** GET /api/admin/urgent-limits — 旺季倍數、生效日期及五級對照表。 */
+adminRouter.get(
+  '/urgent-limits',
+  requireAdmin,
+  adminActionLimiter,
+  asyncHandler(async (_req: Request, res: Response) => {
+    res.json(await getUrgentLimitSettings());
+  }),
+);
+
+/** PUT /api/admin/urgent-limits — 儲存旺季倍數及生效期間（香港日期，結束日當日仍生效）。 */
+adminRouter.put(
+  '/urgent-limits',
+  requireAdmin,
+  adminActionLimiter,
+  asyncHandler(async (req: Request, res: Response) => {
+    const parsed = urgentLimitSettingsSchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ error: parsed.error.issues[0]?.message ?? '旺季限額設定無效' });
+      return;
+    }
+
+    const effectiveFrom = parsed.data.effectiveFrom || null;
+    const effectiveTo = parsed.data.effectiveTo || null;
+    if (effectiveFrom && !isValidIsoDate(effectiveFrom)) {
+      res.status(400).json({ error: '生效日期格式無效（YYYY-MM-DD）' });
+      return;
+    }
+    if (effectiveTo && !isValidIsoDate(effectiveTo)) {
+      res.status(400).json({ error: '結束日期格式無效（YYYY-MM-DD）' });
+      return;
+    }
+    if (Boolean(effectiveFrom) !== Boolean(effectiveTo)) {
+      res.status(400).json({ error: '請同時填寫生效日期及結束日期' });
+      return;
+    }
+    if (effectiveFrom && effectiveTo && effectiveFrom > effectiveTo) {
+      res.status(400).json({ error: '結束日期不可早於生效日期' });
+      return;
+    }
+    if (parsed.data.multiplier > 1 && !effectiveFrom) {
+      res.status(400).json({ error: '旺季倍數大於 1 時，必須填寫生效日期及結束日期' });
+      return;
+    }
+    if (effectiveFrom && parsed.data.multiplier <= 1) {
+      res.status(400).json({ error: '旺季倍數必須大於 1；如不使用旺季設定，請清除日期' });
+      return;
+    }
+
+    const before = await getUrgentLimitSettings();
+    const after = await saveUrgentLimitSettings(
+      {
+        multiplier: parsed.data.multiplier,
+        effectiveFrom,
+        effectiveTo,
+        note: parsed.data.note,
+      },
+      req.adminUsername!,
+    );
+    await writeAuditEvent({
+      eventType: 'urgent_limits_updated',
+      actorRole: 'admin',
+      actor: req.adminUsername,
+      ip: getClientIp(req),
+      metadata: {
+        before: {
+          multiplier: before.multiplier,
+          effectiveFrom: before.effectiveFrom,
+          effectiveTo: before.effectiveTo,
+          note: before.note,
+        },
+        after: {
+          multiplier: after.multiplier,
+          effectiveFrom: after.effectiveFrom,
+          effectiveTo: after.effectiveTo,
+          note: after.note,
+        },
+      },
+    });
+    res.json({ ok: true, ...after });
+  }),
+);
 
 /** GET /api/admin/review-pending — Buyer pending ND review reminder (counts + SKU list). */
 adminRouter.get(

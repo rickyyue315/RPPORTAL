@@ -277,9 +277,9 @@ export async function parseUrgentImportWorkbook(
   buffer: Buffer,
   storeCodes: Set<string>,
   maxRows: number,
-  options: { validateSku?: boolean } = {},
+  options: { validateSku?: boolean; maxQty?: number } = {},
 ): Promise<ParsedUrgentImport> {
-  const { validateSku = true } = options;
+  const { validateSku = true, maxQty = URGENT_QTY_MAX } = options;
   const contentHash = hashFileContent(buffer);
   const workbook = new ExcelJS.Workbook();
   try {
@@ -374,8 +374,8 @@ export async function parseUrgentImportWorkbook(
     }
 
     const qty = parseQtyCell(row.getCell(URGENT_QTY_COL).value);
-    if (!(Number.isInteger(qty) && qty >= URGENT_QTY_MIN && qty <= URGENT_QTY_MAX)) {
-      rowError('QTY', `QTY 必須為 ${URGENT_QTY_MIN} 至 ${URGENT_QTY_MAX} 的整數`);
+    if (!(Number.isInteger(qty) && qty >= URGENT_QTY_MIN && qty <= maxQty)) {
+      rowError('QTY', `QTY 必須為 ${URGENT_QTY_MIN} 至 ${maxQty} 的整數`);
     }
 
     const urgentReason = cellValue(row.getCell(URGENT_REASON_COL));

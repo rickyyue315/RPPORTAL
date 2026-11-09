@@ -37,6 +37,7 @@ export type AuditEventType =
   | 'store_accounts_synced'
   | 'sku_master_updated'
   | 'store_routes_updated'
+  | 'urgent_limits_updated'
   | 'rejection_reason_updated'
   | 'workflow_override'
   | 'buyer_auto_approved'

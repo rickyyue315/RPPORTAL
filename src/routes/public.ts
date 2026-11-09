@@ -59,7 +59,7 @@ import {
   RETURN_REASONS,
   RETURN_SHEET,
   URGENT_QTY_MIN,
-  URGENT_QTY_MAX,
+  URGENT_QTY_HARD_MAX,
   URGENT_WEB_MAX_ITEMS,
   urgentReasonLabel,
 } from '../lib/fields.js';
@@ -69,6 +69,7 @@ import { config } from '../config.js';
 import { requirePublicWritesOpen } from '../middleware/publicWriteSuspension.js';
 import { generateApplicationNo } from '../lib/applicationNo.js';
 import { listActiveNotices } from '../services/notices.js';
+import { getUrgentLimitSettings, getUrgentQtyMax } from '../services/urgentLimits.js';
 import { ipExpiryIso } from '../lib/ip.js';
 import { RETURN_SCHEDULE, RETURN_WINDOWS, getActiveReturnWindow, isReturnModificationOpen } from '../lib/returnSchedule.js';
 import { fingerprintPayload, getIdempotencyKey, hasInvalidIdempotencyKey } from '../lib/idempotency.js';
@@ -997,7 +998,7 @@ const urgentSubmitSchema = z.object({
     .number({ invalid_type_error: 'QTY 必須為整數' })
     .int('QTY 必須為整數')
     .min(URGENT_QTY_MIN, `QTY 最少為 ${URGENT_QTY_MIN}`)
-    .max(URGENT_QTY_MAX, `QTY 最多為 ${URGENT_QTY_MAX}`),
+    .max(URGENT_QTY_HARD_MAX, 'QTY 超出上限'),
   urgent_reason: z.string().trim().max(100).optional().default(''),
   urgent_reason_other: z.string().max(2000).optional().default(''),
 });
@@ -1008,7 +1009,7 @@ const urgentBatchItemSchema = z.object({
     .number({ invalid_type_error: 'QTY 必須為整數' })
     .int('QTY 必須為整數')
     .min(URGENT_QTY_MIN, `QTY 最少為 ${URGENT_QTY_MIN}`)
-    .max(URGENT_QTY_MAX, `QTY 最多為 ${URGENT_QTY_MAX}`),
+    .max(URGENT_QTY_HARD_MAX, 'QTY 超出上限'),
   urgent_reason: z.string().trim().max(100).optional().default(''),
   urgent_reason_other: z.string().max(2000).optional().default(''),
 });
@@ -1043,6 +1044,7 @@ publicRouter.post(
         }
       }
       const rawItems = Array.isArray(rawBody.items) ? rawBody.items : [];
+      const qtyMax = await getUrgentQtyMax();
       const parsedItems: z.infer<typeof urgentBatchItemSchema>[] = [];
       rawItems.forEach((rawItem: unknown, index: number) => {
         const parsedItem = urgentBatchItemSchema.safeParse(rawItem);
@@ -1050,6 +1052,10 @@ publicRouter.post(
           for (const issue of parsedItem.error.issues) {
             errors.push({ item: index + 1, field: String(issue.path[0] ?? ''), message: issue.message });
           }
+          return;
+        }
+        if (parsedItem.data.qty > qtyMax) {
+          errors.push({ item: index + 1, field: 'qty', message: `QTY 最多為 ${qtyMax}` });
           return;
         }
         const reasonErrors = validateUrgentReason(parsedItem.data.urgent_reason, parsedItem.data.urgent_reason_other);
@@ -1103,6 +1109,7 @@ publicRouter.post(
             urgentReason: item.urgent_reason,
             urgentReasonOther: item.urgent_reason_other,
           })),
+          maxQty: qtyMax,
           ip,
           changeSource: 'web_submit',
           idempotencyKey,
@@ -1163,6 +1170,11 @@ publicRouter.post(
       return;
     }
     const data = parsed.data as z.infer<typeof urgentSubmitSchema>;
+    const qtyMax = await getUrgentQtyMax();
+    if (data.qty > qtyMax) {
+      res.status(400).json({ error: `QTY 最多為 ${qtyMax}`, field: 'qty' });
+      return;
+    }
     if (rejectSiteMismatch(res, req.storeSiteCode!, data.site_code)) return;
     const idempotencyFingerprint = fingerprintPayload(data);
     if (await replaySingleSubmission(idempotencyKey, idempotencyFingerprint, 'urgent', serializeUrgentSubmission, res)) return;
@@ -1198,6 +1210,7 @@ publicRouter.post(
         qty: data.qty,
         urgentReason: data.urgent_reason,
         urgentReasonOther: data.urgent_reason_other,
+        maxQty: qtyMax,
         ip,
         changeSource: 'web_submit',
         idempotencyKey,
@@ -1243,12 +1256,41 @@ publicRouter.get(
   }),
 );
 
+/**
+ * GET /api/public/urgent/limits — 店舖頁顯示的 D001 庫存量 → Limit Qty。
+ *
+ * 旺季設定只在生效期間（香港日期，結束日當日仍生效）套用；其他時間回基本值，
+ * 避免店舖時鐘不準或快取舊頁時見到錯誤額度。
+ */
+publicRouter.get(
+  '/urgent/limits',
+  publicLookupLimiter,
+  asyncHandler(async (_req: Request, res: Response) => {
+    const settings = await getUrgentLimitSettings();
+    const active = settings.phase === 'active';
+    res.json({
+      phase: settings.phase,
+      multiplier: settings.multiplier,
+      effectiveFrom: settings.effectiveFrom,
+      effectiveTo: settings.effectiveTo,
+      note: settings.note,
+      today: settings.today,
+      qtyMax: settings.qtyMax,
+      peakQtyMax: settings.peakQtyMax,
+      limits: settings.tiers.map((tier) => ({
+        label: tier.label,
+        limit: active ? tier.peakLimit : tier.baseLimit,
+      })),
+    });
+  }),
+);
+
 /** GET /api/public/urgent/template — download Urgent import template. */
 publicRouter.get(
   '/urgent/template',
   excelExportLimiter,
   asyncHandler(async (_req: Request, res: Response) => {
-    const buffer = await generateUrgentTemplateWorkbook();
+    const buffer = await generateUrgentTemplateWorkbook(await getUrgentQtyMax());
     res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
     res.setHeader('Content-Disposition', `attachment; filename="Urgent Order Template.xlsx"`);
     res.send(buffer);
@@ -1273,7 +1315,9 @@ publicRouter.post(
     const stores = await query<{ site_code: string }>('SELECT site_code FROM stores');
     const storeCodes = new Set(stores.rows.map((s) => s.site_code));
 
-    const parsed = await parseUrgentImportWorkbook(file.buffer, storeCodes, config.maxImportRows);
+    const parsed = await parseUrgentImportWorkbook(file.buffer, storeCodes, config.maxImportRows, {
+      maxQty: await getUrgentQtyMax(),
+    });
     const idempotencyKey = requestIdempotencyKey(req, res);
     if (idempotencyKey === false) return;
     if (idempotencyKey) {
@@ -1728,7 +1772,7 @@ const modifySchema = z.object({
     .number({ invalid_type_error: 'QTY 必須為整數' })
     .int('QTY 必須為整數')
     .min(URGENT_QTY_MIN, `QTY 最少為 ${URGENT_QTY_MIN}`)
-    .max(URGENT_QTY_MAX, `QTY 最多為 ${URGENT_QTY_MAX}`)
+    .max(URGENT_QTY_HARD_MAX, 'QTY 超出上限')
     .optional(),
   urgent_reason: z.string().trim().max(100).optional().default(''),
   urgent_reason_other: z.string().max(2000).optional().default(''),
@@ -1877,6 +1921,11 @@ publicRouter.post(
         res.status(400).json({ error: 'QTY 必須為整數', field: 'qty' });
         return;
       }
+      const qtyMax = await getUrgentQtyMax();
+      if (data.qty > qtyMax) {
+        res.status(400).json({ error: `QTY 最多為 ${qtyMax}`, field: 'qty' });
+        return;
+      }
       const reasonErrors = validateUrgentReason(data.urgent_reason, data.urgent_reason_other);
       if (reasonErrors.length) {
         res.status(400).json({
@@ -1894,6 +1943,7 @@ publicRouter.post(
           qty: data.qty,
           urgentReason: data.urgent_reason,
           urgentReasonOther: data.urgent_reason_other,
+          maxQty: qtyMax,
           ip,
           changeSource: 'web_modify',
         });

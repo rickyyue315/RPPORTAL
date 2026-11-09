@@ -1,6 +1,24 @@
 (() => {
   const $ = (id) => document.getElementById(id);
   let current = null;
+  let urgentQtyMax = Number(globalThis.NDRF_OPTIONS?.urgentQtyMax) || 1000;
+
+  /** 旺季期間每筆 QTY 上限會提高；查詢／修改頁跟隨後端同一支 limits API。 */
+  async function loadUrgentQtyMax() {
+    try {
+      const data = await api('/api/public/urgent/limits');
+      const max = Number(data?.qtyMax);
+      if (!Number.isFinite(max) || max < 1) return;
+      urgentQtyMax = max;
+      const input = $('f_u_qty');
+      if (input) input.max = String(max);
+      const label = $('f_u_qty_max');
+      if (label) label.textContent = String(max);
+      globalThis.__setUrgentQtyMax?.(max);
+    } catch {
+      // 保留 1000 的基本上限；伺服器仍會以即時上限驗證。
+    }
+  }
 
   function isUrgent() {
     return current?.submission?.submission_type === 'urgent';
@@ -244,8 +262,8 @@
       errors.push({ field: 'sku', message: 'SKU 為必填' });
     }
     const qty = Number(body.qty);
-    if (!Number.isInteger(qty) || qty < 1 || qty > 1000) {
-      errors.push({ field: 'qty', message: 'QTY 必須為 1 至 1000 的整數' });
+    if (!Number.isInteger(qty) || qty < 1 || qty > urgentQtyMax) {
+      errors.push({ field: 'qty', message: `QTY 必須為 1 至 ${urgentQtyMax} 的整數` });
     }
     if (!body.urgent_reason) {
       errors.push({ field: 'urgent_reason', message: 'Urgent Reason 為必填' });
@@ -325,6 +343,7 @@
   });
 
   populateNdCodeDatalists();
+  loadUrgentQtyMax();
   api('/api/public/return/schedule').then((data) => {
     $('f_return_reason').innerHTML = '<option value="">請選擇申請退貨原因</option>' + data.reasons.map((r) => `<option value="${escapeHtml(r.code)}">${escapeHtml(r.label)}</option>`).join('');
   }).catch(() => {});

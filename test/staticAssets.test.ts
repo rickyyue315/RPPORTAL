@@ -526,6 +526,35 @@ describe('static asset freshness', () => {
     expect(style).toContain('.urgent-review-table--limit {');
   });
 
+  it('wires the admin peak limit settings and the public limits refresh', () => {
+    const adminHtml = readFileSync(path.join(root, 'public/admin/index.html'), 'utf8');
+    expect(adminHtml).toContain('id="urgent_limits_card"');
+    expect(adminHtml).toContain('data-lazy-section="urgent-limits"');
+    expect(adminHtml).toContain('/js/admin-urgent-limits.js');
+    expect(adminHtml).toContain('id="ul_preview_body"');
+
+    const adminScript = readFileSync(path.join(root, 'public/js/admin-urgent-limits.js'), 'utf8');
+    expect(adminScript).toContain('/api/admin/urgent-limits');
+    expect(adminScript).toContain('__urgentLimitsRefresh');
+    expect(readFileSync(path.join(root, 'public/js/admin.js'), 'utf8')).toContain("'urgent-limits'");
+
+    // 店舖頁保留基本表作 fallback，載入後才由 API 換成旺季限額
+    const urgentPage = readFileSync(path.join(root, 'public/urgent.html'), 'utf8');
+    expect(urgentPage).toContain('id="urgent_limit_body"');
+    expect(urgentPage).toContain('id="urgent_limit_peak"');
+    expect(urgentPage).toContain('id="urgent_qty_max_text"');
+    const urgentScript = readFileSync(path.join(root, 'public/js/urgent.js'), 'utf8');
+    expect(urgentScript).toContain('/api/public/urgent/limits');
+    expect(urgentScript).toContain('qtyMax');
+    expect(urgentScript).toContain('syncQtyMax');
+
+    // 查詢／修改及後台編輯亦要跟隨旺季每筆上限
+    expect(readFileSync(path.join(root, 'public/lookup.html'), 'utf8')).toContain('id="f_u_qty_max"');
+    expect(readFileSync(path.join(root, 'public/js/lookup.js'), 'utf8')).toContain('/api/public/urgent/limits');
+    expect(adminHtml).toContain('id="a_qty_max"');
+    expect(readFileSync(path.join(root, 'public/js/admin.js'), 'utf8')).toContain('refreshUrgentQtyMax');
+  });
+
   it('shop-facing password boxes do not invite browser autofill, and trim before sending', () => {
     const read = (file: string) => readFileSync(path.join(root, file), 'utf8');
     // 一台電腦會輪流登入多間店（RP Team）或多個 OM。Chrome 會把上一個帳戶的

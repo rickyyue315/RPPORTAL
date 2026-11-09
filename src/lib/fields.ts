@@ -89,6 +89,34 @@ export const URGENT_QTY_MAX = 1000;
 /** Maximum number of SKU rows accepted by the Urgent Order web form in a single batch submission. */
 export const URGENT_WEB_MAX_ITEMS = 5;
 
+/**
+ * D001 庫存量 → 基本 Limit Qty 對照表。
+ *
+ * 旺季可在後台設定倍數及生效日期（`urgent_limit_settings`），店舖頁會用
+ * `floor(baseLimit × multiplier)` 顯示；每筆上限由最高一級 peakLimit 決定
+ * （非旺季為 `URGENT_QTY_MAX`）。改基本值時要同步更新 `public/urgent.html`
+ * 的 fallback 表格及 migration 041 的絕對上限。
+ */
+export const URGENT_LIMIT_TIERS: ReadonlyArray<{ label: string; baseLimit: number }> = [
+  { label: '> 10,000', baseLimit: 492 },
+  { label: '> 5,000', baseLimit: 192 },
+  { label: '> 1,000', baseLimit: 96 },
+  { label: '> 500', baseLimit: 24 },
+  { label: '≤ 500', baseLimit: 12 },
+] as const;
+
+/** 旺季倍數上限；2–3 倍是常見用法，留一點空間但避免誤輸入。 */
+export const URGENT_LIMIT_MAX_MULTIPLIER = 5;
+
+/**
+ * 驗證用絕對上限（基本最高一級 × 最大倍數）；實際每筆上限由
+ * `getUrgentQtyMax()` 按旺季設定決定，非旺季仍為 `URGENT_QTY_MAX`。
+ */
+export const URGENT_QTY_HARD_MAX = Math.max(
+  URGENT_QTY_MAX,
+  ...URGENT_LIMIT_TIERS.map((tier) => tier.baseLimit),
+) * URGENT_LIMIT_MAX_MULTIPLIER;
+
 export const RETURN_QTY_MIN = 1;
 export const RETURN_QTY_MAX = 9999;
 
@@ -170,8 +198,8 @@ export interface UrgentFields {
   urgent_reason_other: string | null;
 }
 
-export function isValidUrgentQty(value: unknown): value is number {
-  return typeof value === 'number' && Number.isInteger(value) && value >= URGENT_QTY_MIN && value <= URGENT_QTY_MAX;
+export function isValidUrgentQty(value: unknown, maxQty: number = URGENT_QTY_MAX): value is number {
+  return typeof value === 'number' && Number.isInteger(value) && value >= URGENT_QTY_MIN && value <= maxQty;
 }
 
 export function normalizeText(value: string | number | null | undefined): string {

@@ -6,12 +6,13 @@ SASA RP Team 的店舖申報與回覆平台。主名 **RP Connect**，中文名 
 
 - 公開單筆申報（Site Code + SKU + RP Type 必填，Site Code 驗證門店主檔；RP Type 為 RF 時必須填寫 Safety stock（大於 0）及指定店舖的 Remark，為 ND 時必須填寫 ND Code）
 - 公開 Excel 一次過上載（固定模板 `RP Team` 工作表，整檔驗證，錯誤不寫入任何行；上載成功後可下載匯入記錄 Excel，按店舖分頁）
-- Urgent Order 申報（`/urgent.html`）：網頁申報可一次填寫 1 至 5 個 SKU（`Site Code` 只填一次，每個 SKU 各填 SKU、QTY（1 至 1000 的整數）及 Urgent Reason（指定原因選項，選擇「9. 其他」時必須填寫 Other Reason）），整批 transaction 提交、任何一行錯誤整批拒絕；每個 SKU 各取得一個 `URGENT-...` 申請編號並獨立查詢／修改。另提供獨立 5 欄 Excel 一次過上載（上載成功後同樣可下載匯入記錄 Excel，按店舖分頁）
+- Urgent Order 申報（`/urgent.html`）：網頁申報可一次填寫 1 至 5 個 SKU（`Site Code` 只填一次，每個 SKU 各填 SKU、QTY（1 至頁面顯示的上限；基本 1000，旺季會按 D001 庫存量調高）及 Urgent Reason（指定原因選項，選擇「9. 其他」時必須填寫 Other Reason）），整批 transaction 提交、任何一行錯誤整批拒絕；每個 SKU 各取得一個 `URGENT-...` 申請編號並獨立查詢／修改。另提供獨立 5 欄 Excel 一次過上載（上載成功後同樣可下載匯入記錄 Excel，按店舖分頁）
 - 突發性銷售申報（`/sales.html`）：只填 Site Code 及 SKU，單筆提交或獨立 2 欄 Excel 一次過上載（工作表 `突發性銷售申報`）；沒有提交時間限制，成功後可下載按店舖分頁的匯入記錄
 - 行貨退貨報數（`/return.html`）：填寫 Site Code、SKU、QTY（1 至 9999）、指定退貨原因、確認人姓名及電話；公開單筆或獨立 Excel 一次過上載，按外部 `return-schedule.json` 的店舖申請窗口收單，同一窗口同一 Site Code + SKU 只可申請一次
 - Urgent Order 提交時段為每日 00:00 至 14:30（香港時間）：14:30 後單筆提交及 Excel 一次過上載均會被拒絕（管理後台不受限），翌日 14:30 前恢復；狀態可經 `GET /api/public/urgent/window` 查詢
-- Urgent Order 申請編號使用 `URGENT-...` 前綴；超出 1000 件的需求改以電郵向相關 Buyer 申請，不在平台處理
+- Urgent Order 申請編號使用 `URGENT-...` 前綴；旺季以外的每筆上限為 1000 件，旺季生效期間按 D001 庫存量對應的最高 Limit Qty 提高；超出當日上限的需求改以電郵向相關 Buyer 申請，不在平台處理
 - Urgent Order 申報頁會提示 RP Team 的審核安排：RP Team 會評估**合理落貨數量**及 **D001 庫存量**，按結果調整或取消申請；詳情以頁內「D001 庫存量／Limit Qty」對照表列示（>10,000→≤492、>5,000→≤192、>1,000→≤96、>500→≤24、≤500→≤12），服務暫停期間仍可查看
+- 後台「系統 → 審批設定 → Urgent Order 旺季限額」可設定旺季倍數（1 至 5，例如 ×2、×2.5、×3）及生效日期 From／To（香港日期，**結束日當日仍生效**）。生效期間店舖頁的 Limit Qty 按 `floor(基本值 × 倍數)` 顯示，**每筆上限亦跟隨最高一級 Limit Qty 提高**（例如 ×3 → 1476 件）；非生效期間自動用回基本值及 1000 件上限。設定會寫入審計日誌
 - 申請編號 + Site Code 查詢／修改（需先登入店舖帳戶；匯出前可修改，每次修改新增不可變版本；Urgent Order 查詢不限時，修改限每日 14:30 前；突發性銷售申報查詢及修改均不限時）；登入後可於「搵返申請編號」按日期列出本店申請（site_code 由登入 session 決定，不接受前端傳入其他店舖）
 - 同一 Site Code + SKU 於同一日（香港日期）只可申報一次；一般 NDRF、Urgent 與突發性銷售分開計算。被拒時可用查詢／修改更正，翌日可重新申報；管理後台操作不受此限
 - 管理後台：清單篩選（含申報類型；日期預設今日）、詳情編輯、版本歷史、模板下載、一次過匯入、SAP 9 欄匯出、獨立 Urgent 匯出、獨立突發性銷售匯出、完整審計報表、門店主檔管理；概覽及清單每分鐘自動重新整理
@@ -299,8 +300,9 @@ pg_restore --no-owner --no-privileges --clean --if-exists \
 ## 注意事項
 
 - 申請編號為不可猜測隨機值（`NDRF-XXXXXXXX-XXXXXXXX`、`URGENT-XXXXXXXX-XXXXXXXX` 或 `SALES-XXXXXXXX-XXXXXXXX`）。查詢／修改及「搵返申請編號」清單均必須先登入店舖帳戶；後端只會用登入 session 的 Site Code 查詢，不接受前端指定其他店舖。
-- Urgent Order 的 QTY 必須為 1 至 1000 的整數；網頁單筆／1 至 5 SKU 批次、Excel 模板、申請人修改及管理員修改共用相同驗證規則。網頁批次以單一 transaction 提交，任何一行失敗整批 rollback；每個 SKU 各產生一個申請編號。Urgent Order 必須選擇指定原因（1 至 9）；選擇「9. 其他」時必須填寫 Other Reason，其他選項不得填寫補充原因。
+- Urgent Order 的 QTY 必須為 1 至當日上限的整數（基本 1000；旺季生效期間按最高一級 Limit Qty 提高）；網頁單筆／1 至 5 SKU 批次、Excel 模板、申請人修改及管理員修改共用相同驗證規則。網頁批次以單一 transaction 提交，任何一行失敗整批 rollback；每個 SKU 各產生一個申請編號。Urgent Order 必須選擇指定原因（1 至 9）；選擇「9. 其他」時必須填寫 Other Reason，其他選項不得填寫補充原因。
 - Urgent Order Excel 模板使用獨立 `Urgent Order` 工作表（欄位：Site Code、SKU、QTY、Urgent Reason、Other Reason），與 Page 1 的 `RP Team` 9 欄模板完全分開。舊版 3 欄模板不再接受，避免產生無原因的申報。
+- Urgent Order 旺季限額會同時影響店舖頁顯示的 Limit Qty 及**每筆 QTY 驗證上限**；超出當日上限會即時拒絕，店舖可調整數量後再提交。限額本身仍是 RP Team 的參考，RP Team 可按實際 D001 庫存及合理落貨數量再調整或取消。倍數上限 5，生效日期以香港時間計算，結束日當日仍生效；非旺季每筆上限維持 1000 件。
 - 突發性銷售申報 Excel 模板使用獨立 `突發性銷售申報` 工作表（欄位：Site Code、SKU），只接受這兩個欄名；同一日同一 Site Code + SKU 在同一申報類型內只能提交一次，一般／Urgent／突發性銷售三種類型互不阻擋。
 - Excel 一次過上載只接受 Excel 活頁簿 `.xlsx` 格式，支援 Excel 2007 或更新版本（包括 Excel 2019、Excel 2021、Excel 2024 及 Microsoft 365）；舊式 `.xls` 檔案請先另存為 `.xlsx`。`.xlsx` 是檔案格式，不是特定 Excel 版本名稱。
 - 舊有（加入原因欄位前）的 Urgent Order 原因欄位為空，可於管理後台編輯時補回；匯出時空白原因會以空白顯示。

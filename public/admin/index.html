@@ -1259,7 +1259,7 @@
         </div>
 
         <div class="admin-group-title admin-section" id="sec-review">審批設定</div>
-        <p class="subnav-hint">待審批提醒、指定店路由（RF／改 Safety 送 SCT 審批）、Reject 原因類別。</p>
+        <p class="subnav-hint">待審批提醒、指定店路由（RF／改 Safety 送 SCT 審批）、Urgent 旺季限額、Reject 原因類別。</p>
         <div class="card">
           <div class="card-header">
             <h3 class="card-title">Buyer 待審批提醒</h3>
@@ -1300,6 +1300,48 @@
             <div id="store_routes_result"></div>
             <div class="table-responsive">
               <table class="table table-vcenter"><thead><tr><th>Site Code</th><th>店舖</th><th>SCT 審批</th><th>Remark 必填</th><th>更新時間</th><th>操作</th></tr></thead><tbody id="store_routes_body"><tr><td colspan="6" class="text-center text-secondary">捲動到此處自動載入…</td></tr></tbody></table>
+            </div>
+          </div>
+        </div>
+
+        <div class="card" data-lazy-section="urgent-limits" id="urgent_limits_card">
+          <div class="card-header">
+            <h3 class="card-title">Urgent Order 旺季限額</h3>
+          </div>
+          <div class="card-body">
+            <p class="text-secondary small">旺季期間可把 D001 庫存量對應的 Limit Qty 整體調高（例如 ×2、×2.5、×3）。生效日期以香港時間計算，<b>結束日當日仍生效</b>；非生效期間店舖會見到基本限額。旺季期間<b>每筆 Urgent Order 上限亦會跟隨最高一級 Limit Qty 提高</b>（例如 ×3 → 1476 件）；非旺季維持 1000 件。</p>
+            <div class="row g-2">
+              <div class="col-sm-6 col-lg-2">
+                <label class="form-label" for="ul_multiplier">旺季倍數</label>
+                <input type="number" id="ul_multiplier" class="form-control" min="1" max="5" step="0.1" value="1">
+              </div>
+              <div class="col-sm-6 col-lg-3">
+                <label class="form-label" for="ul_from">生效日期 From</label>
+                <input type="date" id="ul_from" class="form-control">
+              </div>
+              <div class="col-sm-6 col-lg-3">
+                <label class="form-label" for="ul_to">結束日期 To</label>
+                <input type="date" id="ul_to" class="form-control">
+              </div>
+              <div class="col-sm-6 col-lg-4">
+                <label class="form-label" for="ul_note">備註</label>
+                <input type="text" id="ul_note" class="form-control" maxlength="100" placeholder="例如：聖誕旺季">
+                <div class="text-secondary small mt-1">會顯示在店舖頁的旺季提示，可留空。</div>
+              </div>
+            </div>
+            <div class="d-flex gap-2 mt-3 flex-wrap align-items-center">
+              <button class="btn btn-primary" id="btn_ul_save">儲存設定</button>
+              <button class="btn" id="btn_ul_reset">清除旺季設定</button>
+              <span id="ul_status" class="badge bg-secondary-lt">載入中…</span>
+            </div>
+            <div id="ul_result" class="mt-2"></div>
+            <p class="text-secondary small mt-2 mb-1" id="ul_current">店舖目前見到：—</p>
+            <p class="text-secondary small mb-2" id="ul_updated"></p>
+            <div class="table-responsive">
+              <table class="table table-vcenter">
+                <thead><tr><th>D001 庫存量</th><th class="text-end">基本 Limit Qty</th><th class="text-end">旺季期間 Limit Qty（每筆上限亦跟隨最高一級）</th></tr></thead>
+                <tbody id="ul_preview_body"><tr><td colspan="3" class="text-center text-secondary">載入中…</td></tr></tbody>
+              </table>
             </div>
           </div>
         </div>
@@ -1444,7 +1486,7 @@
     <div id="detail_error"></div>
     <div class="datagrid mb-3" id="detail_header"></div>
     <h3 class="card-title mt-3">編輯業務欄位</h3>
-    <div id="urgent_note" style="display:none" class="alert alert-info py-2 small">Urgent Order：可修改 SKU、QTY（1 至 1000）及 Urgent Reason，Site Code 不可修改。選擇「9. 其他」時必須填寫 Other Reason。</div>
+    <div id="urgent_note" style="display:none" class="alert alert-info py-2 small">Urgent Order：可修改 SKU、QTY（1 至目前上限）及 Urgent Reason，Site Code 不可修改。選擇「9. 其他」時必須填寫 Other Reason。</div>
     <form id="edit_form">
       <div id="normal_fields" class="row g-3">
         <div class="col-md-6"><label class="form-label" for="a_sku_normal">SKU</label><input type="text" id="a_sku_normal" class="form-control"></div>
@@ -1455,7 +1497,7 @@
       </div>
       <div id="urgent_fields" class="row g-3" style="display:none">
         <div class="col-md-6"><label class="form-label" for="a_sku_urgent">SKU</label><input type="text" id="a_sku_urgent" class="form-control"></div>
-        <div class="col-md-6"><label class="form-label" for="a_qty">QTY (1-1000)</label><input type="number" id="a_qty" min="1" max="1000" step="1" class="form-control"></div>
+        <div class="col-md-6"><label class="form-label" for="a_qty">QTY（1 至 <span id="a_qty_max">目前上限</span>）</label><input type="number" id="a_qty" min="1" max="2460" step="1" class="form-control"></div>
         <div class="col-12"><label class="form-label" for="a_urgent_reason">Urgent Reason</label><select id="a_urgent_reason" class="form-select"><option value="">請選擇申請原因</option></select></div>
         <div class="col-12" id="a_urgent_reason_other_wrap" style="display:none"><label class="form-label" for="a_urgent_reason_other">Other Reason</label><input type="text" id="a_urgent_reason_other" maxlength="2000" class="form-control"></div>
       </div>
@@ -1514,6 +1556,7 @@
 <script src="/js/admin-zero-sales.js"></script>
 <script src="/js/admin-designated-sku.js"></script>
 <script src="/js/admin-notices.js"></script>
+<script src="/js/admin-urgent-limits.js"></script>
 <script src="/js/chart-lite.js"></script>
 <script src="/js/chart-export.js"></script>
 <script src="/js/chart-zoom.js"></script>

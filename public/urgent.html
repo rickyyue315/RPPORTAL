@@ -42,6 +42,7 @@
       <section class="urgent-review" aria-labelledby="urgent_review_title">
         <h3 id="urgent_review_title">RP Team 審核安排</h3>
         <p>RP Team 將會評估<b>合理落貨數量</b>及 <b>D001 庫存量</b>而作出調整或取消，詳情如下：</p>
+        <p class="urgent-review-peak" id="urgent_limit_peak" hidden></p>
         <div class="table-scroll">
           <table class="urgent-review-table urgent-review-table--limit">
             <thead>
@@ -50,7 +51,7 @@
                 <th scope="col">Limit Qty</th>
               </tr>
             </thead>
-            <tbody>
+            <tbody id="urgent_limit_body">
               <tr><td>&gt; 10,000</td><td>≤ 492</td></tr>
               <tr><td>&gt; 5,000</td><td>≤ 192</td></tr>
               <tr><td>&gt; 1,000</td><td>≤ 96</td></tr>
@@ -61,10 +62,10 @@
         </div>
         <p class="hint" style="margin-top:8px">申報數量大於對應的 Limit Qty 時，RP Team 會按上表調整至 Limit Qty 或取消申請，最終安排以 RP Team 處理為準。</p>
       </section>
-      <p class="hint">可一次填寫 <b>1 至 5 個 SKU</b>。每個 SKU 都必須填寫 <b>SKU</b>、<b>QTY</b>（1 至 1000 的整數）及 <b>Urgent Reason</b>；選擇「9. 其他」時必須填寫 Other Reason。</p>
+      <p class="hint">可一次填寫 <b>1 至 5 個 SKU</b>。每個 SKU 都必須填寫 <b>SKU</b>、<b>QTY</b>（1 至 <span id="urgent_qty_max_hint">1000</span> 的整數）及 <b>Urgent Reason</b>；選擇「9. 其他」時必須填寫 Other Reason。</p>
       <div class="alert warning" style="margin-top:0">
         所有 Urgent Order 申請都預設為 <b>T+1</b>，非緊急 Order 請使用 SAP 打 PR 單。<br>
-        每筆 Urgent Order 數量上限為 <b>1000 件</b>。超出 1000 件的需求，請改以電郵向相關 Buyer 申請，不在此平台處理。<br>
+        每筆 Urgent Order 數量上限為 <b id="urgent_qty_max_text">1000 件</b>（會按上表及旺季設定調整）。超出 <span id="urgent_qty_max_over">1000</span> 件的需求，請改以電郵向相關 Buyer 申請，不在此平台處理。<br>
         店舖每日提交 SKU 不應超過 <b>20 隻 SKU</b>，請盡量使用 SAP 的 PR 打單。<br>
         提交時段：每日 <b>00:00 至 14:30</b>（香港時間），<b>14:30 後暫停收單</b>。
       </div>

@@ -96,6 +96,12 @@ const PLATFORM_OPTIONS = globalThis.NDRF_OPTIONS || {
   returnQtyMax: 9999,
 };
 
+/** 旺季／後台即時上限：更新共用選項，讓修改表單的 max 及提示同步。 */
+globalThis.__setUrgentQtyMax = (value) => {
+  const max = Number(value);
+  if (Number.isFinite(max) && max >= 1) PLATFORM_OPTIONS.urgentQtyMax = max;
+};
+
 const URGENT_REASON_LABELS = Object.fromEntries(
   PLATFORM_OPTIONS.urgentReasons.map((reason) => [reason.code, reason.label]),
 );

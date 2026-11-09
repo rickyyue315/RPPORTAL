@@ -157,7 +157,7 @@ body.cx-zoom-lock { overflow: hidden !important; }
   cursor: pointer;
 }
 .cx-zoom-close:hover { background: rgba(255, 255, 255, .22); }
-.cx-zoom-close:focus-visible { outline: 2px solid var(--border); outline-offset: 2px; }
+.cx-zoom-close:focus-visible { outline: 2px solid var(--on-brand); outline-offset: 2px; }
 
 .cx-zoom-stage {
   flex: 1 1 auto;

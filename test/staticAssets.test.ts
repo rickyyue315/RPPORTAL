@@ -496,6 +496,31 @@ describe('static asset freshness', () => {
     expect(read('public/help.html')).toContain('9. 行貨退貨報數（暫停收單，仍可進入查看）');
   });
 
+  it('tells stores to use the company Portal from every paused page', () => {
+    const read = (file: string) => readFileSync(path.join(root, file), 'utf8');
+    const suspension = read('public/js/service-suspension.js');
+
+    // 平台暫停時，共用橫幅要同時顯示公司 Portal 的申報入口。
+    expect(suspension).toContain('店舖申報的項目，需要使用公司 Portal 提交');
+    expect(suspension).toContain('http://portal.sasa.com/PIS/app?page=Calendar&service=page');
+
+    // 已暫停的頁面全部載入同一個暫停腳本，橫幅才會出現。
+    for (const page of [
+      'public/portal/store.html',
+      'public/urgent.html',
+      'public/sales.html',
+      'public/return.html',
+      'public/lookup.html',
+    ]) {
+      expect(read(page), page).toContain('/js/service-suspension.js');
+    }
+
+    // 首頁的暫停服務卡片上方亦要有同一個入口。
+    const home = read('public/index.html');
+    expect(home).toContain('店舖申報的項目');
+    expect(home).toContain('portal.sasa.com/PIS/app?page=Calendar');
+  });
+
   it('shows the RP Team review policy on the Urgent Order page', () => {
     // 服務暫停期間仍可進入 Urgent 頁；重開前先講清楚 RP Team 會按合理落貨數量
     // 及 D001 庫存量調整或取消，避免店舖以為申報數量一定全數落貨。

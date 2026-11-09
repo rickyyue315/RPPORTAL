@@ -11,6 +11,8 @@
   }
 
   const MESSAGE = '此平台申報服務已暫停，提交／修改／預覽／一次過上載功能已停用，謝謝。';
+  const PORTAL_HINT = '店舖申報的項目，需要使用公司 Portal 提交：';
+  const PORTAL_URL = 'http://portal.sasa.com/PIS/app?page=Calendar&service=page';
   const BTN_SELECTOR = '#btn_submit, #btn_preview, #btn_confirm, #btn_save, #btn_import';
 
   let blockInstalled = false;
@@ -44,7 +46,23 @@
       const banner = document.createElement('div');
       banner.className = 'suspend-banner';
       banner.setAttribute('role', 'alert');
-      banner.textContent = MESSAGE;
+
+      const message = document.createElement('div');
+      message.textContent = MESSAGE;
+      banner.appendChild(message);
+
+      const portal = document.createElement('div');
+      portal.className = 'suspend-banner__portal';
+      portal.appendChild(document.createTextNode(PORTAL_HINT));
+
+      const link = document.createElement('a');
+      link.href = PORTAL_URL;
+      link.target = '_blank';
+      link.rel = 'noopener noreferrer';
+      link.textContent = PORTAL_URL;
+      portal.appendChild(link);
+
+      banner.appendChild(portal);
       document.querySelector('header.topbar')?.after(banner);
     }
   }

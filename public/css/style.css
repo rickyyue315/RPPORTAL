@@ -1,5 +1,7 @@
 :root {
-  --brand: #0f5c9c;
+  /* 顏色 token（--brand / --muted / --border / --danger / --success / --warning …）
+     已統一由 tokens.css 提供，必須在 style.css 之前載入。
+     這裡只保留本檔專用的品牌階梯、頁面底色與尺寸。 */
   --brand-600: #0d4f88;
   --brand-dark: #0a3d69;
   --brand-darker: #072c4d;
@@ -9,16 +11,7 @@
   --brand-300: #8fc3ec;
   --bg: #edf1f5;
   --card: #ffffff;
-  --border: #d9dee3;
-  --border-strong: #b7c2cd;
   --text: #1d2733;
-  --muted: #66727f;
-  --danger: #c0392b;
-  --danger-bg: #fdecea;
-  --success: #1e8449;
-  --success-bg: #eafaf1;
-  --warning: #92600a;
-  --warning-bg: #fef6dd;
   --radius-sm: 6px;
   --radius: 10px;
   --radius-lg: 14px;

@@ -1,7 +1,7 @@
 /* Help page only: kept separate so the submission pages stay lightweight. */
 .help-hero {
-  background: linear-gradient(135deg, #0f5c9c, #0a3d69);
-  color: #fff;
+  background: linear-gradient(135deg, var(--brand), var(--brand-deep));
+  color: var(--on-brand);
   border-radius: 14px;
   padding: 30px 32px;
   margin-bottom: 20px;
@@ -24,7 +24,7 @@
 }
 .help-toc a {
   display: block;
-  background: #fff;
+  background: var(--surface);
   border: 1px solid var(--border);
   border-radius: 10px;
   padding: 14px;
@@ -71,7 +71,7 @@
   display: block;
   border: 1px solid var(--border);
   border-radius: 10px;
-  background: #f7fafc;
+  background: var(--surface-soft);
 }
 .help-step-number {
   display: inline-flex;
@@ -81,7 +81,7 @@
   justify-content: center;
   border-radius: 50%;
   background: var(--brand);
-  color: #fff;
+  color: var(--on-brand);
   font-weight: 700;
   margin-right: 8px;
   vertical-align: middle;
@@ -115,7 +115,7 @@
   border-left: 4px solid var(--brand);
   border-radius: 8px;
   padding: 14px 16px;
-  background: #fbfdff;
+  background: var(--surface-soft);
 }
 .help-rule strong {
   color: var(--brand-dark);
@@ -132,7 +132,7 @@
 }
 .help-code {
   display: inline-block;
-  background: #eaf2fb;
+  background: var(--surface-brand);
   color: var(--brand-dark);
   border-radius: 5px;
   padding: 3px 8px;
@@ -143,7 +143,7 @@
   padding: 13px 16px;
   margin: 16px 0 0;
   border-radius: 8px;
-  background: #fef9e7;
+  background: var(--warning-bg);
   border: 1px solid #f9e79f;
   color: #795b0b;
 }
@@ -158,8 +158,8 @@
   padding: 24px;
   border: 1px dashed var(--border, #cbd5e1);
   border-radius: 12px;
-  background: linear-gradient(135deg, #f8fafc, #eef4ff);
-  color: #334155;
+  background: linear-gradient(135deg, var(--surface-soft), var(--surface-brand));
+  color: var(--body);
   text-align: center;
 }
 
@@ -168,7 +168,7 @@
 }
 
 .help-placeholder span {
-  color: #64748b;
+  color: var(--muted);
   font-size: 0.9rem;
 }
 
@@ -184,7 +184,7 @@
   overflow-x: auto;
   border: 1px solid var(--border);
   border-radius: 10px;
-  background: #fff;
+  background: var(--surface);
   padding: 10px;
 }
 .help-figure svg {

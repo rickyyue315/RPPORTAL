@@ -9,8 +9,8 @@
 
 .portal-login-card {
   width: min(420px, 92vw);
-  background: #fff;
-  border: 1px solid #e2e8f0;
+  background: var(--surface);
+  border: 1px solid var(--border);
   border-radius: 12px;
   padding: 28px;
   box-shadow: 0 8px 24px rgba(15, 23, 42, 0.08);
@@ -46,15 +46,15 @@
   border: 1px solid transparent;
 }
 
-.badge-pending { background: #fef6dd; color: #6b4a06; border-color: #ecd88a; }
-.badge-ready_for_rp { background: #dbeafe; color: #1e40af; border-color: #bfdbfe; }
-.badge-accepted { background: #d1fae5; color: #065f46; border-color: #a7f3d0; }
-.badge-rejected { background: #fee2e2; color: #991b1b; border-color: #fecaca; }
-.badge-legacy { background: #e2e8f0; color: #475569; border-color: #cbd5e1; }
-.badge-unknown { background: #f1f5f9; color: #64748b; border-color: #e2e8f0; }
+.badge-pending { background: var(--warning-bg); color: #6b4a06; border-color: #ecd88a; }
+.badge-ready_for_rp { background: var(--surface-brand); color: #1e40af; border-color: var(--border-accent); }
+.badge-accepted { background: #d1fae5; color: #065f46; border-color: var(--success-border); }
+.badge-rejected { background: var(--danger-bg); color: #991b1b; border-color: var(--danger-border); }
+.badge-legacy { background: var(--surface-brand); color: var(--body); border-color: var(--border-strong); }
+.badge-unknown { background: var(--surface-muted); color: var(--muted); border-color: var(--border); }
 
 .tl-item {
-  border-left: 3px solid #cbd5e1;
+  border-left: 3px solid var(--border-strong);
   padding: 4px 0 12px 14px;
   margin-left: 4px;
 }
@@ -68,7 +68,7 @@
 
 .file-drop.dragover {
   border-color: #2563eb;
-  background: #eff6ff;
+  background: var(--surface-brand);
 }
 
 .site-banner {
@@ -86,7 +86,7 @@
 .dash-site-info { margin: 4px 0 10px; }
 .dash-site-code { font-size: 15px; color: #0f172a; }
 .dash-site-code b { font-family: Consolas, "Courier New", monospace; font-size: 17px; letter-spacing: 1px; }
-.dash-intro { color: #475569; font-size: 13.5px; line-height: 1.6; margin: 8px 0 12px; }
+.dash-intro { color: var(--body); font-size: 13.5px; line-height: 1.6; margin: 8px 0 12px; }
 /* ---------- KPI 四卡（存貨值 / 不良存貨值 / 佔比 / SKU÷RF） ---------- */
 .dash-kpi-grid {
   display: grid;
@@ -95,8 +95,8 @@
   margin-bottom: 20px;
 }
 .dash-kpi {
-  background: #f7fbff;
-  border: 1px solid #cfe0f2;
+  background: var(--surface-soft);
+  border: 1px solid var(--border-accent);
   border-radius: 12px;
   padding: 16px 18px;
   min-width: 0;
@@ -105,17 +105,17 @@
   font-size: 26px;
   font-weight: 800;
   line-height: 1.2;
-  color: #0a3d69;
+  color: var(--ink);
   font-variant-numeric: tabular-nums;
   overflow-wrap: anywhere;
 }
-.dash-kpi-label { margin-top: 4px; font-size: 13px; font-weight: 600; color: #5a6a78; }
-.dash-kpi-sub { margin-top: 2px; font-size: 12px; color: #7a8894; }
+.dash-kpi-label { margin-top: 4px; font-size: 13px; font-weight: 600; color: var(--muted); }
+.dash-kpi-sub { margin-top: 2px; font-size: 12px; color: var(--muted); }
 /* KPI 副標：只有「較上一期／較全公司」的增減文字帶紅綠，數值本身保持深色 */
 .dash-kpi-sub .dash-muted,
-.dash-kpi-sub .om-muted { color: #94a3b8; }
-.dash-worse { color: #c0392b; }
-.dash-better { color: #1e8449; }
+.dash-kpi-sub .om-muted { color: var(--faint); }
+.dash-worse { color: var(--danger); }
+.dash-better { color: var(--success); }
 
 /* ---------- 趨勢圖 ---------- */
 .dash-card { margin-bottom: 20px; }
@@ -141,11 +141,11 @@
   gap: 16px;
   margin-bottom: 8px;
   font-size: 12.5px;
-  color: #3a4653;
+  color: var(--body);
 }
 .dash-legend-item { display: inline-flex; align-items: center; gap: 7px; }
 .dash-legend-item[title] { cursor: help; }
-.dash-line { display: inline-block; width: 16px; height: 0; border-top: 3px solid #0f5c9c; border-radius: 2px; }
+.dash-line { display: inline-block; width: 16px; height: 0; border-top: 3px solid var(--brand); border-radius: 2px; }
 .dash-line--store { border-top-color: #0f766e; }
 .dash-line--company { border-top-style: dashed; border-top-color: #94a3b8; }
 
@@ -169,10 +169,10 @@
 }
 .om-metric-btn {
   padding: 7px 16px;
-  border: 1px solid #d3e3f2;
+  border: 1px solid var(--border-accent);
   border-radius: 999px;
-  background: #f4f9fd;
-  color: #0a3d69;
+  background: var(--surface-soft);
+  color: var(--ink);
   font-family: inherit;
   font-size: 13px;
   font-weight: 600;
@@ -180,15 +180,15 @@
   cursor: pointer;
   transition: background .15s ease, border-color .15s ease, color .15s ease;
 }
-.om-metric-btn:hover { background: #e4f0fb; }
+.om-metric-btn:hover { background: var(--surface-brand); }
 .om-metric-btn:focus-visible {
   outline: 2px solid rgba(15, 92, 156, .35);
   outline-offset: 1px;
 }
 .om-metric-btn.is-active {
-  background: #0f5c9c;
-  border-color: #0f5c9c;
-  color: #fff;
+  background: var(--brand);
+  border-color: var(--brand);
+  color: var(--on-brand);
 }
 
 /* ---------- 管轄店舖不良佔比排名（柱狀，只列自己 OM 的店） ---------- */
@@ -199,16 +199,16 @@
   display: flex;
   flex-wrap: wrap;
   align-items: stretch;
-  border: 1px solid #e3eef8;
+  border: 1px solid var(--border);
   border-radius: 10px;
-  background: #fbfdff;
+  background: var(--surface-soft);
   overflow: hidden;
 }
 .om-share-group {
   flex: 1 1 0;
   min-width: 150px;
   padding: 10px 8px 6px;
-  border-left: 1px solid #e3eef8;
+  border-left: 1px solid var(--border);
 }
 .om-share-group:first-child { border-left: none; }
 /* 窄螢幕不要出現「2 組一行、1 組掉下一行」的參差：直接改成上下排，分隔線轉為橫線。
@@ -217,7 +217,7 @@
   .om-share { flex-direction: column; }
   .om-share-group {
     border-left: none;
-    border-top: 1px solid #e3eef8;
+    border-top: 1px solid var(--border);
   }
   .om-share-group:first-child { border-top: none; }
 }
@@ -230,13 +230,13 @@
   margin-bottom: 2px;
   text-align: center;
 }
-.om-share-name { font-size: 13.5px; font-weight: 700; color: #0a3d69; }
+.om-share-name { font-size: 13.5px; font-weight: 700; color: var(--ink); }
 .om-share-meta {
   font-size: 11.5px;
-  color: #5a6a78;
+  color: var(--muted);
   font-variant-numeric: tabular-nums;
 }
-.om-share-meta--total { font-size: 12.5px; font-weight: 700; color: #0a3d69; }
+.om-share-meta--total { font-size: 12.5px; font-weight: 700; color: var(--ink); }
 /* 頂部留白放柱頂百分比（直排最長 7 個字符），否則 overflow 會裁掉 */
 .om-share-scroll { overflow-x: auto; padding: 46px 0 4px; }
 /* 柱身按該組寬度等分（最多 48px），柱群置中；店太多時每根最少 22px 並橫向滾動 */
@@ -281,7 +281,7 @@
   font-size: 9.5px;
   font-style: normal;
   font-weight: 600;
-  color: #41505e;
+  color: var(--body);
   white-space: nowrap;
 }
 .om-share-site {
@@ -291,7 +291,7 @@
   font-size: 9.5px;
   letter-spacing: -0.2px;
   line-height: 13px;
-  color: #41505e;
+  color: var(--body);
   text-align: center;
   overflow: hidden;
 }
@@ -304,11 +304,11 @@
   font-size: 10.5px;
   /* 直排時行距 = 字欄間距；1.08 會令兩欄字貼住，遠看像疊字，1.2 才有清楚的一線之隔 */
   line-height: 1.2;
-  color: #5a6a78;
+  color: var(--muted);
 }
 .om-share-col:hover .om-share-bar { filter: brightness(1.12); }
 .om-share-col:hover .om-share-site,
-.om-share-col:hover .om-share-shop { color: #0f5c9c; }
+.om-share-col:hover .om-share-shop { color: var(--brand); }
 .om-share-col:focus-visible {
   outline: 2px solid rgba(15, 92, 156, .4);
   outline-offset: 2px;
@@ -322,7 +322,7 @@
   right: -1px;
   top: 0;
   height: 3px;
-  background: #fff;
+  background: var(--surface);
   box-shadow: 0 -1px 0 rgba(15, 92, 156, .45);
 }
 
@@ -336,7 +336,7 @@
   width: 100%;
   padding: 7px 2px 8px;
   border: none;
-  border-top: 1px solid #eef4fa;
+  border-top: 1px solid var(--border);
   border-radius: 0;
   background: none;
   -webkit-appearance: none;
@@ -356,18 +356,18 @@
   font-family: Consolas, "Courier New", monospace;
   font-size: 11px;
   letter-spacing: -0.2px;
-  color: #41505e;
+  color: var(--body);
 }
 .om-share-row-shop {
   font-size: 13px;
   line-height: 1.35;
-  color: #26313d;
+  color: var(--body);
   overflow-wrap: anywhere;
 }
 .om-share-row-value {
   font-size: 13px;
   font-weight: 700;
-  color: #26313d;
+  color: var(--body);
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
@@ -376,19 +376,19 @@
   height: 6px;
   margin-top: 4px;
   border-radius: 999px;
-  background: #eef4fa;
+  background: var(--surface-muted);
   overflow: hidden;
 }
 .om-share-row-fill { display: block; height: 100%; border-radius: 999px; }
 .om-share-row.is-missing .om-share-row-shop,
-.om-share-row.is-missing .om-share-row-value { color: #8494a3; }
-.om-share-row.is-missing .om-share-row-track { background: #f2f5f8; }
+.om-share-row.is-missing .om-share-row-value { color: var(--faint); }
+.om-share-row.is-missing .om-share-row-track { background: var(--surface-muted); }
 /* 截斷的高柱：比例條末端加斜紋，提示實際比率更高 */
 .om-share-row.is-capped .om-share-row-fill {
   background-image: repeating-linear-gradient(45deg, rgba(255, 255, 255, .6) 0 4px, transparent 4px 8px);
 }
 .om-share-row:hover .om-share-row-shop,
-.om-share-row:hover .om-share-row-value { color: #0f5c9c; }
+.om-share-row:hover .om-share-row-value { color: var(--brand); }
 .om-share-row:focus-visible {
   outline: 2px solid rgba(15, 92, 156, .4);
   outline-offset: 2px;
@@ -413,9 +413,9 @@
   padding: 16px;
   text-align: center;
   font-size: 13.5px;
-  color: #66727f;
-  background: #fafbfc;
-  border: 1px dashed #d7dee7;
+  color: var(--muted);
+  background: var(--surface-soft);
+  border: 1px dashed var(--border-soft);
   border-radius: 10px;
   box-sizing: border-box;
 }
@@ -426,7 +426,7 @@
   max-width: min(340px, calc(100% - 8px));
   padding: 8px 10px;
   background: rgba(15, 23, 42, 0.92);
-  color: #fff;
+  color: var(--on-brand);
   border-radius: 8px;
   font-size: 12px;
   line-height: 1.45;
@@ -448,7 +448,7 @@
 .dash-page .dash-chart svg { touch-action: pan-y; }
 
 .dash-empty-card h3 { margin: 0 0 6px; }
-.dash-foot-card { background: #fbfdff; }
+.dash-foot-card { background: var(--surface-soft); }
 
 @media (max-width: 1024px) {
   .dash-kpi-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }  /* KPI 4 卡變 2×2 */
@@ -476,10 +476,10 @@
   flex: 0 1 auto;
   min-height: 42px;
   padding: 8px 20px;
-  border: 1px solid #d7dee8;
+  border: 1px solid var(--border-soft);
   border-radius: 999px;
-  background: #fff;
-  color: #334155;
+  background: var(--surface);
+  color: var(--body);
   font-size: 14px;
   font-weight: 500;
   font-family: inherit;
@@ -489,7 +489,7 @@
 .portal-tab.is-active {
   background: var(--brand, #0f5c9c);
   border-color: var(--brand, #0f5c9c);
-  color: #fff;
+  color: var(--on-brand);
 }
 .portal-tab:focus-visible {
   outline: 2px solid var(--brand, #0f5c9c);
@@ -520,7 +520,7 @@
 .portal-tab--accent.is-active {
   background: var(--brand, #0f5c9c);
   border-color: var(--brand, #0f5c9c);
-  color: #fff;
+  color: var(--on-brand);
   box-shadow: none;
   text-shadow: none;
 }
@@ -550,62 +550,62 @@
    事項以卡片呈現：手機上毋須橫向捲動，年期明細用 chips。
    ========================================================================== */
 .ds-head-card h2 { margin: 0 0 4px; }
-.ds-intro { color: #475569; font-size: 13.5px; line-height: 1.65; margin: 8px 0 14px; }
+.ds-intro { color: var(--body); font-size: 13.5px; line-height: 1.65; margin: 8px 0 14px; }
 .ds-code { font-family: Consolas, 'Courier New', monospace; letter-spacing: .2px; }
-.ds-pending-count { color: #b42318; }
+.ds-pending-count { color: var(--danger); }
 
 .ds-matter {
-  border: 1px solid #dbe4ee;
+  border: 1px solid var(--border);
   border-left: 4px solid #d99a06;
   border-radius: 10px;
-  background: #fff;
+  background: var(--surface);
   padding: 14px 16px;
   margin: 0 0 12px;
 }
-.ds-matter--replied { border-left-color: #1e8449; }
-.ds-matter--closed { border-left-color: #94a3b8; background: #f8fafc; }
+.ds-matter--replied { border-left-color: var(--success); }
+.ds-matter--closed { border-left-color: #94a3b8; background: var(--surface-soft); }
 .ds-matter-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
 .ds-matter-head-left { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 .ds-matter-code {
   font-family: Consolas, 'Courier New', monospace;
   font-size: 12.5px;
   font-weight: 700;
-  color: #334155;
-  background: #f1f5f9;
-  border: 1px solid #e2e8f0;
+  color: var(--body);
+  background: var(--surface-muted);
+  border: 1px solid var(--border);
   border-radius: 6px;
   padding: 1px 7px;
 }
 .ds-matter-title { margin: 8px 0 4px; font-size: 16px; color: #0f172a; }
-.ds-matter-facts { margin-top: 6px; font-size: 12.8px; color: #64748b; }
-.ds-matter-facts b { color: #334155; }
+.ds-matter-facts { margin-top: 6px; font-size: 12.8px; color: var(--muted); }
+.ds-matter-facts b { color: var(--body); }
 .ds-sep { margin: 0 6px; color: #cbd5e1; }
-.ds-sku-list { margin-top: 10px; border-top: 1px dashed #e2e8f0; }
+.ds-sku-list { margin-top: 10px; border-top: 1px dashed var(--border); }
 .ds-sku-line {
   display: grid;
   grid-template-columns: minmax(0, 1.35fr) auto minmax(0, 1fr);
   gap: 12px;
   align-items: center;
   padding: 9px 0;
-  border-bottom: 1px solid #f0f3f7;
+  border-bottom: 1px solid var(--border);
   font-size: 13px;
 }
 .ds-sku-line:last-child { border-bottom: 0; }
 .ds-sku-line-id { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; min-width: 0; }
-.ds-sku-line-id b { font-size: 13.5px; color: #0a3d69; white-space: nowrap; }
-.ds-sku-line-id span { color: #64748b; font-size: 12.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.ds-sku-line-stock { color: #64748b; font-size: 12.5px; white-space: nowrap; }
+.ds-sku-line-id b { font-size: 13.5px; color: var(--ink); white-space: nowrap; }
+.ds-sku-line-id span { color: var(--muted); font-size: 12.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ds-sku-line-stock { color: var(--muted); font-size: 12.5px; white-space: nowrap; }
 .ds-sku-line-reply { text-align: right; }
-.ds-line-pending { color: #b42318; font-weight: 600; }
-.ds-line-none { color: #64748b; font-weight: 600; }
+.ds-line-pending { color: var(--danger); font-weight: 600; }
+.ds-line-none { color: var(--muted); font-weight: 600; }
 .ds-instructions {
   margin-top: 10px;
   padding: 8px 12px;
-  border-left: 3px solid #cfe0f2;
+  border-left: 3px solid var(--border-accent);
   border-radius: 0 6px 6px 0;
-  background: #f7fbff;
+  background: var(--surface-soft);
   font-size: 13px;
-  color: #334155;
+  color: var(--body);
   line-height: 1.6;
 }
 .ds-chip {
@@ -614,31 +614,31 @@
   gap: 4px;
   margin: 0 4px 3px 0;
   padding: 2px 9px;
-  border: 1px solid #cfe0f2;
+  border: 1px solid var(--border-accent);
   border-radius: 999px;
-  background: #eef6ff;
+  background: var(--surface-brand);
   font-size: 12.5px;
   white-space: nowrap;
 }
 .ds-chip b { font-family: Consolas, 'Courier New', monospace; }
-.ds-total-inline { margin-left: 8px; color: #475569; }
+.ds-total-inline { margin-left: 8px; color: var(--body); }
 .ds-open { flex: 0 0 auto; }
 
 /* ---------- 回覆對話框：一個事項多個 SKU ---------- */
 .ds-sku {
-  border: 1px solid #e2e8f0;
+  border: 1px solid var(--border);
   border-radius: 10px;
   padding: 14px 14px 12px;
   margin: 0 0 14px;
-  background: #fcfdff;
+  background: var(--surface-soft);
 }
-.ds-sku.is-no-transfer { background: #f8fafc; }
+.ds-sku.is-no-transfer { background: var(--surface-soft); }
 .ds-sku-head { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; flex-wrap: wrap; margin-bottom: 10px; }
 .ds-sku-id { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; min-width: 0; }
-.ds-sku-id b { font-size: 15px; color: #0a3d69; }
-.ds-sku-id span { color: #64748b; font-size: 12.5px; }
-.ds-sku-stock { font-size: 12.5px; color: #64748b; white-space: nowrap; }
-.ds-sku-stock b { color: #334155; }
+.ds-sku-id b { font-size: 15px; color: var(--ink); }
+.ds-sku-id span { color: var(--muted); font-size: 12.5px; }
+.ds-sku-stock { font-size: 12.5px; color: var(--muted); white-space: nowrap; }
+.ds-sku-stock b { color: var(--body); }
 .ds-sku .ds-lines-head { margin-top: 2px; }
 .ds-sku .ds-add-line { min-height: 30px; }
 .ds-none {
@@ -647,26 +647,26 @@
   gap: 8px;
   margin: 4px 0 10px;
   font-size: 13px;
-  color: #475569;
+  color: var(--body);
   cursor: pointer;
 }
-.ds-none input { width: 16px; height: 16px; accent-color: #0f5c9c; }
+.ds-none input { width: 16px; height: 16px; accent-color: var(--brand); }
 .ds-sku-total { font-size: 12.5px; padding: 7px 10px; }
 .ds-sku-note {
   width: 100%;
   box-sizing: border-box;
   margin-top: 10px;
   padding: 8px 10px;
-  border: 1px solid #cfd9e4;
+  border: 1px solid var(--border-strong);
   border-radius: 8px;
   font-size: 13px;
   font-family: inherit;
 }
-.ds-sku-readonly { font-size: 13px; line-height: 1.7; color: #334155; }
+.ds-sku-readonly { font-size: 13px; line-height: 1.7; color: var(--body); }
 .ds-sku-readonly .ds-chip { margin-top: 2px; }
 
 /* ---------- 自定回覆欄位（批次自己定義，最多 10 個） ---------- */
-.ds-sku--shop { background: #fff; }
+.ds-sku--shop { background: var(--surface); }
 .ds-cf-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -675,33 +675,33 @@
 }
 .ds-cf { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
 .ds-cf--wide { grid-column: 1 / -1; }
-.ds-cf-label { font-size: 12.5px; font-weight: 700; color: #334155; line-height: 1.55; }
-.ds-cf-req { color: #b42318; margin-left: 3px; }
+.ds-cf-label { font-size: 12.5px; font-weight: 700; color: var(--body); line-height: 1.55; }
+.ds-cf-req { color: var(--danger); margin-left: 3px; }
 .ds-cf-input {
   width: 100%;
   box-sizing: border-box;
   padding: 8px 10px;
-  border: 1px solid #cfd9e4;
+  border: 1px solid var(--border-strong);
   border-radius: 8px;
   font-size: 14px;
   font-family: inherit;
   color: #0f172a;
-  background: #fff;
+  background: var(--surface);
 }
-.ds-cf-input:focus { outline: 2px solid rgba(15, 92, 156, .18); border-color: #0f5c9c; }
-.ds-cf-input.is-invalid { border-color: #d9534f; background: #fef7f6; }
-.ds-cf-hint { font-size: 11px; color: #94a3b8; }
+.ds-cf-input:focus { outline: 2px solid rgba(15, 92, 156, .18); border-color: var(--brand); }
+.ds-cf-input.is-invalid { border-color: #d9534f; background: var(--surface); }
+.ds-cf-hint { font-size: 11px; color: var(--faint); }
 .ds-cf-readonly { margin: 2px 0 8px; line-height: 1.9; }
 .ds-cf-chip {
   display: inline-block;
   margin: 0 6px 4px 0;
   padding: 2px 8px;
   border-radius: 6px;
-  background: #eef5fc;
-  color: #3f5a75;
+  background: var(--surface-brand);
+  color: var(--body);
   font-size: 12px;
 }
-.ds-cf-chip b { color: #0a3d69; }
+.ds-cf-chip b { color: var(--ink); }
 
 @media (max-width: 640px) {
   .ds-cf-grid { grid-template-columns: 1fr; }
@@ -728,14 +728,14 @@ dialog#ds_reply_dialog::backdrop { background: rgba(7, 30, 50, 0.5); backdrop-fi
 .ds-notice {
   margin: 0 0 12px;
   padding: 8px 12px;
-  border: 1px solid #cfe0f2;
+  border: 1px solid var(--border-accent);
   border-radius: 8px;
-  background: #f7fbff;
+  background: var(--surface-soft);
   font-size: 13px;
-  color: #334155;
+  color: var(--body);
   line-height: 1.6;
 }
-.ds-notice--closed { border-color: #e2e8f0; background: #f8fafc; color: #64748b; }
+.ds-notice--closed { border-color: var(--border); background: var(--surface-soft); color: var(--muted); }
 
 .ds-lines-head {
   display: grid;
@@ -744,7 +744,7 @@ dialog#ds_reply_dialog::backdrop { background: rgba(7, 30, 50, 0.5); backdrop-fi
   padding: 0 0 4px;
   font-size: 12px;
   font-weight: 700;
-  color: #64748b;
+  color: var(--muted);
 }
 .ds-line {
   display: grid;
@@ -757,7 +757,7 @@ dialog#ds_reply_dialog::backdrop { background: rgba(7, 30, 50, 0.5); backdrop-fi
   width: 100%;
   box-sizing: border-box;
   padding: 9px 10px;
-  border: 1px solid #cfd9e4;
+  border: 1px solid var(--border-strong);
   border-radius: 8px;
   font-size: 15px;
   font-family: inherit;
@@ -765,30 +765,30 @@ dialog#ds_reply_dialog::backdrop { background: rgba(7, 30, 50, 0.5); backdrop-fi
 .ds-line .ds-year { font-family: Consolas, 'Courier New', monospace; letter-spacing: 1px; text-align: center; }
 .ds-line .ds-qty { text-align: center; }
 .ds-line input:focus { outline: 2px solid rgba(15, 92, 156, .35); border-color: var(--brand, #0f5c9c); }
-.ds-line input:disabled { background: #f1f5f9; color: #64748b; }
+.ds-line input:disabled { background: var(--surface-muted); color: var(--muted); }
 .ds-remove {
   width: 36px;
   height: 36px;
-  border: 1px solid #e2e8f0;
+  border: 1px solid var(--border);
   border-radius: 8px;
-  background: #fff;
-  color: #94a3b8;
+  background: var(--surface);
+  color: var(--faint);
   font-size: 14px;
   cursor: pointer;
 }
-.ds-remove:hover { border-color: #f5c6c2; color: #b42318; background: #fdecea; }
+.ds-remove:hover { border-color: var(--danger-border); color: var(--danger); background: var(--danger-bg); }
 .ds-add-line { margin: 2px 0 10px; min-height: 32px; border-radius: 8px; }
 .ds-total {
   padding: 8px 12px;
   border-radius: 8px;
-  background: #f8fafc;
-  border: 1px solid #e2e8f0;
+  background: var(--surface-soft);
+  border: 1px solid var(--border);
   font-size: 13px;
-  color: #334155;
+  color: var(--body);
 }
-.ds-total b { color: #0a3d69; }
-.ds-total--over { border-color: #f5c6c2; background: #fdecea; }
-.ds-over { color: #b42318; font-weight: 700; }
+.ds-total b { color: var(--ink); }
+.ds-total--over { border-color: var(--danger-border); background: var(--danger-bg); }
+.ds-over { color: var(--danger); font-weight: 700; }
 
 @media (max-width: 640px) {
   .ds-matter { padding: 12px 12px; }
@@ -813,18 +813,18 @@ dialog#ds_reply_dialog::backdrop { background: rgba(7, 30, 50, 0.5); backdrop-fi
   padding: 10px 14px;
   border: 1px solid #ecd88a;
   border-radius: 10px;
-  background: #fef6dd;
+  background: var(--warning-bg);
   color: #6b4a06;
   font-size: 13.5px;
   line-height: 1.55;
 }
 .ds-pending-banner b { color: #7a3e00; }
-.ds-pending-banner a { color: #0a3d69; font-weight: 700; }
+.ds-pending-banner a { color: var(--ink); font-weight: 700; }
 .ds-sku-note-label {
   display: block;
   margin: 10px 0 4px;
   font-size: 12px;
-  color: #64748b;
+  color: var(--muted);
   font-weight: 600;
 }
 
@@ -874,7 +874,7 @@ dialog#ds_reply_dialog::backdrop { background: rgba(7, 30, 50, 0.5); backdrop-fi
   vertical-align: middle;
 }
 .om-table thead th {
-  background: #f2f8fe;
+  background: var(--surface-muted);
   color: var(--brand-dark, #0a3d69);
   font-size: 12.5px;
   font-weight: 700;
@@ -883,15 +883,15 @@ dialog#ds_reply_dialog::backdrop { background: rgba(7, 30, 50, 0.5); backdrop-fi
   top: 0;
   z-index: 1;
 }
-.om-table tbody tr:hover td { background: #f7fbff; }
+.om-table tbody tr:hover td { background: var(--surface-soft); }
 .om-table .om-site {
   font-family: Consolas, 'Courier New', monospace;
   font-weight: 700;
   color: var(--brand-dark, #0a3d69);
   white-space: nowrap;
 }
-.om-table .om-shop { color: #475569; }
-.om-table .om-muted { color: #94a3b8; }
+.om-table .om-shop { color: var(--body); }
+.om-table .om-muted { color: var(--faint); }
 .om-table .om-link-btn {
   border: 0;
   background: none;
@@ -922,7 +922,7 @@ dialog#ds_reply_dialog::backdrop { background: rgba(7, 30, 50, 0.5); backdrop-fi
 .om-kpi-note {
   margin: 0;
   font-size: 12px;
-  color: #7a8894;
+  color: var(--muted);
 }
 .om-zero-toolbar-actions { display: flex; gap: 8px; align-items: flex-end; }
 .om-matter-shop {
@@ -931,15 +931,15 @@ dialog#ds_reply_dialog::backdrop { background: rgba(7, 30, 50, 0.5); backdrop-fi
   gap: 6px;
   margin-right: 8px;
   font-weight: 700;
-  color: #0a3d69;
+  color: var(--ink);
 }
 .om-matter-store {
   margin-right: 8px;
   padding: 2px 8px;
   border-radius: 999px;
-  background: #eef6fd;
-  border: 1px solid #cfe0f2;
-  color: #0a3d69;
+  background: var(--surface-brand);
+  border: 1px solid var(--border-accent);
+  color: var(--ink);
   font-family: Consolas, 'Courier New', monospace;
   font-size: 12px;
   font-weight: 700;

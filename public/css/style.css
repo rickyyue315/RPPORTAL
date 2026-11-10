@@ -55,7 +55,7 @@ a:hover {
   position: sticky;
   top: 0;
   z-index: 100;
-  background: linear-gradient(135deg, #1270bd 0%, var(--brand) 45%, var(--brand-dark) 100%);
+  background: linear-gradient(135deg, var(--brand-hover) 0%, var(--brand) 45%, var(--brand-dark) 100%);
   color: #fff;
   padding: 0;
   display: flex;
@@ -170,7 +170,7 @@ a:hover {
   margin-left: 6px;
   padding: 0 6px;
   border-radius: 999px;
-  background: #b42318;
+  background: var(--danger);
   color: #fff;
   font-size: 11px;
   font-weight: 700;
@@ -182,7 +182,7 @@ a:hover {
 .announce-banner {
   background: #fff7e0;
   border-bottom: 3px solid var(--warning);
-  color: #7a4d00;
+  color: var(--warning);
   font-size: 20px;
   font-weight: 700;
   line-height: 1.6;
@@ -194,7 +194,7 @@ a:hover {
 }
 
 .suspend-banner {
-  background: #fdecea;
+  background: var(--danger-bg);
   border-bottom: 3px solid var(--danger);
   color: #7a1414;
   font-size: 18px;
@@ -573,7 +573,7 @@ textarea {
   font-weight: 700;
   letter-spacing: 0.2px;
   cursor: pointer;
-  background: linear-gradient(180deg, #1270bd, var(--brand) 60%, var(--brand-600));
+  background: linear-gradient(180deg, var(--brand-hover), var(--brand) 60%, var(--brand-600));
   color: #fff;
   box-shadow: 0 2px 8px rgba(15, 92, 156, 0.35), inset 0 1px 0 rgba(255,255,255,.25);
   transition: transform 0.12s ease, box-shadow 0.15s ease, background-color 0.15s ease, filter 0.15s ease;
@@ -618,7 +618,7 @@ a.btn.ghost:visited {
   box-shadow: none;
 }
 .btn.secondary {
-  background: #eef2f6;
+  background: var(--surface-muted);
   color: var(--text);
   border-color: var(--border);
   box-shadow: var(--shadow-sm);
@@ -698,22 +698,22 @@ a.btn.ghost:visited {
   font-size: 14px;
 }
 .alert.error {
-  background: #fdecea;
-  border: 1px solid #f5c6c2;
+  background: var(--danger-bg);
+  border: 1px solid var(--danger-border);
   color: var(--danger);
 }
 .alert.success {
-  background: #eafaf1;
-  border: 1px solid #a9dfbf;
+  background: var(--success-bg);
+  border: 1px solid var(--success-border);
   color: var(--success);
 }
 .alert.info {
-  background: #eaf2fb;
+  background: var(--surface-brand);
   border: 1px solid #a9c7e8;
   color: var(--brand-dark);
 }
 .alert.warning {
-  background: #fef9e7;
+  background: var(--warning-bg);
   border: 1px solid #f9e79f;
   color: var(--warning);
 }
@@ -766,8 +766,8 @@ a.btn.ghost:visited {
   background: rgba(15, 92, 156, 0.08);
 }
 .result-banner {
-  background: #eafaf1;
-  border: 1px solid #a9dfbf;
+  background: var(--success-bg);
+  border: 1px solid var(--success-border);
   color: var(--success);
   font-weight: 700;
   font-size: 15px;
@@ -902,7 +902,7 @@ td {
   vertical-align: top;
 }
 th {
-  background: #eef2f6;
+  background: var(--surface-muted);
   font-weight: 600;
 }
 tr:nth-child(even) td {
@@ -933,15 +933,15 @@ tr:nth-child(even) td {
   font-weight: 600;
 }
 .status-badge.received {
-  background: #eaf2fb;
+  background: var(--surface-brand);
   color: var(--brand-dark);
 }
 .status-badge.locked {
-  background: #fdecea;
+  background: var(--danger-bg);
   color: var(--danger);
 }
 .status-badge.exported {
-  background: #fef9e7;
+  background: var(--warning-bg);
   color: var(--warning);
 }
 
@@ -1182,7 +1182,7 @@ hr {
 input[readonly]#site_code,
 input[readonly]#q_site,
 input[readonly]#r_site {
-  background: #eef2f6;
+  background: var(--surface-muted);
   color: var(--brand-dark);
   font-weight: 700;
 }
@@ -1238,7 +1238,7 @@ a.btn-disabled {
 
 /* ============ 2026-09 首頁 Hero + 網格（店舖首頁美化） ============ */
 .hero {
-  background: linear-gradient(135deg, #1270bd 0%, var(--brand-dark) 70%, var(--brand-darker) 100%);
+  background: linear-gradient(135deg, var(--brand-hover) 0%, var(--brand-dark) 70%, var(--brand-darker) 100%);
   color: #fff;
   border-radius: var(--radius-xl);
   padding: 30px 30px 26px;
@@ -1360,7 +1360,7 @@ a.btn-disabled {
 .zs-progress {
   height: 8px; border-radius: 999px; background: #e6ebf0; overflow: hidden; margin-top: 10px;
 }
-.zs-progress > i { display: block; height: 100%; background: linear-gradient(90deg, #1270bd, var(--success)); border-radius: 999px; transition: width .3s ease; }
+.zs-progress > i { display: block; height: 100%; background: linear-gradient(90deg, var(--brand-hover), var(--success)); border-radius: 999px; transition: width .3s ease; }
 /* 零銷售頁：頁頭說明文字（加大、加深，方便店舖閱讀） */
 .zs-intro {
   margin: 12px 0 0;
@@ -1452,11 +1452,11 @@ table.zs-table td:nth-child(3) { font-family: Consolas, 'Courier New', monospace
 .badge-pending::before, .badge-replied::before, .badge-archived::before { content: ''; width: 7px; height: 7px; border-radius: 50%; }
 .badge-pending { background: var(--warning-bg); color: #6b4a06; border: 1px solid #ecd88a; }
 .badge-pending::before { background: #d99a06; }
-.badge-replied { background: var(--success-bg); color: #0a5c36; border: 1px solid #a9dfbf; }
+.badge-replied { background: var(--success-bg); color: #0a5c36; border: 1px solid var(--success-border); }
 .badge-replied::before { background: var(--success); }
 /* 已封存週次：中性灰，不再用「待辦」的黃色，避免店舖以為仍要處理 */
-.badge-archived { background: #eef2f6; color: #64748b; border: 1px solid #d7dee7; }
-.badge-archived::before { background: #94a3b8; }
+.badge-archived { background: var(--surface-muted); color: var(--body); border: 1px solid #d7dee7; }
+.badge-archived::before { background: var(--faint); }
 .badge-repeat {
   display: inline-flex; align-items: center; gap: 5px;
   padding: 3px 11px; border-radius: 999px; font-size: 12px; font-weight: 700; white-space: nowrap;
@@ -1484,17 +1484,17 @@ table.zs-table tbody tr.zs-repeat td { background: #fff7f7; }
 table.zs-table tbody tr.zs-repeat:hover td { background: #feecec; }
 /* 舊週次整行灰階：視覺上明確是「紀錄」而非「工作」 */
 table.zs-table tbody tr.zs-archived td,
-table.zs-table tbody tr.zs-archived:hover td { background: #f8fafc; color: #8a97a6; }
+table.zs-table tbody tr.zs-archived:hover td { background: var(--surface-soft); color: #8a97a6; }
 table.zs-table tbody tr.zs-archived td:nth-child(3) { color: #8a97a6; }
 table.zs-table tbody tr.zs-archived .badge-repeat { opacity: .75; }
 .zs-week-tag {
   display: inline-block; margin-left: 6px; padding: 1px 7px; border-radius: 999px;
   background: #e2e8f0; color: #475569; font-size: 11px; font-weight: 700; vertical-align: middle;
 }
-.zs-closed { color: #94a3b8; font-size: 12.5px; font-weight: 700; white-space: nowrap; }
+.zs-closed { color: var(--faint); font-size: 12.5px; font-weight: 700; white-space: nowrap; }
 .zs-archived-banner {
   margin: 8px 0 10px; padding: 10px 14px; border-radius: 8px;
-  background: #f1f5f9; border: 1px solid #dbe3ec; border-left: 4px solid #94a3b8;
+  background: #f1f5f9; border: 1px solid #dbe3ec; border-left: 4px solid var(--faint);
   color: #475569; font-size: 13px;
 }
 .zs-archived-banner .btn { margin-left: 8px; }

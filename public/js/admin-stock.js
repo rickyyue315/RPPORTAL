@@ -790,11 +790,18 @@
 
   const MTD_RANK_DESC = '以本月最新一期快照計（MTD）；每店比率 = 該店分子 ÷ 分母，<b>不是全公司加權</b>（全公司加權見上方 KPI）。新店／上期無數據不參與排名，但仍計入全公司合計。';
   const MTD_SHARE_DESC = '以本月最新一期快照計（MTD）；按報表 Shop Nature（Local／Mix／Tourist）分成民生區／混合區／遊客區，可用 OM 下拉只看某位 OM 管轄的店舖。「全部」時上方顯示三組的店數／加權／最高摘要，下面用一條連續棒圖列出全部店舖（按比率由高至低、共用同一比例尺），可用分區按鈕只看其中一組。柱頂為百分比，整張圖可橫向滑動睇全部店舖；斜紋柱為新店／上期無數據，仍列出但不宜直接比較。';
-  const MTD_OM_DESC = '以本月最新一期快照計（MTD）；每位 OM 的比率 = <b>Σ轄下所有店舖分子 ÷ Σ所有店舖分母</b>（加權，不是各店平均），新店照計入加權合計。排行榜按上方口徑由高至低（第 1 位比率最高）；表內同時列出另一口徑與其名次作參考。按「看店舖」會切到店舖佔比並只顯示該 OM 管轄的店舖。';
+  const MTD_OM_DESC = '以本月最新一期快照計（MTD）；每位 OM 的比率 = <b>Σ轄下所有店舖分子 ÷ Σ所有店舖分母</b>（加權，不是各店平均），新店照計入加權合計。排行榜按上方口徑由高至低（第 1 位比率最高）；表內同時列出另一口徑與其名次作參考。OM 名旁同時列出新店及遊客／混合／民生店數。按「看店舖」會切到店舖佔比並只顯示該 OM 管轄的店舖。';
   const MTD_SHARE_GROUPS = [
     { key: 'local', label: '民生區' },
     { key: 'mix', label: '混合區' },
     { key: 'tourist', label: '遊客區' },
+  ];
+
+  /** OM 綜合排名每行顯示的店舖類型（跟日常講法：遊客、混合、民生） */
+  const MTD_OM_NATURE_META = [
+    { key: 'tourist', label: '遊客' },
+    { key: 'mix', label: '混合' },
+    { key: 'local', label: '民生' },
   ];
 
   /** 報表 Shop Nature 歸一化（與後端 normalizeShopNature 同一套；未知值保留，不會被靜默丟棄） */
@@ -1153,6 +1160,8 @@
           label: om || '未設定 OM',
           rows: [],
           newCount: 0,
+          natureCounts: { tourist: 0, mix: 0, local: 0 },
+          natureOther: 0,
           skuNum: 0,
           skuDen: 0,
           hasSkuDen: false,
@@ -1164,6 +1173,13 @@
       }
       group.rows.push(row);
       if (row.is_new) group.newCount += 1;
+
+      const nature = natureGroupKey(row.shop_nature);
+      if (nature === 'tourist' || nature === 'mix' || nature === 'local') {
+        group.natureCounts[nature] += 1;
+      } else {
+        group.natureOther += 1;
+      }
 
       const skuCount = num(row.sku_count_0sale);
       if (skuCount !== null) group.skuNum += skuCount;
@@ -1273,11 +1289,17 @@
           ${sorted.map((group) => {
             const rank = group[`${current.key}Rank`];
             const newHint = group.newCount ? `${group.newCount} 間新店` : '';
+            const natureHint = MTD_OM_NATURE_META
+              .map((def) => `${def.label} ${group.natureCounts[def.key]}`)
+              .join(' · ');
+            const natureTitle = MTD_OM_NATURE_META
+              .map((def) => `${def.label}舖 ${group.natureCounts[def.key]} 間`)
+              .join('、') + (group.natureOther ? `、未分類 ${group.natureOther} 間` : '');
             return `<tr class="stk-om-row${group.isUnassigned ? ' is-unassigned' : ''}">
               <td class="stk-om-pos">${rank ? `#${rank}` : '—'}</td>
               <td>
                 <div class="stk-om-name">${esc(group.label)}</div>
-                ${newHint ? `<div class="stk-om-meta">${newHint}</div>` : ''}
+                <div class="stk-om-meta" title="${escAttr(natureTitle)}">${newHint ? `${newHint} · ` : ''}${natureHint}</div>
               </td>
               <td class="text-end stk-om-stores">${group.rows.length}</td>
               ${metricCell(group, defs.sku, currentMax, isSku)}
@@ -1290,7 +1312,7 @@
         </tbody>
       </table>
     </div>
-    <p class="text-secondary small mt-2 mb-0">加權比率會把大店舖的影響放大，與「各店比率平均」不同；新店首期存貨通常偏高，已照計入加權並在店數旁標示。按「看店舖」可切到店舖佔比並只顯示該 OM 的店舖。</p>`;
+    <p class="text-secondary small mt-2 mb-0">加權比率會把大店舖的影響放大，與「各店比率平均」不同；新店首期存貨通常偏高，已照計入加權並在 OM 名旁標示。遊客／混合／民生為該 OM 轄下店數（按報表 Shop Nature 分類）。按「看店舖」可切到店舖佔比並只顯示該 OM 的店舖。</p>`;
   }
 
   async function loadMtdWeek() {

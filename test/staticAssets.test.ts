@@ -139,6 +139,9 @@ describe('static asset freshness', () => {
     expect(script).toContain('renderMtdOm');
     expect(script).toContain('data-stk-om-share');
     expect(script).toContain('Σ轄下所有店舖分子');
+    // OM 名旁同時顯示新店及遊客／混合／民生店數
+    expect(script).toContain('MTD_OM_NATURE_META');
+    expect(script).toContain('natureCounts');
     // 分區篩選：全部／民生區／混合區／遊客區，預設全部
     expect(html).toContain('id="stk_share_nature"');
     expect(html).toContain('id="stk_share_body"');

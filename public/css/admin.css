@@ -1026,7 +1026,7 @@ body.stk-modal-open { overflow: hidden; }
 .stk-om-table thead th.is-current small { color: #3b7d76; }
 .stk-om-table tbody td { vertical-align: middle; font-variant-numeric: tabular-nums; }
 .stk-om-table th:nth-child(1) { width: 52px; }
-.stk-om-table th:nth-child(2) { min-width: 150px; }
+.stk-om-table th:nth-child(2) { min-width: 190px; }
 .stk-om-table th:nth-child(3) { width: 92px; }
 .stk-om-table th:nth-child(4),
 .stk-om-table th:nth-child(5) { width: 210px; }

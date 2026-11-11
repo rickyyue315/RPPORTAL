@@ -269,7 +269,7 @@ describe('指定 SKU 回覆 API（一個事項多個 SKU）', () => {
     mainBuffer = buffer;
     const res = await uploadBatch(agent, buffer, {
       instructions: '請按年期填報可調撥件數',
-      due_at: '2026-11-10T18:00',
+      due_at: '2099-12-31T18:00',
       reference: 'RP-2026-1042',
     });
     expect(res.status).toBe(201);
@@ -285,7 +285,7 @@ describe('指定 SKU 回覆 API（一個事項多個 SKU）', () => {
     expect(batch.subject).toBe('指定 SKU 存貨年期確認（測試）');
     expect(batch.instructions).toBe('請按年期填報可調撥件數');
     // 輸入香港時間 18:00，讀回同一時間
-    expect(batch.due_at).toBe('2026-11-10 18:00');
+    expect(batch.due_at).toBe('2099-12-31 18:00');
     expect(batch.reference).toBe('RP-2026-1042');
     expect(batch.matter_count).toBe(3);
     expect(batch.row_count).toBe(4);

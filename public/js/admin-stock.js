@@ -680,7 +680,6 @@
     setResult('stk_mtd_error', 'info', '');
 
     const isSku = groupMetric === 'sku';
-    const metricLabel = isSku ? '不良 SKU 佔比' : '不良存貨值佔比';
 
     if (!mtdWeekDate) {
       const hasSeries = normalizedSeries(summaryCache).length > 0;
@@ -694,8 +693,29 @@
       month: mtdWeekDate.slice(0, 7),
       is_current_month: true,
     };
-    const pick = isSku ? (row) => num(row.ovs_carry_ratio) : (row) => num(row.ratio);
-    const wowOf = isSku ? (row) => num(row.ovs_carry_delta_pt) : (row) => num(row.wow_delta_pt);
+    const defs = {
+      sku: {
+        key: 'sku',
+        label: '不良 SKU 佔比',
+        hint: 'Σ不良 SKU ÷ ΣSKU Carry',
+        pick: (row) => num(row.ovs_carry_ratio),
+        wow: (row) => num(row.ovs_carry_delta_pt),
+        detail: (row) => `${fmtInt(row.sku_count_0sale)} ÷ ${fmtInt(row.sku_carry_count)}`,
+        alert: OVS_CARRY_RATIO_ALERT,
+        color: COLOR_RF,
+      },
+      value: {
+        key: 'value',
+        label: '不良存貨值佔比',
+        hint: 'Σ不良存貨值 ÷ Σ存貨值',
+        pick: (row) => num(row.ratio),
+        wow: (row) => num(row.wow_delta_pt),
+        detail: (row) => `${fmtMoney(row.deadstock_value)} ÷ ${fmtMoney(row.shop_stock_value)}`,
+        alert: 0.1,
+        color: COLOR_MAIN,
+      },
+    };
+    const current = isSku ? defs.sku : defs.value;
     const allRows = Array.isArray(mtdWeekRows) ? mtdWeekRows : [];
     syncRankOmOptions(allRows);
     const rows = filterRankRows(allRows);
@@ -721,18 +741,41 @@
       return;
     }
 
-    // 與原有 Top 15 同一套新店規則：新店／上期無數據不排名，但仍計入全公司合計
+    // 與 OM 綜合排名同一做法：兩個口徑各自計名次，目前口徑負責排序及加底色。
+    // 名次只在目前篩選範圍（OM／Shop Nature）內計算；新店／上期無數據不排名。
+    const bySite = (a, b) => String(a.site_code || '').localeCompare(String(b.site_code || ''));
+    const rankScope = rows.filter((row) => !row.is_new);
+    const ranks = { sku: new Map(), value: new Map() };
+    const assignRanks = (def) => {
+      const ordered = rankScope
+        .filter((row) => def.pick(row) !== null)
+        .sort((a, b) => (def.pick(b) || 0) - (def.pick(a) || 0) || bySite(a, b));
+      let lastValue = null;
+      let lastRank = 0;
+      ordered.forEach((row, index) => {
+        const value = def.pick(row);
+        if (lastValue !== null && value === lastValue) {
+          ranks[def.key].set(row, lastRank);
+        } else {
+          ranks[def.key].set(row, index + 1);
+          lastValue = value;
+          lastRank = index + 1;
+        }
+      });
+    };
+    assignRanks(defs.sku);
+    assignRanks(defs.value);
+
     const excluded = rows.filter((row) => row.is_new).length;
-    const ranked = rows
-      .filter((row) => !row.is_new && pick(row) !== null)
-      .sort((a, b) => (pick(b) || 0) - (pick(a) || 0)
-        || String(a.site_code || '').localeCompare(String(b.site_code || '')))
+    const ranked = rankScope
+      .filter((row) => current.pick(row) !== null)
+      .sort((a, b) => (current.pick(b) || 0) - (current.pick(a) || 0) || bySite(a, b))
       .slice(0, 15);
 
     const monthNote = period.is_current_month ? '' : `（本月尚未上載，顯示最新月份 ${period.month}）`;
     const filterNote = (rankOm || rankNature) ? `（已篩選 ${rows.length} 店）` : '';
     if (note) {
-      note.textContent = `${mtdWeekDate}${monthNote} · ${ranked.length} 店入榜${filterNote}${excluded ? ` · 已排除 ${excluded} 間新店／上期無數據` : ''}`;
+      note.textContent = `${mtdWeekDate}${monthNote} · ${ranked.length} 店入榜${filterNote} · 按${current.label}由高至低${excluded ? ` · 已排除 ${excluded} 間新店／上期無數據` : ''}`;
     }
     if (!ranked.length) {
       wrap.innerHTML = `<div class="text-secondary small">${rows.length
@@ -741,10 +784,30 @@
       return;
     }
 
-    const max = pick(ranked[0]) || 1;
-    const alert = isSku ? OVS_CARRY_RATIO_ALERT : 0.1;
-    const color = isSku ? COLOR_RF : COLOR_MAIN;
-    const detailLabel = isSku ? '不良 SKU ÷ SKU Carry' : '不良存貨值 ÷ 店舖存貨值';
+    // 兩欄各自用該口徑在篩選範圍內的最大值做滿格，與 OM 綜合排名一致
+    const maxOf = (def) => rankScope.reduce((max, row) => {
+      const value = def.pick(row);
+      return value !== null && value > max ? value : max;
+    }, 0);
+    const maxSku = maxOf(defs.sku);
+    const maxValue = maxOf(defs.value);
+
+    const metricCell = (row, def, max, isCurrent) => {
+      const ratio = def.pick(row);
+      const rank = ranks[def.key].get(row);
+      const width = ratio === null || max <= 0
+        ? 0
+        : Math.max(1.5, Math.min(100, (ratio / max) * 100));
+      const alarm = ratio !== null && ratio >= def.alert;
+      return `<td class="text-end stk-om-metric${isCurrent ? ' is-current' : ''}">
+        <div class="stk-om-ratio-line">
+          <span class="stk-om-ratio${alarm ? ' text-danger' : ''}">${fmtRatio(ratio)}</span>
+          <span class="stk-om-rank${rank ? '' : ' is-empty'}" title="${escAttr(`${def.label}名次（1 = 最高）`)}">${rank ? `#${rank}` : '—'}</span>
+        </div>
+        <span class="stk-om-track"><i style="width:${width.toFixed(1)}%;background:${alarm ? '#c0392b' : def.color}"></i></span>
+        <div class="stk-om-detail">${def.detail(row)}</div>
+      </td>`;
+    };
 
     wrap.innerHTML = `<div class="table-responsive stk-mtd-wrap">
       <table class="table table-vcenter table-hover card-table stk-mtd-table">
@@ -754,30 +817,22 @@
           <th scope="col">店舖名稱</th>
           <th scope="col">OM</th>
           <th scope="col">Shop Nature</th>
-          <th scope="col" class="text-end">${metricLabel}</th>
-          <th scope="col" class="text-end">${detailLabel}</th>
-          <th scope="col" class="text-end">與上期</th>
+          <th scope="col" class="text-end${isSku ? ' is-current' : ''}">${defs.sku.label}<small>${defs.sku.hint}</small></th>
+          <th scope="col" class="text-end${isSku ? '' : ' is-current'}">${defs.value.label}<small>${defs.value.hint}</small></th>
+          <th scope="col" class="text-end" title="上方選定口徑與上一期的百分點差；切換口徑可看另一欄的變化">與上期<small>現行口徑</small></th>
         </tr></thead>
         <tbody>
-          ${ranked.map((row, index) => {
-            const ratio = pick(row) || 0;
-            const wow = wowOf(row);
-            const width = Math.max(2, Math.min(100, (ratio / max) * 100));
-            const barColor = ratio >= alert ? '#c0392b' : color;
-            const detail = isSku
-              ? `${fmtInt(row.sku_count_0sale)} ÷ ${fmtInt(row.sku_carry_count)}`
-              : `${fmtMoney(row.deadstock_value)} ÷ ${fmtMoney(row.shop_stock_value)}`;
+          ${ranked.map((row) => {
+            const rank = ranks[current.key].get(row);
+            const wow = current.wow(row);
             return `<tr class="stk-mtd-row" data-stk-mtd-site="${escAttr(row.site_code || '')}" data-stk-mtd-date="${escAttr(mtdWeekDate)}" title="按一下查看 ${escAttr(row.site_code || '')} 的明細">
-              <td class="text-secondary">${index + 1}</td>
+              <td class="stk-om-pos">${rank ? `#${rank}` : '—'}</td>
               <td class="stk-mtd-site">${esc(row.site_code || '')}</td>
               <td class="stk-mtd-shop">${esc(shopLabel(row))}</td>
               <td class="stk-mtd-meta">${esc(row.om || '—')}</td>
               <td class="stk-mtd-meta" title="${escAttr(natureTitle(row.shop_nature))}">${esc(row.shop_nature || '—')}</td>
-              <td class="text-end">
-                <div class="stk-mtd-ratio ${ratio >= alert ? 'text-danger' : ''}">${fmtRatio(ratio)}</div>
-                <span class="stk-mtd-track"><i style="width:${width.toFixed(1)}%;background:${barColor}"></i></span>
-              </td>
-              <td class="text-end stk-mtd-detail">${detail}</td>
+              ${metricCell(row, defs.sku, maxSku, isSku)}
+              ${metricCell(row, defs.value, maxValue, !isSku)}
               <td class="text-end ${wowClass(wow)}">${wow === null ? '—' : `${wowArrow(wow)}${fmtPt(wow)}`}</td>
             </tr>`;
           }).join('')}
@@ -788,7 +843,7 @@
 
   /* ---- 店舖佔比：按 Shop Nature 分組的柱狀排名（OM 式三組並排、整張圖橫向滑動） ---- */
 
-  const MTD_RANK_DESC = '以本月最新一期快照計（MTD）；每店比率 = 該店分子 ÷ 分母，<b>不是全公司加權</b>（全公司加權見上方 KPI）。新店／上期無數據不參與排名，但仍計入全公司合計。';
+  const MTD_RANK_DESC = '以本月最新一期快照計（MTD）；排行榜同時列出兩個口徑：<b>不良 SKU 佔比</b>（Σ不良 SKU ÷ ΣSKU Carry）與 <b>不良存貨值佔比</b>（Σ不良存貨值 ÷ Σ存貨值）。按上方選定口徑由高至低排序，該欄會加底色並顯示名次（1 = 最高），另一欄作參考。每店比率 = 該店自身分子 ÷ 分母，不是全公司加權（全公司加權見上方 KPI）。新店／上期無數據不參與排名，但仍計入全公司合計。';
   const MTD_SHARE_DESC = '以本月最新一期快照計（MTD）；按報表 Shop Nature（Local／Mix／Tourist）分成民生區／混合區／遊客區，可用 OM 下拉只看某位 OM 管轄的店舖。「全部」時上方顯示三組的店數／加權／最高摘要，下面用一條連續棒圖列出全部店舖（按比率由高至低、共用同一比例尺），可用分區按鈕只看其中一組。柱頂為百分比，整張圖可橫向滑動睇全部店舖；斜紋柱為新店／上期無數據，仍列出但不宜直接比較。';
   const MTD_OM_DESC = '以本月最新一期快照計（MTD）；每位 OM 的比率 = <b>Σ轄下所有店舖分子 ÷ Σ所有店舖分母</b>（加權，不是各店平均），新店照計入加權合計。排行榜按上方口徑由高至低（第 1 位比率最高）；表內同時列出另一口徑與其名次作參考。OM 名旁同時列出新店及遊客／混合／民生店數。按「看店舖」會切到店舖佔比並只顯示該 OM 管轄的店舖。';
   const MTD_SHARE_GROUPS = [

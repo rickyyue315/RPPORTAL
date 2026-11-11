@@ -670,7 +670,7 @@ body.stk-modal-open { overflow: hidden; }
 
 /* 當月 MTD 每店排名（走勢卡下方） */
 .stk-mtd-wrap { max-height: 560px; overflow-y: auto; }
-.stk-mtd-table { width: 100%; margin-bottom: 0; }
+.stk-mtd-table { width: 100%; min-width: 1060px; margin-bottom: 0; }
 .stk-mtd-table th,
 .stk-mtd-table td { padding: 7px 10px; }
 .stk-mtd-table th:nth-child(1) { width: 40px; }
@@ -678,8 +678,8 @@ body.stk-modal-open { overflow: hidden; }
 .stk-mtd-table th:nth-child(3) { min-width: 220px; }
 .stk-mtd-table th:nth-child(4) { width: 90px; }
 .stk-mtd-table th:nth-child(5) { width: 105px; }
-.stk-mtd-table th:nth-child(6) { width: 112px; }
-.stk-mtd-table th:nth-child(7) { width: 175px; }
+.stk-mtd-table th:nth-child(6) { width: 210px; }
+.stk-mtd-table th:nth-child(7) { width: 210px; }
 .stk-mtd-table th:nth-child(8) { width: 92px; }
 .stk-mtd-table thead th {
   white-space: nowrap;
@@ -687,7 +687,18 @@ body.stk-modal-open { overflow: hidden; }
   text-align: left;
   background: var(--surface-muted);
 }
+.stk-mtd-table thead th small {
+  display: block;
+  margin-top: 1px;
+  font-size: 10.5px;
+  font-weight: 400;
+  color: var(--muted);
+}
+.stk-mtd-table thead th.is-current { background: var(--success-bg); color: #0b5f59; }
+.stk-mtd-table thead th.is-current small { color: #3b7d76; }
 .stk-mtd-table tbody td { vertical-align: middle; font-variant-numeric: tabular-nums; }
+.stk-mtd-table tbody td:last-child { white-space: nowrap; }
+.stk-mtd-table tbody tr:hover td.stk-om-metric.is-current { background: var(--success-bg); }
 .stk-mtd-table .stk-mtd-site {
   font-family: Consolas, "Courier New", monospace;
   font-weight: 600;
@@ -701,21 +712,6 @@ body.stk-modal-open { overflow: hidden; }
 }
 .stk-mtd-row { cursor: pointer; }
 .stk-mtd-row:hover td { background: var(--surface-muted); }
-.stk-mtd-ratio { font-weight: 700; }
-.stk-mtd-track {
-  display: block;
-  height: 5px;
-  margin-top: 3px;
-  border-radius: 999px;
-  background: var(--surface-muted);
-  overflow: hidden;
-}
-.stk-mtd-track i { display: block; height: 100%; border-radius: 999px; }
-.stk-mtd-detail {
-  font-size: 11.5px;
-  color: var(--muted);
-  white-space: nowrap;
-}
 
 /* 排行榜篩選：OM／Shop Nature（沿用每店明細那套 Tabler 控件，只是收窄 label 間距） */
 .stk-mtd-filter {

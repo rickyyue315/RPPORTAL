@@ -178,6 +178,13 @@ describe('static asset freshness', () => {
     expect(html).toContain('id="stk_rank_scope"');
     expect(script).toContain('filterRankRows');
     expect(script).toContain('syncRankOmOptions');
+    // 排行榜與 OM 綜合排名一致：一行同時列出兩個口徑及各自名次
+    expect(script).toContain("label: '不良 SKU 佔比'");
+    expect(script).toContain("label: '不良存貨值佔比'");
+    expect(script).toContain('assignRanks(defs.sku)');
+    expect(script).toContain('assignRanks(defs.value)');
+    expect(adminCss).toContain('.stk-mtd-table thead th.is-current');
+    expect(adminCss).toContain('min-width: 1060px');
   });
 
   it('wires chart export on every dashboard chart card', () => {

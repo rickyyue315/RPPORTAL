@@ -181,10 +181,13 @@ import {
 } from '../services/shopStock.js';
 import { getEffectiveOmBySite } from '../services/effectiveOm.js';
 import {
+  buildShopStockMtdRankingBuffer,
   buildShopStockRfBuffer,
   buildShopStockTrendBuffer,
   buildShopStockWeekBuffer,
   filterAndSortWeekRows,
+  filterMtdRankingRows,
+  normalizeMtdRankingExportFilters,
   normalizeWeekExportFilters,
 } from '../services/shopStockExport.js';
 import {
@@ -4121,6 +4124,59 @@ adminRouter.get(
     const filename = `Shop_Stock_Detail_${reportDate}_${stamp}.xlsx`;
     await writeAuditEvent({
       eventType: 'shop_stock_detail_export',
+      actorRole: 'admin',
+      actor: req.adminUsername,
+      ip: getClientIp(req),
+      metadata: {
+        filename,
+        report_date: reportDate,
+        rows: rows.length,
+        total_rows: week.rows.length,
+        filters,
+      },
+    });
+    res.setHeader('Content-Type', EXPORT_CONTENT_TYPE);
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    res.send(buffer);
+  }),
+);
+
+/**
+ * GET /api/admin/stock/mtd/export — 當月 MTD 排行榜匯出
+ * 匯出全部符合 OM／Shop Nature 篩選店舖（不只畫面 Top 15），兩個口徑並列；
+ * 現行口徑決定排序及名次，新店／上期無數據／比率缺值排最後。
+ */
+adminRouter.get(
+  '/stock/mtd/export',
+  requireAdmin,
+  adminActionLimiter,
+  asyncHandler(async (req: Request, res: Response) => {
+    const reportDate = String(req.query.report_date ?? '').trim();
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(reportDate) || !isValidIsoDate(reportDate)) {
+      res.status(400).json({ error: '報表日期格式應為 YYYY-MM-DD' });
+      return;
+    }
+    const week = await getShopStockWeek(reportDate);
+    if (!week) {
+      res.status(404).json({ error: '找不到此報表日期的批次' });
+      return;
+    }
+    const filters = normalizeMtdRankingExportFilters({
+      metric: String(req.query.metric ?? ''),
+      om: String(req.query.om ?? ''),
+      nature: String(req.query.nature ?? ''),
+    });
+    const rows = filterMtdRankingRows(week.rows, filters);
+    const buffer = await buildShopStockMtdRankingBuffer({
+      week,
+      filters,
+      rows,
+      generatedAt: toHKString(new Date()),
+    });
+    const stamp = hkTodayForDateColumn().replace(/-/g, '');
+    const filename = `Shop_Stock_MTD_Rank_${reportDate}_${filters.metric}_${stamp}.xlsx`;
+    await writeAuditEvent({
+      eventType: 'shop_stock_mtd_export',
       actorRole: 'admin',
       actor: req.adminUsername,
       ip: getClientIp(req),

@@ -900,6 +900,7 @@ describe('shopStock routes', () => {
       '/api/admin/stock/stores/HA02/summary',
       '/api/admin/stock/weeks/2026-10-25',
       '/api/admin/stock/weeks/2026-10-25/export',
+      '/api/admin/stock/mtd/export?report_date=2026-10-25&metric=value',
       '/api/admin/stock/rf/export?months=12',
       '/api/admin/stock/batches',
     ]) {
@@ -1332,6 +1333,39 @@ describe.skipIf(!config.adminPassword)('shopStock admin routes (logged in)', () 
     const sheet = workbook.getWorksheet('每店明細')!;
     expect(sheet.actualRowCount).toBe(2); // 表頭 + 一間店
     expect(sheet.getCell(2, 2).value).toBe('HA02');
+  });
+
+  it('exports the MTD ranking with both metrics and all filtered shops', async () => {
+    const res = await getBinary('/api/admin/stock/mtd/export?report_date=2026-10-25&metric=value');
+    expect(res.status).toBe(200);
+    expect(res.headers['content-type']).toContain('spreadsheetml');
+    expect(String(res.headers['content-disposition'])).toMatch(/filename="Shop_Stock_MTD_Rank_2026-10-25_value_\d{8}\.xlsx"/);
+
+    const workbook = new ExcelJS.Workbook();
+    await workbook.xlsx.load(res.body as never);
+    expect(workbook.worksheets.map((w) => w.name)).toEqual(['MTD 排行榜', '匯出說明']);
+
+    const sheet = workbook.getWorksheet('MTD 排行榜')!;
+    expect(sheet.getRow(1).getCell(1).value).toBe('名次（現行口徑）');
+    expect(sheet.getRow(1).getCell(6).value).toBe('不良 SKU 佔比');
+    expect(sheet.getRow(1).getCell(10).value).toBe('不良存貨值佔比');
+    expect(sheet.actualRowCount).toBe(4); // 表頭 + 三間店（包括新店）
+    const sites: string[] = [];
+    sheet.eachRow((row, n) => { if (n > 1) sites.push(String(row.getCell(2).value ?? '')); });
+    expect(sites.sort()).toEqual(['HA02', 'HC71', 'HD09']);
+
+    const filtered = await getBinary('/api/admin/stock/mtd/export?report_date=2026-10-25&metric=value&om=WINDY');
+    expect(filtered.status).toBe(200);
+    const filteredBook = new ExcelJS.Workbook();
+    await filteredBook.xlsx.load(filtered.body as never);
+    expect(filteredBook.getWorksheet('MTD 排行榜')!.actualRowCount).toBe(2); // 表頭 + HD09
+  });
+
+  it('rejects an invalid date on the MTD ranking export', async () => {
+    const res = await request(app)
+      .get('/api/admin/stock/mtd/export?report_date=2026-10-25x')
+      .set('Cookie', session.cookie);
+    expect(res.status).toBe(400);
   });
 
   it('exports the RF SKU dashboard as an xlsx with the trend and both rankings', async () => {

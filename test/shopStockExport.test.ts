@@ -1,11 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import ExcelJS from 'exceljs';
 import {
+  buildShopStockMtdRankingBuffer,
   buildShopStockRfBuffer,
   buildShopStockStoreBuffer,
   buildShopStockTrendBuffer,
   buildShopStockWeekBuffer,
   filterAndSortWeekRows,
+  filterMtdRankingRows,
+  normalizeMtdRankingExportFilters,
   normalizeWeekExportFilters,
   shopStockKindLabel,
 } from '../src/services/shopStockExport.js';
@@ -325,6 +328,141 @@ describe('buildShopStockWeekBuffer', () => {
     expect(labels).toContain('搜尋');
     expect(labels).toContain('排序');
     expect(labels).toContain('產生時間（HK）');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// MTD 排行榜匯出（全部符合篩選店舖，兩個口徑並列）
+// ---------------------------------------------------------------------------
+
+describe('MTD 排行榜匯出', () => {
+  const rows = [
+    weekRow({
+      site_code: 'HA02', shop: '沙田連城廣場', om: '李嘉欣', shop_nature: 'Local',
+      ovs_carry_ratio: 0.2, ovs_carry_delta_pt: 0.3, sku_count_0sale: 200, sku_carry_count: 1000,
+      ratio: 0.18, wow_delta_pt: -0.2, deadstock_value: 180000, shop_stock_value: 1000000,
+    }),
+    weekRow({
+      site_code: 'HD09', shop: '觀塘apm', om: '黃志明', shop_nature: 'Mix',
+      ovs_carry_ratio: 0.15, ovs_carry_delta_pt: -0.1, sku_count_0sale: 150, sku_carry_count: 1000,
+      ratio: 0.2, wow_delta_pt: 0.4, deadstock_value: 200000, shop_stock_value: 1000000,
+    }),
+    weekRow({
+      site_code: 'HE15', shop: '將軍澳PopCorn', om: '李嘉欣', shop_nature: 'Non Tourist',
+      ovs_carry_ratio: 0.25, ovs_carry_delta_pt: 0.5, sku_count_0sale: 250, sku_carry_count: 1000,
+      ratio: 0.12, wow_delta_pt: 0.1, deadstock_value: 120000, shop_stock_value: 1000000,
+    }),
+    weekRow({
+      site_code: 'HC71', shop: '屯門市廣場', om: '李嘉欣', shop_nature: 'Tourist',
+      ovs_carry_ratio: 0.1, ovs_carry_delta_pt: null, sku_count_0sale: 100, sku_carry_count: 1000,
+      ratio: 0.05, wow_delta_pt: null, deadstock_value: 50000, shop_stock_value: 1000000,
+      is_new: true, new_reason: 'new_store',
+    }),
+  ];
+
+  it('normalizes the metric/nature and falls back to safe defaults', () => {
+    expect(normalizeMtdRankingExportFilters({})).toEqual({ metric: 'sku', om: '', nature: '' });
+    expect(normalizeMtdRankingExportFilters({ metric: 'value', om: '  HIPPO ', nature: 'local' })).toEqual({
+      metric: 'value',
+      om: 'HIPPO',
+      nature: 'local',
+    });
+    expect(normalizeMtdRankingExportFilters({ metric: 'drop_table', nature: 'nonsense' })).toEqual({
+      metric: 'sku',
+      om: '',
+      nature: '',
+    });
+  });
+
+  it('filters by OM and by the normalized Shop Nature group', () => {
+    const omOnly = filterMtdRankingRows(rows, { metric: 'sku', om: '李嘉欣', nature: '' });
+    expect(omOnly.map((row) => row.site_code).sort()).toEqual(['HA02', 'HC71', 'HE15']);
+
+    const localOnly = filterMtdRankingRows(rows, { metric: 'sku', om: '', nature: 'local' });
+    expect(localOnly.map((row) => row.site_code).sort()).toEqual(['HA02', 'HE15']);
+
+    const tourist = filterMtdRankingRows(rows, { metric: 'sku', om: '', nature: 'tourist' });
+    expect(tourist.map((row) => row.site_code)).toEqual(['HC71']);
+  });
+
+  it('exports every filtered shop with both metrics, ranks, and new shops at the bottom', async () => {
+    const week = mockWeek(rows);
+    const filters = { metric: 'value' as const, om: '', nature: '' as const };
+    const buffer = await buildShopStockMtdRankingBuffer({
+      week,
+      filters,
+      rows: filterMtdRankingRows(rows, filters),
+      generatedAt: '2026-10-25 20:30:00',
+    });
+
+    const workbook = new ExcelJS.Workbook();
+    await workbook.xlsx.load(buffer as never);
+    expect(workbook.worksheets.map((w) => w.name)).toEqual(['MTD 排行榜', '匯出說明']);
+
+    const sheet = workbook.getWorksheet('MTD 排行榜')!;
+    const headers: string[] = [];
+    sheet.getRow(1).eachCell((cell, col) => { headers[col - 1] = String(cell.value ?? ''); });
+    expect(headers[0]).toBe('名次（現行口徑）');
+    expect(headers[5]).toBe('不良 SKU 佔比');
+    expect(headers[6]).toBe('不良 SKU 名次');
+    expect(headers[9]).toBe('不良存貨值佔比');
+    expect(headers[10]).toBe('不良存貨值名次');
+    expect(headers[14]).toBe('狀態');
+
+    // 現行口徑 = 存貨值：HD09 20% > HA02 18% > HE15 12%；新店 HC71 排最後
+    expect(sheet.getCell(2, 2).value).toBe('HD09');
+    expect(sheet.getCell(3, 2).value).toBe('HA02');
+    expect(sheet.getCell(4, 2).value).toBe('HE15');
+    expect(sheet.getCell(5, 2).value).toBe('HC71');
+    expect(sheet.getCell(2, 1).value).toBe(1);
+    expect(sheet.getCell(3, 1).value).toBe(2);
+    expect(sheet.getCell(4, 1).value).toBe(3);
+    expect(sheet.getCell(5, 1).value).toBeNull();
+    // SKU 名次：HE15 #1、HA02 #2、HD09 #3；新店冇名次
+    expect(sheet.getCell(2, 7).value).toBe(3);
+    expect(sheet.getCell(3, 7).value).toBe(2);
+    expect(sheet.getCell(4, 7).value).toBe(1);
+    expect(sheet.getCell(5, 7).value).toBeNull();
+    // 存貨值名次
+    expect(sheet.getCell(2, 11).value).toBe(1);
+    expect(sheet.getCell(3, 11).value).toBe(2);
+    expect(sheet.getCell(4, 11).value).toBe(3);
+    // 與上期用現行口徑，新店留空
+    expect(sheet.getCell(2, 14).value).toBeCloseTo(0.4, 10);
+    expect(sheet.getCell(5, 14).value).toBeNull();
+    expect(sheet.getCell(5, 15).value).toBe('新店（不參與排名）');
+    expect(sheet.getColumn(6).numFmt).toBe('0.00%');
+    expect(sheet.getColumn(14).numFmt).toBe('+0.00;-0.00;0.00');
+
+    const info = workbook.getWorksheet('匯出說明')!;
+    const content = new Map<string, string>();
+    info.eachRow((row, n) => {
+      if (n > 1) content.set(String(row.getCell(1).value ?? ''), String(row.getCell(2).value ?? ''));
+    });
+    expect(content.get('排序口徑')).toContain('不良存貨值佔比');
+    expect(content.get('匯出店數')).toBe('4');
+    expect(content.get('參與排名店數')).toBe('3');
+    expect(content.get('未參與排名')).toContain('1 間');
+  });
+
+  it('sorts by SKU ratio when that is the current metric', async () => {
+    const week = mockWeek(rows);
+    const filters = { metric: 'sku' as const, om: '', nature: '' as const };
+    const buffer = await buildShopStockMtdRankingBuffer({
+      week,
+      filters,
+      rows: filterMtdRankingRows(rows, filters),
+      generatedAt: '2026-10-25 20:30:00',
+    });
+    const workbook = new ExcelJS.Workbook();
+    await workbook.xlsx.load(buffer as never);
+    const sheet = workbook.getWorksheet('MTD 排行榜')!;
+    expect(sheet.getCell(2, 2).value).toBe('HE15');
+    expect(sheet.getCell(3, 2).value).toBe('HA02');
+    expect(sheet.getCell(4, 2).value).toBe('HD09');
+    expect(sheet.getCell(5, 2).value).toBe('HC71');
+    expect(sheet.getCell(2, 1).value).toBe(1);
+    expect(sheet.getCell(2, 14).value).toBeCloseTo(0.5, 10);
   });
 });
 

@@ -185,6 +185,15 @@ describe('static asset freshness', () => {
     expect(script).toContain('assignRanks(defs.value)');
     expect(adminCss).toContain('.stk-mtd-table thead th.is-current');
     expect(adminCss).toContain('min-width: 1060px');
+    // 每店明細表預設收起，可由 MTD／RF 排名或批次「明細」自動展開；卡頂 Top 15 已移除
+    expect(html).toContain('id="stk_detail_details"');
+    expect(html).not.toContain('id="stk_top15"');
+    expect(script).toContain('openWeekDetail');
+    expect(adminCss).toContain('.stk-detail-details');
+    // MTD 排行榜 Excel 匯出（全部符合篩選店舖）
+    expect(html).toContain('id="btn_stk_mtd_export"');
+    expect(script).toContain('downloadMtdExport');
+    expect(script).toContain('/api/admin/stock/mtd/export');
   });
 
   it('wires chart export on every dashboard chart card', () => {

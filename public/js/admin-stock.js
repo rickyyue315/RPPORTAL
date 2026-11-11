@@ -1941,29 +1941,31 @@
     );
   }
 
-  /** 每店明細：跟住畫面嘅搜尋／排序／只顯示，即「匯出 = 畫面所見」 */
-  function downloadDetailExport() {
-    const week = String(selectedWeek || '').slice(0, 10);
-    if (!week) {
-      const box = $('stk_detail_export_result');
-      if (box) {
-        box.innerHTML = '<div class="alert alert-warning mt-2 mb-0">未有可匯出的期數，請先上載報表，或喺下方「上載批次」揀一期。</div>';
-      }
+  /** 當月 MTD 排行榜：匯出全部符合 OM／Shop Nature 篩選店舖（兩個口徑並列） */
+  function downloadMtdExport() {
+    const date = String(mtdWeekDate || '').slice(0, 10);
+    if (!date) {
+      const box = $('stk_mtd_export_result');
+      if (box) box.innerHTML = '<div class="alert alert-warning mt-2 mb-0">未有可匯出的 MTD 期數，請先上載報表。</div>';
       return Promise.resolve();
     }
     const params = new URLSearchParams();
-    const q = String((($('stk_q') || {}).value) || '').trim();
-    if (q) params.set('q', q);
-    params.set('sort', String((($('stk_sort') || {}).value) || '') || 'ratio_desc');
-    const only = String((($('stk_only') || {}).value) || '');
-    if (only) params.set('only', only);
-    const count = filteredWeekRows().length;
+    params.set('report_date', date);
+    params.set('metric', groupMetric);
+    if (rankOm) params.set('om', rankOm);
+    if (rankNature) params.set('nature', rankNature);
+    const count = filterRankRows(Array.isArray(mtdWeekRows) ? mtdWeekRows : []).length;
+    const metricLabel = groupMetric === 'sku' ? '不良 SKU 佔比' : '不良存貨值佔比';
+    const scope = [
+      rankOm ? `OM ${rankOm}` : '',
+      rankNature ? (MTD_NATURE_LABELS[rankNature] || rankNature) : '',
+    ].filter(Boolean).join(' · ');
     return downloadExcel(
-      `/api/admin/stock/weeks/${encodeURIComponent(week)}/export?${params.toString()}`,
-      'Shop_Stock_Detail.xlsx',
-      'btn_stk_detail_export',
-      'stk_detail_export_result',
-      `已匯出 ${week} 的每店明細，共 ${count} 間店（跟住畫面嘅搜尋／排序／篩選）。`,
+      `/api/admin/stock/mtd/export?${params.toString()}`,
+      'Shop_Stock_MTD_Rank.xlsx',
+      'btn_stk_mtd_export',
+      'stk_mtd_export_result',
+      `已匯出 ${date} 的 MTD 排行榜，共 ${count} 間店（按${metricLabel}排序${scope ? `，${scope}` : ''}）。`,
     );
   }
 
@@ -2142,6 +2144,12 @@
     return rows;
   }
 
+  /** 由 MTD 排名／RF 排名／批次「明細」跳去每店明細時，自動展開收起咗嘅明細表 */
+  function openWeekDetail() {
+    const details = $('stk_detail_details');
+    if (details) details.open = true;
+  }
+
   function renderWeekRows() {
     const body = $('stk_detail_body');
     if (!body) return;
@@ -2215,49 +2223,6 @@
       <summary>已排除 ${notes.join('、')}，不參與排名（仍計入全公司合計與每店明細）。<span class="stk-excluded-hint">看名單</span></summary>
       <div class="stk-excluded-body">${groups.map(({ rows, label }) => group(rows, label)).join('')}</div>
     </details>`;
-  }
-
-  function renderTop15() {
-    const wrap = $('stk_top15');
-    if (!wrap) return;
-    const newStoreRows = weekRows.filter((row) => row.new_reason === 'new_store');
-    const noPrevRows = weekRows.filter((row) => row.new_reason === 'no_prev_data');
-    const notes = [];
-    if (newStoreRows.length) notes.push(`${newStoreRows.length} 間新店（開業未滿 ${weekGraceDays} 天）`);
-    if (noPrevRows.length) notes.push(`${noPrevRows.length} 間上期無數據`);
-    const note = notes.length
-      ? excludedNote([
-        { rows: newStoreRows, label: '新店' },
-        { rows: noPrevRows, label: '上期無數據' },
-      ], notes)
-      : '';
-    const ranked = weekRows
-      .filter((row) => !row.is_new && num(row.ratio) !== null)
-      .sort((a, b) => (num(b.ratio) || 0) - (num(a.ratio) || 0))
-      .slice(0, 15);
-    if (!ranked.length) {
-      wrap.innerHTML = `<div class="text-secondary small">此期沒有可比較的店舖（全部為新店，或店舖存貨值為 0 或全部缺值）。</div>${note}`;
-      return;
-    }
-    const max = num(ranked[0].ratio) || 1;
-    wrap.innerHTML = ranked.map((row, index) => {
-      const ratio = num(row.ratio) || 0;
-      const wow = num(row.wow_delta_pt);
-      const width = Math.max(2, Math.min(100, (ratio / max) * 100));
-      const om = String(row.om || '').trim();
-      const nature = String(row.shop_nature || '').trim();
-      const meta = [om ? `OM ${om}` : '', nature].filter(Boolean).join(' · ');
-      return `<button type="button" class="stk-bar-row" data-stk-site="${escAttr(row.site_code || '')}" title="按一下只看 ${escAttr(row.site_code || '')} 的明細">
-        <span class="stk-bar-rank">${index + 1}</span>
-        <span class="stk-bar-name">
-          <span class="stk-bar-title"><b>${esc(row.site_code || '')}</b><span class="stk-bar-shop">${esc(shortShop(shopLabel(row)))}</span></span>
-          ${meta ? `<span class="stk-bar-meta" title="${escAttr(natureTitle(nature))}">${esc(meta)}</span>` : ''}
-        </span>
-        <span class="stk-bar-track"><i style="width:${width.toFixed(1)}%;background:${ratio >= 0.1 ? '#c0392b' : COLOR_MAIN}"></i></span>
-        <span class="stk-bar-value">${fmtRatio(ratio)}</span>
-        <span class="stk-bar-wow ${wowClass(wow)}">${wow === null ? '' : `${wowArrow(wow)}${fmtPt(wow)}`}</span>
-      </button>`;
-    }).join('') + note;
   }
 
   /** RF 是實際 SKU 數，不像不良存貨比率排名需要排除新店；所有有效數字都參與。 */
@@ -2363,23 +2328,16 @@
   }
 
   async function loadWeek(date) {
-    const body = $('stk_detail_body');
-    const label = $('stk_week_label');
     const target = String(date || '').slice(0, 10);
     setResult('stk_week_error', 'info', '');
     if (!target) {
       weekRows = [];
       weekTotals = null;
-      if (label) label.textContent = '—';
-      if (body) body.innerHTML = '<tr><td colspan="11" class="text-center text-secondary">尚未有批次，上載後會顯示每店明細</td></tr>';
-      const top = $('stk_top15');
-      if (top) top.innerHTML = '<div class="text-secondary small">上載報表後會顯示排名。</div>';
       renderTop15Rf('');
       renderTop15OvsCarry('');
       renderWeekRows();
       return;
     }
-    if (body) body.innerHTML = '<tr><td colspan="11" class="text-center text-secondary">載入中…</td></tr>';
     try {
       const data = (await aFetch(`/api/admin/stock/weeks/${encodeURIComponent(target)}`)) || {};
       selectedWeek = String(data.report_date || target).slice(0, 10);
@@ -2388,10 +2346,10 @@
       weekGraceDays = num(data.new_store_grace_days) ?? weekGraceDays;
       const storeCount = firstNum([weekTotals && weekTotals.store_count]) ?? weekRows.length;
       const ratio = firstNum([weekTotals && weekTotals.ratio]);
+      const label = $('stk_week_label');
       if (label) {
         label.textContent = `${selectedWeek} · ${storeCount} 店${ratio === null ? '' : ` · 合計佔比 ${fmtRatio(ratio)}`}`;
       }
-      renderTop15();
       renderTop15Rf(selectedWeek);
       renderTop15OvsCarry(selectedWeek);
       if (mtdPeriodInfo && selectedWeek === mtdPeriodInfo.date) {
@@ -2403,11 +2361,7 @@
     } catch (err) {
       weekRows = [];
       weekTotals = null;
-      if (label) label.textContent = target;
       setResult('stk_week_error', 'error', `未能載入 ${target} 的明細：${err.message}`);
-      if (body) body.innerHTML = `<tr><td colspan="11" class="text-center text-danger">${esc(err.message)}</td></tr>`;
-      const top = $('stk_top15');
-      if (top) top.innerHTML = '<div class="text-secondary small">未能載入排名。</div>';
       renderTop15Rf(target);
       renderTop15OvsCarry(target);
       renderWeekRows();
@@ -2477,6 +2431,7 @@
         if (target.dataset.stkView) {
           selectedWeek = String(target.dataset.stkDate || '').slice(0, 10);
           weekPage = 1;
+          openWeekDetail();
           loadWeek(selectedWeek).then(() => {
             const card = $('stk_week_label');
             if (card && card.scrollIntoView) card.scrollIntoView({ behavior: 'smooth', block: 'center' });
@@ -2494,13 +2449,14 @@
       });
     }
 
-    // 三個 Top 15：按一下只看該店明細
-    ['stk_top15', 'stk_rf_top15', 'stk_ovscarry_top15'].forEach((id) => {
+    // 兩個 RF Top 15：按一下只看該店明細（明細表會自動展開）
+    ['stk_rf_top15', 'stk_ovscarry_top15'].forEach((id) => {
       const ranking = $(id);
       if (!ranking) return;
       ranking.addEventListener('click', (e) => {
         const target = e.target instanceof Element ? e.target.closest('[data-stk-site]') : null;
         if (!target) return;
+        openWeekDetail();
         const q = $('stk_q');
         if (q) q.value = target.dataset.stkSite || '';
         weekPage = 1;
@@ -2522,6 +2478,7 @@
           selectedWeek = date;
           await loadWeek(date);
         }
+        openWeekDetail();
         const q = $('stk_q');
         if (q) q.value = site;
         weekPage = 1;
@@ -2608,9 +2565,9 @@
     const exportBtn = $('btn_stk_export');
     if (exportBtn) exportBtn.addEventListener('click', downloadTrendExport);
 
-    // 每店明細匯出（跟住畫面篩選）
-    const detailExportBtn = $('btn_stk_detail_export');
-    if (detailExportBtn) detailExportBtn.addEventListener('click', downloadDetailExport);
+    // MTD 排行榜匯出（全部符合篩選店舖，兩個口徑）
+    const mtdExportBtn = $('btn_stk_mtd_export');
+    if (mtdExportBtn) mtdExportBtn.addEventListener('click', downloadMtdExport);
 
     // RF SKU Dashboard 匯出（走勢 + 兩張排名）
     const rfExportBtn = $('btn_stk_rf_export');

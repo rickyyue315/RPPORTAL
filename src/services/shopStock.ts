@@ -811,7 +811,7 @@ const NATURE_ORDER = ['local', 'mix', 'tourist'] as const;
  * 真實報表的 Shop Nature 是 Local / Mix / Tourist；部分舊檔用 Non Tourist /
  * Mixed / 中文。全部歸一化，未知值保留原字串（不丟失資料）。
  */
-function normalizeShopNature(value: string | null): { key: string; label: string } {
+export function normalizeShopNature(value: string | null): { key: string; label: string } {
   const raw = String(value ?? '').trim();
   const normalized = raw.toLowerCase().replace(/[\s_-]+/g, ' ');
   if (['local', 'non tourist', 'nontourist', 'resident', '民生區', '本地客'].includes(normalized)) {

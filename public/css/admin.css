@@ -523,6 +523,16 @@ body.drawer-open { overflow: hidden; }
 
 /* ---------- 每店明細表（sticky 表頭） ---------- */
 .stk-detail-wrap { max-height: 68vh; }
+.stk-detail-details { margin-top: 4px; border-top: 1px solid var(--border); padding-top: 10px; }
+.stk-detail-details > summary {
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--brand);
+  list-style-position: inside;
+}
+.stk-detail-details > summary:hover { text-decoration: underline; }
+.stk-detail-details[open] > summary { margin-bottom: 8px; }
 .stk-detail thead th {
   position: sticky;
   top: 0;

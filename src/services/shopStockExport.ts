@@ -1,6 +1,7 @@
 import ExcelJS from 'exceljs';
 import {
   deriveWeekLabel,
+  normalizeShopNature,
   type ShopStockKpi,
   type ShopStockSeriesPoint,
   type ShopStockStoreView,
@@ -405,6 +406,230 @@ export async function buildShopStockWeekBuffer(input: ShopStockWeekExportInput):
   for (const [label, value] of infoRows) info.addRow([label, value]);
   info.getColumn(1).width = 22;
   info.getColumn(2).width = 90;
+  info.getColumn(2).alignment = { wrapText: true, vertical: 'top' };
+
+  const buffer = await workbook.xlsx.writeBuffer();
+  return Buffer.from(buffer);
+}
+
+// ===========================================================================
+// 當月 MTD 排行榜（Excel 匯出全部符合篩選店舖，兩個口徑並列）
+// ===========================================================================
+
+export type ShopStockMtdMetric = 'sku' | 'value';
+export type ShopStockMtdNature = '' | 'local' | 'mix' | 'tourist';
+
+export interface ShopStockMtdRankingExportFilters {
+  metric: ShopStockMtdMetric;
+  om: string;
+  nature: ShopStockMtdNature;
+}
+
+/** 收窄前端傳來的 MTD 匯出參數；非法值退回預設，不會令匯出失敗 */
+export function normalizeMtdRankingExportFilters(input: {
+  metric?: string;
+  om?: string;
+  nature?: string;
+}): ShopStockMtdRankingExportFilters {
+  const metric: ShopStockMtdMetric = input.metric === 'value' ? 'value' : 'sku';
+  const nature = ['local', 'mix', 'tourist'].includes(String(input.nature ?? ''))
+    ? (String(input.nature) as ShopStockMtdNature)
+    : '';
+  return { metric, om: String(input.om ?? '').trim(), nature };
+}
+
+/** 與畫面 filterRankRows() 一致：OM 完全相等、Shop Nature 用同一套歸一化 */
+export function filterMtdRankingRows(
+  rows: ShopStockWeekRow[],
+  filters: ShopStockMtdRankingExportFilters,
+): ShopStockWeekRow[] {
+  return rows.filter((row) => {
+    if (filters.om && String(row.om ?? '').trim() !== filters.om) return false;
+    if (filters.nature && normalizeShopNature(row.shop_nature).key !== filters.nature) return false;
+    return true;
+  });
+}
+
+const MTD_METRIC_DEFS = {
+  sku: {
+    key: 'sku' as const,
+    pick: (row: ShopStockWeekRow): number | null => row.ovs_carry_ratio,
+    delta: (row: ShopStockWeekRow): number | null => row.ovs_carry_delta_pt,
+  },
+  value: {
+    key: 'value' as const,
+    pick: (row: ShopStockWeekRow): number | null => row.ratio,
+    delta: (row: ShopStockWeekRow): number | null => row.wow_delta_pt,
+  },
+} as const;
+
+const MTD_RANK_HEADERS = [
+  '名次（現行口徑）',
+  'Site',
+  '店舖',
+  'OM',
+  'Shop Nature',
+  '不良 SKU 佔比',
+  '不良 SKU 名次',
+  '不良 SKU 數',
+  'SKU Carry',
+  '不良存貨值佔比',
+  '不良存貨值名次',
+  '不良存貨值',
+  '店舖存貨值',
+  '與上期（現行口徑，pp）',
+  '狀態',
+] as const;
+
+const MTD_RANK_WIDTHS = [14, 10, 24, 12, 14, 14, 12, 12, 12, 16, 14, 16, 16, 20, 24];
+
+const MTD_RANK_FORMATS: Record<number, string> = {
+  1: '0',
+  6: '0.00%',
+  7: '0',
+  8: '#,##0',
+  9: '#,##0',
+  10: '0.00%',
+  11: '0',
+  12: '#,##0',
+  13: '#,##0',
+  14: '+0.00;-0.00;0.00',
+};
+
+export interface ShopStockMtdRankingExportInput {
+  week: ShopStockWeek;
+  filters: ShopStockMtdRankingExportFilters;
+  /** 已套用 OM／Shop Nature 篩選的行（由 filterMtdRankingRows 產生） */
+  rows: ShopStockWeekRow[];
+  generatedAt: string;
+}
+
+/**
+ * MTD 排行榜 Excel：
+ *   - 全部符合篩選的店舖（不只畫面的 Top 15）
+ *   - 兩個口徑並列，各自名次；現行口徑決定排序
+ *   - 新店／上期無數據／比率缺值排最後，名次留空
+ */
+export async function buildShopStockMtdRankingBuffer(
+  input: ShopStockMtdRankingExportInput,
+): Promise<Buffer> {
+  const workbook = new ExcelJS.Workbook();
+  workbook.creator = 'RP Connect';
+  workbook.created = new Date();
+
+  const current = MTD_METRIC_DEFS[input.filters.metric];
+  const bySite = (a: ShopStockWeekRow, b: ShopStockWeekRow): number =>
+    String(a.site_code ?? '').localeCompare(String(b.site_code ?? ''));
+  const rankScope = input.rows.filter((row) => !row.is_new);
+
+  const assignRanks = (
+    def: (typeof MTD_METRIC_DEFS)[ShopStockMtdMetric],
+  ): Map<ShopStockWeekRow, number> => {
+    const ordered = rankScope
+      .filter((row) => def.pick(row) !== null)
+      .sort((a, b) => ((def.pick(b) ?? 0) - (def.pick(a) ?? 0) || bySite(a, b)));
+    const ranks = new Map<ShopStockWeekRow, number>();
+    let lastValue: number | null = null;
+    let lastRank = 0;
+    ordered.forEach((row, index) => {
+      const value = def.pick(row);
+      if (lastValue !== null && value === lastValue) {
+        ranks.set(row, lastRank);
+      } else {
+        ranks.set(row, index + 1);
+        lastValue = value;
+        lastRank = index + 1;
+      }
+    });
+    return ranks;
+  };
+
+  const skuRanks = assignRanks(MTD_METRIC_DEFS.sku);
+  const valueRanks = assignRanks(MTD_METRIC_DEFS.value);
+  const currentRanks = input.filters.metric === 'sku' ? skuRanks : valueRanks;
+  const ranked = rankScope
+    .filter((row) => current.pick(row) !== null)
+    .sort((a, b) => ((current.pick(b) ?? 0) - (current.pick(a) ?? 0) || bySite(a, b)));
+  const unranked = input.rows
+    .filter((row) => row.is_new || current.pick(row) === null)
+    .sort(bySite);
+  const orderedRows = [...ranked, ...unranked];
+
+  const detail = workbook.addWorksheet('MTD 排行榜');
+  detail.addRow([...MTD_RANK_HEADERS]);
+  styleHeaderRow(detail, MTD_RANK_HEADERS.length);
+
+  for (const row of orderedRows) {
+    const status = row.is_new
+      ? (row.new_reason === 'new_store' ? '新店（不參與排名）' : '上期無數據（不參與排名）')
+      : current.pick(row) === null
+        ? '比率缺值（不參與排名）'
+        : '';
+    detail.addRow([
+      currentRanks.get(row) ?? null,
+      row.site_code,
+      row.shop,
+      row.om,
+      row.shop_nature,
+      row.ovs_carry_ratio,
+      skuRanks.get(row) ?? null,
+      row.sku_count_0sale,
+      row.sku_carry_count,
+      row.ratio,
+      valueRanks.get(row) ?? null,
+      row.deadstock_value,
+      row.shop_stock_value,
+      current.delta(row),
+      status,
+    ]);
+  }
+
+  MTD_RANK_WIDTHS.forEach((width, index) => {
+    detail.getColumn(index + 1).width = width;
+  });
+  detail.getColumn(2).numFmt = '@'; // Site 保持文字
+  for (const [col, fmt] of Object.entries(MTD_RANK_FORMATS)) {
+    detail.getColumn(Number(col)).numFmt = fmt;
+  }
+  detail.views = [{ state: 'frozen', xSplit: 3, ySplit: 1 }];
+  if (orderedRows.length > 0) {
+    detail.autoFilter = {
+      from: { row: 1, column: 1 },
+      to: { row: orderedRows.length + 1, column: MTD_RANK_HEADERS.length },
+    };
+  }
+
+  const info = workbook.addWorksheet('匯出說明');
+  info.addRow(['項目', '內容']);
+  styleHeaderRow(info, 2);
+  const metricLabel = input.filters.metric === 'sku'
+    ? '不良 SKU 佔比（Σ不良 SKU ÷ ΣSKU Carry）'
+    : '不良存貨值佔比（Σ不良存貨值 ÷ Σ存貨值）';
+  const natureLabels: Record<ShopStockMtdNature, string> = {
+    '': '全部',
+    local: '民生區（Local / Non Tourist）',
+    mix: '混合區（Mix）',
+    tourist: '遊客區（Tourist）',
+  };
+  const infoRows: Array<[string, string | number | null]> = [
+    ['畫面', '存貨 Dashboard → 當月 MTD 排行榜（匯出全部符合篩選店舖）'],
+    ['期別', `${input.week.report_date}（${shopStockKindLabel(input.week.report_kind)}）`],
+    ['排序口徑', metricLabel],
+    ['OM 篩選', input.filters.om || '全部'],
+    ['Shop Nature 篩選', natureLabels[input.filters.nature]],
+    ['該期店數', input.week.store_count],
+    ['匯出店數', orderedRows.length],
+    ['參與排名店數', ranked.length],
+    ['未參與排名', unranked.length
+      ? `${unranked.length} 間（新店／上期無數據／比率缺值），已排在最後`
+      : '0'],
+    ['名次', '以目前篩選範圍內、排除新店／上期無數據後，按該口徑由高至低排名；並列同名次。畫面的排行榜只顯示 Top 15，Excel 匯出全部符合篩選店舖。'],
+    ['口徑', '不良 SKU 佔比 = Σ不良 SKU ÷ ΣSKU Carry；不良存貨值佔比 = Σ不良存貨值 ÷ Σ店舖存貨值 (CM)；「與上期」= 現行口徑與上一期的百分點差（正數＝惡化）。分母為 0／缺值時比率留空（不是 0%）。'],
+    ['產生時間（HK）', input.generatedAt],
+  ];
+  for (const [label, value] of infoRows) info.addRow([label, value]);
+  info.getColumn(1).width = 22;
+  info.getColumn(2).width = 100;
   info.getColumn(2).alignment = { wrapText: true, vertical: 'top' };
 
   const buffer = await workbook.xlsx.writeBuffer();

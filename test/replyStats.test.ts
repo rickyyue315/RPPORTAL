@@ -99,10 +99,13 @@ beforeAll(async () => {
   const pwHash = await hashPassword(TEST_STORE_PASS);
   for (const site of ['HA02', 'HB20']) {
     await db.query(
-      `INSERT INTO portal_users (username, display_name, role, site_code, password_hash, must_change_password, active, created_by)
-       VALUES ($1, $1, 'store', $1, $2, false, true, 'test')
-       ON CONFLICT (username) DO UPDATE SET active = true`,
-      [site, pwHash],
+      // initial_password 必須有值：resolveAuthMode() 只有「已派發密碼」的帳戶
+      // 才走 per_user 驗證，否則會退回公司共用密碼 → 用測試密碼登入變 401。
+      `INSERT INTO portal_users (username, display_name, role, site_code, password_hash, initial_password, must_change_password, active, created_by)
+       VALUES ($1, $1, 'store', $1, $2, $3, false, true, 'test')
+       ON CONFLICT (username) DO UPDATE
+         SET active = true, password_hash = EXCLUDED.password_hash, initial_password = EXCLUDED.initial_password`,
+      [site, pwHash, TEST_STORE_PASS],
     );
   }
   app = createApp();
@@ -123,9 +126,11 @@ beforeAll(async () => {
     .send({ reason_code: 'seasonal', reason_note: '' });
   expect(replied.status).toBe(200);
 
-  // W42：再派 HA02 A1（自動封存 W41）＋ 另一店 HB20，兩店都完全沒有回覆
+  // W42：再派 HA02 一個從未回覆過的 SKU（自動封存 W41）＋ 另一店 HB20，
+  // 兩店都完全沒有回覆。這裡刻意不用 A1 —— A1 在 W41 已回覆過，重複上榜會
+  // 被 createBatch 自動套用上次回覆，W42 就變成「已回覆」而不是「完全沒回覆」。
   const w42 = await seedBatch('2026-W42-stats', [
-    { siteCode: 'HA02', sku: 'A1' },
+    { siteCode: 'HA02', sku: 'A4' },
     { siteCode: 'HB20', sku: 'B1' },
   ]);
   w42Id = w42.batchId;

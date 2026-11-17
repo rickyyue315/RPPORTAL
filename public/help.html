@@ -37,13 +37,13 @@
   <main class="container">
     <section class="help-hero" aria-labelledby="help-title">
       <h2 id="help-title">跟著圖示，一步一步完成回覆</h2>
-      <p>店舖首頁為「90日零銷售回覆」，頁面上方有兩個分頁：<b>零銷售回覆</b>（預設）與<b>存貨走勢</b>。店舖以 Site Code 及密碼登入一次，所有頁面（90日零銷售、<b>指定SKU回覆</b>、一般 NDRF、Urgent、突發性銷售、行貨退貨）即共同登入並自動認店；Urgent、突發性銷售及行貨退貨已全部顯示，暫停收單中仍可進入查看。先選擇你要看的說明章節，圖片為介面示意圖，實際畫面可能因手機或電腦螢幕大小略有不同。</p>
+      <p>店舖首頁為「90日零銷售回覆」，頁面上方有三個分頁：<b>零銷售回覆</b>（預設）、<b>存貨走勢</b>與<b>沒回覆次數</b>。店舖以 Site Code 及密碼登入一次，所有頁面（90日零銷售、<b>指定SKU回覆</b>、一般 NDRF、Urgent、突發性銷售、行貨退貨）即共同登入並自動認店；Urgent、突發性銷售及行貨退貨已全部顯示，暫停收單中仍可進入查看。先選擇你要看的說明章節，圖片為介面示意圖，實際畫面可能因手機或電腦螢幕大小略有不同。</p>
     </section>
 
     <nav class="help-toc" aria-label="說明章節">
       <a href="#zero-sales">1. 90日零銷售回覆<small>免登入，每週指定SKU</small></a>
       <a href="#designated-sku">2. 指定SKU回覆<small>一個事項多個 SKU，按年期填可調撥件數</small></a>
-      <a href="#stock-trend">3. 存貨走勢<small>自己店舖的不良存貨比率與趨勢</small></a>
+      <a href="#stock-trend">3. 店舖 Dashboard<small>存貨走勢、沒回覆次數</small></a>
       <a href="#normal">4. 一般申報<small>進入 RP 連繫網，ND／RF 申報（暫停）</small></a>
       <a href="#excel">5. Excel 一次過上載<small>進入後可一次提交多筆（暫停）</small></a>
       <a href="#portal-status">6. 申請進度<small>查看審批狀態及結果</small></a>
@@ -351,14 +351,14 @@
     </section>
 
     <section class="card help-section" id="stock-trend" aria-labelledby="stock-trend-title">
-      <h2 id="stock-trend-title">3. 存貨走勢（店舖）</h2>
-      <p class="help-section-intro">存貨走勢與「90日零銷售回覆」<b>在同一頁</b>，按頁面上方的「<b>存貨走勢</b>」分頁即可（按鈕以<b>橙色高亮</b>提示）。RP Team 每週從 I14「By Shop」報表整理你店舖的存貨狀況：<b>不良存貨比率 = 不良存貨值（P90D 0 Sales）÷ 店舖存貨值（CM）</b>。比率越高，代表越多存貨屬 90 日零銷售。</p>
+      <h2 id="stock-trend-title">3. 店舖 Dashboard（存貨走勢／沒回覆次數）</h2>
+      <p class="help-section-intro">存貨走勢與「90日零銷售回覆」<b>在同一頁</b>，按頁面上方的「<b>存貨走勢</b>」分頁即可（按鈕以<b>橙色高亮</b>提示）。RP Team 每週從 I14「By Shop」報表整理你店舖的存貨狀況：<b>不良存貨比率 = 不良存貨值（P90D 0 Sales）÷ 店舖存貨值（CM）</b>。比率越高，代表越多存貨屬 90 日零銷售。<br>同一頁第三個分頁「<b>沒回覆次數</b>」會統計你店舖過去一年每週的零銷售回覆情況，見下面第 5 步。</p>
       <p class="help-note"><b>需要下載數字？</b>按走勢圖右上角的「<b>匯出 Excel</b>」可下載你店舖每期的存貨數字（Excel）。檔案只包含<b>你店舖自己</b>的比率同全公司加權平均作對比，不會有其他店舖的資料。<b>為保障數據安全，檔案刻意唔包含店舖存貨值（CM）同不良存貨值（P90D 0 Sales）的金額數字</b>，只有不良存貨佔比、較上期變化等比率；需要金額數字請直接向 RP Team 查詢。<br><b>需要把走勢圖放入報告或電郵？</b>按旁邊的「<b>匯出圖表</b>」可下載 <b>PDF／SVG／JPG／PNG</b>；SVG 是向量圖，放大不失真。<b>匯出的線圖會自動附上「數據明細」表</b>，逐期列出日期與數值，唔會得條線。想睇清楚走勢，可按「<b>放大</b>」將整張圖表卡放到全螢幕；畫面上亦可按「<b>查看數據表</b>」展開每期數字。按 <b>Esc</b> 或右上角「關閉」返回。</p>
 
       <div class="help-step">
         <div class="help-placeholder">
-          <strong>同一頁兩個分頁</strong>
-          <span>零銷售回覆 ｜ 存貨走勢</span>
+          <strong>同一頁三個分頁</strong>
+          <span>零銷售回覆 ｜ 存貨走勢 ｜ 沒回覆次數</span>
         </div>
         <div>
           <h3><span class="help-step-number">1</span>切換到存貨走勢</h3>
@@ -437,6 +437,18 @@
         <div>
           <h3><span class="help-step-number">4</span>比率偏高時怎樣跟進</h3>
           <p>切換回「零銷售回覆」分頁，按每週派發的 SKU 清單處理：<b>賣出一件</b>，或<b>轉 ND／降低 Safety Stock</b> 並把存貨降至 Top 10 以外。比率會在往後幾期反映。</p>
+        </div>
+      </div>
+
+      <div class="help-step">
+        <div class="help-placeholder">
+          <strong>第三個分頁</strong>
+          <span>沒回覆次數</span>
+        </div>
+        <div>
+          <h3><span class="help-step-number">5</span>沒回覆次數（每週回覆紀錄）</h3>
+          <p>按頁面上方的「<b>沒回覆次數</b>」分頁，可以看到你店舖過去一年每週的零銷售回覆情況。<b>口徑：</b>RP Team 派發新一週時，上一週會自動封存；如果封存時仍有 SKU 未回覆，該週就計 <b>1 次沒回覆</b>（不論是全部未回覆，還是只餘部分）。<b>未封存的最新一週仍可回覆，不計次數</b>；「本週無須回覆」的週次亦不計。</p>
+          <div class="help-note"><b>四張卡：</b>① <b>沒回覆次數</b>（已封存週次中，有幾週未回覆）；② <b>連續沒回覆</b>（最近連續幾週都未回覆）；③ <b>累計沒回覆 SKU</b>；④ <b>回覆率</b>（按件數計，已回覆 ÷ 派發）。下面有每週走勢圖、每週回覆狀況色格，以及逐週明細表。<br><b>想補做或查看某一週：</b>按色格或明細表的「<b>查看</b>」，會自動跳到「零銷售回覆」並選中該週次，可看到當時的 SKU 清單與回覆紀錄（已封存的週次只供查閱）。<br><b>統計會自動更新：</b>如果 RP Team 之後代你補填（例如你以電郵補交），該週的未回覆數字會相應減少。</div>
         </div>
       </div>
     </section>

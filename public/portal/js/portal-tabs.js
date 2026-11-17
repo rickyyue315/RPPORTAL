@@ -1,11 +1,14 @@
 /*!
- * portal-tabs.js — 店舖端分頁籤（零銷售回覆 / 存貨走勢）
+ * portal-tabs.js — 店舖端分頁籤（零銷售回覆 / 存貨走勢 / 沒回覆次數）
  *
  * 只做四件事：
  *  1. 切換 panel 的 hidden、aria-selected、tabindex
- *  2. 記住選擇（網址 hash：#stock），重新載入仍停在同一頁
+ *  2. 記住選擇（網址 hash：#stock、#missed），重新載入仍停在同一頁
  *  3. 更新頁首副標題（例：存貨走勢 — HA02）
- *  4. 廣播 `portal:tab` 事件，讓 dashboard.js 在面板可見後才量寬度畫圖
+ *  4. 廣播 `portal:tab` 事件，讓各 panel 的腳本在面板可見後才量寬度畫圖
+ *
+ * 分頁以 data-panel / data-tab / data-hash 描述，加新分頁只需在 HTML 加一個
+ * <button role="tab"> 及對應 <section>，不用改這支腳本。
  *
  * 零銷售回覆是預設頁，任何時候都不會因為這個檔而延遲或改變行為。
  */
@@ -15,6 +18,18 @@
   const header = document.getElementById('store_header');
   const tabs = Array.from(document.querySelectorAll('[role="tab"][data-panel]'));
   if (!tabs.length) return;
+
+  /** 分頁代號：給 portal:tab 事件用（預設頁 = zs） */
+  function keyOf(tab) {
+    return tab.dataset.tab || (tab.dataset.panel === 'panel_stock' ? 'stock' : 'zs');
+  }
+
+  /** 網址 hash（不含 #）：預設頁為空字串 */
+  function hashOf(tab) {
+    if (typeof tab.dataset.hash === 'string') return tab.dataset.hash;
+    const key = keyOf(tab);
+    return key === 'zs' ? '' : key;
+  }
 
   /** 存貨走勢是「新功能」提示：只要不是目前頁就一直脈動，切走會再亮起來 */
   const accentTab = document.querySelector('[role="tab"].portal-tab--accent');
@@ -66,16 +81,16 @@
     applySubtitle();
 
     if (!options.silentHash) {
-      const hash = tab.dataset.panel === 'panel_zs' ? '' : `#${tab.id === 'tab_stock' ? 'stock' : 'zs'}`;
+      const hash = hashOf(tab);
       try {
-        const url = `${window.location.pathname}${window.location.search}${hash}`;
+        const url = `${window.location.pathname}${window.location.search}${hash ? `#${hash}` : ''}`;
         window.history.replaceState(null, '', url);
       } catch { /* 舊瀏覽器忽略 */ }
     }
 
     if (!options.silent) {
       document.dispatchEvent(new CustomEvent('portal:tab', {
-        detail: { tab: tab.dataset.panel === 'panel_stock' ? 'stock' : 'zs' },
+        detail: { tab: keyOf(tab) },
       }));
     }
   }
@@ -94,9 +109,10 @@
     });
   });
 
-  // 深連結：/portal/zero-sales.html#stock
-  const wanted = /^#stock$/i.test(window.location.hash || '') ? 'tab_stock' : null;
-  const initial = wanted ? document.getElementById(wanted) : tabs[0];
+  // 深連結：/portal/zero-sales.html#stock、#missed
+  const wanted = String(window.location.hash || '').replace(/^#/, '').toLowerCase();
+  const deepLinked = wanted ? tabs.find((tab) => hashOf(tab).toLowerCase() === wanted) : null;
+  const initial = deepLinked || tabs[0];
   activate(initial, { silentHash: true });
 
   // 副標題由 zero-sales.js 於登入後才寫入店號，寫入後重新套用對應分頁的標籤

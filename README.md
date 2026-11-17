@@ -330,6 +330,21 @@ pg_restore --no-owner --no-privileges --clean --if-exists \
 - **匯出**：Admin 匯出的「未回覆店舖」工作表不列無須回覆的週次；`記錄狀態` 欄標示「無須回覆（只供參考）」。店舖端匯出的狀態欄為「無須回覆」／「已回覆（本週無須回覆）」。
 - **API**：`PUT /api/admin/zero-sales/batches/:id/reply-required`，body `{ reply_required: boolean, notice?: string }`（省略 `notice` 時沿用原值）；上載 `POST /api/admin/zero-sales/batches` 可加 `reply_required=0` / `reply_notice`。切換會寫入審計 `zero_sales_reply_required_changed`。
 
+## 店舖「沒有回覆次數」Dashboard（沒回覆次數分頁）
+
+店舖想知自己「有幾多週冇交零銷售回覆」。`/portal/zero-sales.html` 第三個分頁（`#missed`）把這件事故意做成**累積紀錄**，而不是只顯示本週待辦。
+
+- **口徑（唯一真相：`closed_at`）**：只有**已封存 + `reply_required`** 的週次屬「已定案」；該週封存時仍有 `pending` 行，就計 **1 次沒回覆**（部分未回覆與全部未回覆同樣計 1 次，另分開顯示）。
+  - 最新一週未封存 → **不計次數**，另以「本週待回覆」呈現（`open_pending`）。
+  - `reply_required = false`（本週無須回覆）→ **完全不計**（次數、連續紀錄、回覆率分母都不計），走勢圖以斷線表示，不當成 0 件。
+  - 管理員代填或系統自動套用會令 `pending` 減少，統計會隨之改善 —— 口徑是「最終有沒有回覆」，不是「店舖有冇親自按過」。
+- **四張 KPI**：沒回覆次數（`missed_weeks` / `finalized_weeks`）、連續沒回覆（由最近一個已定案週次倒數的 `streak`）、累計沒回覆 SKU（`items_missed`）、回覆率（`items_replied ÷ items_required`，按件數；無定案週次回 `null` 而不是 0%）。
+- **畫面**：每週沒回覆 SKU 件數線圖（紅實線＝沒回覆、灰虛線＝派發；支援圖表放大／匯出 PDF／SVG／JPG／PNG 及數據明細）→ 每週回覆狀況色格（全部回覆／部分沒回覆／完全沒回覆／本週待回覆／無須回覆）→ 逐週明細表。按色格或「查看」會切回「零銷售回覆」並自動選中該週次（重用 `#f_batch` 的 change 事件）。
+- **API**：`GET /api/portal/zero-sales/reply-stats`（`requirePortalUser` + `requireStoreSite` + `adminActionLimiter`）。`site_code` 只取自 session，回應只有本店週次（最近 52 個），不含其他店。
+- **資料來源**：`getMyReplyStats()` 重用 `listMyBatches()` 的每週 `total / replied / pending / reply_required / closed_at`，不另寫一套 SQL，避免兩處口徑漂移。
+- **前端**：`public/portal/js/reply-stats.js`，只在切到該分頁時才載入（`portal:tab` 事件），之後每次切回來都重新抓一次。分頁設定集中在 HTML 的 `data-panel` / `data-tab` / `data-hash`，`portal-tabs.js` 不再寫死 `#stock`。
+- **測試**：`test/replyStats.test.ts`（部分／完全沒回覆、無須回覆不計、未封存不計次數、跨店隔離、管理員代填後統計改善）。
+
 ## 每週店舖不良存貨 Dashboard（I14「By Shop」）
 
 用現有 Express + PostgreSQL，把每週 I14「By Shop」報表變成可追蹤的不良存貨趨勢，**不改動 zero-sales 流程**。
@@ -420,9 +435,9 @@ pg_restore --no-owner --no-privileges --clean --if-exists \
 
 ### 店舖端
 
-店舖用原本的 Site Code 登入後，`/portal/zero-sales.html` 有兩個分頁籤：**零銷售回覆**（預設）與 **存貨走勢**。存貨走勢顯示**自己店**的每週佔比趨勢、全公司加權平均線（虛線）及最新四個 KPI（店舖存貨值、不良存貨值、不良存貨佔比、不良存貨 SKU ÷ 店內貨品 SKU——最後一張卡附全公司同日加權對比；RF 轉 ND 而貨未清走時這個數字不變，實際清貨才會下降）。
+店舖用原本的 Site Code 登入後，`/portal/zero-sales.html` 有三個分頁籤：**零銷售回覆**（預設）、**存貨走勢**與 **沒回覆次數**。存貨走勢顯示**自己店**的每週佔比趨勢、全公司加權平均線（虛線）及最新四個 KPI（店舖存貨值、不良存貨值、不良存貨佔比、不良存貨 SKU ÷ 店內貨品 SKU——最後一張卡附全公司同日加權對比；RF 轉 ND 而貨未清走時這個數字不變，實際清貨才會下降）。沒回覆次數的統計口徑見上面「店舖沒有回覆次數 Dashboard」一節。
 
-- 分頁由 `public/portal/js/portal-tabs.js` 控制（`aria-selected` + `hidden` + 網址 hash `#stock`），並廣播 `portal:tab` 事件；`dashboard.js` 收到事件才首次載入，確保面板可見、圖表量得到闊度。
+- 分頁由 `public/portal/js/portal-tabs.js` 控制（`aria-selected` + `hidden` + 網址 hash `#stock`／`#missed`），並廣播 `portal:tab` 事件；`dashboard.js`／`reply-stats.js` 收到事件才首次載入，確保面板可見、圖表量得到闊度。
 - 舊網址 `/portal/dashboard.html` **已移除**（該頁只在分頁整合當日短暫存在，從未對外通知，故不留跳轉頁）。入口一律是 `/portal/zero-sales.html`，需要直接開存貨分頁時用 `/portal/zero-sales.html#stock`。
 - API：`GET /api/portal/stock/summary`（`requirePortalUser` + `requireStoreSite`）。
 - **店舖端亦可以匯出 Excel**：走勢卡右上角「匯出 Excel」→ `GET /api/portal/stock/summary/export`（`excelExportLimiter`），工作表「本店走勢」＋「匯出說明」，只含**本店**每期數字同全公司加權平均線；冇數據時回 404。audit event `shop_stock_store_export`。

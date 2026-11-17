@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <link rel="icon" type="image/svg+xml" href="/favicon.svg">
-  <title>零銷售回覆 · 存貨走勢 — RP 連繫網</title>
+  <title>零銷售回覆 · 存貨走勢 · 沒回覆次數 — RP 連繫網</title>
   <link rel="stylesheet" href="/css/tokens.css">
   <link rel="stylesheet" href="/css/style.css">
   <link rel="stylesheet" href="/portal/css/portal.css">
@@ -41,10 +41,13 @@
     <div class="portal-tabs" role="tablist" aria-label="店舖專區">
       <button class="portal-tab is-active" type="button" role="tab" id="tab_zs"
               aria-controls="panel_zs" aria-selected="true"
-              data-panel="panel_zs" data-subtitle="90日零銷售回覆">零銷售回覆</button>
+              data-panel="panel_zs" data-tab="zs" data-hash="" data-subtitle="90日零銷售回覆">零銷售回覆</button>
       <button class="portal-tab portal-tab--accent" type="button" role="tab" id="tab_stock"
               aria-controls="panel_stock" aria-selected="false" tabindex="-1"
-              data-panel="panel_stock" data-subtitle="存貨走勢">存貨走勢</button>
+              data-panel="panel_stock" data-tab="stock" data-hash="stock" data-subtitle="存貨走勢">存貨走勢</button>
+      <button class="portal-tab" type="button" role="tab" id="tab_missed"
+              aria-controls="panel_missed" aria-selected="false" tabindex="-1"
+              data-panel="panel_missed" data-tab="missed" data-hash="missed" data-subtitle="沒回覆次數">沒回覆次數</button>
     </div>
 
     <section id="panel_zs" role="tabpanel" aria-labelledby="tab_zs" tabindex="0">
@@ -126,6 +129,57 @@
         <p class="hint">佔比越高，代表越多存貨屬「90 日零銷售」。改善方向可參考上面「零銷售回覆」每週派發的 SKU 提示（賣出一件，或轉 ND／降低 Safety Stock）。<br>如有疑問，請聯絡 RP Team。</p>
       </div>
     </section>
+
+    <section id="panel_missed" role="tabpanel" aria-labelledby="tab_missed" tabindex="0" hidden>
+      <div class="card dash-head-card">
+        <h2>店舖沒有回覆次數</h2>
+        <div id="miss_site_info" class="dash-site-info"><div class="loading">載入中…</div></div>
+        <p class="dash-intro">RP Team 每週派發一次 Top 10 零銷售 SKU；<b>新一週派發時，上一週就會封存</b>，未回覆的 SKU 亦不能再補做。<br>本頁把「<b>封存時仍有 SKU 未回覆</b>」的週次累積起來，讓你看到自己店舖的<b>沒回覆次數</b>。只有已封存的週次才計入次數；最新一週仍可回覆，會標示為「本週待回覆」；「本週無須回覆」的週次不計。<br>這裡<b>只顯示你店舖自己的數據</b>，不會顯示其他店舖的數字或排名。</p>
+        <div id="miss_error"></div>
+      </div>
+
+      <section class="dash-kpi-grid" id="miss_kpi" aria-label="沒回覆次數統計">
+        <div class="dash-kpi"><div class="dash-kpi-value">—</div><div class="dash-kpi-label">載入中…</div></div>
+      </section>
+
+      <div class="card dash-card" id="miss_chart_card">
+        <div class="dash-card-head">
+          <h3>每週沒回覆 SKU 件數</h3>
+          <div class="dash-head-tools">
+            <span class="hint" id="miss_chart_period"></span>
+            <span id="miss_chart_export" class="chart-export-host"></span>
+          </div>
+        </div>
+        <div class="dash-legend">
+          <span class="dash-legend-item"><i class="dash-line dash-line--missed" aria-hidden="true"></i>沒回覆 SKU</span>
+          <span class="dash-legend-item"><i class="dash-line dash-line--dispatched" aria-hidden="true"></i>每週派發 SKU</span>
+        </div>
+        <div class="dash-chart" id="miss_chart"></div>
+        <p class="hint dash-chart-note" id="miss_chart_note"></p>
+      </div>
+
+      <div class="card dash-card">
+        <div class="dash-card-head">
+          <h3>每週回覆狀況</h3>
+          <span class="hint" id="miss_strip_period"></span>
+        </div>
+        <div class="miss-legend" id="miss_legend"></div>
+        <div class="miss-strip" id="miss_strip" role="group" aria-label="每週回覆狀況"></div>
+        <p class="hint miss-strip-note">左邊最早、右邊最新；按任何一格可跳到該週的 SKU 清單。</p>
+      </div>
+
+      <div class="card dash-card">
+        <div class="dash-card-head">
+          <h3>週次明細</h3>
+          <span class="hint" id="miss_table_count"></span>
+        </div>
+        <div class="miss-table-wrap"><div id="miss_table"><div class="loading">載入中…</div></div></div>
+      </div>
+
+      <div class="card dash-card dash-foot-card">
+        <p class="hint">想保持 0 次？每週收到派發後，在「零銷售回覆」逐條選擇原因即可（重複上榜的 SKU 會自動套用上次回覆，只需確認）。<br>如對紀錄有疑問，請聯絡 RP Team。</p>
+      </div>
+    </section>
   </main>
 
   <dialog id="reply_dialog" aria-labelledby="reply_title">
@@ -165,6 +219,7 @@
   <script src="/js/chart-export.js"></script>
   <script src="/js/chart-zoom.js"></script>
   <script src="/portal/js/dashboard.js"></script>
+  <script src="/portal/js/reply-stats.js"></script>
   <script src="/portal/js/portal-tabs.js"></script>
   <script src="/portal/js/nav-badges.js"></script>
   <script src="/js/portal-notice.js"></script>

@@ -148,6 +148,9 @@
 .dash-line { display: inline-block; width: 16px; height: 0; border-top: 3px solid var(--brand); border-radius: 2px; }
 .dash-line--store { border-top-color: #0f766e; }
 .dash-line--company { border-top-style: dashed; border-top-color: #94a3b8; }
+/* 沒回覆次數：實線紅＝沒回覆 SKU，虛線灰＝每週派發 SKU */
+.dash-line--missed { border-top-color: var(--danger); }
+.dash-line--dispatched { border-top-style: dashed; border-top-color: #94a3b8; }
 
 /* 圖表容器用 aspect-ratio：高度跟寬度自動，觸控區不會被壓扁 */
 .dash-chart {
@@ -466,7 +469,123 @@
   }
 }
 
-/* 店舖端分頁籤（零銷售回覆 / 存貨走勢） */
+/* ==========================================================================
+   沒回覆次數（店舖端）— 只影響 .miss-*，不改動零銷售／存貨走勢樣式
+   ========================================================================== */
+
+.miss-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+  margin: 2px 0 8px;
+  font-size: 12.5px;
+  color: var(--body);
+}
+.miss-legend-item { display: inline-flex; align-items: center; gap: 6px; }
+.miss-swatch {
+  width: 12px;
+  height: 12px;
+  border-radius: 3px;
+  border: 1px solid transparent;
+  flex: 0 0 auto;
+}
+.miss-swatch--replied { background: var(--success); }
+.miss-swatch--partial { background: #d99a06; }
+.miss-swatch--missed { background: var(--danger); }
+.miss-swatch--open { background: var(--brand); }
+.miss-swatch--na { background: var(--surface-muted); border-color: var(--border-strong); }
+
+/* 每週一格：左最早、右最新；auto-fit 會把空格收起，52 週在桌面剛好一行排滿 */
+.miss-strip {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(18px, 1fr));
+  gap: 4px;
+  margin: 4px 0 8px;
+}
+.miss-cell {
+  width: 100%;
+  max-width: 40px;
+  height: 26px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 5px;
+  cursor: pointer;
+  transition: transform .1s ease, box-shadow .1s ease;
+}
+.miss-cell:hover { transform: translateY(-1px); box-shadow: 0 2px 6px rgba(15, 23, 42, .22); }
+.miss-cell:focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; }
+.miss-cell--replied { background: var(--success); }
+.miss-cell--partial { background: #d99a06; }
+.miss-cell--missed { background: var(--danger); }
+.miss-cell--open { background: var(--brand); }
+.miss-cell--na { background: var(--surface-muted); border-color: var(--border-strong); }
+/* 空狀態要橫跨整個 grid，否則會被壓成一個 18px 的小格 */
+.miss-strip .empty { grid-column: 1 / -1; }
+.miss-strip-note { margin: 2px 0 0; }
+@media (max-width: 640px) {
+  .miss-strip { grid-template-columns: repeat(auto-fit, minmax(14px, 1fr)); }
+  .miss-cell { height: 22px; }
+}
+
+.miss-table-wrap {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: auto;
+  max-height: 58vh;
+  box-shadow: var(--shadow-sm);
+}
+table.miss-table { width: 100%; border-collapse: separate; border-spacing: 0; min-width: 720px; }
+table.miss-table th,
+table.miss-table td {
+  font-size: 13px;
+  padding: 10px 12px;
+  border: 0;
+  border-bottom: 1px solid var(--border);
+}
+table.miss-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: #eaf2fa;
+  color: var(--brand-dark);
+  font-weight: 700;
+  white-space: nowrap;
+  box-shadow: 0 1px 0 var(--border-strong);
+}
+table.miss-table tbody tr:hover td { background: #f2f8fe; }
+table.miss-table .miss-num { text-align: right; font-variant-numeric: tabular-nums; }
+table.miss-table .miss-num--bad { color: var(--danger); font-weight: 700; }
+/* 沒回覆的週次淺紅底：一眼看出是哪幾週 */
+table.miss-table tbody tr.miss-row--missed td { background: #fff7f7; }
+table.miss-table tbody tr.miss-row--missed:hover td { background: #feecec; }
+.miss-week-tag {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: var(--surface-brand);
+  color: var(--brand);
+  font-size: 11px;
+  font-weight: 700;
+  vertical-align: middle;
+}
+.miss-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 11px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+.miss-pill--replied { background: var(--success-bg); color: #0a5c36; border: 1px solid var(--success-border); }
+.miss-pill--partial { background: var(--warning-bg); color: #6b4a06; border: 1px solid var(--warning-border); }
+.miss-pill--missed { background: var(--danger-bg); color: var(--danger); border: 1px solid var(--danger-border); }
+.miss-pill--open { background: var(--surface-brand); color: #185fa5; border: 1px solid var(--border-accent); }
+.miss-pill--na { background: var(--surface-muted); color: var(--body); border: 1px solid var(--border-strong); }
+
+/* 店舖端分頁籤（零銷售回覆 / 存貨走勢 / 沒回覆次數） */
 .portal-tabs {
   display: flex;
   gap: 6px;

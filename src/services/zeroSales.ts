@@ -1412,6 +1412,133 @@ export async function listBatchesForSites(siteCodes: string[]): Promise<ZeroSale
   });
 }
 
+/**
+ * 店舖「沒有回覆次數」統計（店舖端 Dashboard 用）。
+ *
+ * 口徑（刻意與店舖頁其他地方一致，避免同一頁出現兩個數字）：
+ *  - 只計「已封存 + 需要回覆」的週次＝已定案，店舖再無機會補做。
+ *  - 該週封存時仍有 pending 行 → 計 1 次「沒回覆」（部分或全部）。
+ *  - 未封存的最新一週不計次數（仍可回覆），另以 open_pending 顯示。
+ *  - 「本週無須回覆」的週次完全不計（分母、次數、連續紀錄都不計）。
+ *  - 管理員代填／系統自動套用會令 pending 減少，統計會隨之改善（＝最終沒有回覆）。
+ */
+export type ZeroSalesReplyWeekStatus =
+  | 'replied'
+  | 'partial'
+  | 'missed'
+  | 'open_pending'
+  | 'not_required';
+
+export interface ZeroSalesReplyWeek {
+  batch_id: string;
+  week_label: string;
+  /** 派發日期（HKT，YYYY-MM-DD） */
+  date: string;
+  reply_required: boolean;
+  is_archived: boolean;
+  total: number;
+  replied: number;
+  pending: number;
+  status: ZeroSalesReplyWeekStatus;
+}
+
+export interface ZeroSalesReplyStats {
+  site_code: string;
+  /** 新到舊（與店舖頁的週次下拉一致） */
+  weeks: ZeroSalesReplyWeek[];
+  summary: {
+    /** 視窗內派發過的週次數（含無須回覆） */
+    window_weeks: number;
+    /** 已定案（已封存 + 需要回覆）的週次數 */
+    finalized_weeks: number;
+    missed_weeks: number;
+    missed_full_weeks: number;
+    missed_partial_weeks: number;
+    replied_weeks: number;
+    /** 由最近一個已定案週次倒數，連續沒回覆的週次數 */
+    streak: number;
+    items_required: number;
+    items_replied: number;
+    items_missed: number;
+    /** 0–1；沒有任何已定案週次時為 null（不是 0%） */
+    reply_rate: number | null;
+    last_missed_week: string;
+    last_missed_date: string;
+    /** 仍未封存而尚待回覆的週次（沒有則為空字串） */
+    open_week: string;
+    open_pending: number;
+    open_total: number;
+  };
+}
+
+export async function getMyReplyStats(siteCode: string): Promise<ZeroSalesReplyStats> {
+  const batches = await listMyBatches(siteCode);
+
+  const weeks: ZeroSalesReplyWeek[] = batches.map((b) => {
+    const total = Number(b.total ?? 0);
+    const replied = Number(b.replied ?? 0);
+    const pending = Number(b.pending ?? 0);
+    const isArchived = Boolean(b.is_archived);
+    let status: ZeroSalesReplyWeekStatus;
+    if (b.reply_required === false) status = 'not_required';
+    else if (!isArchived) status = pending > 0 ? 'open_pending' : 'replied';
+    else if (pending === 0) status = 'replied';
+    else if (replied === 0) status = 'missed';
+    else status = 'partial';
+    return {
+      batch_id: b.id,
+      week_label: b.week_label,
+      date: String(b.created_at ?? '').slice(0, 10),
+      reply_required: b.reply_required !== false,
+      is_archived: isArchived,
+      total,
+      replied,
+      pending,
+      status,
+    };
+  });
+
+  const finalized = weeks.filter((w) => w.reply_required && w.is_archived && w.status !== 'not_required');
+  const missed = finalized.filter((w) => w.pending > 0);
+  const openWeek = weeks.find((w) => w.status === 'open_pending')
+    ?? weeks.find((w) => w.reply_required && !w.is_archived)
+    ?? null;
+
+  let streak = 0;
+  for (const week of finalized) { // weeks 已由新到舊
+    if (week.pending > 0) streak += 1;
+    else break;
+  }
+
+  const itemsRequired = finalized.reduce((sum, w) => sum + w.total, 0);
+  const itemsReplied = finalized.reduce((sum, w) => sum + w.replied, 0);
+  const itemsMissed = finalized.reduce((sum, w) => sum + w.pending, 0);
+  const lastMissed = missed[0] ?? null;
+
+  return {
+    site_code: siteCode,
+    weeks,
+    summary: {
+      window_weeks: weeks.length,
+      finalized_weeks: finalized.length,
+      missed_weeks: missed.length,
+      missed_full_weeks: missed.filter((w) => w.replied === 0).length,
+      missed_partial_weeks: missed.filter((w) => w.replied > 0).length,
+      replied_weeks: finalized.filter((w) => w.pending === 0).length,
+      streak,
+      items_required: itemsRequired,
+      items_replied: itemsReplied,
+      items_missed: itemsMissed,
+      reply_rate: itemsRequired > 0 ? itemsReplied / itemsRequired : null,
+      last_missed_week: lastMissed ? lastMissed.week_label : '',
+      last_missed_date: lastMissed ? lastMissed.date : '',
+      open_week: openWeek ? openWeek.week_label : '',
+      open_pending: openWeek ? openWeek.pending : 0,
+      open_total: openWeek ? openWeek.total : 0,
+    },
+  };
+}
+
 /** 刪除整個批次（items 經 FK ON DELETE CASCADE 一併清除），回傳週次及清除行數供審計。
  *  若刪除的是當時仍開放的批次，會自動重開剩下最新的批次，避免店舖完全沒有可回覆週次。 */
 export async function deleteZeroSalesBatch(

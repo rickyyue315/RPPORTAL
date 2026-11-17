@@ -66,6 +66,16 @@ describe('static asset freshness', () => {
     expect(res.text).toContain('id="panel_stock"');
     expect(res.text).toContain('/portal/js/portal-tabs.js?v=');
     expect(res.text).toContain('/portal/js/dashboard.js?v=');
+    // 沒回覆次數：第三個分頁，與存貨走勢同一頁，數據同樣以登入店舖限定
+    expect(res.text).toContain('id="panel_missed"');
+    expect(res.text).toContain('id="tab_missed"');
+    expect(res.text).toContain('/portal/js/reply-stats.js?v=');
+    expect(res.text).toContain('id="miss_chart"');
+    expect(res.text).toContain('id="miss_table"');
+    const tabs = readFileSync(path.join(root, 'public', 'portal', 'js', 'portal-tabs.js'), 'utf8');
+    // 分頁以 data-hash 描述，深連結不再寫死 tab_stock
+    expect(tabs).toContain('data-hash');
+    expect(tabs).toContain('data-tab');
     // 舊的獨立頁不應再出現在導覽，也不應再存在（單頁入口開放後從未對外通知）
     expect(res.text).not.toContain('href="/portal/dashboard.html"');
     const gone = await request(app).get('/portal/dashboard.html');

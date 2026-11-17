@@ -71,6 +71,7 @@ import { createImportBatch, findPortalImportBatchByIdempotencyKey, getPortalImpo
 import { query, withTransaction } from '../db/pool.js';
 import {
   countMyPendingItems as countMyZeroSalesPending,
+  getMyReplyStats as getMyZeroSalesReplyStats,
   listMyBatches as listMyZeroSalesBatches,
   listMyItems as listMyZeroSalesItems,
   listReasons as listZeroSalesReasons,
@@ -1077,6 +1078,23 @@ portalRouter.get(
     res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
     res.setHeader('Content-Disposition', `attachment; filename="Zero_Sales_${req.storeSiteCode}_${label}_${stamp}.xlsx"`);
     res.send(buffer);
+  }),
+);
+
+/**
+ * GET /api/portal/zero-sales/reply-stats — 本店「沒有回覆次數」統計
+ *
+ * 數據隔離同其他店舖端 API 一樣：site_code 只取自 portal session，
+ * 不接受 query / body 傳入，回傳只有本店的週次紀錄。
+ */
+portalRouter.get(
+  '/zero-sales/reply-stats',
+  requirePortalUser,
+  requireStoreSite,
+  adminActionLimiter,
+  asyncHandler(async (req: Request, res: Response) => {
+    const stats = await getMyZeroSalesReplyStats(req.storeSiteCode!);
+    res.json({ ok: true, ...stats });
   }),
 );
 

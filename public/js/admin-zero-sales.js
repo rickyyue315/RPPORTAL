@@ -390,7 +390,11 @@
       const noReplyText = data.replyRequired === false
         ? '；<b>本週無須回覆</b>：店舖會看到本店 Top 10 清單，但不用逐條回覆（不計入待回覆／回覆率）'
         : '';
-      res.innerHTML = `<div class="alert alert-success">已建立批次（${data.totalRows} 行）${autoText}${noReplyText}${closedText}。舊週次已轉為唯讀，店舖不能再回覆。</div>`;
+      const ignored = (data.ignoredColumns || []);
+      const ignoredText = ignored.length
+        ? `<div class="small text-secondary mt-1">已忽略原表多出的欄位：${ignored.map((c) => esc(c)).join('、')}（不影響匯入，如要納入統計請通知 RP Team）</div>`
+        : '';
+      res.innerHTML = `<div class="alert alert-success">已建立批次（${data.totalRows} 行）${autoText}${noReplyText}${closedText}。舊週次已轉為唯讀，店舖不能再回覆。${ignoredText}</div>`;
       $('zs_file').value = '';
       await loadBatches(true);
       await loadSummary();

@@ -3334,9 +3334,14 @@ adminRouter.post(
         reply_required: replyRequired,
         // 即時封存：記錄被自動封存的舊批次及當時未回覆行數，方便日後追查
         closed_batches: closedBatches.map((b) => ({ batch_id: b.id, week_label: b.week_label, pending: b.pending })),
+        // 原表多出的欄位（例如 Shop Stock Qty (LLM)）：已忽略，記錄下來方便追溯來源格式變更
+        ignored_columns: parsed.ignoredColumns ?? [],
       },
     });
-    res.status(201).json({ ok: true, batchId, totalRows: parsed.totalRows, closedBatches, autoFilled, replyRequired });
+    res.status(201).json({
+      ok: true, batchId, totalRows: parsed.totalRows, closedBatches, autoFilled, replyRequired,
+      ignoredColumns: parsed.ignoredColumns ?? [],
+    });
   }),
 );
 

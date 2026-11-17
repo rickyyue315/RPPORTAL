@@ -48,7 +48,12 @@ export interface ZeroSalesParsed {
   errors?: Array<{ row: number; field: string; reason: string; siteCode?: string }>;
   rows?: ZeroSalesParsedRow[];
   contentHash?: string;
+  /** 原表多出、未被採用的欄名（例如 2026-11 起出現的 Shop Stock Qty (LLM)）；只作提示，不影響匯入 */
+  ignoredColumns?: string[];
 }
+
+/** 表頭掃描上限：原表可能在中間插入新欄位，所以不鎖死 23 欄 */
+const HEADER_SCAN_COLUMNS = 40;
 
 function valueToText(v: unknown): string {
   if (v === null || v === undefined) return '';
@@ -82,15 +87,25 @@ export async function parseZeroSalesWorkbook(
   // 接受第一個工作表 (Admin 原表可能有多種 sheet 名)，但必須包含表頭
   let sheet: ExcelJS.Worksheet | undefined;
   let headerRowNum = 0;
+  let headerWidth: number = ZERO_SALES_COLUMNS.length;
   outer: for (const ws of workbook.worksheets) {
     for (let r = 1; r <= Math.min(5, ws.rowCount); r++) {
       const row = ws.getRow(r);
-      const vals: string[] = [];
-      for (let c = 1; c <= ZERO_SALES_COLUMNS.length; c++) vals.push(cellText(row.getCell(c)));
-      // 必須至少包含 Site Code + SKU + 店舖回覆
-      if (vals[0] === 'Site Code' && vals[7] === 'SKU' && vals[vals.length - 1] === '店舖回覆') {
+      const width = Math.max(ZERO_SALES_COLUMNS.length, Math.min(HEADER_SCAN_COLUMNS, ws.columnCount));
+      let hasSite = false;
+      let hasSku = false;
+      let hasReply = false;
+      for (let c = 1; c <= width; c++) {
+        const t = cellText(row.getCell(c));
+        if (t === 'Site Code') hasSite = true;
+        else if (t === 'SKU') hasSku = true;
+        else if (t === '店舖回覆') hasReply = true;
+      }
+      // 必須至少包含 Site Code + SKU + 店舖回覆（不綁死欄位順序，原表插入新欄亦可）
+      if (hasSite && hasSku && hasReply) {
         sheet = ws;
         headerRowNum = r;
+        headerWidth = width;
         break outer;
       }
     }
@@ -102,9 +117,27 @@ export async function parseZeroSalesWorkbook(
       return { ok: false, totalRows: 0, errors: [{ row: 0, field: 'sheet', reason: '找不到工作表' }], contentHash };
     }
     headerRowNum = 1;
+    headerWidth = Math.max(ZERO_SALES_COLUMNS.length, Math.min(HEADER_SCAN_COLUMNS, sheet.columnCount));
   }
   const headers: string[] = [];
-  for (let c = 1; c <= ZERO_SALES_COLUMNS.length; c++) headers.push(cellText(sheet.getRow(headerRowNum).getCell(c)));
+  for (let c = 1; c <= headerWidth; c++) headers.push(cellText(sheet.getRow(headerRowNum).getCell(c)));
+
+  // 按欄名定位（同名取第一欄）；原表多出的欄位一律忽略，不影響其餘欄位對位
+  const colIndex = new Map<string, number>();
+  headers.forEach((h, i) => { if (h && !colIndex.has(h)) colIndex.set(h, i + 1); });
+  const missing = ZERO_SALES_COLUMNS.filter((h) => !colIndex.has(h));
+  const ignoredColumns = headers.filter((h) => h && !(ZERO_SALES_COLUMNS as readonly string[]).includes(h));
+  if (missing.length) {
+    return {
+      ok: false, sheetName: sheet.name, headers, totalRows: 0, contentHash, ignoredColumns,
+      errors: [{
+        row: headerRowNum,
+        field: 'header',
+        reason: `缺少必要欄位：${missing.join('、')}。完整欄名應為：${ZERO_SALES_COLUMNS.join(' | ')}`,
+      }],
+    };
+  }
+  const mapped = ZERO_SALES_COLUMNS.map((col) => colIndex.get(col)!);
 
   const errors: ZeroSalesParsed['errors'] = [];
   const rows: ZeroSalesParsedRow[] = [];
@@ -114,9 +147,8 @@ export async function parseZeroSalesWorkbook(
   sheet.eachRow((row, rowNumber) => {
     if (rowNumber <= headerRowNum) return;
     let hasAny = false;
-    for (let c = 1; c <= ZERO_SALES_COLUMNS.length; c++) {
-      const v = row.getCell(c).value;
-      if (v !== null && v !== undefined && String(v).trim() !== '') { hasAny = true; break; }
+    for (const c of mapped) {
+      if (cellText(row.getCell(c)) !== '') { hasAny = true; break; }
     }
     if (!hasAny) return;
     totalRows++;
@@ -125,7 +157,7 @@ export async function parseZeroSalesWorkbook(
       return;
     }
     const data: Record<string, string> = {};
-    ZERO_SALES_COLUMNS.forEach((col, i) => { data[col] = cellText(row.getCell(i + 1)); });
+    ZERO_SALES_COLUMNS.forEach((col, i) => { data[col] = cellText(row.getCell(mapped[i]!)); });
     const siteCode = normalizeSiteCode(data['Site Code'] || '');
     const sku = normalizeText(data['SKU'] || '');
     if (!siteCode) errors!.push({ row: rowNumber, field: 'Site Code', reason: 'Site Code 為必填' });
@@ -139,19 +171,8 @@ export async function parseZeroSalesWorkbook(
     rows.push({ rowNumber, siteCode, sku, data });
   });
 
-  // 嚴格表頭檢查：前22欄必須一致 (店舖回覆欄名必須為「店舖回覆」)
-  const expected = [...ZERO_SALES_COLUMNS];
-  const mismatch = expected.some((h, i) => headers[i] !== h);
-  if (mismatch) {
-    return {
-      ok: false, sheetName: sheet.name, headers, totalRows,
-      errors: [{ row: headerRowNum, field: 'header', reason: `欄名必須與模板一致，應為：${expected.join(' | ')}` }],
-      contentHash,
-    };
-  }
-
-  if (errors!.length) return { ok: false, sheetName: sheet.name, headers, totalRows, errors, contentHash };
-  return { ok: true, sheetName: sheet.name, headers, totalRows, rows, contentHash };
+  if (errors!.length) return { ok: false, sheetName: sheet.name, headers, totalRows, errors, contentHash, ignoredColumns };
+  return { ok: true, sheetName: sheet.name, headers, totalRows, rows, contentHash, ignoredColumns };
 }
 
 /** 下載模板 (22欄上下文 + 空白店舖回覆欄) */

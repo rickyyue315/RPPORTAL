@@ -14,6 +14,7 @@ function item(overrides: Partial<ZeroSalesStoreExportItem> = {}): ZeroSalesStore
       Brand: 'EYG - EO YUNG GAM(HAN BANG)',
       'SKU Desc': 'Lip Gloss 4g',
       'Shop Stock Qty (CM)': '12',
+      'Supply Source': 'Warehouse',
       'RP Type': 'RP',
       'Safety Stock (現時)': '8',
     },
@@ -54,11 +55,11 @@ async function readSheet(buf: Buffer): Promise<{ headers: string[]; rows: Record
 }
 
 describe('buildZeroSalesStoreExportBuffer', () => {
-  it('欄名為店舖版面指定的 11 欄', async () => {
+  it('欄名為店舖版面指定的 12 欄', async () => {
     const buf = await buildZeroSalesStoreExportBuffer([item()]);
     const { headers } = await readSheet(buf);
     expect(headers).toEqual([...ZERO_SALES_STORE_EXPORT_COLUMNS]);
-    expect(headers).toEqual(['週次', 'Brand', 'SKU', '描述', 'SKU上載日期', '狀態', '店舖本次回覆', '重複提示', '存貨量', 'RP Type', 'Safety Stock']);
+    expect(headers).toEqual(['週次', 'Brand', 'SKU', '描述', 'Warehouse/Vendor', 'SKU上載日期', '狀態', '店舖本次回覆', '重複提示', '存貨量', 'RP Type', 'Safety Stock']);
   });
 
   it('已回覆行：狀態=已回覆、本次回覆=原因+補充（兩行）、存貨量為數字', async () => {
@@ -72,6 +73,7 @@ describe('buildZeroSalesStoreExportBuffer', () => {
     expect(r['Brand']).toBe('EYG - EO YUNG GAM(HAN BANG)');
     expect(r['SKU']).toBe('1001');
     expect(r['描述']).toBe('Lip Gloss 4g');
+    expect(r['Warehouse/Vendor']).toBe('Warehouse');
     expect(r['SKU上載日期']).toBe('2026-10-14');
     expect(r['狀態']).toBe('已回覆');
     expect(r['店舖本次回覆']).toBe('1.無陳列\n已安排下週陳列');

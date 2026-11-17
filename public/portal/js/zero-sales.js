@@ -44,6 +44,12 @@
     renderDesignatedBanner(Number(e.detail && e.detail.designated_sku) || 0);
   });
 
+  /**
+   * 表格欄位（順序＝畫面順序），key 對應上載原表的欄名。
+   * Warehouse/Vendor 與 RP Type 不做獨立欄位，改為「描述」下方一行細字：
+   * 兩欄加起來要 200px，而卡片最闊只有 1200px，開兩欄會令「回覆」按鈕
+   * 被推到畫面外（要橫向捲才按到），店舖反而更難用。
+   */
   const COLS = [
     { key: 'Brand', label: 'Brand' },
     { key: 'SKU', label: 'SKU' },
@@ -128,6 +134,29 @@
     const full = payloadVal(it, 'Brand');
     const code = (full.split(' - ')[0] || '').trim();
     return code || full;
+  }
+
+  /**
+   * 貨品屬性一行細字（Warehouse/Vendor、RP Type）：只照原表值顯示，不做推斷。
+   * 店舖要靠它判斷貨是由倉（可安排調撥）還是 Vendor 直接供應，以及是否自動補貨。
+   * 原表空白就不顯示該項，不會補 0 或預設值。
+   */
+  function propsLine(it) {
+    const supply = String(payloadVal(it, 'Supply Source') || '').trim();
+    const rp = String(payloadVal(it, 'RP Type') || '').trim();
+    if (!supply && !rp) return '';
+    const parts = [];
+    if (supply) parts.push(`<span class="zs-prop${supplyTone(supply)}">${p.escapeHtml(supply)}</span>`);
+    if (rp) parts.push(`<span class="zs-prop zs-prop-rp">${p.escapeHtml(rp)}</span>`);
+    return `<div class="zs-props">${parts.join('<span class="zs-prop-sep">·</span>')}</div>`;
+  }
+
+  /** 供應來源：Warehouse（倉）與 Vendor（供應商）分色，方便一眼掃；其他值用中性色 */
+  function supplyTone(val) {
+    const v = val.toLowerCase();
+    if (v.includes('warehouse')) return ' zs-prop-wh';
+    if (v.includes('vendor')) return ' zs-prop-vd';
+    return '';
   }
 
   async function loadReasons() {
@@ -244,7 +273,7 @@
       $('site_info').innerHTML =
         `<div class="site-banner">${p.escapeHtml(data.site_code)}${shop}</div>` +
         `<div>${p.escapeHtml(weekLabel || '')}：${items.length} 個指定 SKU｜${replied} 已回覆（${rate}%）${repeatN ? `｜<b>${repeatN}</b> 個重複上榜（≥2 次）` : ''}${onlyRepeat ? '｜現只顯示重複上榜' : ''}</div>` +
-        `<div class="hint">黃色「回覆」＝未回覆（排最前）；橙色「修改」＝已自動套用上次回覆，請確認或更正。如非你店舖，請按右上「登出」再輸入 Site Code。</div>`;
+        `<div class="hint">黃色「回覆」＝未回覆（排最前）；橙色「修改」＝已自動套用上次回覆，請確認或更正。「描述」下方細字為貨源（Warehouse＝倉／Vendor＝供應商）及 RP Type（RF＝自動補貨、ND＝不自動補貨）。如非你店舖，請按右上「登出」再輸入 Site Code。</div>`;
     }
     const goto = document.getElementById('zs_goto_latest');
     if (goto && latestOpen) {
@@ -262,7 +291,14 @@
     const q = ($('f_search').value || '').trim().toUpperCase();
     const filtered = items.filter((it) => {
       if (!q) return true;
-      const hay = `${it.sku} ${(it.payload && it.payload['Brand']) || ''} ${(it.payload && it.payload['SKU Desc']) || ''}`.toUpperCase();
+      // 搜尋同時覆蓋貨源與 RP Type，店舖可直接打 "warehouse" 或 "RF" 篩貨
+      const hay = [
+        it.sku,
+        it.payload && it.payload['Brand'],
+        it.payload && it.payload['SKU Desc'],
+        it.payload && it.payload['Supply Source'],
+        it.payload && it.payload['RP Type'],
+      ].filter(Boolean).join(' ').toUpperCase();
       return hay.includes(q);
     }).sort((a, b) => (a.status === 'pending' ? 0 : 1) - (b.status === 'pending' ? 0 : 1));
     if (!filtered.length) {
@@ -273,7 +309,7 @@
     }
     let html = '<table class="zs-table"><thead><tr><th>週次</th>';
     COLS.forEach((c) => { html += `<th>${p.escapeHtml(c.label)}</th>`; });
-    html += '<th>SKU上載日期</th><th>狀態</th><th>店舖回覆</th><th>重複提示</th><th></th></tr></thead><tbody>';
+    html += '<th>SKU上載日期</th><th>狀態</th><th class="zs-c-reply">店舖回覆</th><th class="zs-c-repeat">重複提示</th><th></th></tr></thead><tbody>';
     filtered.forEach((it) => {
       const replied = it.status === 'replied';
       const auto = isAutoFilled(it);
@@ -318,10 +354,14 @@
         : `<button class="btn ghost${needReply ? ' zs-reply-needed' : ''}${highlight ? ' zs-edit-highlight' : ''}" data-reply="${it.id}" ${locked ? 'disabled' : ''}${needReply ? ' title="此 SKU 仍需要回覆"' : (highlight ? ` title="此 SKU 可再修改 ${left} 次"` : '')}>${btnLabel}</button>`;
       html += `<tr${rowClass ? ` class="${rowClass}"` : ''}><td>${weekCell}</td>`;
       COLS.forEach((c) => {
-        const val = c.key === 'Brand' ? brandCode(it) : payloadVal(it, c.key);
-        html += `<td>${p.escapeHtml(val)}</td>`;
+        let cell;
+        if (c.key === 'Brand') cell = p.escapeHtml(brandCode(it));
+        // 貨源與 RP Type 跟在描述下方，店舖一眼看到又不用橫向捲
+        else if (c.key === 'SKU Desc') cell = `${p.escapeHtml(payloadVal(it, 'SKU Desc'))}${propsLine(it)}`;
+        else cell = p.escapeHtml(payloadVal(it, c.key));
+        html += `<td>${cell}</td>`;
       });
-      html += `<td>${p.escapeHtml(uploadDate(it))}</td><td>${badge}</td><td>${reply}</td><td>${repeatCell}</td><td>${action}</td></tr>`;
+      html += `<td>${p.escapeHtml(uploadDate(it))}</td><td>${badge}</td><td class="zs-c-reply">${reply}</td><td class="zs-c-repeat">${repeatCell}</td><td>${action}</td></tr>`;
     });
     html += '</tbody></table>';
     $('zs_list').innerHTML = html;
@@ -403,7 +443,10 @@
       ? `確認／修改自動套用回覆 — ${it.sku}`
       : (n === 0 ? `回覆 — ${it.sku}` : `修改回覆 — ${it.sku}`);
     const autoFrom = it.auto_filled_from_week ? ` ${it.auto_filled_from_week} ` : '上次';
+    // 回覆視窗同步顯示貨源與 RP Type，店舖回覆時不必再回頭睇表格
+    const meta = [payloadVal(it, 'Supply Source'), payloadVal(it, 'RP Type')].filter(Boolean).join('｜');
     $('reply_sku_info').textContent = `${it.week_label || ''}｜${payloadVal(it, 'Brand')}｜${payloadVal(it, 'SKU Desc')}` +
+      (meta ? `｜${meta}` : '') +
       (auto
         ? `｜系統已自動套用${autoFrom}的回覆；你仍可修改 ${left} 次`
         : (n >= 1 ? `｜剩餘修改次數：${left} 次` : ''));

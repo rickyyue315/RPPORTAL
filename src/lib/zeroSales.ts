@@ -583,12 +583,13 @@ function formatTopEntries(counts: Map<string, number>): string {
     .join('；');
 }
 
-/** 店舖版面匯出欄位：與店舖頁表格一致（前8欄），另加存貨量 / RP Type / Safety Stock */
+/** 店舖版面匯出欄位：與店舖頁表格一致（前 12 欄），另加存貨量 / Safety Stock */
 export const ZERO_SALES_STORE_EXPORT_COLUMNS = [
   '週次',
   'Brand',
   'SKU',
   '描述',
+  'Warehouse/Vendor',
   'SKU上載日期',
   '狀態',
   '店舖本次回覆',
@@ -658,6 +659,7 @@ export async function buildZeroSalesStoreExportBuffer(items: ZeroSalesStoreExpor
       p['Brand'] ?? '',
       it.sku,
       p['SKU Desc'] ?? '',
+      p['Supply Source'] ?? '',
       it.batch_date ?? '',
       statusText,
       replied ? [it.reason_label || '', it.reason_note || ''].filter(Boolean).join('\n') : '',
@@ -667,7 +669,7 @@ export async function buildZeroSalesStoreExportBuffer(items: ZeroSalesStoreExpor
       p['Safety Stock (現時)'] ?? '',
     ]);
   }
-  const widths = [12, 22, 16, 36, 14, 10, 36, 34, 12, 12, 14];
+  const widths = [12, 22, 16, 36, 16, 14, 10, 36, 34, 12, 12, 14];
   widths.forEach((w, i) => { sheet.getColumn(i + 1).width = w; });
   sheet.views = [{ state: 'frozen', ySplit: 1 }];
   applyDefaultFont(workbook);

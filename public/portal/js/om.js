@@ -570,7 +570,7 @@
         <td>${esc(brand)}</td>
         <td>${esc(payload['SKU Desc'] || '')}</td>
         <td>${badge}</td>
-        <td>${reply}</td>
+        <td class="zs-c-reply">${reply}</td>
         <td>${esc(item.batch_date || fmtDate(item.batch_created_at))}</td>
         <td>${action}</td></tr>`;
     }

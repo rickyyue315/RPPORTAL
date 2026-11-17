@@ -1435,8 +1435,24 @@ table.zs-table { width: 100%; border-collapse: separate; border-spacing: 0; min-
 table.zs-table th:nth-child(1), table.zs-table td:nth-child(1),
 table.zs-table th:nth-child(3), table.zs-table td:nth-child(3),
 table.zs-table th:last-child, table.zs-table td:last-child { white-space: nowrap; }
-table.zs-table td:nth-child(7) { min-width: 200px; }
-table.zs-table td:nth-child(8) { min-width: 230px; }
+/* 店舖回覆 / 重複提示的最少闊度。原本靠 nth-child(7)(8)，加減欄位就會錯位，
+   故改用 class，兩頁（店舖、OM）各自標示，不再依賴欄序。 */
+table.zs-table td.zs-c-reply { min-width: 200px; }
+/* 重複提示由 230 收窄到 200：描述下方多了貨源／RP Type 一行，
+   要騰出位置令整張表仍放得入 1200px 卡片（否則「回覆」要橫向捲才見到） */
+table.zs-table td.zs-c-repeat { min-width: 200px; }
+/* 貨源 / RP Type 掛在「描述」下方一行細字，不另開欄：
+   兩欄需要約 200px，而卡片最闊 1200px，開欄會把「回覆」按鈕推出畫面。 */
+.zs-props {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 4px;
+  margin-top: 3px; font-size: 12px; font-weight: 700; line-height: 1.45;
+}
+.zs-prop { color: var(--muted); }
+/* Warehouse（倉貨，可安排調撥）與 Vendor（供應商直接供應）分色，純屬區分，不代表好壞 */
+.zs-prop-wh { color: var(--brand-600); }
+.zs-prop-vd { color: #6b3fa0; }
+.zs-prop-rp { color: var(--body); }
+.zs-prop-sep { color: var(--faint); font-weight: 400; }
 table.zs-table th, table.zs-table td { font-size: 13px; padding: 10px 12px; border: 0; border-bottom: 1px solid var(--border); }
 table.zs-table thead th {
   position: sticky; top: 0; z-index: 2;

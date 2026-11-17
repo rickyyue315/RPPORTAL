@@ -709,9 +709,11 @@ describe('RP Connect 品牌鎖定', () => {
     // 資料來源就是上載原表的欄名，改名會令 payload 取不到值 → 靜靜變空
     expect(script).toContain("payloadVal(it, 'Supply Source')");
     expect(script).toContain("payloadVal(it, 'RP Type')");
-    // 掛在「描述」下方而不是另開兩欄：11 欄會超出 1200px 卡片，回覆按鈕要橫向捲
+    expect(script).toContain("payloadVal(it, 'Safety Stock (現時)')");
+    expect(script).toContain("payloadVal(it, 'Shop Stock Qty (CM)')");
+    // 掛在「描述」下方而不是另開欄：多開欄會超出 1200px 卡片，回覆按鈕要橫向捲
     expect(script).toContain('propsLine(it)');
-    expect(script).toContain("if (!supply && !rp) return '';");
+    expect(script).toContain('zs-props-stock');
     // 供應來源分色（Warehouse / Vendor），其他值用中性色
     expect(script).toContain("v.includes('warehouse')");
     expect(script).toContain("v.includes('vendor')");

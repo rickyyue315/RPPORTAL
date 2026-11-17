@@ -46,8 +46,8 @@
 
   /**
    * 表格欄位（順序＝畫面順序），key 對應上載原表的欄名。
-   * Warehouse/Vendor 與 RP Type 不做獨立欄位，改為「描述」下方一行細字：
-   * 兩欄加起來要 200px，而卡片最闊只有 1200px，開兩欄會令「回覆」按鈕
+   * Warehouse/Vendor、RP Type、Safety、CM存貨不做獨立欄位，改為「描述」下方兩行細字：
+   * 多開兩欄要 200px+，而卡片最闊只有 1200px，開欄會令「回覆」按鈕
    * 被推到畫面外（要橫向捲才按到），店舖反而更難用。
    */
   const COLS = [
@@ -137,18 +137,34 @@
   }
 
   /**
-   * 貨品屬性一行細字（Warehouse/Vendor、RP Type）：只照原表值顯示，不做推斷。
-   * 店舖要靠它判斷貨是由倉（可安排調撥）還是 Vendor 直接供應，以及是否自動補貨。
-   * 原表空白就不顯示該項，不會補 0 或預設值。
+   * 貨品屬性細字（描述下方，最多兩行，不另開欄）：
+   * 第一行：Warehouse/Vendor、RP Type（判斷可否調撥／是否自動補貨）。
+   * 第二行：Safety Stock（現時）、店舖存貨 CM（判斷仲有幾多貨要賣）。
+   * 只照原表值顯示，不做推斷；原表空白就不顯示該項，不會補 0 或預設值。
    */
   function propsLine(it) {
     const supply = String(payloadVal(it, 'Supply Source') || '').trim();
     const rp = String(payloadVal(it, 'RP Type') || '').trim();
-    if (!supply && !rp) return '';
-    const parts = [];
-    if (supply) parts.push(`<span class="zs-prop${supplyTone(supply)}">${p.escapeHtml(supply)}</span>`);
-    if (rp) parts.push(`<span class="zs-prop zs-prop-rp">${p.escapeHtml(rp)}</span>`);
-    return `<div class="zs-props">${parts.join('<span class="zs-prop-sep">·</span>')}</div>`;
+    const safety = String(payloadVal(it, 'Safety Stock (現時)') || '').trim();
+    const cmStock = String(payloadVal(it, 'Shop Stock Qty (CM)') || '').trim();
+    const lmStock = String(payloadVal(it, 'Shop Stock Qty (LM)') || '').trim();
+    // CM 為現時存貨；CM 空白才退回 LM（舊批次），避免顯示空白
+    const stock = cmStock || lmStock;
+    const stockLabel = cmStock ? 'CM存貨' : (lmStock ? 'LM存貨' : '');
+    let html = '';
+    if (supply || rp) {
+      const parts = [];
+      if (supply) parts.push(`<span class="zs-prop${supplyTone(supply)}">${p.escapeHtml(supply)}</span>`);
+      if (rp) parts.push(`<span class="zs-prop zs-prop-rp">${p.escapeHtml(rp)}</span>`);
+      html += `<div class="zs-props">${parts.join('<span class="zs-prop-sep">·</span>')}</div>`;
+    }
+    if (safety || stock) {
+      const parts = [];
+      if (safety) parts.push(`<span class="zs-prop zs-prop-stock">Safety: ${p.escapeHtml(safety)}</span>`);
+      if (stock) parts.push(`<span class="zs-prop zs-prop-stock">${p.escapeHtml(stockLabel)}: ${p.escapeHtml(stock)}</span>`);
+      html += `<div class="zs-props zs-props-stock">${parts.join('<span class="zs-prop-sep">·</span>')}</div>`;
+    }
+    return html;
   }
 
   /** 供應來源：Warehouse（倉）與 Vendor（供應商）分色，方便一眼掃；其他值用中性色 */
@@ -273,7 +289,7 @@
       $('site_info').innerHTML =
         `<div class="site-banner">${p.escapeHtml(data.site_code)}${shop}</div>` +
         `<div>${p.escapeHtml(weekLabel || '')}：${items.length} 個指定 SKU｜${replied} 已回覆（${rate}%）${repeatN ? `｜<b>${repeatN}</b> 個重複上榜（≥2 次）` : ''}${onlyRepeat ? '｜現只顯示重複上榜' : ''}</div>` +
-        `<div class="hint">黃色「回覆」＝未回覆（排最前）；橙色「修改」＝已自動套用上次回覆，請確認或更正。「描述」下方細字為貨源（Warehouse＝倉／Vendor＝供應商）及 RP Type（RF＝自動補貨、ND＝不自動補貨）。如非你店舖，請按右上「登出」再輸入 Site Code。</div>`;
+        `<div class="hint">黃色「回覆」＝未回覆（排最前）；橙色「修改」＝已自動套用上次回覆，請確認或更正。「描述」下方細字為貨源（Warehouse＝倉／Vendor＝供應商）、RP Type（RF＝自動補貨、ND＝不自動補貨）、Safety 及 CM存貨。如非你店舖，請按右上「登出」再輸入 Site Code。</div>`;
     }
     const goto = document.getElementById('zs_goto_latest');
     if (goto && latestOpen) {
@@ -443,10 +459,14 @@
       ? `確認／修改自動套用回覆 — ${it.sku}`
       : (n === 0 ? `回覆 — ${it.sku}` : `修改回覆 — ${it.sku}`);
     const autoFrom = it.auto_filled_from_week ? ` ${it.auto_filled_from_week} ` : '上次';
-    // 回覆視窗同步顯示貨源與 RP Type，店舖回覆時不必再回頭睇表格
+    // 回覆視窗同步顯示貨源、RP Type、Safety 及存貨，店舖回覆時不必再回頭睇表格
     const meta = [payloadVal(it, 'Supply Source'), payloadVal(it, 'RP Type')].filter(Boolean).join('｜');
+    const safetyTxt = String(payloadVal(it, 'Safety Stock (現時)') || '').trim();
+    const cmTxt = String(payloadVal(it, 'Shop Stock Qty (CM)') || '').trim();
+    const stockMeta = [safetyTxt ? `Safety: ${safetyTxt}` : '', cmTxt ? `CM存貨: ${cmTxt}` : ''].filter(Boolean).join('｜');
     $('reply_sku_info').textContent = `${it.week_label || ''}｜${payloadVal(it, 'Brand')}｜${payloadVal(it, 'SKU Desc')}` +
       (meta ? `｜${meta}` : '') +
+      (stockMeta ? `｜${stockMeta}` : '') +
       (auto
         ? `｜系統已自動套用${autoFrom}的回覆；你仍可修改 ${left} 次`
         : (n >= 1 ? `｜剩餘修改次數：${left} 次` : ''));

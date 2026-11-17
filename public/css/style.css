@@ -1441,12 +1441,14 @@ table.zs-table td.zs-c-reply { min-width: 200px; }
 /* 重複提示由 230 收窄到 200：描述下方多了貨源／RP Type 一行，
    要騰出位置令整張表仍放得入 1200px 卡片（否則「回覆」要橫向捲才見到） */
 table.zs-table td.zs-c-repeat { min-width: 200px; }
-/* 貨源 / RP Type 掛在「描述」下方一行細字，不另開欄：
+/* 貨源 / RP Type / Safety / 存貨掛在「描述」下方細字，不另開欄：
    兩欄需要約 200px，而卡片最闊 1200px，開欄會把「回覆」按鈕推出畫面。 */
 .zs-props {
   display: flex; flex-wrap: wrap; align-items: center; gap: 4px;
   margin-top: 3px; font-size: 12px; font-weight: 700; line-height: 1.45;
 }
+.zs-props-stock { margin-top: 2px; }
+.zs-prop-stock { color: #44566a; font-weight: 600; }
 .zs-prop { color: var(--muted); }
 /* Warehouse（倉貨，可安排調撥）與 Vendor（供應商直接供應）分色，純屬區分，不代表好壞 */
 .zs-prop-wh { color: var(--brand-600); }

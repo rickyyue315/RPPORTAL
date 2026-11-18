@@ -256,6 +256,22 @@ describe('static asset freshness', () => {
     expect(exportScript).toContain('cx-data-details');
   });
 
+  it('佔比趨勢可放大波動（Y 軸非 0 起點，但一定要在圖上標明）', () => {
+    const adminHtml = readFileSync(path.join(root, 'public', 'admin', 'index.html'), 'utf8');
+    const adminScript = readFileSync(path.join(root, 'public', 'js', 'admin-stock.js'), 'utf8');
+    const chartLite = readFileSync(path.join(root, 'public', 'js', 'chart-lite.js'), 'utf8');
+
+    expect(adminHtml).toContain('id="btn_stk_zoom_y"');
+    expect(adminHtml).toContain('放大波動');
+    expect(adminScript).toContain("ndrf_admin_stock_trend_zoom_y");
+    expect(adminScript).toContain('function trendYRange');
+    // 全公司與單店兩條線都要套用，否則切換店舖就回到壓扁的圖
+    expect(adminScript).toContain('...yRange');
+    // 非 0 起點必須講明（圖內 SVG 及卡片註解各一次），不能靜靜誤導
+    expect(chartLite).toContain('Y 軸由');
+    expect(adminScript).toContain('不是 0 起點');
+  });
+
   it('wires the designated SKU reply page, admin tab and direct link', () => {
     const page = readFileSync(path.join(root, 'public', 'portal', 'designated-sku.html'), 'utf8');
     const storeScript = readFileSync(path.join(root, 'public', 'portal', 'js', 'designated-sku.js'), 'utf8');

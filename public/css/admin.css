@@ -403,6 +403,27 @@ body.drawer-open { overflow: hidden; }
   color: var(--body);
 }
 .stk-legend:empty { display: none; }
+/* 圖例與「放大波動」開關同一行；legend 空（例如未載入）時開關靠右，不會忽然跳位 */
+.stk-chart-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 12px;
+  flex-wrap: wrap;
+  margin-bottom: 6px;
+}
+.stk-chart-bar .stk-legend { margin-bottom: 0; flex: 1 1 auto; min-width: 0; }
+.stk-zoom-toggle {
+  padding: 2px 9px;
+  font-size: 12px;
+  line-height: 1.6;
+  white-space: nowrap;
+}
+.stk-zoom-toggle[aria-pressed="true"] {
+  background: var(--brand);
+  border-color: var(--brand);
+  color: var(--on-brand);
+}
 .stk-legend-item { display: inline-flex; align-items: center; gap: 6px; }
 .stk-legend-item i {
   display: inline-block;

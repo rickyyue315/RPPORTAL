@@ -634,7 +634,11 @@
             </div>
           </div>
           <div class="card-body">
-            <div class="stk-legend" id="stk_legend"></div>
+            <div class="stk-chart-bar">
+              <div class="stk-legend" id="stk_legend"></div>
+              <button class="btn btn-sm stk-zoom-toggle" id="btn_stk_zoom_y" type="button" aria-pressed="true"
+                title="Y 軸由數據最低點起（不是 0），令 8%–12% 這種窄幅上落睇得更大上大落；圖上會標明起點，不會誤導">放大波動</button>
+            </div>
             <div class="stk-chart" id="stk_chart"></div>
             <div id="stk_chart_error"></div>
             <p class="text-secondary small mt-2 mb-0" id="stk_chart_note"></p>

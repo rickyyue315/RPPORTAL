@@ -10,6 +10,7 @@ interface ChartLiteApi {
   fmtDay: (t: number, withYear?: boolean) => string;
   scaleX: (t: number, minT: number, maxT: number, x0: number, x1: number) => number;
   niceMax: (value: number, tickCount?: number) => number;
+  niceRange: (minV: number, maxV: number, tickCount?: number) => { min: number; max: number };
   dateTicks: (minT: number, maxT: number, count?: number) => ChartTick[];
   buildPath: (points: ChartPoint[]) => string;
   splitIndex: (points: { t: number }[], splitT: number) => number;
@@ -159,6 +160,46 @@ describe('chart-lite 純函數', () => {
         expect(top / 4).toBeCloseTo(Math.round((top / 4) * 1e6) / 1e6, 6);
         expect(top).toBeGreaterThanOrEqual(v);
       });
+    });
+  });
+
+  describe('niceRange（放大波動：容許非 0 起點）', () => {
+    it('把窄幅比例擴成好睇的範圍（8.3%–11.9% → 8%–12%）', () => {
+      expect(ChartLite.niceRange(8.3, 11.9, 4)).toEqual({ min: 8, max: 12 });
+      expect(ChartLite.niceRange(0.083, 0.119, 4)).toEqual({ min: 0.08, max: 0.12 });
+    });
+
+    it('下限對齊後蓋不住上限時，自動換大一級步距（不出現怪刻度）', () => {
+      // 舊寫法會回 7.8–10.2 蓋不住 10.4，或者出現 8.55 / 9.3 這種刻度
+      const r = ChartLite.niceRange(8.3, 10.4, 4);
+      expect(r.min).toBeLessThanOrEqual(8.3);
+      expect(r.max).toBeGreaterThanOrEqual(10.4);
+      const step = (r.max - r.min) / 4;
+      expect(step).toBeCloseTo(0.8, 6); // 8.0 / 8.8 / 9.6 / 10.4 / 11.2
+    });
+
+    it('永遠包住輸入範圍，且 four 段等距', () => {
+      [[0, 12.075], [8.3, 11.9], [0.001, 0.0037], [99, 100.4], [-5, 5]].forEach(([lo, hi]) => {
+        const r = ChartLite.niceRange(lo!, hi!, 4);
+        expect(r.min).toBeLessThanOrEqual(lo!);
+        expect(r.max).toBeGreaterThanOrEqual(hi!);
+        const step = (r.max - r.min) / 4;
+        expect(step).toBeGreaterThan(0);
+        [0, 1, 2, 3, 4].forEach((i) => {
+          expect(r.min + step * i).toBeCloseTo(Math.round((r.min + step * i) * 1e6) / 1e6, 6);
+        });
+      });
+    });
+
+    it('尊重 ticks 數；非法／退化輸入安全退化（不會 NaN）', () => {
+      const r3 = ChartLite.niceRange(8.3, 11.9, 3);
+      expect(r3.min).toBeLessThanOrEqual(8.3);
+      expect(r3.max).toBeGreaterThanOrEqual(11.9);
+      const eq = ChartLite.niceRange(5, 5, 4);
+      expect(eq.max).toBeGreaterThan(eq.min);
+      const bad = ChartLite.niceRange(Number.NaN, 1, 4);
+      expect(Number.isFinite(bad.min) && Number.isFinite(bad.max)).toBe(true);
+      expect(bad.max).toBeGreaterThan(bad.min);
     });
   });
 

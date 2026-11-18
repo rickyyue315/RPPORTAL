@@ -10,7 +10,7 @@
  *  4. tooltip / 點按（pointer 事件），觸控目標由 CSS 保證 ≥20px。
  *
  * 對外 API：
- *   globalThis.ChartLite = { renderLine, renderBarGrid, redraw, clear, barLabelIndices, weeklyLabelVisibility, dateTicks, niceMax, scaleX, toTime, buildPath, splitIndex, fmtDay }
+ *   globalThis.ChartLite = { renderLine, renderBarGrid, redraw, clear, barLabelIndices, weeklyLabelVisibility, dateTicks, niceMax, niceRange, scaleX, toTime, buildPath, splitIndex, fmtDay }
  *
  * renderLine(el, opts) 的 opts：
  *   series: [{ key, label, color, dashed, splitDate, colorBefore, points: [{ date:'YYYY-MM-DD', value:Number|null, showLabel?:Boolean }] }]  // 最多 3 條
@@ -19,6 +19,9 @@
  *   height: Number           容器的 clientHeight 為 0 時使用的像素高（預設 220）
  *   yFormat: (v) => String    y 軸刻度文字
  *   tipFormat: (v) => String  tooltip 數值文字（預設同 yFormat）
+ *   yMin / yMax: Number       自訂 y 軸範圍（兩者要一齊給、且包住所有點才會生效）。
+ *                             用於「放大波動」：比例類數據只在 8%–11% 徘徊時，由 0 起畫會變直線。
+ *                             非 0 起點會在圖內加註「Y 軸由 x 起」，不要靠讀者自己發現。
  *   valueLabels: Boolean      是否在資料點直接標示數值（預設 false）
  *   labelSeries: [Number]     只標示指定 series 的數值（預設全部；三線圖可設 [0,1] 只標首兩條）
  *   emptyText: String        完全沒有有效點時顯示的文字
@@ -82,14 +85,43 @@
     const ticks = Math.min(8, Math.max(1, Math.floor(Number(tickCount) || 4)));
     const v = Number(value);
     if (!Number.isFinite(v) || v <= 0) return 1;
-    const raw = v / ticks;
-    const mag = Math.pow(10, Math.floor(Math.log10(raw)));
+    return round(niceStep(v / ticks) * ticks, 6);
+  }
+
+  /** 把 raw 向上取成「好睇」的步距（1 / 1.5 / 2 / 2.5 / 3 / 4 / 5 / 6 / 8 / 10 × 10^n）。 */
+  function niceStep(raw) {
+    const value = Number(raw);
+    if (!Number.isFinite(value) || value <= 0) return 1;
+    const mag = Math.pow(10, Math.floor(Math.log10(value)));
     const steps = [1, 1.5, 2, 2.5, 3, 4, 5, 6, 8, 10];
-    let step = steps[steps.length - 1];
     for (let i = 0; i < steps.length; i += 1) {
-      if (steps[i] * mag >= raw - 1e-9) { step = steps[i]; break; }
+      if (steps[i] * mag >= value - 1e-9) return steps[i] * mag;
     }
-    return round(step * mag * ticks, 6);
+    return steps[steps.length - 1] * mag;
+  }
+
+  /**
+   * 把 [minV, maxV] 擴成「好睇」的刻度範圍，下限可以不是 0。
+   * 用於「放大波動」：數據只在 8%–11% 之間徘徊時，由 0 起畫會變成一條直線。
+   * 回傳 { min, max }：min <= minV、max >= maxV，且 (max - min) 可被 ticks 整除。
+   * niceRange(8.3, 11.9, 4) → { min: 8, max: 12 }。
+   */
+  function niceRange(minV, maxV, tickCount) {
+    const ticks = Math.min(8, Math.max(1, Math.floor(Number(tickCount) || 4)));
+    const lo = Number(minV);
+    const hi = Number(maxV);
+    if (!Number.isFinite(lo) || !Number.isFinite(hi)) return { min: 0, max: 1 };
+    if (hi <= lo) return { min: lo, max: lo + 1 };
+    // 下限要先對齊到步距，對齊後可能蓋不住上限（例如 8.3 對齊到 7.8 之後只到 10.2），
+    // 這時換大一級步距再試，寧願範圍闊少少，都不要出現 7.8 / 8.55 / 9.3 這種怪刻度。
+    let step = niceStep((hi - lo) / ticks);
+    for (let guard = 0; guard < 12; guard += 1) {
+      const first = round(Math.floor(lo / step + 1e-9) * step, 10);
+      const last = round(first + step * ticks, 10);
+      if (last >= hi - 1e-9) return { min: first, max: last };
+      step = niceStep(step * 1.01);
+    }
+    return { min: lo, max: hi };
   }
 
   /**
@@ -318,8 +350,17 @@
     if (maxT <= minT) maxT = minT + DAY; // 只有一個日期時避免除以 0（呼叫端不應走到這裡）
 
     const maxV = finite.reduce((acc, p) => (p.v > acc ? p.v : acc), finite[0].v);
-    const yMax = niceMax(maxV * 1.05, 4);
-    const yScale = (v) => padT + (1 - (v / yMax)) * innerH;
+    const minV = finite.reduce((acc, p) => (p.v < acc ? p.v : acc), finite[0].v);
+    // 「放大波動」：呼叫端可用 yMin / yMax 指定非 0 起點的範圍（比例類數據由 0 起畫會變直線）。
+    // 範圍必須包住所有點（含虛線對照線），否則最低／最高點會畫出框外，所以在這裡再驗一次。
+    const reqMin = Number(o.yMin);
+    const reqMax = Number(o.yMax);
+    const customRange = Number.isFinite(reqMin) && Number.isFinite(reqMax)
+      && reqMin >= 0 && reqMax > reqMin && reqMin < minV && reqMax > maxV;
+    const yMin = customRange ? reqMin : 0;
+    const yMax = customRange ? reqMax : niceMax(maxV * 1.05, 4);
+    const spanV = yMax - yMin;
+    const yScale = (v) => padT + (1 - ((v - yMin) / spanV)) * innerH;
     const xScale = (t) => scaleX(t, minT, maxT, padL, padL + innerW);
 
     const svg = svgEl('svg', {
@@ -339,7 +380,7 @@
 
     /* --- y 軸網格 + 刻度 --- */
     for (let i = 0; i <= 4; i += 1) {
-      const v = (yMax * i) / 4;
+      const v = round(yMin + (spanV * i) / 4, 10);
       const y = round(yScale(v), 2);
       svg.appendChild(svgEl('line', {
         x1: padL, x2: padL + innerW, y1: y, y2: y,
@@ -352,6 +393,16 @@
       });
       label.textContent = yFmt(v);
       svg.appendChild(label);
+    }
+
+    // 非 0 起點要在圖上寫明，否則單看刻度容易被誤讀成「跌到 0」
+    if (yMin > 0) {
+      const note = svgEl('text', {
+        x: padL + 4, y: round(padT + innerH - 8, 2), 'text-anchor': 'start',
+        fill: '#8a97a4', 'font-size': 9.5, 'font-family': 'inherit',
+      });
+      note.textContent = `Y 軸由 ${yFmt(yMin)} 起（放大波動）`;
+      svg.appendChild(note);
     }
 
     /* --- x 軸刻度（真實日期） --- */
@@ -823,6 +874,7 @@
     weeklyLabelVisibility,
     dateTicks,
     niceMax,
+    niceRange,
     scaleX,
     toTime,
     buildPath,

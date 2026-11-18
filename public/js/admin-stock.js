@@ -7,6 +7,8 @@
   const KIND_LABELS = { weekly: '週更', month_end: '月結', ad_hoc: '臨時' };
   const BATCH_PAGE_KEY = 'ndrf_admin_stock_batch_page_size';
   const WEEK_PAGE_KEY = 'ndrf_admin_stock_week_page_size';
+  /** 佔比趨勢「放大波動」（Y 軸非 0 起點）的使用者偏好 */
+  const TREND_ZOOM_KEY = 'ndrf_admin_stock_trend_zoom_y';
   const COLOR_MAIN = '#0f5c9c';
   const COLOR_REF = '#94a3b8';
   /** 12 個月之前（去年）的線：淺灰藍，和主線、虛線參考線都分得開 */
@@ -29,6 +31,11 @@
   let chartMonths = 12;
   /** 佔比趨勢卡的自選店舖：空字串 = 全公司；view = 該店 series + company_series */
   let chartStoreSite = '';
+  /**
+   * 佔比趨勢「放大波動」：預設開，Y 軸下限貼近數據最低點（非 0 起點），
+   * 令 8%–11% 這種窄幅上落在圖上睇得出大起大跌。圖表會標明「Y 軸由 x 起」，不會靜靜誤導。
+   */
+  let trendZoomY = true;
   let chartStoreView = null;
   let chartStoreRequestSeq = 0;
   let chartStoreOptionsLoaded = false;
@@ -1407,6 +1414,43 @@
     renderMtd();
   }
 
+  /**
+   * 佔比趨勢的 Y 軸範圍。開啟「放大波動」時，下限貼近數據最低點（例如由 8.0% 起），
+   * 令 8%–12% 這種窄幅上落在圖上睇得出大起大跌；關閉時回空物件，圖表照舊由 0 起。
+   * extraValues：虛線對照線之類不在 series 內、但一定要畫入範圍的值（否則虛線會跑出框外）。
+   */
+  function trendYRange(values, extraValues) {
+    const chartApi = globalThis.ChartLite;
+    if (!trendZoomY || !chartApi || typeof chartApi.niceRange !== 'function') return {};
+    const list = (values || []).filter((v) => Number.isFinite(v));
+    if (list.length < 2) return {};
+    let lo = Math.min(...list);
+    let hi = Math.max(...list);
+    (extraValues || []).forEach((v) => {
+      if (!Number.isFinite(v)) return;
+      lo = Math.min(lo, v);
+      hi = Math.max(hi, v);
+    });
+    // 數值貼近 0（例如長期 0.1%）就不放大：0 起點本身已經睇得出變化，再放大只會失真
+    if (!(lo > 0) || !(hi > lo)) return {};
+    const span = hi - lo;
+    // 先貼住數據本身對齊刻度（下限向下取整通常已提供少少留白，曲線可以佔滿高度）
+    let range = chartApi.niceRange(lo, hi, 4);
+    // 剛好對齊到刻度線的話，最高／最低點會壓在框線上 → 加留白再對齊一次
+    const roomBelow = (lo - range.min) / (range.max - range.min);
+    const roomAbove = (range.max - hi) / (range.max - range.min);
+    if (roomAbove > 0.96 || roomBelow < 0.04) {
+      range = chartApi.niceRange(
+        Math.max(0, lo - span * 0.25),
+        hi + Math.max(span * 0.25, hi * 0.002),
+        4,
+      );
+    }
+    // 對齊後下限仍然要真的高過 0，否則等於沒有放大
+    if (!(range.min > 0) || !(range.max > hi)) return {};
+    return { yMin: range.min, yMax: range.max };
+  }
+
   function renderCompanyChart(data, series) {
     const el = $('stk_chart');
     const legend = $('stk_legend');
@@ -1457,6 +1501,7 @@
     const avg = num(data && data.company_avg_ratio);
     const lastRatio = usable[usable.length - 1].value;
     const showAvg = avg !== null && Math.abs(avg - lastRatio) > 0.005;
+    const yRange = trendYRange(usable.map((p) => p.value), showAvg ? [avg] : []);
 
     if (legend) {
       const mainLabel = hasYearPart ? '最近 12 個月' : '不良存貨佔比（加權）';
@@ -1495,13 +1540,21 @@
       yFormat: (v) => `${(Number(v) * 100).toFixed(1)}%`,
       tipFormat: (v) => fmtRatio(v),
       ariaLabel: `不良存貨佔比趨勢，共 ${usable.length} 期，最新 ${fmtRatio(lastRatio)}`,
+      ...yRange,
     });
 
     const gaps = points.length - usable.length;
     if (chartNote) {
-      chartNote.textContent = gaps
-        ? `注意：有 ${gaps} 期店舖存貨值為 0（除零），該期不會連線（缺值斷線，不會當成 0%）。`
-        : '點或懸停圖表可看該期數值；虛線為全公司平均參考，不屬於任何一期。';
+      const parts = [];
+      if (yRange.yMin > 0) {
+        parts.push(`Y 軸由 ${fmtRatio(yRange.yMin)} 起（放大波動，不是 0 起點）。`);
+      }
+      if (gaps) {
+        parts.push(`注意：有 ${gaps} 期店舖存貨值為 0（除零），該期不會連線（缺值斷線，不會當成 0%）。`);
+      } else {
+        parts.push('點或懸停圖表可看該期數值；虛線為全公司平均參考，不屬於任何一期。');
+      }
+      chartNote.textContent = parts.join(' ');
     }
     updateChartExportState();
   }
@@ -1525,6 +1578,12 @@
       btn.textContent = '匯出 Excel';
       btn.title = '匯出目前顯示期間的完整數字（Excel）';
     }
+  }
+
+  /** 「放大波動」開關的視覺狀態（aria-pressed 同時控制藍底，不用另加 class） */
+  function syncZoomToggle() {
+    const btn = $('btn_stk_zoom_y');
+    if (btn) btn.setAttribute('aria-pressed', String(trendZoomY));
   }
 
   /* ==================== 圖表放大／匯出（PDF／SVG／JPG／PNG） ==================== */
@@ -1667,6 +1726,8 @@
     }));
     const storeUsable = storePoints.filter((point) => point.value !== null);
     const companyUsable = companyPoints.filter((point) => point.value !== null);
+    // 放大波動：兩條線一齊計範圍，否則被壓扁的那條（通常是全公司）會畫出框外
+    const yRange = trendYRange([...storeUsable, ...companyUsable].map((point) => point.value));
     const yearCutoff = chartMonths > 12 ? monthsBefore(latestDate, 12) : '';
     const hasYearPart = !!yearCutoff
       && storePoints.some((point) => String(point.date || '').slice(0, 10) < yearCutoff);
@@ -1726,6 +1787,7 @@
       yFormat: (v) => `${(Number(v) * 100).toFixed(1)}%`,
       tipFormat: (v) => fmtRatio(v),
       ariaLabel: `${storeLabel} 與全公司不良存貨佔比趨勢`,
+      ...yRange,
     });
 
     const gaps = storePoints.length - storeUsable.length;
@@ -1734,6 +1796,9 @@
       notes.push('此店在所選期間沒有有效佔比，圖中只顯示全公司加權平均。');
     } else if (gaps) {
       notes.push(`此店有 ${gaps} 期店舖存貨值為 0（除零），該期斷線，不會當成 0%。`);
+    }
+    if (yRange.yMin > 0) {
+      notes.push(`Y 軸由 ${fmtRatio(yRange.yMin)} 起（放大波動，不是 0 起點）。`);
     }
     notes.push('點或懸停圖表可看該期數值；虛線為全公司加權平均，不屬於任何一期。');
     if (chartNote) chartNote.textContent = notes.join(' ');
@@ -2581,6 +2646,20 @@
       });
     }
 
+    // 佔比趨勢：放大波動（Y 軸改由數據最低點起）；偏好記住，下次開頁照用
+    const zoomBtn = $('btn_stk_zoom_y');
+    if (zoomBtn) {
+      zoomBtn.addEventListener('click', () => {
+        trendZoomY = !trendZoomY;
+        syncZoomToggle();
+        try {
+          localStorage.setItem(TREND_ZOOM_KEY, trendZoomY ? '1' : '0');
+        } catch { /* 私隱模式不可寫，照用記憶體狀態 */ }
+        const series = normalizedSeries(summaryCache);
+        if (series.length) renderChart(summaryCache, series);
+      });
+    }
+
     // 趨勢圖顯示期間（3 / 6 / 12 / 24 個月；只影響下方佔比趨勢與 RF 線圖，資料本身永久保留）
     const rangeEls = [$('stk_range')].filter(Boolean);
     if (rangeEls.length) {
@@ -2679,6 +2758,11 @@
       const saved = localStorage.getItem('ndrf_admin_stock_mtd_view_v2');
       if (saved === 'share' || saved === 'rank' || saved === 'om') mtdView = saved;
     } catch { /* 私隱模式不可讀，用預設值 */ }
+    // 佔比趨勢「放大波動」（預設開）；只有明確存過 '0' 才關閉
+    try {
+      if (localStorage.getItem(TREND_ZOOM_KEY) === '0') trendZoomY = false;
+    } catch { /* 私隱模式不可讀，用預設值 */ }
+    syncZoomToggle();
     bindEvents();
     mountChartExports();
 

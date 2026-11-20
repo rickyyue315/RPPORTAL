@@ -550,6 +550,12 @@ describe('指定 SKU 回覆 API（一個事項多個 SKU）', () => {
     expect(summary.body.latest_batch?.is_open).toBe(true);
     expect(summary.body.latest_batch?.matter_count).toBe(2);
     expect(summary.body.latest_batch?.item_count).toBe(3);
+    // 批次列表用店舖口徑顯示「已覆 / 未覆」
+    const list = await admin.get('/api/admin/designated-sku/batches?page=1&page_size=20');
+    const row = (list.body.batches || []).find((b: { id: string }) => b.id === batchId);
+    expect(row?.replied_store_count).toBe(2);
+    expect(row?.pending_store_count).toBe(0);
+    expect(row?.store_count).toBe(2);
   });
 
   it('封存後店舖不可再提交，管理員仍可更正；重開後店舖可補答', async () => {

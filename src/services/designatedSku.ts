@@ -125,6 +125,9 @@ export interface DesignatedSkuBatchRow {
   is_open: boolean;
   replied_count: number;
   pending_count: number;
+  /** 店舖層面（同一批次同一店舖只有一個事項，所以通常等於事項數） */
+  replied_store_count: number;
+  pending_store_count: number;
 }
 
 export class DesignatedSkuError extends Error {}
@@ -447,6 +450,8 @@ function mapBatch(row: Record<string, unknown>): DesignatedSkuBatchRow {
     is_expired: !b.closed_at && Boolean((row as Record<string, unknown>).due_at) && !(row as Record<string, unknown>).is_open_now,
     replied_count: Number(b.replied_count ?? 0),
     pending_count: Number(b.pending_count ?? 0),
+    replied_store_count: Number(b.replied_store_count ?? 0),
+    pending_store_count: Number(b.pending_store_count ?? 0),
     matter_count: Number(b.matter_count ?? 0),
     row_count: Number(b.row_count ?? 0),
     store_count: Number(b.store_count ?? 0),
@@ -470,7 +475,23 @@ const BATCH_COUNT_SELECT = `
                    SELECT 1 FROM designated_sku_items i
                     WHERE i.matter_id = m.id AND i.status = 'pending'
                  )
-            ) AS replied_count
+            ) AS replied_count,
+            (
+              SELECT count(DISTINCT m.site_code)::int FROM designated_sku_matters m
+               WHERE m.batch_id = b.id
+                 AND NOT EXISTS (
+                   SELECT 1 FROM designated_sku_items i
+                    WHERE i.matter_id = m.id AND i.status = 'pending'
+                 )
+            ) AS replied_store_count,
+            (
+              SELECT count(DISTINCT m.site_code)::int FROM designated_sku_matters m
+               WHERE m.batch_id = b.id
+                 AND EXISTS (
+                   SELECT 1 FROM designated_sku_items i
+                    WHERE i.matter_id = m.id AND i.status = 'pending'
+                 )
+            ) AS pending_store_count
 `;
 
 export interface DesignatedSkuBatchPage {

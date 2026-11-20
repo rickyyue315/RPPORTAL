@@ -295,7 +295,7 @@
       fillBatchSelects(data.batch_options || []);
       const rows = data.batches || [];
       if (!rows.length) {
-        body.innerHTML = '<tr><td colspan="10" class="text-center text-secondary">暫無批次，請先上載 Excel 建立事項。</td></tr>';
+        body.innerHTML = '<tr><td colspan="8" class="text-center text-secondary">暫無批次，請先上載 Excel 建立事項。</td></tr>';
       } else {
         body.innerHTML = rows.map((b) => {
           const status = b.is_open
@@ -307,14 +307,20 @@
             b.due_at ? `截止 ${b.due_at}（香港時間）` : '',
             b.reference ? `參考 ${b.reference}` : '',
           ].filter(Boolean).join(' ｜ ');
+          // 店舖口徑：同一批次同一店舖只有一個事項，所以「已完成店舖」＝該店全部 SKU 都已回覆
+          const stores = Number(b.store_count) || 0;
+          const storesDone = Number(b.replied_store_count) || 0;
+          const storesPending = Number(b.pending_store_count) || 0;
+          const storeRate = stores ? Math.round((storesDone / stores) * 1000) / 10 : 0;
           return `<tr>
             <td><b class="dsku-code">${esc(b.batch_code)}</b><div class="text-secondary small">${esc(b.created_by)}</div></td>
             <td><b>${esc(b.subject)}</b>${optional ? `<div class="text-secondary small">${esc(optional)}</div>` : ''}${b.warn_count ? `<div class="text-warning small">${b.warn_count} 個匯入提示</div>` : ''}</td>
             <td class="text-end">${b.matter_count ?? 0}</td>
             <td class="text-end">${b.reply_scope === 'matter' ? '—' : b.row_count}</td>
-            <td class="text-end">${b.store_count}</td>
-            <td class="text-end text-success">${b.replied_count ?? 0}</td>
-            <td class="text-end ${b.is_open && b.pending_count ? 'text-danger' : 'text-secondary'}">${b.pending_count ?? 0}</td>
+            <td class="text-end">
+              <span class="text-success">${storesDone}</span><span class="text-secondary"> / </span><span class="${b.is_open && storesPending ? 'text-danger' : 'text-secondary'}">${storesPending}</span>
+              <div class="text-secondary small">共 ${stores} 間 · ${storeRate}% 已覆</div>
+            </td>
             <td>${status}</td>
             <td class="text-secondary small">${esc(b.created_at)}</td>
             <td><div class="d-flex gap-1 flex-wrap">
@@ -401,9 +407,8 @@
         : batch.is_expired
           ? '<span class="badge-zs badge-zs-warn">已逾期</span>'
           : '<span class="badge-zs badge-zs-muted">已封存</span>',
-      `${batch.matter_count} 個事項 / ${batch.reply_scope === 'matter' ? '全店回覆一次' : `${batch.row_count} 個 SKU`} / ${batch.store_count} 間店`,
-      `${batch.replied_count} 個事項已回覆`,
-      `${batch.pending_count} 個未回覆`,
+      `${batch.matter_count} 個事項 / ${batch.reply_scope === 'matter' ? '全店回覆一次' : `${batch.row_count} 個 SKU`}`,
+      `店舖 <b class="text-success">${batch.replied_store_count ?? 0}</b> 間已覆 / <b class="${batch.is_open && batch.pending_store_count ? 'text-danger' : 'text-secondary'}">${batch.pending_store_count ?? 0}</b> 間未覆（共 ${batch.store_count} 間）`,
       `建立：${esc(batch.created_by)} ${esc(batch.created_at)}`,
     ];
     // 預留欄位：空白時自動隱藏

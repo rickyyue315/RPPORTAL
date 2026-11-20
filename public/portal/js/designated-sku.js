@@ -505,7 +505,7 @@
           <tbody>${items.map(safetyRowHtml).join('')}</tbody>
         </table>
       </div>
-      <p class="ds-sf-legend">可售日數＝以目前店舖存貨除以每日平均銷量（P90D），數字越低代表越快賣完。Safety 增減為「建議 − 現時」，正數代表需增加。</p>
+      <p class="ds-sf-legend">可售日數＝以目前店舖存貨除以每日平均銷量（P90D），數字越低代表越快賣完。Safety 增減為「建議 − 現時」，正數代表需增加。<br><b>截止前未回覆的 SKU，會自動套用建議 Safety；如選「不同意」但未填新 Safety，則維持現時數值不變。</b></p>
     </div>`;
   }
 

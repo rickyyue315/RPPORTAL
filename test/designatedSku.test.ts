@@ -1093,6 +1093,7 @@ async function buildSafetyWorkbook(): Promise<Buffer> {
     ['HA02', '駱克', 'DHC - DHC', '107482202001', 'LIP BALM, N/A, 1.5G', 194, 418.5277777777778, 14.13765182186235, 120, 199],
     ['HA02', '駱克', 'ELE - ELEANOR', '1099572', 'TMK COLOR LIP BALM, 3.4G', 5, 7.455555555555556, 20.45454545454546, 6, 8],
     ['HB20', '旺角', 'SHI - SHISEIDO', '100165902001', 'HAND CREAM, N/A, 100G', 47, 135.8944444444444, 10.54862842892768, 48, 89],
+    ['HC63', '沙田', 'SHI - SHISEIDO', '100165902001', 'HAND CREAM, N/A, 100G', 47, 135.8944444444444, 10.54862842892768, 48, 89],
   ];
   for (const [site, shop, brand, sku, desc, stock, monthly, turnday, current, recommend] of rows) {
     ws.addRow([
@@ -1113,13 +1114,13 @@ describe('Safety 調整（reply_mode = safety）', () => {
 
   it('自動認到 Safety 檔：11 欄寫入 payload，回覆欄固定三個', async () => {
     safetyBuffer = await buildSafetyWorkbook();
-    const parsed = await parseDesignatedSkuWorkbook(safetyBuffer, new Set(['HA02', 'HB20']), 100);
+    const parsed = await parseDesignatedSkuWorkbook(safetyBuffer, new Set(['HA02', 'HB20', 'HC63']), 100);
     expect(parsed.ok).toBe(true);
     expect(parsed.replyMode).toBe('safety');
     expect(parsed.replyScope).toBe('item');
     expect(parsed.replyFields!.map((f) => f.key)).toEqual(['f1', 'f2', 'f3']);
     expect(parsed.replyFields![0]!.options).toEqual(['同意', '不同意']);
-    expect(parsed.rows!.length).toBe(3);
+    expect(parsed.rows!.length).toBe(4);
     const first = parsed.rows![0]!;
     expect(first.siteCode).toBe('HA02');
     expect(first.description).toBe('LIP BALM, N/A, 1.5G');
@@ -1208,6 +1209,19 @@ describe('Safety 調整（reply_mode = safety）', () => {
     expect(disagreed.reply_total).toBeNull();
   });
 
+  it('不同意但未填數字：照樣接受，不需要原因或新數字', async () => {
+    const store = await storeAgent('HC63');
+    const list = await store.get('/api/portal/designated-sku/matters');
+    const matter = (list.body.matters as Array<Record<string, unknown>>).find((m) => m.site_code === 'HC63')!;
+    const items = matter.items as Array<Record<string, unknown>>;
+    const res = await store
+      .put(`/api/portal/designated-sku/matters/${encodeURIComponent(String(matter.matter_code))}/reply`)
+      .set('x-csrf-token', store._csrf ?? '')
+      .send({ items: items.map((it) => ({ item_id: it.id, fields: { f1: '不同意' } })) });
+    expect(res.status).toBe(200);
+    expect((res.body.matter.items as Array<Record<string, unknown>>)[0]!.reply_values).toEqual({ f1: '不同意' });
+  });
+
   it('匯出多一張「Safety 調整」工作表，含店舖回覆', async () => {
     const admin = await adminAgent();
     const res = await getXlsx(admin, `/api/admin/designated-sku/export?batch_id=${batchId}`);
@@ -1241,9 +1255,9 @@ describe('Safety 調整（reply_mode = safety）', () => {
     const headers = (ws!.getRow(1).values as unknown[]).slice(1).map(String);
     expect(headers.slice(0, 3)).toEqual(['Site Code', 'SKU', '最終 Safety（SAP 輸入）']);
     const rows = ws!.getRows(2, ws!.rowCount - 1)!.map((row) => (row.values as unknown[]).slice(1));
-    // 按 Site Code 排序，HA02 兩行在前
-    expect(rows.map((row) => row[0])).toEqual(['HA02', 'HA02', 'HB20']);
-    const agreeRow = rows.find((row) => row[1] === '107482202001')!;
+    // 按 Site Code 排序
+    expect(rows.map((row) => row[0])).toEqual(['HA02', 'HA02', 'HB20', 'HC63']);
+    const agreeRow = rows.find((row) => row[0] === 'HA02' && row[1] === '107482202001')!;
     expect(agreeRow[2]).toBe(199);
     expect(agreeRow[7]).toBe(79);
     expect(agreeRow[8]).toBe('同意建議');
@@ -1251,9 +1265,16 @@ describe('Safety 調整（reply_mode = safety）', () => {
     expect(disagreeRow[2]).toBe(4);
     expect(disagreeRow[7]).toBe(-2);
     expect(disagreeRow[8]).toBe('店舖另提數字');
-    const pendingRow = rows.find((row) => row[1] === '100165902001')!;
-    expect(pendingRow[2]).toBe('');
-    expect(String(pendingRow[8])).toContain('未回覆');
+    // 未回覆：強制套用建議值
+    const pendingRow = rows.find((row) => row[0] === 'HB20')!;
+    expect(pendingRow[2]).toBe(89);
+    expect(pendingRow[7]).toBe(41);
+    expect(pendingRow[8]).toBe('未回覆（套用建議值）');
+    // 不同意又沒有新數字：保留現值
+    const keepRow = rows.find((row) => row[0] === 'HC63')!;
+    expect(keepRow[2]).toBe(48);
+    expect(keepRow[7]).toBe(0);
+    expect(keepRow[8]).toBe('不同意（維持現值）');
   });
 
   it('Safety 批次不可修改回覆欄位', async () => {

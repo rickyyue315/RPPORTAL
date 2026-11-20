@@ -1063,10 +1063,14 @@ export async function buildDesignatedSkuExportBuffer(items: DesignatedSkuExportI
           final = toNum(shopSafety);
           statusText = '店舖另提數字';
         } else {
-          statusText = '不同意（未提數字），待跟進';
+          // 不同意但沒有提供新數字：保留原有 Safety，不變
+          final = current;
+          statusText = '不同意（維持現值）';
         }
       } else {
-        statusText = '未回覆，待跟進';
+        // 未回覆：一律套用系統建議值
+        final = recommend;
+        statusText = recommend === '' ? '未回覆（缺建議值，待補）' : '未回覆（套用建議值）';
       }
       const diff = typeof final === 'number' && typeof current === 'number' ? final - current : '';
       return {

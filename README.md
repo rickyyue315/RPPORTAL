@@ -460,6 +460,7 @@ pg_restore --no-owner --no-privileges --clean --if-exists \
 - **每期明細**：新→舊列出店數、SKU／存貨量及其分項、MAKE UP 佔比（SKU／量）、較上期（SKU／量），可「編輯」（帶回上方表單）或「刪除」（寫 audit event `zero_sales_90d_deleted`）。
 - **API**：`GET /api/admin/stock/zero90/summary`、`POST /api/admin/stock/zero90`（upsert；zod 驗證：空字串不會變 0、SKU 與店數必須整數）、`DELETE /api/admin/stock/zero90/:reportDate`、`GET /api/admin/stock/zero90/export`。寫入 audit `zero_sales_90d_saved`／`_deleted`／`_export`。
 - **匯出 Excel**：`90日0銷售`（每期完整數字、佔比、較上期）、`PPT 圖表用`（日期 + SKU 總數／MAKE UP／Non-MAKE UP／存貨量，插入折線圖即用）、`匯出說明`。
+- **從 Excel 貼上**：入數卡頂有貼上區，直接由「90日0銷售（統計）」簡報複製一行 **6 欄**（P90D 0 Sales SKU 總數 → Shop Stock Qty (CM) 總數 → MAKE UP SKU → MAKE UP 量 → Non-MAKE UP SKU → Non-MAKE UP 量），按「貼上並填入」或直接貼上即自動拆欄（Tab 或連續空格皆可），表頭行自動跳過；亦接受 **8 欄**（前面多日期 + 店數）。只填 MAKE UP／Non-MAKE UP 四格，日期與店數仍手動；**貼上時即核對「總數 = 分項相加」**（SKU 必須完全相等、存貨量容許 1 件捨入差），對唔上會紅字講明差幾多並拒絕填入，避免存入矛盾數字。
 - **回填**：migration 042 已把 2026-10-06 至 2026-11-17 共 7 期簡報數字寫入（`ON CONFLICT DO NOTHING`，不會覆蓋畫面上的修改）。
 - 前端在 `public/js/admin-zero90.js`（DOM id 一律 `z90_`／`stk_view_` 前綴，自有 CSRF 與 fetch，不依賴 `admin-stock.js` 的內部狀態）。
 

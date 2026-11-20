@@ -299,6 +299,15 @@ describe('static asset freshness', () => {
     expect(script).toContain('valueLabels: true');
     expect(script).toContain('labelSpacing');
     expect(script).toContain('ndrf_admin_z90_months');
+    // Excel 貼上：6 欄（可連表頭）→ 自動填四格，並核對兩個總數
+    const pasteScript = readFileSync(path.join(root, 'public', 'js', 'z90-paste.js'), 'utf8');
+    expect(html).toContain('id="z90_paste"');
+    expect(html).toContain('id="btn_z90_paste"');
+    expect(html).toContain('/js/z90-paste.js');
+    expect(script).toContain('globalThis.Z90Paste');
+    expect(pasteScript).toContain('SKU 總數對唔上');
+    expect(pasteScript).toContain('存貨量總數對唔上');
+    expect(script).toContain("addEventListener('paste'");
     expect(html).toContain('id="z90_makeup_sku"');
     expect(html).toContain('id="z90_non_qty"');
     expect(html).toContain('id="z90_table_body"');

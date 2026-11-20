@@ -801,6 +801,15 @@
               <span class="ms-auto text-secondary small">同一日期再儲存 = 覆蓋該期（會寫入審計日誌）</span>
             </div>
             <div class="card-body">
+              <div class="z90-paste">
+                <label class="form-label" for="z90_paste">從 Excel 貼上（一行 6 欄；可連表頭一齊貼）</label>
+                <textarea id="z90_paste" class="form-control" rows="2" spellcheck="false" placeholder="例如：6,618	253,204	2,605	100,669	4,013	152,535&#10;欄序：SKU 總數 → 存貨量總數 → MAKE UP SKU → MAKE UP 量 → Non SKU → Non 量（Tab 分隔）"></textarea>
+                <div class="d-flex align-items-center gap-2 flex-wrap mt-2">
+                  <button class="btn btn-sm" id="btn_z90_paste" type="button">貼上並填入</button>
+                  <span class="hint">貼上即自動解析；可以連表頭一齊貼。只會填 MAKE UP／Non-MAKE UP 四格，日期同店數仍由你輸入，儲存前會核對兩個總數。</span>
+                </div>
+                <div id="z90_paste_result"></div>
+              </div>
               <div class="z90-form-grid">
                 <div>
                   <label class="form-label" for="z90_date">報表日期 <span class="text-danger">*</span></label>
@@ -1709,6 +1718,7 @@
 <script src="/js/chart-export.js"></script>
 <script src="/js/chart-zoom.js"></script>
 <script src="/js/admin-stock.js"></script>
+<script src="/js/z90-paste.js"></script>
 <script src="/js/admin-zero90.js"></script>
 <script src="/js/admin-ui.js"></script>
 <script src="/js/version.js"></script>

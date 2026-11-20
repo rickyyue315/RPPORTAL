@@ -500,6 +500,44 @@
 
   /* ==================== 表單 ==================== */
 
+  /* ---------- 從 Excel 貼上：解析在 /js/z90-paste.js（純函數，有單元測試） ---------- */
+
+  /** 貼上 → 填入四個分項（日期／店數只會在貼 8 欄時一併填） */
+  function applyPaste() {
+    const input = $('z90_paste');
+    if (!input) return;
+    const parser = globalThis.Z90Paste;
+    if (!parser || typeof parser.parse !== 'function') {
+      setResult('z90_paste_result', 'error', '貼上解析元件未載入（/js/z90-paste.js），請重新整理頁面（F5）再試。');
+      return;
+    }
+    const parsed = parser.parse(input.value);
+    if (parsed.error) {
+      setResult('z90_paste_result', 'error', parsed.error);
+      return;
+    }
+
+    if (parsed.reportDate && $('z90_date')) $('z90_date').value = parsed.reportDate;
+    if (parsed.shopCount !== undefined && $('z90_shops')) $('z90_shops').value = String(parsed.shopCount);
+    const stats = parsed.stats;
+    if ($('z90_makeup_sku')) $('z90_makeup_sku').value = String(stats.makeupSku);
+    if ($('z90_makeup_qty')) $('z90_makeup_qty').value = String(stats.makeupQty);
+    if ($('z90_non_sku')) $('z90_non_sku').value = String(stats.nonSku);
+    if ($('z90_non_qty')) $('z90_non_qty').value = String(stats.nonQty);
+    updateTotals();
+
+    setResult(
+      'z90_paste_result',
+      'success',
+      `已填入：MAKE UP ${fmtInt(stats.makeupSku)}／${fmtQty(stats.makeupQty)}、Non-MAKE UP ${fmtInt(stats.nonSku)}／${fmtQty(stats.nonQty)}；總數 ${fmtInt(parsed.totals.sku)}／${fmtQty(parsed.totals.qty)} 已核對。`,
+    );
+    input.value = '';
+
+    // 未填的必填欄（日期／店數）直接聚焦，減少一次手動搵位
+    if (!$('z90_date')?.value) $('z90_date')?.focus();
+    else if (!$('z90_shops')?.value) $('z90_shops')?.focus();
+  }
+
   function updateTotals() {
     const el = $('z90_form_totals');
     if (!el) return;
@@ -513,13 +551,14 @@
   }
 
   function clearForm() {
-    ['z90_shops', 'z90_makeup_sku', 'z90_makeup_qty', 'z90_non_sku', 'z90_non_qty', 'z90_note'].forEach((id) => {
+    ['z90_shops', 'z90_makeup_sku', 'z90_makeup_qty', 'z90_non_sku', 'z90_non_qty', 'z90_note', 'z90_paste'].forEach((id) => {
       const el = $(id);
       if (el) el.value = '';
     });
     const date = $('z90_date');
     if (date) date.value = hkToday();
     setResult('z90_save_result', 'info', '');
+    setResult('z90_paste_result', 'info', '');
     updateTotals();
     document.querySelectorAll('#z90_table_body tr.is-editing').forEach((tr) => tr.classList.remove('is-editing'));
   }
@@ -745,6 +784,20 @@
 
     $('btn_z90_save')?.addEventListener('click', () => { void save(); });
     $('btn_z90_clear')?.addEventListener('click', clearForm);
+
+    // Excel 貼上：按鈕或直接貼（paste 事件要等瀏覽器寫入 value 才讀）
+    const pasteBtn = $('btn_z90_paste');
+    if (pasteBtn) pasteBtn.addEventListener('click', applyPaste);
+    const pasteEl = $('z90_paste');
+    if (pasteEl) {
+      pasteEl.addEventListener('paste', () => { setTimeout(applyPaste, 0); });
+      pasteEl.addEventListener('keydown', (event) => {
+        if (event.key === 'Enter' && (event.ctrlKey || event.metaKey)) {
+          event.preventDefault();
+          applyPaste();
+        }
+      });
+    }
     $('btn_z90_refresh')?.addEventListener('click', () => {
       setResult('z90_table_error', 'info', '');
       void load();

@@ -1521,3 +1521,21 @@ body.stk-modal-open { overflow: hidden; }
 @media (max-width: 720px) {
   #z90_chart { height: 210px; }
 }
+
+/* 從 Excel 貼上：獨立一塊淡底區，避免同手動輸入欄位混淆 */
+.z90-paste {
+  background: var(--surface-soft);
+  border: 1px dashed var(--border-accent);
+  border-radius: 10px;
+  padding: 12px 14px;
+  margin-bottom: 14px;
+}
+.z90-paste textarea {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 12.5px;
+  font-variant-numeric: tabular-nums;
+  white-space: pre;
+  overflow-x: auto;
+  background: #fff;
+}
+.z90-paste .hint { font-size: 12px; }

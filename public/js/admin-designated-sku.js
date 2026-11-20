@@ -189,6 +189,8 @@
   }
 
   function summaryTableHtml(s) {
+    // 所有回覆數字一律用「SKU 行」計（行口徑），細字才是事項數；
+    // 一個事項要全部 SKU 都回覆（或標示無可調撥）才算該事項完成。
     const batchCount = Number(s.batch_count) || 0;
     const openBatch = Number(s.open_batch_count) || 0;
     const matters = Number(s.matter_count) || 0;
@@ -197,6 +199,8 @@
     const repliedItems = Number(s.replied_item_count) || 0;
     const openPending = Number(s.open_pending_count) || 0;
     const overdue = Number(s.overdue_count) || 0;
+    const openPendingItems = Number(s.open_pending_item_count) || 0;
+    const overdueItems = Number(s.overdue_item_count) || 0;
     const stores = Number(s.store_count) || 0;
     const storesPending = Number(s.pending_store_count) || 0;
 
@@ -206,23 +210,26 @@
       ${scopeCell('總計', `${batchCount} 個批次 · ${openBatch} 個未封存`)}
       <td>${matters}</td>
       <td>${items}</td>
-      <td class="text-success">${replied}${kpiSub(repliedItems ? `${repliedItems} 個 SKU 行` : '')}</td>
-      <td class="text-danger">${openPending}</td>
-      <td class="text-secondary">${overdue}</td>
-      <td>${rateText(replied, matters)}</td>
+      <td class="text-success">${repliedItems}${kpiSub(`${replied} 個事項`)}</td>
+      <td class="text-danger">${openPendingItems}${kpiSub(openPending ? `${openPending} 個事項` : '')}</td>
+      <td class="text-secondary">${overdueItems}${kpiSub(overdue ? `${overdue} 個事項` : '')}</td>
+      <td>${rateText(repliedItems, items)}${kpiSub(`事項 ${rateText(replied, matters)}`)}</td>
       <td>${stores} / ${storesPending}</td>
     </tr>`;
 
     const lb = s.latest_batch;
+    const lbItems = lb ? Number(lb.item_count) || 0 : 0;
+    const lbRepliedItems = lb ? Number(lb.replied_item_count) || 0 : 0;
+    const lbPendingItems = lb ? Number(lb.pending_item_count) || 0 : 0;
     const latestRow = lb
       ? `<tr class="zs-kpi-latest">
       ${scopeCell('最新批次', `${lb.batch_code} · ${lb.is_open ? '開放中' : (lb.is_expired ? '已逾期' : '已封存')}`)}
       <td>${lb.matter_count}</td>
-      <td>${lb.item_count}</td>
-      <td class="text-success">${lb.replied_count}</td>
-      <td class="text-danger">${lb.is_open ? lb.pending_count : '—'}</td>
-      <td class="text-secondary">${lb.is_open ? '—' : lb.pending_count}</td>
-      <td>${rateText(lb.replied_count, lb.matter_count)}</td>
+      <td>${lbItems}</td>
+      <td class="text-success">${lbRepliedItems}${kpiSub(`${lb.replied_count} 個事項`)}</td>
+      <td class="text-danger">${lb.is_open ? lbPendingItems : '—'}${kpiSub(lb.is_open && lb.pending_count ? `${lb.pending_count} 個事項` : '')}</td>
+      <td class="text-secondary">${lb.is_open ? '—' : lbPendingItems}${kpiSub(!lb.is_open && lb.pending_count ? `${lb.pending_count} 個事項` : '')}</td>
+      <td>${rateText(lbRepliedItems, lbItems)}${kpiSub(`事項 ${rateText(lb.replied_count, lb.matter_count)}`)}</td>
       <td>${lb.store_count} / ${lb.is_open ? lb.pending_store_count : '—'}</td>
     </tr>`
       : `<tr class="zs-kpi-latest">${scopeCell('最新批次', '暫無批次')}<td colspan="7" class="text-secondary">—</td></tr>`;
@@ -234,17 +241,17 @@
             <th scope="col" class="zs-kpi-scope">範圍</th>
             <th scope="col">事項數</th>
             <th scope="col">SKU 行數</th>
-            <th scope="col">已回覆</th>
-            <th scope="col">未回覆<small>可回覆</small></th>
-            <th scope="col">逾期未回覆<small>已封存 / 已截止</small></th>
-            <th scope="col">回覆率</th>
+            <th scope="col">已回覆<small>SKU 行</small></th>
+            <th scope="col">未回覆<small>可回覆 · SKU 行</small></th>
+            <th scope="col">逾期未回覆<small>已封存 / 已截止 · SKU 行</small></th>
+            <th scope="col">回覆率<small>按 SKU 行（細字為事項）</small></th>
             <th scope="col">店舖<small>涉及 / 待回覆</small></th>
           </tr>
         </thead>
         <tbody>${totalRow}${latestRow}</tbody>
       </table>
     </div>
-    <p class="hint mb-0 mt-2">回覆率 = 已回覆事項 ÷ 事項總數（一個事項要全部 SKU 回覆或標示「無可調撥」才算已回覆）。批次已封存或已過截止時間仍未回覆的事項列作「逾期未回覆」，不計入可回覆待辦。</p>`;
+    <p class="hint mb-0 mt-2">回覆率 = 已回覆 SKU 行 ÷ SKU 行總數。一個事項要全部 SKU 回覆或標示「無可調撥」才算完成，所以細字的事項完成率會低於行回覆率。批次已封存或已過截止時間仍未回覆的 SKU 行列作「逾期未回覆」，不計入可回覆待辦。</p>`;
   }
 
   async function loadSummary() {

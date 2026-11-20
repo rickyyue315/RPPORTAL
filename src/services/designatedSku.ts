@@ -606,6 +606,10 @@ export interface DesignatedSkuSummaryBatch {
   is_expired: boolean;
   matter_count: number;
   item_count: number;
+  /** 已回覆的 SKU 行數 */
+  replied_item_count: number;
+  /** 仍未回覆的 SKU 行數（按批次開放狀態歸入「可回覆」或「逾期」） */
+  pending_item_count: number;
   replied_count: number;
   pending_count: number;
   store_count: number;
@@ -625,6 +629,10 @@ export interface DesignatedSkuSummary {
   open_pending_count: number;
   /** 未回覆而批次已封存或已過截止 → 逾期未回覆 */
   overdue_count: number;
+  /** 可回覆的未回覆 SKU 行數 */
+  open_pending_item_count: number;
+  /** 逾期未回覆的 SKU 行數 */
+  overdue_item_count: number;
   store_count: number;
   pending_store_count: number;
   latest_batch: DesignatedSkuSummaryBatch | null;
@@ -639,7 +647,15 @@ export async function getSummary(): Promise<DesignatedSkuSummary> {
               b.closed_at, b.due_at,
               count(i.id)::int AS item_count,
               count(i.id) FILTER (WHERE i.status = 'replied')::int AS replied_items,
-              count(i.id) FILTER (WHERE i.status = 'pending')::int AS pending_items
+              count(i.id) FILTER (WHERE i.status = 'pending')::int AS pending_items,
+              count(i.id) FILTER (
+                WHERE i.status = 'pending'
+                  AND b.closed_at IS NULL AND (b.due_at IS NULL OR b.due_at > now())
+              )::int AS open_pending_items,
+              count(i.id) FILTER (
+                WHERE i.status = 'pending'
+                  AND NOT (b.closed_at IS NULL AND (b.due_at IS NULL OR b.due_at > now()))
+              )::int AS overdue_items
          FROM designated_sku_matters m
          JOIN designated_sku_batches b ON b.id = m.batch_id
          LEFT JOIN designated_sku_items i ON i.matter_id = m.id
@@ -658,6 +674,8 @@ export async function getSummary(): Promise<DesignatedSkuSummary> {
        count(*) FILTER (WHERE pending_items > 0)::text AS pending_count,
        count(*) FILTER (WHERE pending_items > 0 AND is_open)::text AS open_pending_count,
        count(*) FILTER (WHERE pending_items > 0 AND NOT is_open)::text AS overdue_count,
+       COALESCE(sum(open_pending_items), 0)::text AS open_pending_item_count,
+       COALESCE(sum(overdue_items), 0)::text AS overdue_item_count,
        count(DISTINCT site_code)::text AS store_count,
        count(DISTINCT site_code) FILTER (WHERE pending_items > 0)::text AS pending_store_count
      FROM k`,
@@ -674,6 +692,8 @@ export async function getSummary(): Promise<DesignatedSkuSummary> {
     pending_count: Number(row.pending_count ?? 0),
     open_pending_count: Number(row.open_pending_count ?? 0),
     overdue_count: Number(row.overdue_count ?? 0),
+    open_pending_item_count: Number(row.open_pending_item_count ?? 0),
+    overdue_item_count: Number(row.overdue_item_count ?? 0),
     store_count: Number(row.store_count ?? 0),
     pending_store_count: Number(row.pending_store_count ?? 0),
     latest_batch: latest,
@@ -688,6 +708,12 @@ async function getLatestBatchSummary(): Promise<DesignatedSkuSummaryBatch | null
             (SELECT count(*)::int FROM designated_sku_items i
                JOIN designated_sku_matters m ON m.id = i.matter_id
               WHERE m.batch_id = b.id) AS item_count,
+            (SELECT count(*)::int FROM designated_sku_items i
+               JOIN designated_sku_matters m ON m.id = i.matter_id
+              WHERE m.batch_id = b.id AND i.status = 'replied') AS replied_item_count,
+            (SELECT count(*)::int FROM designated_sku_items i
+               JOIN designated_sku_matters m ON m.id = i.matter_id
+              WHERE m.batch_id = b.id AND i.status = 'pending') AS pending_item_count,
             (SELECT count(*)::int FROM designated_sku_matters m
               WHERE m.batch_id = b.id
                 AND NOT EXISTS (
@@ -723,6 +749,8 @@ async function getLatestBatchSummary(): Promise<DesignatedSkuSummaryBatch | null
     is_expired: !b.closed_at && Boolean(b.due_at) && !isOpen,
     matter_count: Number(b.matter_count ?? 0),
     item_count: Number(b.item_count ?? 0),
+    replied_item_count: Number(b.replied_item_count ?? 0),
+    pending_item_count: Number(b.pending_item_count ?? 0),
     replied_count: Number(b.replied_count ?? 0),
     pending_count: Number(b.pending_count ?? 0),
     store_count: Number(b.store_count ?? 0),

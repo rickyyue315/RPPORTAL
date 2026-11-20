@@ -328,6 +328,19 @@ describe('指定 SKU 回覆 API（一個事項多個 SKU）', () => {
     expect(stores.map((s) => s.shop).sort()).toEqual(['旺角', '沙田']);
   });
 
+  it('總覽用 SKU 行計：未回覆行數 = 全部未回覆 SKU', async () => {
+    const admin = await adminAgent();
+    const res = await admin.get('/api/admin/designated-sku/summary');
+    expect(res.status).toBe(200);
+    expect(res.body.item_count).toBe(4);
+    expect(res.body.replied_item_count).toBe(0);
+    expect(res.body.open_pending_item_count).toBe(4);
+    expect(res.body.overdue_item_count).toBe(0);
+    expect(res.body.open_pending_count).toBe(3); // 事項層面：3 個事項仍在等
+    expect(res.body.latest_batch.item_count).toBe(4);
+    expect(res.body.latest_batch.pending_item_count).toBe(4);
+  });
+
   it('同一檔案再上載會被擋（DUPLICATE_FILE）', async () => {
     const agent = await adminAgent();
     const res = await uploadBatch(agent, mainBuffer);
@@ -563,12 +576,16 @@ describe('指定 SKU 回覆 API（一個事項多個 SKU）', () => {
     expect(summary.body.store_count).toBe(2);
     // 總覽表：總計一行 + 最新批次一行；待辦要拆成「可回覆」與「逾期未回覆」
     expect(summary.body.replied_item_count).toBe(3);
+    expect(summary.body.open_pending_item_count).toBe(0);
+    expect(summary.body.overdue_item_count).toBe(0);
     expect(summary.body.open_pending_count).toBe(0);
     expect(summary.body.overdue_count).toBe(0);
     expect(summary.body.latest_batch?.batch_code).toBe(batchCode);
     expect(summary.body.latest_batch?.is_open).toBe(true);
     expect(summary.body.latest_batch?.matter_count).toBe(2);
     expect(summary.body.latest_batch?.item_count).toBe(3);
+    expect(summary.body.latest_batch?.replied_item_count).toBe(3);
+    expect(summary.body.latest_batch?.pending_item_count).toBe(0);
     // 批次列表用店舖口徑顯示「已覆 / 未覆」
     const list = await admin.get('/api/admin/designated-sku/batches?page=1&page_size=20');
     const row = (list.body.batches || []).find((b: { id: string }) => b.id === batchId);

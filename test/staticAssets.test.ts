@@ -299,6 +299,14 @@ describe('static asset freshness', () => {
     expect(script).toContain('valueLabels: true');
     expect(script).toContain('labelSpacing');
     expect(script).toContain('ndrf_admin_z90_months');
+    // 雙軸對照：左軸 SKU（綠）、右軸存貨量（藍），兩軸各自縮放
+    expect(html).toContain('data-z90-metric="dual"');
+    expect(script).toContain("axis: 'right'");
+    expect(script).toContain('y2Format');
+    expect(script).toContain('期內變化');
+    const chartLiteScript = readFileSync(path.join(root, 'public', 'js', 'chart-lite.js'), 'utf8');
+    expect(chartLiteScript).toContain("axis: spec.axis === 'right' ? 'right' : 'left'");
+    expect(chartLiteScript).toContain('y2Min / y2Max');
     // Excel 貼上：6 欄（可連表頭）→ 自動填四格，並核對兩個總數
     const pasteScript = readFileSync(path.join(root, 'public', 'js', 'z90-paste.js'), 'utf8');
     expect(html).toContain('id="z90_paste"');

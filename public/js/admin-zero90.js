@@ -15,6 +15,9 @@
   const COLOR_TOTAL = '#0f5c9c';
   const COLOR_MAKEUP = '#b5367a';
   const COLOR_NON = '#0f766e';
+  /** 雙軸對照：SKU 走綠、存貨量走藍；刻度文字用同一隻色，睇顏色就知邊個軸 */
+  const COLOR_DUAL_SKU = '#0f7a4d';
+  const COLOR_DUAL_QTY = '#0f5c9c';
 
   let csrf = null;
   let loaded = false;
@@ -302,10 +305,26 @@
         { key: 'qty_share', label: 'MAKE UP 存貨量佔比', color: COLOR_NON, field: 'makeup_qty_share' },
       ],
     },
+    dual: {
+      label: 'SKU 數 ＋ 存貨量（雙軸）',
+      dual: true,
+      // 兩條線各自一條軸：左 SKU、右 存貨量，單位唔同都可以放同一個圖
+      both: [
+        {
+          key: 'sku', label: 'SKU 數（左軸）', color: COLOR_DUAL_SKU, field: 'sku_total',
+          axis: 'left', format: fmtInt, labelSpacing: 34,
+        },
+        {
+          key: 'qty', label: '存貨量（右軸）', color: COLOR_DUAL_QTY, field: 'qty_total',
+          axis: 'right', format: fmtQty, labelSpacing: 48,
+        },
+      ],
+    },
   };
 
   /** 依現時指標＋「顯示拆分」決定畫邊幾條線（ChartLite 最多 3 條） */
   function activeSeries(config) {
+    if (config.both) return config.both;
     if (config.shares) return config.shares;
     if (config.single) return config.single;
     if (split && config.split) return [...config.total, ...config.split];
@@ -398,8 +417,15 @@
       return;
     }
 
-    const allValues = chartSeries.flatMap((spec) => spec.points.map((point) => point.value));
-    const range = chartRange(allValues);
+    // 雙軸：左右各自計範圍（兩邊單位差 30 倍，共用一個軸會令 SKU 變直線）
+    const isDual = !!config.dual;
+    const valuesOf = (which) => chartSeries
+      .filter((spec) => (which === 'right' ? spec.axis === 'right' : spec.axis !== 'right'))
+      .flatMap((spec) => spec.points.map((point) => point.value));
+    const range = chartRange(isDual
+      ? valuesOf('left')
+      : chartSeries.flatMap((spec) => spec.points.map((point) => point.value)));
+    const range2 = isDual ? chartRange(valuesOf('right')) : {};
     const yText = (value) => (config.percent ? fmtRatio(value) : axisFormat(value));
 
     chartApi.renderLine(el, {
@@ -407,19 +433,39 @@
       height: 260,
       emptyText: '暫無數據',
       yFormat: (v) => yText(v),
-      tipFormat: (v) => config.format(v),
+      // 雙軸：右軸用自己嘅刻度格式，並把左右刻度染成對應線色
+      ...(isDual ? {
+        y2Format: (v) => axisFormat(v),
+        yColor: COLOR_DUAL_SKU,
+        y2Color: COLOR_DUAL_QTY,
+      } : {}),
+      // 單軸指標共用一個格式；雙軸交由每條 series 自己的 format
+      ...(typeof config.format === 'function' ? {
+        tipFormat: (v) => config.format(v),
+        labelFormat: (v) => config.format(v),
+      } : {}),
       // 每個數據點都標示實際數值；期數太密時 ChartLite 會自動隔開（最新一期一定標）
       valueLabels: true,
-      labelFormat: (v) => config.format(v),
       labelSpacing: config.labelSpacing,
       ariaLabel: `${config.label}走勢，顯示最近 ${months} 個月共 ${rows.length} 期，最新 ${rows[rows.length - 1].report_date}`,
       ...range,
+      ...(isDual && Number.isFinite(range2.yMin) ? { y2Min: range2.yMin, y2Max: range2.yMax } : {}),
     });
 
     if (note) {
       const parts = [];
       parts.push(`顯示最近 ${months} 個月（${rows.length} 期）。`);
-      if (num(range.yMin) !== null && range.yMin > 0) {
+      if (isDual) {
+        parts.push('左軸＝SKU 數（綠）、右軸＝存貨量（藍）；兩軸各自縮放，只宜比較走勢方向，線的高低不可直接比。');
+        const first = rows[0];
+        const last = rows[rows.length - 1];
+        const pctOf = (from, to) => {
+          const a = num(from);
+          const b = num(to);
+          return a === null || b === null || a === 0 ? null : (b - a) / a;
+        };
+        parts.push(`期內變化：SKU ${fmtPct(pctOf(first.sku_total, last.sku_total))}、存貨量 ${fmtPct(pctOf(first.qty_total, last.qty_total))}。`);
+      } else if (num(range.yMin) !== null && range.yMin > 0) {
         parts.push(`Y 軸由 ${yText(range.yMin)} 起（放大波動，不是 0 起點）。`);
       }
       parts.push('點上數字為該期實際值；期數太密時標籤會自動隔開（最新一期必顯示），懸停可看該期全部線的數值。');

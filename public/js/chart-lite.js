@@ -16,6 +16,12 @@
  *   series: [{ key, label, color, dashed, splitDate, colorBefore, points: [{ date:'YYYY-MM-DD', value:Number|null, showLabel?:Boolean }] }]  // 最多 3 條
  *            splitDate 之前的點改用 colorBefore 畫（同一條線分兩段，用於「去年」等舊資料）
  *            showLabel: false 只隱藏該點的數值標籤，圓點與 tooltip 照舊
+ *            axis: 'right' 用右邊獨立 Y 軸（雙軸對照；預設左軸）
+ *            format: (v) => String 該條線自己的數值格式（雙軸時左右單位不同）
+ *            labelSpacing: Number  該條線的標籤預留闊度（覆蓋外層設定）
+ *   y2Min / y2Max: Number     右軸自訂範圍（條件同 yMin / yMax）
+ *   y2Format: (v) => String   右軸刻度文字
+ *   yColor / y2Color: String  左右刻度文字顏色（雙軸時染成對應線色，一眼分得出）
  *   height: Number           容器的 clientHeight 為 0 時使用的像素高（預設 220）
  *   yFormat: (v) => String    y 軸刻度文字
  *   tipFormat: (v) => String  tooltip 數值文字（預設同 yFormat）
@@ -212,6 +218,12 @@
       /** 分界日期（含）之前的點改用 colorBefore 畫，用於「去年」等舊資料 */
       splitT: toTime(spec.splitDate),
       colorBefore: spec.colorBefore || '#94a3b8',
+      /** 'right' = 用右邊獨立 Y 軸（雙軸對照）；預設左軸 */
+      axis: spec.axis === 'right' ? 'right' : 'left',
+      /** 每條線自己的數值格式（雙軸時兩邊單位不同，總不能共用一個） */
+      format: typeof spec.format === 'function' ? spec.format : null,
+      /** 每條線自己的數值標籤預留闊度（長數字要闊一點） */
+      labelSpacing: Number(spec.labelSpacing) || 0,
       points,
     };
   }
@@ -335,8 +347,12 @@
     const measureH = box.clientHeight && box.clientHeight > 60 ? box.clientHeight : 0;
     const H = Math.max(120, Math.round(measureH || o.height || 220));
 
+    // 雙軸：有 series 指定 axis:'right' 才啟用，右邊要預留位置放刻度文字
+    const rightSpecs = specs.filter((s) => s.axis === 'right' && s.points.some((p) => p.v !== null));
+    const hasRight = rightSpecs.length > 0;
+
     const padL = 46;
-    const padR = 12;
+    const padR = hasRight ? 54 : 12;
     // 顯示數值標籤時頂部要留位（最高點的標籤在點上方），否則會被裁掉
     const padT = o.valueLabels ? 28 : 12;
     const padB = 24;
@@ -350,8 +366,12 @@
     if (!Number.isFinite(minT) || !Number.isFinite(maxT)) return null;
     if (maxT <= minT) maxT = minT + DAY; // 只有一個日期時避免除以 0（呼叫端不應走到這裡）
 
-    const maxV = finite.reduce((acc, p) => (p.v > acc ? p.v : acc), finite[0].v);
-    const minV = finite.reduce((acc, p) => (p.v < acc ? p.v : acc), finite[0].v);
+    // 左軸只計左軸的點（雙軸時右軸那條有自己的範圍，不能拉高左軸）
+    const leftPts = specs.filter((s) => s.axis !== 'right')
+      .flatMap((s) => s.points).filter((p) => p.v !== null);
+    const axisL = leftPts.length ? leftPts : finite;
+    const maxV = axisL.reduce((acc, p) => (p.v > acc ? p.v : acc), axisL[0].v);
+    const minV = axisL.reduce((acc, p) => (p.v < acc ? p.v : acc), axisL[0].v);
     // 「放大波動」：呼叫端可用 yMin / yMax 指定非 0 起點的範圍（比例類數據由 0 起畫會變直線）。
     // 範圍必須包住所有點（含虛線對照線），否則最低／最高點會畫出框外，所以在這裡再驗一次。
     const reqMin = Number(o.yMin);
@@ -362,6 +382,27 @@
     const yMax = customRange ? reqMax : niceMax(maxV * 1.05, 4);
     const spanV = yMax - yMin;
     const yScale = (v) => padT + (1 - ((v - yMin) / spanV)) * innerH;
+
+    /* --- 右軸（雙軸對照）：獨立範圍，同樣支援 y2Min / y2Max 放大波動 --- */
+    let y2Min = 0;
+    let y2Max = 0;
+    let span2 = 0;
+    let y2Scale = null;
+    if (hasRight) {
+      const rPts = rightSpecs.flatMap((s) => s.points).filter((p) => p.v !== null);
+      const maxR = rPts.reduce((acc, p) => (p.v > acc ? p.v : acc), rPts[0].v);
+      const minR = rPts.reduce((acc, p) => (p.v < acc ? p.v : acc), rPts[0].v);
+      const req2Min = Number(o.y2Min);
+      const req2Max = Number(o.y2Max);
+      const custom2 = Number.isFinite(req2Min) && Number.isFinite(req2Max)
+        && req2Min >= 0 && req2Max > req2Min && req2Min < minR && req2Max > maxR;
+      y2Min = custom2 ? req2Min : 0;
+      y2Max = custom2 ? req2Max : niceMax(maxR * 1.05, 4);
+      span2 = y2Max - y2Min;
+      y2Scale = (v) => padT + (1 - ((v - y2Min) / span2)) * innerH;
+    }
+    const scaleOf = (s) => (s.axis === 'right' && y2Scale ? y2Scale : yScale);
+
     const xScale = (t) => scaleX(t, minT, maxT, padL, padL + innerW);
 
     const svg = svgEl('svg', {
@@ -378,8 +419,12 @@
     svg.style.overflow = 'visible';
 
     const yFmt = typeof o.yFormat === 'function' ? o.yFormat : (v) => String(round(v, 2));
+    const y2Fmt = typeof o.y2Format === 'function' ? o.y2Format : yFmt;
+    // 雙軸時把刻度文字染成對應線色，睇顏色就知邊個軸屬邊條線
+    const tickColorL = o.yColor || '#66727f';
+    const tickColorR = o.y2Color || '#66727f';
 
-    /* --- y 軸網格 + 刻度 --- */
+    /* --- y 軸網格 + 左右刻度 --- */
     for (let i = 0; i <= 4; i += 1) {
       const v = round(yMin + (spanV * i) / 4, 10);
       const y = round(yScale(v), 2);
@@ -390,19 +435,35 @@
       }));
       const label = svgEl('text', {
         x: padL - 8, y: y + 4, 'text-anchor': 'end',
-        fill: '#66727f', 'font-size': 11, 'font-family': 'inherit',
+        fill: tickColorL, 'font-size': 11, 'font-family': 'inherit',
       });
       label.textContent = yFmt(v);
       svg.appendChild(label);
+      if (!hasRight) continue;
+      const v2 = round(y2Min + (span2 * i) / 4, 10);
+      const label2 = svgEl('text', {
+        x: padL + innerW + 8, y: y + 4, 'text-anchor': 'start',
+        fill: tickColorR, 'font-size': 11, 'font-family': 'inherit',
+      });
+      label2.textContent = y2Fmt(v2);
+      svg.appendChild(label2);
     }
 
     // 非 0 起點要在圖上寫明，否則單看刻度容易被誤讀成「跌到 0」
-    if (yMin > 0) {
+    if (yMin > 0 || (hasRight && y2Min > 0)) {
+      let noteText;
+      if (yMin > 0 && hasRight && y2Min > 0) {
+        noteText = `兩軸皆非 0 起（左 ${yFmt(yMin)}／右 ${y2Fmt(y2Min)}）`;
+      } else if (hasRight && y2Min > 0) {
+        noteText = `右軸由 ${y2Fmt(y2Min)} 起（放大波動）`;
+      } else {
+        noteText = `Y 軸由 ${yFmt(yMin)} 起（放大波動）`;
+      }
       const note = svgEl('text', {
         x: padL + 4, y: round(padT + innerH - 8, 2), 'text-anchor': 'start',
         fill: '#8a97a4', 'font-size': 9.5, 'font-family': 'inherit',
       });
-      note.textContent = `Y 軸由 ${yFmt(yMin)} 起（放大波動）`;
+      note.textContent = noteText;
       svg.appendChild(note);
     }
 
@@ -423,7 +484,7 @@
     specs.forEach((s) => {
       const plotted = s.points.map((p) => ({
         x: xScale(p.t),
-        y: p.v === null ? NaN : yScale(p.v),
+        y: p.v === null ? NaN : scaleOf(s)(p.v),
         t: p.t,
         v: p.v,
         showLabel: p.showLabel,
@@ -471,14 +532,16 @@
     /* --- 數值標籤（opt-in）：第 1 條線標在點上方、第 2 條標在下方；
        期數太密時用 barLabelIndices 抽樣（永遠保留最新一期），避免疊字。 --- */
     if (o.valueLabels) {
-      const labelOf = typeof o.labelFormat === 'function' ? o.labelFormat : yFmt;
-      const perLabel = Number(o.labelSpacing) || 44;
-      const maxLabels = Math.max(2, Math.floor(innerW / perLabel));
+      const globalLabel = typeof o.labelFormat === 'function' ? o.labelFormat : yFmt;
+      const globalPer = Number(o.labelSpacing) || 44;
       dots.forEach((entry, seriesIndex) => {
         // 三線圖可只標首兩條，第三條（所選店舖）留 tooltip
         if (Array.isArray(o.labelSeries) && !o.labelSeries.includes(seriesIndex)) return;
         const plotted = entry.plotted;
         if (!plotted.length) return;
+        // 雙軸時兩邊單位不同，各系列可以有自己的格式與標籤闊度
+        const labelOf = entry.series.format || globalLabel;
+        const maxLabels = Math.max(2, Math.floor(innerW / (entry.series.labelSpacing || globalPer)));
         const above = seriesIndex === 0;
         // 只喺「有數值兼且准許標示」嘅點入面抽樣，避免 hidden 點白佔標籤位
         const candidates = [];
@@ -568,7 +631,8 @@
           c.setAttribute('cy', round(p.y, 2));
           c.setAttribute('opacity', 1);
           anyValue = true;
-          rows.push({ label: entry.series.label, color: entry.series.color, text: (typeof o.tipFormat === 'function' ? o.tipFormat(p.v) : yFmt(p.v)) });
+          const tipFmt = entry.series.format || (typeof o.tipFormat === 'function' ? o.tipFormat : yFmt);
+          rows.push({ label: entry.series.label, color: entry.series.color, text: tipFmt(p.v) });
         } else {
           c.setAttribute('opacity', 0);
           rows.push({ label: entry.series.label, color: entry.series.color, text: '無數據' });
@@ -609,7 +673,7 @@
 
     startObserving(box, W, H, renderLine);
 
-    return { width: W, height: H, yMax, minT, maxT, points: finite.length, empty: false };
+    return { width: W, height: H, yMax, y2Max, minT, maxT, points: finite.length, empty: false };
   }
 
   /**

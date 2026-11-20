@@ -947,6 +947,200 @@ dialog#ds_reply_dialog::backdrop { background: rgba(7, 30, 50, 0.5); backdrop-fi
   font-weight: 600;
 }
 
+/* ---------- Safety 調整（reply_mode = 'safety'） ----------
+   一行一個 SKU，11 個顯示欄 ＋ 回覆欄；每店可達 40+ 行，
+   所以表格自己捲動、表頭與頭兩欄固定。 */
+dialog#ds_reply_dialog.ds-dialog--wide {
+  max-width: min(1520px, 96vw);
+  width: 96vw;
+}
+.ds-sf-wrap { display: flex; flex-direction: column; gap: 10px; }
+.ds-sf-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.ds-sf-progress { font-size: 13px; color: var(--body); }
+.ds-sf-progress b { color: var(--ink); }
+.ds-sf-count-yes { color: #1a7f4b; font-weight: 700; }
+.ds-sf-count-no { color: #a15c00; font-weight: 700; }
+.ds-sf-count-left { color: var(--danger); font-weight: 700; }
+.ds-sf-done { color: #1a7f4b; }
+.ds-sf-toolbar .btn { min-height: 32px; border-radius: 8px; white-space: nowrap; }
+
+.ds-sf-scroll {
+  overflow: auto;
+  max-height: 62vh;
+  max-height: 62dvh;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  -webkit-overflow-scrolling: touch;
+}
+.ds-sf-table {
+  border-collapse: separate;
+  border-spacing: 0;
+  width: 100%;
+  min-width: 1460px;
+  font-size: 12.5px;
+}
+.ds-sf-table th,
+.ds-sf-table td {
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--border);
+  text-align: left;
+  vertical-align: middle;
+}
+.ds-sf-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: var(--surface-muted);
+  color: var(--brand-dark, #0a3d69);
+  font-size: 12px;
+  font-weight: 700;
+  white-space: nowrap;
+  line-height: 1.35;
+  border-bottom: 1px solid var(--border-strong);
+}
+.ds-sf-table thead th span { font-weight: 500; color: var(--muted); font-size: 11px; }
+.ds-sf-table tbody tr:nth-child(even) td { background: #fafcff; }
+.ds-sf-table tbody tr.is-answered td { background: #f6fbf7; }
+.ds-sf-table tbody tr.is-missing td { background: #fff3f3; box-shadow: inset 0 0 0 1px rgba(197, 48, 48, .25); }
+
+/* 頭兩欄固定：橫向捲動時仍見到品牌與 SKU */
+.ds-sf-c-brand {
+  width: 118px;
+  min-width: 118px;
+  max-width: 118px;
+  position: sticky;
+  left: 0;
+  z-index: 3;
+  background: var(--surface);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: 11.5px;
+  color: var(--muted);
+}
+.ds-sf-c-sku {
+  width: 116px;
+  min-width: 116px;
+  max-width: 116px;
+  position: sticky;
+  left: 118px;
+  z-index: 3;
+  background: var(--surface);
+  box-shadow: 1px 0 0 var(--border);
+  white-space: nowrap;
+}
+.ds-sf-table thead .ds-sf-c-brand,
+.ds-sf-table thead .ds-sf-c-sku { background: var(--surface-muted); z-index: 4; }
+.ds-sf-c-desc { min-width: 190px; max-width: 230px; }
+.ds-sf-c-issue { width: 108px; white-space: nowrap; }
+.ds-sf-c-method { min-width: 240px; max-width: 300px; color: var(--body); }
+.ds-sf-clamp {
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  line-height: 1.45;
+}
+.ds-sf-tag {
+  display: inline-block;
+  padding: 3px 8px;
+  border-radius: 999px;
+  background: #fff4e0;
+  border: 1px solid #f0d49a;
+  color: #8a5a00;
+  font-size: 11.5px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+.ds-sf-num {
+  text-align: right;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.ds-sf-num--rec { font-weight: 700; color: var(--ink); }
+.ds-sf-up { color: var(--brand-dark, #0a3d69); font-weight: 700; }
+.ds-sf-down { color: var(--muted); font-weight: 700; }
+.ds-sf-reply { min-width: 292px; }
+
+.ds-sf-btns { display: flex; gap: 6px; }
+.ds-sf-btn {
+  flex: 1 1 0;
+  min-height: 30px;
+  padding: 5px 8px;
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--body);
+  font-size: 12.5px;
+  font-weight: 700;
+  font-family: inherit;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.ds-sf-btn:hover { border-color: var(--brand); color: var(--brand-dark); }
+.ds-sf-btn:focus-visible { outline: 2px solid rgba(15, 92, 156, .35); outline-offset: 1px; }
+.ds-sf-btn--yes.is-on { background: #e8f6ec; border-color: #2f9e5e; color: #14663a; }
+.ds-sf-btn--no.is-on { background: #fff1e6; border-color: #d98026; color: #8a4b00; }
+.ds-sf-extra {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 104px;
+  gap: 6px;
+  margin-top: 6px;
+}
+.ds-sf-extra[hidden] { display: none; }
+.ds-sf-extra input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 6px 8px;
+  border: 1px solid var(--border-strong);
+  border-radius: 7px;
+  font-size: 12.5px;
+  font-family: inherit;
+  color: var(--ink);
+  background: var(--surface);
+}
+.ds-sf-extra input:focus { outline: 2px solid rgba(15, 92, 156, .3); border-color: var(--brand); }
+.ds-sf-extra input.is-invalid { border-color: var(--danger-border); background: var(--danger-bg); }
+.ds-sf-new { display: flex; flex-direction: column; gap: 2px; }
+.ds-sf-new span { font-size: 10.5px; color: var(--muted); white-space: nowrap; line-height: 1.2; }
+.ds-sf-new input { min-height: 31px; }
+.ds-sf-readonly { display: flex; flex-direction: column; gap: 3px; }
+.ds-sf-ro-line { font-size: 11.5px; color: var(--body); line-height: 1.4; }
+.ds-sf-legend { margin: 0; font-size: 11.5px; color: var(--muted); line-height: 1.5; }
+
+/* 清單卡片上的 Safety 標記 */
+.ds-sf-mode-tag {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--surface-soft);
+  border: 1px solid var(--border-accent);
+  color: var(--brand-dark, #0a3d69);
+  font-size: 11.5px;
+}
+.ds-sf-chip {
+  display: inline-block;
+  padding: 2px 9px;
+  border-radius: 999px;
+  font-size: 11.5px;
+  font-weight: 700;
+}
+.ds-sf-chip--yes { background: #e8f6ec; border: 1px solid #9ed4b2; color: #14663a; }
+.ds-sf-chip--no { background: #fff1e6; border: 1px solid #e7b77e; color: #8a4b00; }
+.ds-sku-more { padding: 6px 0 0; font-size: 12px; color: var(--muted); }
+
+@media (max-width: 720px) {
+  dialog#ds_reply_dialog.ds-dialog--wide { width: 98vw; }
+  .ds-sf-scroll { max-height: 58vh; }
+  .ds-sf-extra { grid-template-columns: 1fr; }
+}
+
 /* ==========================================================================
    OM Portal(????)
    ========================================================================== */

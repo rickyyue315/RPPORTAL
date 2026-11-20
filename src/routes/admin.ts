@@ -194,6 +194,7 @@ import {
   buildDesignatedSkuExportBuffer,
   generateDesignatedSkuTemplateWorkbook,
   parseDesignatedSkuWorkbook,
+  readSafetyPayload,
 } from '../lib/designatedSku.js';
 import {
   deleteZero90Stat,
@@ -4469,6 +4470,8 @@ function designatedSkuExportRows(matters: DesignatedSkuMatter[]) {
     lines: Array<{ year_code: string; qty: number }>;
     reply_fields: Array<{ label: string; value: string }>;
     reply_scope: string;
+    reply_mode: string;
+    safety: ReturnType<typeof readSafetyPayload>;
   }> = [];
   for (const matter of matters) {
     for (const item of matter.items) {
@@ -4500,6 +4503,8 @@ function designatedSkuExportRows(matters: DesignatedSkuMatter[]) {
           value: item.reply_values[field.key] ?? '',
         })),
         reply_scope: matter.reply_scope,
+        reply_mode: matter.reply_mode,
+        safety: matter.reply_mode === 'safety' ? readSafetyPayload(item.payload) : null,
       });
     }
   }
@@ -4578,10 +4583,13 @@ adminRouter.post(
     }
 
     const replyFields = parsed.replyFields ?? [];
+    // Safety 調整檔一律用固定三欄（同意／不同意、原因、新 Safety），不受上載畫面選項影響
     // 全店回覆一次：佔位 SKU 沒有存貨／年期，一律以自定欄位回覆
-    const replyMode = parsed.replyScope === 'matter'
-      ? 'custom'
-      : (meta.data.reply_mode === 'auto' ? (parsed.replyMode ?? 'stock_year') : meta.data.reply_mode);
+    const replyMode = parsed.replyMode === 'safety'
+      ? 'safety'
+      : parsed.replyScope === 'matter'
+        ? 'custom'
+        : (meta.data.reply_mode === 'auto' ? (parsed.replyMode ?? 'stock_year') : meta.data.reply_mode);
     if (replyMode !== 'stock_year' && !replyFields.length) {
       res.status(400).json({
         error: '回覆模式包含自定欄位，但檔案內沒有可辨識的回覆欄位（內建 5 欄以外的表頭）',
@@ -4591,7 +4599,7 @@ adminRouter.post(
 
     const { batchId, batchCode, matterCodes } = await createDesignatedSkuBatch({
       subject: meta.data.subject,
-      matterType: meta.data.matter_type,
+      matterType: parsed.replyMode === 'safety' ? 'safety_review' : meta.data.matter_type,
       instructions: meta.data.instructions ?? '',
       dueAt: due.value,
       reference: meta.data.reference ?? '',

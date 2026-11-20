@@ -94,8 +94,17 @@
       .join(' ');
   }
 
-  function itemReply(item) {
+  function itemReply(item, matter) {
     if (item.status !== 'replied') return '<span class="text-danger small">未回覆</span>';
+    if (matter && matter.reply_mode === 'safety') {
+      const v = item.reply_values || {};
+      if (v.f1 === '不同意') {
+        return `<span class="dsku-line-chip">不同意</span>`
+          + (v.f2 ? `<span class="dsku-line-chip">原因 <b>${esc(v.f2)}</b></span>` : '')
+          + (v.f3 ? `<span class="dsku-line-chip">新 Safety <b>${esc(v.f3)}</b></span>` : '');
+      }
+      return '<span class="dsku-line-chip">同意</span>';
+    }
     if (item.no_transfer) return '<span class="text-secondary small">無可調撥</span>';
     return `${fmtLines(item.lines)}<span class="text-secondary small">合計 ${item.reply_total ?? 0} 件</span>`;
   }
@@ -348,12 +357,15 @@
     // 回覆內容：模式／層級／自定欄位
     const mode = batch.reply_mode || 'stock_year';
     const fields = batch.reply_fields || [];
-    const modeText = mode === 'custom' ? '自定欄位' : mode === 'mixed' ? '年期 + 自定欄位' : '年期／可調撥件數';
+    const safety = mode === 'safety';
+    const modeText = safety
+      ? 'Safety 調整（同意／不同意）'
+      : mode === 'custom' ? '自定欄位' : mode === 'mixed' ? '年期 + 自定欄位' : '年期／可調撥件數';
     const scopeText = batch.reply_scope === 'matter' ? '全店回覆一次' : '逐個 SKU 回覆';
     html += `<div class="mt-2 dsku-fields-meta"><b>回覆內容</b>：${modeText}｜${scopeText}`
-      + (fields.length ? `｜欄位 <b>${fields.length}</b> / 10` : '')
+      + (safety ? '｜固定 3 欄（回覆／原因／新 Safety）' : (fields.length ? `｜欄位 <b>${fields.length}</b> / 10` : ''))
       + '</div>';
-    if (fields.length) {
+    if (fields.length && !safety) {
       html += `<div class="dsku-field-chips">${fields.map((f) => `<span class="dsku-field-chip">${esc(f.label)}${f.required ? '<b class="text-danger">*</b>' : ''}<em>${f.type === 'number' ? '數字' : f.type === 'choice' ? '單選' : '文字'}</em></span>`).join('')}</div>`;
     }
     $('dsku_detail_meta').innerHTML = html;
@@ -400,7 +412,7 @@
         : (matter.items || []).map((item) => `
         <div class="dsku-sku-row">
           <div class="dsku-sku-row-head"><b class="dsku-code">${esc(item.sku)}</b><span>${esc(item.description || '')}</span><em>存貨 ${fmtStock(item.stock_qty)}</em></div>
-          <div class="dsku-sku-row-reply">${itemReply(item)}</div>
+          <div class="dsku-sku-row-reply">${itemReply(item, matter)}</div>
           <div class="dsku-sku-row-actions">
             <button class="btn btn-sm btn-outline-primary" data-dsku-edit-item="${esc(item.id)}" data-matter="${esc(matter.id)}">編輯</button>
             <button class="btn btn-sm btn-outline-danger" data-dsku-del-item="${esc(item.id)}" data-sku="${esc(item.sku)}">移除</button>
@@ -608,6 +620,15 @@
     if (!wrap) return;
     const box = $('dsku_admin_total');
     if (!box) return;
+    if (currentBatch && currentBatch.reply_mode === 'safety') {
+      const sections = Array.from(wrap.querySelectorAll('[data-item]'));
+      const answered = sections.filter((section) => {
+        const select = section.querySelector('.dsku-cf-input[data-field="f1"]');
+        return select && String(select.value || '').trim() !== '';
+      }).length;
+      box.innerHTML = `已選擇 <b>${answered}</b> / ${sections.length} 個 SKU`;
+      return;
+    }
     if (currentBatch && currentBatch.reply_mode === 'custom') {
       const inputs = Array.from(wrap.querySelectorAll('.dsku-cf-input'));
       const filled = inputs.filter((el) => String(el.value || '').trim() !== '').length;
@@ -662,7 +683,8 @@
           <div class="text-secondary small">存貨 ${fmtStock(item.stock_qty)}</div>
         </div>`;
 
-    const linesBlock = mode === 'custom' ? '' : `
+    const fieldOnly = mode === 'custom' || mode === 'safety';
+    const linesBlock = fieldOnly ? '' : `
       <div class="dsku-editor">
         <div class="dsku-lines-head"><span>貨品年期 (MMYY)</span><span>可調撥件數</span><span></span></div>
         <div class="dsku-lines"></div>
@@ -681,7 +703,7 @@
       input.addEventListener('change', updateAdminTotal);
     });
 
-    if (mode === 'custom') {
+    if (fieldOnly) {
       updateAdminTotal();
       return section;
     }
@@ -770,6 +792,10 @@
         const note = noteBox ? noteBox.value.trim() : '';
         if (matter.reply_mode === 'custom') {
           if (!Object.keys(fields).length) throw new Error(`${subject}：請至少填寫一個回覆欄位`);
+          return { item_id: section.dataset.item, lines: [], note, no_transfer: false, fields };
+        }
+        if (matter.reply_mode === 'safety') {
+          if (!fields.f1) throw new Error(`${subject}：請選擇「同意」或「不同意」`);
           return { item_id: section.dataset.item, lines: [], note, no_transfer: false, fields };
         }
         const checkbox = section.querySelector('.dsku-no-transfer');
@@ -1151,6 +1177,10 @@
 
   function openFieldsModal() {
     if (!currentBatch) return;
+    if (currentBatch.reply_mode === 'safety') {
+      toast('Safety 調整批次的回覆欄位固定（回覆／原因／新 Safety），不可修改');
+      return;
+    }
     fieldDraft = (currentBatch.reply_fields || []).map((f) => ({ ...f }));
     $('dsku_fields_hint').textContent =
       `${currentBatch.batch_code}｜${currentBatch.reply_scope === 'matter' ? '全店回覆一次' : '逐個 SKU 回覆'}`;
@@ -1223,14 +1253,16 @@
       const data = await aFetch('/api/admin/designated-sku/batches', { method: 'POST', body: fd });
       const warnRows = (data.warnings || []).slice(0, 8).map((w) =>
         `<li>第 ${esc(String(w.row))} 行${w.siteCode ? `（${esc(w.siteCode)}）` : ''}：${esc(w.reason)}</li>`).join('');
-      const replyInfo = (data.replyFields || []).length
-        ? `｜回覆欄位 <b>${data.replyFields.length}</b> 個（${data.replyScope === 'matter' ? '全店回覆一次' : '逐個 SKU 回覆'}）`
-        : '｜只有年期／可調撥件數';
+      const replyInfo = data.replyMode === 'safety'
+        ? '｜<b>Safety 調整</b>（逐個 SKU 回覆同意／不同意）'
+        : (data.replyFields || []).length
+          ? `｜回覆欄位 <b>${data.replyFields.length}</b> 個（${data.replyScope === 'matter' ? '全店回覆一次' : '逐個 SKU 回覆'}）`
+          : '｜只有年期／可調撥件數';
       res.innerHTML = `
         <div class="alert alert-success">
           已建立批次 <b class="dsku-code">${esc(data.batchCode)}</b>：${data.matterCount} 個事項 / ${data.itemCount} 個 SKU（${data.storeCount} 間店舖）${replyInfo}。
           ${data.skippedRows ? `已剔除 ${data.skippedRows} 個合計／空白列。` : ''}
-          <div class="small mt-1">同店多個 SKU 已歸入同一事項；店舖只會見到屬於自己 Site Code 的事項。可按「批次列表 → 明細」複製直 link${(data.replyFields || []).length ? '，或按「回覆欄位」改名／設必填' : ''}。</div>
+          <div class="small mt-1">同店多個 SKU 已歸入同一事項；店舖只會見到屬於自己 Site Code 的事項。可按「批次列表 → 明細」複製直 link${data.replyMode === 'safety' ? '' : ((data.replyFields || []).length ? '，或按「回覆欄位」改名／設必填' : '')}。</div>
         </div>
         ${warnRows ? `<div class="alert alert-warning"><b>${data.warnings.length} 個匯入提示</b>（事項已建立，請核對）<ul class="mb-0">${warnRows}</ul></div>` : ''}`;
       $('dsku_force').checked = false;

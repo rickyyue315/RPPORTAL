@@ -14,12 +14,36 @@
   const MAX_LINES = 20;
   const MAX_QTY = 9999;
 
+  /** Safety 調整模式（reply_mode = 'safety'） */
+  const SAFETY_AGREE = '同意';
+  const SAFETY_DISAGREE = '不同意';
+
   /** 目前開啟事項的回覆設定（由批次帶落嚟） */
   let currentFields = [];
   let currentMode = 'stock_year';
   let currentScope = 'item';
 
   /* ---------------- 工具 ---------------- */
+
+  /** 數字顯示：空白顯示「—」，可指定小數位；非數字原樣顯示 */
+  function numText(raw, digits = 0) {
+    const text = String(raw === null || raw === undefined ? '' : raw).trim();
+    if (!text) return '—';
+    const n = Number(text.replace(/,/g, ''));
+    if (!Number.isFinite(n)) return p.escapeHtml(text);
+    return digits ? n.toFixed(digits) : String(Math.round(n));
+  }
+
+  function safetyDelta(raw) {
+    const text = String(raw ?? '').trim();
+    if (!text) return { text: '—', cls: '' };
+    const n = Number(text.replace(/,/g, ''));
+    if (!Number.isFinite(n)) return { text: p.escapeHtml(text), cls: '' };
+    const rounded = Math.round(n);
+    if (rounded > 0) return { text: `+${rounded}`, cls: 'ds-sf-up' };
+    if (rounded < 0) return { text: String(rounded), cls: 'ds-sf-down' };
+    return { text: '0', cls: '' };
+  }
 
   function fmtStock(value) {
     return value === null || value === undefined ? '未提供' : `${value} 件`;
@@ -41,6 +65,16 @@
     if (item.status !== 'replied') return '<span class="ds-line-pending">未回覆</span>';
     const mode = (matter && matter.reply_mode) || 'stock_year';
     const fields = (matter && matter.reply_fields) || [];
+    if (mode === 'safety') {
+      const values = item.reply_values || {};
+      if (values.f1 === SAFETY_DISAGREE) {
+        const bits = ['<span class="ds-sf-chip ds-sf-chip--no">不同意</span>'];
+        if (values.f2) bits.push(`<span class="ds-cf-chip">原因 <b>${p.escapeHtml(values.f2)}</b></span>`);
+        if (values.f3) bits.push(`<span class="ds-cf-chip">新 Safety <b>${p.escapeHtml(values.f3)}</b></span>`);
+        return bits.join(' ');
+      }
+      return '<span class="ds-sf-chip ds-sf-chip--yes">同意</span>';
+    }
     if (mode === 'custom') {
       const values = (item.reply_values || {});
       const parts = fields
@@ -98,6 +132,13 @@
       $('ds_site_info').innerHTML =
         `<div class="site-banner">${p.escapeHtml(data.site_code)}${data.shop ? ` ${p.escapeHtml(data.shop)}` : ''}</div>` +
         `<div>共 ${matters.length} 個事項${parts.length ? `（${parts.join('｜')}）` : ''}${data.pending_count ? `｜<b class="ds-pending-count">${data.pending_count} 個事項未回覆</b>` : '｜全部已回覆'}</div>`;
+      // 說明文字按實際模式切換：只有 Safety 事項就收起年期／自定欄位那段
+      const hasSafety = matters.some((m) => m.reply_mode === 'safety');
+      const hasOther = matters.some((m) => m.reply_mode !== 'safety');
+      const introSafety = $('ds_intro_safety');
+      const introDefault = $('ds_intro_default');
+      if (introSafety) introSafety.hidden = !hasSafety;
+      if (introDefault) introDefault.hidden = hasSafety && !hasOther;
       render();
       if (wantedMatterCode) {
         const code = wantedMatterCode;
@@ -136,18 +177,30 @@
       const replied = matter.status === 'replied';
       const label = closed ? '查看回覆' : replied ? '修改回覆' : '回覆';
       const shopLevel = matter.reply_scope === 'matter';
+      const safetyMode = matter.reply_mode === 'safety';
+      const allItems = matter.items || [];
+      // Safety 調整每店可達 40+ 行：列表只顯示頭 6 行，詳情在事項彈窗
+      const visibleItems = safetyMode ? allItems.slice(0, 6) : allItems;
       const facts = [
+        safetyMode ? '<b class="ds-sf-mode-tag">Safety 調整</b>' : '',
         shopLevel ? '<b>全店回覆一次</b>（不需逐個 SKU）' : `<b>${matter.item_count}</b> 個 SKU`,
         `批次 <span class="ds-code">${p.escapeHtml(matter.batch_code)}</span>`,
         matter.due_at ? `截止 <b>${p.escapeHtml(matter.due_at)}</b>（香港時間）` : '',
         matter.reference ? `參考 ${p.escapeHtml(matter.reference)}` : '',
       ].filter(Boolean).join('<span class="ds-sep">｜</span>');
-      const skuRows = shopLevel ? '' : (matter.items || []).map((item) => `
+      const skuRows = shopLevel ? '' : visibleItems.map((item) => {
+        const stockText = safetyMode && item.safety
+          ? `Safety ${numText(item.safety.safety_current)} → <b>${numText(item.safety.safety_recommend)}</b>`
+          : `存貨 ${p.escapeHtml(fmtStock(item.stock_qty))}`;
+        return `
         <div class="ds-sku-line">
           <div class="ds-sku-line-id"><b class="ds-code">${p.escapeHtml(item.sku)}</b><span>${p.escapeHtml(item.description || '')}</span></div>
-          <div class="ds-sku-line-stock">存貨 ${p.escapeHtml(fmtStock(item.stock_qty))}</div>
+          <div class="ds-sku-line-stock">${stockText}</div>
           <div class="ds-sku-line-reply">${itemSummary(item, matter)}</div>
-        </div>`).join('');
+        </div>`;
+      }).join('') + (safetyMode && allItems.length > 6
+        ? `<div class="ds-sku-more">…其餘 <b>${allItems.length - 6}</b> 個 SKU，按「${p.escapeHtml(label)}」查看全部</div>`
+        : '');
       return `<article class="ds-matter${closed ? ' ds-matter--closed' : replied ? ' ds-matter--replied' : ' ds-matter--pending'}">
         <div class="ds-matter-head">
           <div class="ds-matter-head-left">${matterStatusBadge(matter)}<span class="ds-code ds-matter-code">${p.escapeHtml(matter.matter_code)}</span></div>
@@ -225,6 +278,10 @@
 
   function updateOverallTotal() {
     if (!currentMatter) return;
+    if (currentMode === 'safety') {
+      updateSafetySummary();
+      return;
+    }
     if (currentMode === 'custom') {
       const inputs = Array.from($('ds_sku_sections').querySelectorAll('.ds-cf-input'));
       const filled = inputs.filter((el) => String(el.value || '').trim() !== '').length;
@@ -373,6 +430,170 @@
     return section;
   }
 
+  /* ---------------- Safety 調整：逐行同意／不同意 ---------------- */
+
+  /** 一行 = 一個 SKU；11 個顯示欄位 ＋ 回覆欄 */
+  function safetyRowHtml(item) {
+    const s = item.safety || {};
+    const values = item.reply_values || {};
+    const decision = values.f1 || '';
+    const delta = safetyDelta(s.safety_change);
+    const disabled = readOnly ? ' disabled' : '';
+    let replyCell;
+    if (readOnly) {
+      if (!decision) {
+        replyCell = '<span class="ds-line-pending">未回覆（已截止）</span>';
+      } else if (decision === SAFETY_DISAGREE) {
+        replyCell = `<div class="ds-sf-readonly"><span class="ds-sf-chip ds-sf-chip--no">不同意</span>`
+          + (values.f2 ? `<div class="ds-sf-ro-line">原因：${p.escapeHtml(values.f2)}</div>` : '')
+          + (values.f3 ? `<div class="ds-sf-ro-line">新 Safety：<b>${p.escapeHtml(values.f3)}</b></div>` : '')
+          + '</div>';
+      } else {
+        replyCell = '<span class="ds-sf-chip ds-sf-chip--yes">同意</span>';
+      }
+    } else {
+      replyCell = `<div class="ds-sf-btns" role="group" aria-label="SKU ${p.escapeHtml(item.sku)} 回覆">
+          <button type="button" class="ds-sf-btn ds-sf-btn--yes${decision === SAFETY_AGREE ? ' is-on' : ''}" data-decision="${SAFETY_AGREE}" aria-pressed="${decision === SAFETY_AGREE}">${SAFETY_AGREE}</button>
+          <button type="button" class="ds-sf-btn ds-sf-btn--no${decision === SAFETY_DISAGREE ? ' is-on' : ''}" data-decision="${SAFETY_DISAGREE}" aria-pressed="${decision === SAFETY_DISAGREE}">${SAFETY_DISAGREE}</button>
+        </div>
+        <div class="ds-sf-extra"${decision === SAFETY_DISAGREE ? '' : ' hidden'}>
+          <input class="ds-sf-reason" type="text" maxlength="300" autocomplete="off" placeholder="原因（選填）" aria-label="SKU ${p.escapeHtml(item.sku)} 不同意原因" value="${p.escapeHtml(values.f2 || '')}">
+          <label class="ds-sf-new"><span>新 Safety</span>
+            <input class="ds-sf-newsafety" type="number" min="0" max="99999" step="1" inputmode="numeric" placeholder="選填" aria-label="SKU ${p.escapeHtml(item.sku)} 新 Safety 件數" value="${p.escapeHtml(values.f3 || '')}">
+          </label>
+        </div>`;
+    }
+    return `<tr data-sf-row data-item="${p.escapeHtml(item.id)}" data-sku="${p.escapeHtml(item.sku)}" data-decision="${p.escapeHtml(decision)}" class="${decision ? 'is-answered' : ''}${readOnly && !decision ? ' is-unanswered' : ''}">
+      <td class="ds-sf-c-brand" title="${p.escapeHtml(s.brand || '')}">${p.escapeHtml(s.brand || '')}</td>
+      <td class="ds-sf-c-sku"><b class="ds-code">${p.escapeHtml(item.sku)}</b></td>
+      <td class="ds-sf-c-desc">${p.escapeHtml(s.description || item.description || '')}</td>
+      <td class="ds-sf-c-issue"><span class="ds-sf-tag">${p.escapeHtml(s.issue_type || '—')}</span></td>
+      <td class="ds-sf-c-method" title="${p.escapeHtml(s.suggestion || '')}"><div class="ds-sf-clamp">${p.escapeHtml(s.suggestion || '—')}</div></td>
+      <td class="ds-sf-num">${numText(s.stock_qty)}</td>
+      <td class="ds-sf-num">${numText(s.monthly_sold, 1)}</td>
+      <td class="ds-sf-num">${numText(s.turnday, 1)}</td>
+      <td class="ds-sf-num">${numText(s.safety_current)}</td>
+      <td class="ds-sf-num ds-sf-num--rec">${numText(s.safety_recommend)}</td>
+      <td class="ds-sf-num ${delta.cls}">${delta.text}</td>
+      <td class="ds-sf-reply">${replyCell}</td>
+    </tr>`;
+  }
+
+  function safetyTableHtml(matter) {
+    const items = matter.items || [];
+    return `<div class="ds-sf-wrap">
+      <div class="ds-sf-toolbar">
+        <div class="ds-sf-progress" id="ds_sf_progress" role="status"></div>
+        ${readOnly ? '' : '<button type="button" class="btn ghost btn-sm" id="ds_sf_all_agree">全部同意</button>'}
+      </div>
+      <div class="ds-sf-scroll">
+        <table class="ds-sf-table">
+          <thead><tr>
+            <th class="ds-sf-c-brand" scope="col">品牌</th>
+            <th class="ds-sf-c-sku" scope="col">SKU</th>
+            <th class="ds-sf-c-desc" scope="col">貨品描述</th>
+            <th class="ds-sf-c-issue" scope="col">問題類型</th>
+            <th class="ds-sf-c-method" scope="col">建議方法</th>
+            <th class="ds-sf-num" scope="col">店舖存貨<br><span>（件）</span></th>
+            <th class="ds-sf-num" scope="col">月均銷量<br><span>（P90D）</span></th>
+            <th class="ds-sf-num" scope="col">可售日數<br><span>（Turnday）</span></th>
+            <th class="ds-sf-num" scope="col">現時<br>Safety</th>
+            <th class="ds-sf-num" scope="col">建議<br>Safety</th>
+            <th class="ds-sf-num" scope="col">Safety<br>增減</th>
+            <th class="ds-sf-reply" scope="col">回覆</th>
+          </tr></thead>
+          <tbody>${items.map(safetyRowHtml).join('')}</tbody>
+        </table>
+      </div>
+      <p class="ds-sf-legend">可售日數＝以目前店舖存貨除以每日平均銷量（P90D），數字越低代表越快賣完。Safety 增減為「建議 − 現時」，正數代表需增加。</p>
+    </div>`;
+  }
+
+  function setSafetyDecision(row, decision, silent = false) {
+    if (!row) return;
+    row.dataset.decision = decision;
+    row.classList.remove('is-missing');
+    row.classList.toggle('is-answered', Boolean(decision));
+    row.querySelectorAll('[data-decision]').forEach((btn) => {
+      const on = btn.dataset.decision === decision;
+      btn.classList.toggle('is-on', on);
+      btn.setAttribute('aria-pressed', on ? 'true' : 'false');
+    });
+    const extra = row.querySelector('.ds-sf-extra');
+    if (extra) extra.hidden = decision !== SAFETY_DISAGREE;
+    row.querySelectorAll('.ds-sf-reason, .ds-sf-newsafety').forEach((el) => el.classList.remove('is-invalid'));
+    if (!silent) updateSafetySummary();
+  }
+
+  function updateSafetySummary() {
+    if (!currentMatter || currentMode !== 'safety') return;
+    const rows = Array.from($('ds_sku_sections').querySelectorAll('[data-sf-row]'));
+    const answered = rows.filter((row) => row.dataset.decision).length;
+    const agree = rows.filter((row) => row.dataset.decision === SAFETY_AGREE).length;
+    const disagree = rows.filter((row) => row.dataset.decision === SAFETY_DISAGREE).length;
+    const progress = $('ds_sf_progress');
+    if (progress) {
+      progress.innerHTML = `共 <b>${rows.length}</b> 個 SKU｜已回覆 <b>${answered}</b> / ${rows.length}`
+        + `｜<span class="ds-sf-count-yes">同意 ${agree}</span>`
+        + `｜<span class="ds-sf-count-no">不同意 ${disagree}</span>`
+        + (answered < rows.length ? `｜<span class="ds-sf-count-left">尚餘 ${rows.length - answered}</span>` : '｜<b class="ds-sf-done">已全部選擇</b>');
+    }
+    const summary = $('ds_reply_summary');
+    if (summary) {
+      summary.innerHTML = `已回覆 <b>${answered}</b> / ${rows.length} 個 SKU`
+        + (answered < rows.length ? ' — 請為每個 SKU 選擇同意或不同意' : '');
+    }
+  }
+
+  function wireSafetyTable() {
+    const wrap = $('ds_sku_sections');
+    updateSafetySummary();
+    if (readOnly) return;
+    wrap.querySelectorAll('[data-decision]').forEach((btn) => {
+      btn.addEventListener('click', () => setSafetyDecision(btn.closest('[data-sf-row]'), btn.dataset.decision));
+    });
+    const all = wrap.querySelector('#ds_sf_all_agree');
+    if (all) {
+      all.addEventListener('click', () => {
+        wrap.querySelectorAll('[data-sf-row]').forEach((row) => setSafetyDecision(row, SAFETY_AGREE, true));
+        updateSafetySummary();
+      });
+    }
+    wrap.querySelectorAll('.ds-sf-reason, .ds-sf-newsafety').forEach((input) => {
+      input.addEventListener('input', () => input.classList.remove('is-invalid'));
+    });
+  }
+
+  /** 收集 Safety 回覆：每個 SKU 必須有 f1；不同意才送 f2／f3 */
+  function collectSafetyItems() {
+    const rows = Array.from($('ds_sku_sections').querySelectorAll('[data-sf-row]'));
+    const missing = rows.filter((row) => !row.dataset.decision);
+    if (missing.length) {
+      const first = missing[0];
+      first.classList.add('is-missing');
+      first.scrollIntoView({ block: 'center', behavior: 'smooth' });
+      throw new Error(`仍有 ${missing.length} 個 SKU 未選擇「同意／不同意」，已跳到第一個未選擇的行`);
+    }
+    return rows.map((row) => {
+      const decision = row.dataset.decision;
+      const sku = row.dataset.sku || '—';
+      const fields = { f1: decision };
+      if (decision === SAFETY_DISAGREE) {
+        const reasonEl = row.querySelector('.ds-sf-reason');
+        const newEl = row.querySelector('.ds-sf-newsafety');
+        const reason = reasonEl ? reasonEl.value.trim() : '';
+        const newSafety = newEl ? newEl.value.trim() : '';
+        if (newSafety && !/^\d+$/.test(newSafety)) {
+          if (newEl) newEl.classList.add('is-invalid');
+          throw new Error(`SKU ${sku}：新 Safety 必須為 0 或以上的整數`);
+        }
+        if (reason) fields.f2 = reason;
+        if (newSafety) fields.f3 = newSafety;
+      }
+      return { item_id: row.dataset.item, lines: [], note: '', no_transfer: false, fields };
+    });
+  }
+
   function openMatter(code) {
     const matter = matters.find((m) => m.matter_code === code);
     if (!matter) return;
@@ -381,14 +602,19 @@
     currentMode = matter.reply_mode || 'stock_year';
     currentScope = matter.reply_scope || 'item';
     readOnly = !matter.is_open;
+    $('ds_reply_dialog').classList.toggle('ds-dialog--wide', currentMode === 'safety');
     $('ds_reply_title').textContent = readOnly
       ? `事項回覆（已截止） — ${matter.matter_code}`
       : matter.status === 'replied' ? `修改回覆 — ${matter.matter_code}` : `回覆事項 — ${matter.matter_code}`;
     $('ds_reply_matter').textContent = `${matter.subject}｜批次 ${matter.batch_code}`;
-    $('ds_reply_sub').textContent = (currentScope === 'matter' ? '全店回覆一次' : `${matter.item_count} 個 SKU`) +
-      (currentFields.length ? `｜${currentFields.length} 個回覆欄位` : '') +
-      (matter.due_at ? `｜截止 ${matter.due_at}（香港時間）` : '') +
-      (matter.reference ? `｜參考 ${matter.reference}` : '');
+    $('ds_reply_sub').textContent = currentMode === 'safety'
+      ? `Safety 調整｜${matter.item_count} 個 SKU`
+        + (matter.due_at ? `｜截止 ${matter.due_at}（香港時間）` : '')
+        + (matter.reference ? `｜參考 ${matter.reference}` : '')
+      : (currentScope === 'matter' ? '全店回覆一次' : `${matter.item_count} 個 SKU`) +
+        (currentFields.length ? `｜${currentFields.length} 個回覆欄位` : '') +
+        (matter.due_at ? `｜截止 ${matter.due_at}（香港時間）` : '') +
+        (matter.reference ? `｜參考 ${matter.reference}` : '');
 
     const notice = $('ds_reply_notice');
     if (readOnly) {
@@ -408,7 +634,12 @@
 
     const wrap = $('ds_sku_sections');
     wrap.innerHTML = '';
-    (matter.items || []).forEach((item) => wrap.appendChild(buildSkuSection(item)));
+    if (currentMode === 'safety') {
+      wrap.innerHTML = safetyTableHtml(matter);
+      wireSafetyTable();
+    } else {
+      (matter.items || []).forEach((item) => wrap.appendChild(buildSkuSection(item)));
+    }
 
     $('ds_reply_summary').hidden = readOnly;
     $('ds_save').hidden = readOnly;
@@ -417,10 +648,14 @@
     p.showAlert($('ds_reply_error'), '', '');
     updateOverallTotal();
     $('ds_reply_dialog').showModal();
-    if (!readOnly) {
-      const first = wrap.querySelector('.ds-year') || wrap.querySelector('.ds-cf-input');
-      if (first) setTimeout(() => first.focus(), 60);
+    if (readOnly) return;
+    if (currentMode === 'safety') {
+      const firstBtn = wrap.querySelector('.ds-sf-btn');
+      if (firstBtn) setTimeout(() => firstBtn.focus(), 60);
+      return;
     }
+    const first = wrap.querySelector('.ds-year') || wrap.querySelector('.ds-cf-input');
+    if (first) setTimeout(() => first.focus(), 60);
   }
 
   /** 直 link：先在本店清單找；找不到再向伺服器查（會被 403 / 404 擋） */
@@ -493,6 +728,7 @@
   }
 
   function collectItems() {
+    if (currentMode === 'safety') return collectSafetyItems();
     return Array.from($('ds_sku_sections').querySelectorAll('[data-item]')).map((section) => {
       const item = (currentMatter.items || []).find((it) => it.id === section.dataset.item);
       const subject = currentScope === 'matter' ? '本店回覆' : `SKU ${item ? item.sku : '—'}`;
@@ -540,9 +776,11 @@
       $('ds_reply_dialog').close();
       render();
       await loadMatters();
-      const summary = data.matter.reply_mode === 'custom'
-        ? (data.matter.reply_scope === 'matter' ? '本店回覆已儲存' : `${data.matter.item_count} 個 SKU 已回覆`)
-        : `${data.matter.item_count} 個 SKU，合計 ${data.matter.reply_total} 件`;
+      const summary = data.matter.reply_mode === 'safety'
+        ? `${data.matter.item_count} 個 SKU 已提交 Safety 回覆`
+        : data.matter.reply_mode === 'custom'
+          ? (data.matter.reply_scope === 'matter' ? '本店回覆已儲存' : `${data.matter.item_count} 個 SKU 已回覆`)
+          : `${data.matter.item_count} 個 SKU，合計 ${data.matter.reply_total} 件`;
       p.showAlert($('ds_list_error'), 'success', `已儲存 <b>${p.escapeHtml(data.matter.matter_code)}</b> 的回覆（${summary}）。如發現輸入有誤，可在截止前再修改。`);
     } catch (err) {
       if (err.status === 409 && err.data?.code === 'MATTER_CLOSED') {

@@ -14,6 +14,7 @@ import { hashPassword } from '../src/services/portalAuth.js';
 import {
   normalizeYearCode,
   parseDesignatedSkuWorkbook,
+  readSafetyPayload,
 } from '../src/lib/designatedSku.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -1055,5 +1056,187 @@ describe('回覆自定欄位（每批次不同，上限 10 個）', () => {
     const res = await uploadBatch(admin, Buffer.from(await wb.xlsx.writeBuffer()), { subject: '欄位過多測試' });
     expect(res.status).toBe(400);
     expect(JSON.stringify(res.body)).toContain('上限 10');
+  });
+});
+
+/* -------------------------------------------------------------------------
+ * Safety 調整（reply_mode = 'safety'）
+ * 買手上載的檔案每行 = 一間店舖的一個 SKU，店舖只需回覆同意／不同意。
+ * 這個模式與原有「年期／可調撥件數」「自定欄位」並存，互不影響。
+ * ---------------------------------------------------------------------- */
+
+const SAFETY_HEADERS = [
+  'Site Code',
+  'Shop Name',
+  'Brand',
+  'SKU',
+  'SKU Desc',
+  '問題類型',
+  '問題說明',
+  '建議方法',
+  'Shop Stock Qty (CM)',
+  'Shop Monthly Sold Qty (P90D)',
+  'Turnday (P90D Qty)',
+  'Safety Stock (現時)',
+  'Recommend Safety Stock',
+  'Safety Qty Change',
+];
+
+async function buildSafetyWorkbook(): Promise<Buffer> {
+  const wb = new ExcelJS.Workbook();
+  const ws = wb.addWorksheet('店舖問題 SKU');
+  // 與真實檔案相同：第 1 列標題、第 2 列空白、第 3 列表頭
+  ws.addRow(['店舖問題 SKU — 每間店舖需行動列（問題＋建議方法）']);
+  ws.addRow([]);
+  ws.addRow(SAFETY_HEADERS);
+  const rows: Array<[string, string, string, string, number, number, number, number, number, number]> = [
+    ['HA02', '駱克', 'DHC - DHC', '107482202001', 'LIP BALM, N/A, 1.5G', 194, 418.5277777777778, 14.13765182186235, 120, 199],
+    ['HA02', '駱克', 'ELE - ELEANOR', '1099572', 'TMK COLOR LIP BALM, 3.4G', 5, 7.455555555555556, 20.45454545454546, 6, 8],
+    ['HB20', '旺角', 'SHI - SHISEIDO', '100165902001', 'HAND CREAM, N/A, 100G', 47, 135.8944444444444, 10.54862842892768, 48, 89],
+  ];
+  for (const [site, shop, brand, sku, desc, stock, monthly, turnday, current, recommend] of rows) {
+    ws.addRow([
+      site, shop, brand, sku, desc, 'Safety 設定不足',
+      `現時 Safety ${current} 件低於建議 ${recommend} 件（需增加 ${recommend - current} 件），狀態為Normal`,
+      `建議將 Safety 由 ${current} 件調整為 ${recommend} 件（增加 ${recommend - current} 件），請按建議值補足安全庫存`,
+      stock, monthly, turnday, current, recommend, recommend - current,
+    ]);
+  }
+  return Buffer.from(await wb.xlsx.writeBuffer());
+}
+
+describe('Safety 調整（reply_mode = safety）', () => {
+  let batchId = '';
+  let ha02Matter = '';
+  let ha02Items: Array<{ id: string; sku: string }> = [];
+  let safetyBuffer: Buffer;
+
+  it('自動認到 Safety 檔：11 欄寫入 payload，回覆欄固定三個', async () => {
+    safetyBuffer = await buildSafetyWorkbook();
+    const parsed = await parseDesignatedSkuWorkbook(safetyBuffer, new Set(['HA02', 'HB20']), 100);
+    expect(parsed.ok).toBe(true);
+    expect(parsed.replyMode).toBe('safety');
+    expect(parsed.replyScope).toBe('item');
+    expect(parsed.replyFields!.map((f) => f.key)).toEqual(['f1', 'f2', 'f3']);
+    expect(parsed.replyFields![0]!.options).toEqual(['同意', '不同意']);
+    expect(parsed.rows!.length).toBe(3);
+    const first = parsed.rows![0]!;
+    expect(first.siteCode).toBe('HA02');
+    expect(first.description).toBe('LIP BALM, N/A, 1.5G');
+    const safety = readSafetyPayload(first.data)!;
+    expect(safety.issue_type).toBe('Safety 設定不足');
+    expect(safety.stock_qty).toBe('194');
+    expect(safety.safety_current).toBe('120');
+    expect(safety.safety_recommend).toBe('199');
+    expect(safety.safety_change).toBe('79');
+  });
+
+  it('上載後建立 safety 批次；店舖 API 帶回 11 欄顯示資料', async () => {
+    const admin = await adminAgent();
+    const res = await uploadBatch(admin, safetyBuffer, { subject: 'Winter Safety 調整（測試）' });
+    expect(res.status).toBe(201);
+    expect(res.body.replyMode).toBe('safety');
+    batchId = res.body.batchId as string;
+
+    const detail = await batchMatters(admin, batchId);
+    expect((detail.batch as Record<string, unknown>).reply_mode).toBe('safety');
+    expect((detail.batch as Record<string, unknown>).matter_type).toBe('safety_review');
+    const ha02 = (detail.matters as Matter[]).find((m) => m.site_code === 'HA02')!;
+    expect(ha02.item_count).toBe(2);
+    ha02Matter = ha02.matter_code;
+    ha02Items = ha02.items.map((it) => ({ id: it.id, sku: it.sku }));
+
+    const store = await storeAgent('HA02');
+    const list = await store.get('/api/portal/designated-sku/matters');
+    expect(list.status).toBe(200);
+    const matter = (list.body.matters as Array<Record<string, unknown>>).find((m) => m.matter_code === ha02Matter)!;
+    const items = matter.items as Array<Record<string, unknown>>;
+    const first = items.find((it) => it.sku === '107482202001')!;
+    const safety = first.safety as Record<string, string>;
+    expect(safety.safety_current).toBe('120');
+    expect(safety.safety_recommend).toBe('199');
+    expect(safety.suggestion).toContain('建議將 Safety');
+    // 原有 payload 不外洩（只給 11 欄）
+    expect(first.payload).toBeUndefined();
+  });
+
+  it('店舖回覆：必須逐個 SKU 選同意／不同意', async () => {
+    const store = await storeAgent('HA02');
+    const missing = await store
+      .put(`/api/portal/designated-sku/matters/${ha02Matter}/reply`)
+      .set('x-csrf-token', store._csrf ?? '')
+      .send({ items: ha02Items.map((it) => ({ item_id: it.id, fields: {} })) });
+    expect(missing.status).toBe(400);
+    expect(missing.body.error).toContain('回覆');
+
+    const bad = await store
+      .put(`/api/portal/designated-sku/matters/${ha02Matter}/reply`)
+      .set('x-csrf-token', store._csrf ?? '')
+      .send({
+        items: ha02Items.map((it) => ({ item_id: it.id, fields: { f1: '同意', f3: '1.5' } })),
+      });
+    expect(bad.status).toBe(400);
+  });
+
+  it('同意與不同意（原因＋新 Safety）一併儲存，事項轉已回覆', async () => {
+    const store = await storeAgent('HA02');
+    const [agreeItem, disagreeItem] = ha02Items;
+    const res = await store
+      .put(`/api/portal/designated-sku/matters/${ha02Matter}/reply`)
+      .set('x-csrf-token', store._csrf ?? '')
+      .send({
+        items: [
+          { item_id: agreeItem!.id, fields: { f1: '同意' } },
+          {
+            item_id: disagreeItem!.id,
+            fields: { f1: '不同意', f2: '陳列位不足，先維持 6 件', f3: '4' },
+          },
+        ],
+      });
+    expect(res.status).toBe(200);
+    expect(res.body.matter.status).toBe('replied');
+    const items = res.body.matter.items as Array<Record<string, unknown>>;
+    const agreed = items.find((it) => it.id === agreeItem!.id)!;
+    const disagreed = items.find((it) => it.id === disagreeItem!.id)!;
+    expect(agreed.reply_values).toEqual({ f1: '同意' });
+    expect(disagreed.reply_values).toEqual({
+      f1: '不同意',
+      f2: '陳列位不足，先維持 6 件',
+      f3: '4',
+    });
+    // Safety 模式不需要年期
+    expect(disagreed.reply_total).toBeNull();
+  });
+
+  it('匯出多一張「Safety 調整」工作表，含店舖回覆', async () => {
+    const admin = await adminAgent();
+    const res = await getXlsx(admin, `/api/admin/designated-sku/export?batch_id=${batchId}`);
+    expect(res.status).toBe(200);
+    const wb = new ExcelJS.Workbook();
+    await wb.xlsx.load(res.body as Buffer);
+    const ws = wb.getWorksheet('Safety 調整');
+    expect(ws).toBeTruthy();
+    const headers = (ws!.getRow(1).values as unknown[]).slice(1).map(String);
+    expect(headers).toContain('Safety Stock (現時)');
+    expect(headers).toContain('Recommend Safety Stock');
+    expect(headers).toContain('店舖回覆');
+    expect(headers).toContain('店舖建議 Safety');
+    const rows = ws!.getRows(2, ws!.rowCount - 1)!.map((row) =>
+      (row.values as unknown[]).slice(1),
+    );
+    const disagreeRow = rows.find((row) => row[5] === '1099572')!;
+    expect(disagreeRow[14]).toBe('不同意');
+    expect(disagreeRow[15]).toBe('陳列位不足，先維持 6 件');
+    expect(disagreeRow[16]).toBe(4);
+  });
+
+  it('Safety 批次不可修改回覆欄位', async () => {
+    const admin = await adminAgent();
+    const res = await admin
+      .put(`/api/admin/designated-sku/batches/${batchId}/reply-fields`)
+      .set('x-csrf-token', admin._csrf ?? '')
+      .send({ fields: [{ key: 'f1', label: '自己改名', type: 'text' }], reply_mode: 'custom' });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toContain('Safety');
   });
 });

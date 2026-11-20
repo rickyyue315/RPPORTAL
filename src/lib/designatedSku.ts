@@ -36,8 +36,79 @@ export const DESIGNATED_SKU_REPLY_TEXT_MAX = 300;
 export const DESIGNATED_SKU_PLACEHOLDER_SKU = '0';
 
 export type DesignatedSkuReplyFieldType = 'text' | 'number' | 'choice';
-export type DesignatedSkuReplyMode = 'stock_year' | 'custom' | 'mixed';
+export type DesignatedSkuReplyMode = 'stock_year' | 'custom' | 'mixed' | 'safety';
 export type DesignatedSkuReplyScope = 'item' | 'matter';
+
+/* -------------------------------------------------------------------------
+ * Safety 調整（reply_mode = 'safety'）
+ *
+ * 買手上載的檔案每行是「一間店舖的一個 SKU」，已經計好建議 Safety；
+ * 店舖只需逐個 SKU 回覆同意／不同意，唔需要填年期。
+ * 顯示用的欄位存在 item.payload（key 以 "Safety:" 開頭），
+ * 咁就算日後原檔欄名改動，都只影響解析，不影響前端。
+ * ---------------------------------------------------------------------- */
+
+export const SAFETY_DECISION_AGREE = '同意';
+export const SAFETY_DECISION_DISAGREE = '不同意';
+
+/** Safety 模式固定的三個回覆欄位（後台不可改名，因為 UI 直接對應） */
+export const SAFETY_REPLY_FIELDS: DesignatedSkuReplyField[] = [
+  { key: 'f1', label: '回覆', type: 'choice', required: true, options: [SAFETY_DECISION_AGREE, SAFETY_DECISION_DISAGREE] },
+  { key: 'f2', label: '不同意原因', type: 'text', required: false, hint: '選填' },
+  { key: 'f3', label: '店舖建議 Safety', type: 'number', required: false, hint: '選填' },
+];
+
+export const SAFETY_PAYLOAD_KEYS = {
+  brand: 'Safety:Brand',
+  description: 'Safety:SKU Desc',
+  issueType: 'Safety:問題類型',
+  issueDetail: 'Safety:問題說明',
+  suggestion: 'Safety:建議方法',
+  stock: 'Safety:Shop Stock Qty (CM)',
+  monthlySold: 'Safety:Shop Monthly Sold Qty (P90D)',
+  turnday: 'Safety:Turnday (P90D Qty)',
+  safetyCurrent: 'Safety:Safety Stock (現時)',
+  safetyRecommend: 'Safety:Recommend Safety Stock',
+  safetyChange: 'Safety:Safety Qty Change',
+} as const;
+
+export interface SafetyReviewView {
+  brand: string;
+  description: string;
+  issue_type: string;
+  issue_detail: string;
+  suggestion: string;
+  stock_qty: string;
+  monthly_sold: string;
+  turnday: string;
+  safety_current: string;
+  safety_recommend: string;
+  safety_change: string;
+}
+
+/** 由 item.payload 讀出 Safety 顯示欄位；不是 Safety 批次回 null */
+export function readSafetyPayload(payload: Record<string, string> | null | undefined): SafetyReviewView | null {
+  if (!payload) return null;
+  const get = (key: string) => {
+    const value = payload[key];
+    return value === null || value === undefined ? '' : String(value);
+  };
+  const hasAny = Object.values(SAFETY_PAYLOAD_KEYS).some((key) => get(key) !== '');
+  if (!hasAny) return null;
+  return {
+    brand: get(SAFETY_PAYLOAD_KEYS.brand),
+    description: get(SAFETY_PAYLOAD_KEYS.description),
+    issue_type: get(SAFETY_PAYLOAD_KEYS.issueType),
+    issue_detail: get(SAFETY_PAYLOAD_KEYS.issueDetail),
+    suggestion: get(SAFETY_PAYLOAD_KEYS.suggestion),
+    stock_qty: get(SAFETY_PAYLOAD_KEYS.stock),
+    monthly_sold: get(SAFETY_PAYLOAD_KEYS.monthlySold),
+    turnday: get(SAFETY_PAYLOAD_KEYS.turnday),
+    safety_current: get(SAFETY_PAYLOAD_KEYS.safetyCurrent),
+    safety_recommend: get(SAFETY_PAYLOAD_KEYS.safetyRecommend),
+    safety_change: get(SAFETY_PAYLOAD_KEYS.safetyChange),
+  };
+}
 
 export interface DesignatedSkuReplyField {
   /** 穩定識別（f1…f10）；改名不改 key，已收回覆不會失去對應 */
@@ -173,6 +244,75 @@ const HEADER_ALIASES: Record<string, string[]> = {
 
 const HEADER_FIELDS = Object.keys(HEADER_ALIASES) as Array<keyof typeof HEADER_ALIASES>;
 
+/**
+ * Safety 調整檔（每行 = 一間店舖的一個 SKU）的欄名。
+ * 只在同時偵測到「現時 Safety」及「建議 Safety」時才啟用，避免誤認其他檔案。
+ */
+const SAFETY_HEADER_ALIASES: Record<keyof SafetyReviewView, string[]> = {
+  brand: ['brand', '品牌'],
+  description: ['skudesc', 'skudescription', '貨品描述', '描述', 'articlelongtext60chars'],
+  issue_type: ['問題類型', '问题类型', 'issuetype', '問題分類'],
+  issue_detail: ['問題說明', '问题说明', 'issuedetail', '問題描述'],
+  suggestion: ['建議方法', '建议方法', 'suggestion', '建議行動'],
+  stock_qty: ['shopstockqtycm', 'shopstockqty', 'storestock', '店舖存貨', '存貨'],
+  monthly_sold: ['shopmonthlysoldqtyp90d', 'monthlysoldqtyp90d', '月均銷量', '平均月銷', '每月銷量'],
+  turnday: ['turndayp90dqty', 'turnday', '可售日數', '存貨可售天數'],
+  safety_current: [
+    'safetystock現時',
+    '現時safety',
+    'safetystockcurrent',
+    'adjsafetystock',
+    'safetystock',
+    '現時安全存貨',
+  ],
+  safety_recommend: [
+    'recommendsafetystock',
+    'recommendedsafetystock',
+    '建議safetystock',
+    '建議安全存貨',
+  ],
+  safety_change: ['safetyqtychange', 'safety增減', 'safety差額', '增減'],
+};
+
+const SAFETY_FIELD_KEYS = Object.keys(SAFETY_HEADER_ALIASES) as Array<keyof SafetyReviewView>;
+
+/** 逐欄比對 Safety 表頭；認不到回 null（不猜） */
+function detectSafetyField(header: string): keyof SafetyReviewView | null {
+  const h = normalizeHeader(header);
+  if (!h) return null;
+  // 先比對完整別名，避免「Recommend Safety Stock」被當成「Safety Stock」
+  for (const field of SAFETY_FIELD_KEYS) {
+    if (SAFETY_HEADER_ALIASES[field].includes(h)) return field;
+  }
+  if (h.includes('safety') && (h.includes('recommend') || h.includes('建議'))) return 'safety_recommend';
+  if (h.includes('safety') && (h.includes('change') || h.includes('增減') || h.includes('差額'))) return 'safety_change';
+  if (h.includes('safety')) return 'safety_current';
+  if (h.includes('turnday') || h.includes('可售日')) return 'turnday';
+  if (h.includes('monthlysold') || h.includes('月銷')) return 'monthly_sold';
+  if (h.includes('shopstockqty')) return 'stock_qty';
+  if (h.includes('問題類型')) return 'issue_type';
+  if (h.includes('問題說明')) return 'issue_detail';
+  if (h.includes('建議方法')) return 'suggestion';
+  if (h === 'skudesc' || h.includes('貨品描述')) return 'description';
+  if (h === 'brand' || h === '品牌') return 'brand';
+  return null;
+}
+
+/** 由 Item_Shop「(DHC) 107482202001-LIP BALM, N/A, 1.5GHD09-新威尼斯人」拆出描述 */
+function descriptionFromItemShop(raw: string, sku: string, siteCode: string): string {
+  let text = String(raw ?? '').trim();
+  if (!text) return '';
+  text = text.replace(/^\([^)]*\)\s*/, '');
+  if (sku && text.startsWith(sku)) text = text.slice(sku.length);
+  text = text.replace(/^[-–—]\s*/, '');
+  if (siteCode) {
+    const tail = `-${siteCode}-`;
+    const idx = text.lastIndexOf(tail);
+    if (idx >= 0) text = text.slice(0, idx);
+  }
+  return text.trim();
+}
+
 function detectField(header: string): string | null {
   const h = normalizeHeader(header);
   if (!h) return null;
@@ -306,6 +446,7 @@ export async function parseDesignatedSkuWorkbook(
   let sheet: ExcelJS.Worksheet | undefined;
   let headerRowNum = 0;
   let headerMap = new Map<string, number>();
+  let safetyHeaderMap = new Map<keyof SafetyReviewView, number>();
   let headers: string[] = [];
   let bestScore = 0;
 
@@ -314,17 +455,24 @@ export async function parseDesignatedSkuWorkbook(
     for (let r = 1; r <= maxProbe; r += 1) {
       const row = ws.getRow(r);
       const map = new Map<string, number>();
+      const safetyMap = new Map<keyof SafetyReviewView, number>();
       for (let c = 1; c <= Math.max(ws.columnCount, 1); c += 1) {
         const text = cellText(row.getCell(c)).trim();
         const field = detectField(text);
         if (field && !map.has(field)) map.set(field, c);
+        const safetyField = detectSafetyField(text);
+        if (safetyField && !safetyMap.has(safetyField)) safetyMap.set(safetyField, c);
       }
-      const score = HEADER_FIELDS.filter((f) => map.has(f)).length;
+      let score = HEADER_FIELDS.filter((f) => map.has(f)).length;
+      // Safety 調整檔：必須同時有「現時 Safety」及「建議 Safety」才算
+      const isSafety = safetyMap.has('safety_current') && safetyMap.has('safety_recommend');
+      if (isSafety) score += 10;
       // Article 可以不出現（= 全店回覆一次）；但 Site 一定要有
       if (map.has('site') && score > bestScore) {
         sheet = ws;
         headerRowNum = r;
         headerMap = map;
+        safetyHeaderMap = isSafety ? safetyMap : new Map();
         bestScore = score;
       }
     }
@@ -356,25 +504,50 @@ export async function parseDesignatedSkuWorkbook(
   // ---------------------------------------------------------------------
   // 回覆欄位：內建 5 欄及舊「年期／件數」欄以外，其餘表頭自動成為自定欄位。
   // 表頭就是欄位名，上載後仍可在後台改名；key 固定 f1…f10，改名不影響已收回覆。
+  // Safety 調整檔例外：固定三個欄位（同意／不同意、原因、新 Safety），
+  // 其餘欄位（問題說明、Overstock Cap 等）只作參考，不會變成回覆欄位。
   // ---------------------------------------------------------------------
+  const safetyFormat = safetyHeaderMap.has('safety_current') && safetyHeaderMap.has('safety_recommend');
+  if (safetyFormat && !headerMap.has('sku')) {
+    return {
+      ok: false,
+      sheetName: sheet.name,
+      headers,
+      totalRows: 0,
+      skippedRows: 0,
+      errors: [{
+        row: headerRowNum,
+        field: 'SKU',
+        reason: 'Safety 調整檔必須有 SKU 欄（每個 SKU 逐行回覆）',
+      }],
+      contentHash,
+    };
+  }
+
   const replyScope: DesignatedSkuReplyScope = headerMap.has('sku') ? 'item' : 'matter';
   const mappedColumns = new Set<number>(headerMap.values());
   const replyFields: DesignatedSkuReplyField[] = [];
   let hasYearColumns = false;
-  for (let c = 1; c <= columnCount; c += 1) {
-    const raw = fullHeaders[c - 1] ?? '';
-    if (mappedColumns.has(c)) continue;
-    if (!raw || /^Column \d+$/i.test(raw)) continue;
-    if (isLegacyReplyHeader(raw)) {
-      hasYearColumns = true;
-      continue;
+  if (!safetyFormat) {
+    for (let c = 1; c <= columnCount; c += 1) {
+      const raw = fullHeaders[c - 1] ?? '';
+      if (mappedColumns.has(c)) continue;
+      if (!raw || /^Column \d+$/i.test(raw)) continue;
+      if (isLegacyReplyHeader(raw)) {
+        hasYearColumns = true;
+        continue;
+      }
+      replyFields.push({
+        key: `f${replyFields.length + 1}`,
+        label: raw.slice(0, 80),
+        type: inferReplyFieldType(raw),
+        required: false,
+      });
     }
-    replyFields.push({
-      key: `f${replyFields.length + 1}`,
-      label: raw.slice(0, 80),
-      type: inferReplyFieldType(raw),
-      required: false,
-    });
+  } else {
+    for (const field of SAFETY_REPLY_FIELDS) {
+      replyFields.push({ ...field, ...(field.options ? { options: [...field.options] } : {}) });
+    }
   }
   if (replyFields.length > DESIGNATED_SKU_MAX_REPLY_FIELDS) {
     return {
@@ -392,9 +565,11 @@ export async function parseDesignatedSkuWorkbook(
       contentHash,
     };
   }
-  const replyMode: DesignatedSkuReplyMode = replyScope === 'matter'
-    ? 'custom'
-    : (replyFields.length ? (hasYearColumns ? 'mixed' : 'custom') : 'stock_year');
+  const replyMode: DesignatedSkuReplyMode = safetyFormat
+    ? 'safety'
+    : replyScope === 'matter'
+      ? 'custom'
+      : (replyFields.length ? (hasYearColumns ? 'mixed' : 'custom') : 'stock_year');
 
   const errors: NonNullable<DesignatedSkuParsed['errors']> = [];
   const warnings: NonNullable<DesignatedSkuParsed['warnings']> = [];
@@ -441,6 +616,52 @@ export async function parseDesignatedSkuWorkbook(
     const stockRaw = headerMap.has('stock') ? cellText(row.getCell(headerMap.get('stock')!)) : '';
     const stock = parseStockQty(stockRaw);
 
+    // Safety 調整檔：把 11 個顯示欄位寫入 payload（canonical key），
+    // 咁前端／匯出就算原檔欄名改動都唔會壞。
+    let rowHierarchy = hierarchy;
+    let rowDescription = description;
+    if (safetyFormat) {
+      const safetyCell = (key: keyof SafetyReviewView): string => {
+        const col = safetyHeaderMap.get(key);
+        return col ? cellText(row.getCell(col)) : '';
+      };
+      rowHierarchy = safetyCell('brand') || hierarchy;
+      rowDescription = safetyCell('description') || description;
+      if (!rowDescription) {
+        const itemShopHeader = fullHeaders.find((h) => /^item[\s_]?shop$/i.test(h.trim())) ?? '';
+        rowDescription = descriptionFromItemShop(itemShopHeader ? data[itemShopHeader] ?? '' : '', sku, siteCode);
+      }
+      const safetyValues: Record<keyof SafetyReviewView, string> = {
+        brand: rowHierarchy,
+        description: rowDescription,
+        issue_type: safetyCell('issue_type'),
+        issue_detail: safetyCell('issue_detail'),
+        suggestion: safetyCell('suggestion'),
+        stock_qty: stockRaw,
+        monthly_sold: safetyCell('monthly_sold'),
+        turnday: safetyCell('turnday'),
+        safety_current: safetyCell('safety_current'),
+        safety_recommend: safetyCell('safety_recommend'),
+        safety_change: safetyCell('safety_change'),
+      };
+      const payloadPairs: Array<[keyof SafetyReviewView, string]> = [
+        ['brand', SAFETY_PAYLOAD_KEYS.brand],
+        ['description', SAFETY_PAYLOAD_KEYS.description],
+        ['issue_type', SAFETY_PAYLOAD_KEYS.issueType],
+        ['issue_detail', SAFETY_PAYLOAD_KEYS.issueDetail],
+        ['suggestion', SAFETY_PAYLOAD_KEYS.suggestion],
+        ['stock_qty', SAFETY_PAYLOAD_KEYS.stock],
+        ['monthly_sold', SAFETY_PAYLOAD_KEYS.monthlySold],
+        ['turnday', SAFETY_PAYLOAD_KEYS.turnday],
+        ['safety_current', SAFETY_PAYLOAD_KEYS.safetyCurrent],
+        ['safety_recommend', SAFETY_PAYLOAD_KEYS.safetyRecommend],
+        ['safety_change', SAFETY_PAYLOAD_KEYS.safetyChange],
+      ];
+      for (const [viewKey, payloadKey] of payloadPairs) {
+        data[payloadKey] = safetyValues[viewKey];
+      }
+    }
+
     if (!siteCode) errors.push({ row: rowNumber, field: 'Site', reason: 'Site Code 為必填' });
     else if (storeCodes.size && !storeCodes.has(siteCode)) {
       errors.push({
@@ -482,8 +703,8 @@ export async function parseDesignatedSkuWorkbook(
       rowNumber,
       siteCode,
       sku,
-      hierarchy,
-      description,
+      hierarchy: rowHierarchy,
+      description: rowDescription,
       stockQty: stock.value,
       data,
     });
@@ -637,6 +858,10 @@ export interface DesignatedSkuExportItem {
   reply_fields?: Array<{ label: string; value: string }>;
   /** matter = 全店回覆一次（SKU 欄留空） */
   reply_scope?: string;
+  /** 回覆模式（safety = Safety 調整） */
+  reply_mode?: string;
+  /** Safety 調整批次的顯示資料（由 payload 讀出） */
+  safety?: SafetyReviewView | null;
 }
 
 export type DesignatedSkuMatterType = 'stock_year_breakdown';
@@ -756,6 +981,60 @@ export async function buildDesignatedSkuExportBuffer(items: DesignatedSkuExportI
   summary.columns = summaryCols.map((name) => ({ width: widthOf[name] ?? 20 }));
   if (items.length) {
     summary.autoFilter = { from: { row: 1, column: 1 }, to: { row: 1, column: summaryCols.length } };
+  }
+
+  // Safety 調整：買手要的 11 欄原值 ＋ 店舖回覆，獨立一張表（其餘批次不會有）
+  const safetyItems = items.filter((it) => it.safety);
+  if (safetyItems.length) {
+    const safetyCols = [
+      '事項編號', '批次編號', 'Site', '店舖', '品牌', 'SKU', '描述', '問題類型',
+      'Shop Stock Qty (CM)', 'Shop Monthly Sold Qty (P90D)', 'Turnday (P90D Qty)',
+      'Safety Stock (現時)', 'Recommend Safety Stock', 'Safety Qty Change',
+      '店舖回覆', '不同意原因', '店舖建議 Safety', '回覆人', '回覆時間', '狀態',
+    ] as const;
+    const sheet = workbook.addWorksheet('Safety 調整');
+    styleHeader(sheet, safetyCols);
+    const toNum = (raw: string, digits = 0): number | string => {
+      const text = String(raw ?? '').trim().replace(/,/g, '');
+      if (!text) return '';
+      const n = Number(text);
+      if (!Number.isFinite(n)) return raw;
+      return digits ? Number(n.toFixed(digits)) : Math.round(n);
+    };
+    for (const it of safetyItems) {
+      const s = it.safety!;
+      sheet.addRow([
+        it.matter_code,
+        it.batch_code,
+        it.site_code,
+        it.shop ?? '',
+        s.brand,
+        it.sku,
+        s.description || it.description,
+        s.issue_type,
+        toNum(s.stock_qty),
+        toNum(s.monthly_sold, 1),
+        toNum(s.turnday, 1),
+        toNum(s.safety_current),
+        toNum(s.safety_recommend),
+        toNum(s.safety_change),
+        fieldValue(it, '回覆'),
+        fieldValue(it, '不同意原因'),
+        toNum(fieldValue(it, '店舖建議 Safety')),
+        it.replied_by ?? '',
+        it.replied_at ?? '',
+        itemStatusLabel(it),
+      ]);
+    }
+    sheet.columns = [
+      { width: 26 }, { width: 20 }, { width: 10 }, { width: 18 }, { width: 20 }, { width: 14 },
+      { width: 34 }, { width: 16 }, { width: 12 }, { width: 16 }, { width: 12 },
+      { width: 12 }, { width: 14 }, { width: 12 }, { width: 12 }, { width: 30 }, { width: 14 },
+      { width: 18 }, { width: 20 }, { width: 16 },
+    ];
+    if (safetyItems.length) {
+      sheet.autoFilter = { from: { row: 1, column: 1 }, to: { row: 1, column: safetyCols.length } };
+    }
   }
 
   const lineCols = ['事項編號', '批次編號', 'Site', '店舖', 'SKU', '貨品年期 (MMYY)', '可調撥件數'] as const;

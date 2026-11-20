@@ -3,6 +3,9 @@ import { query, withTransaction } from '../db/pool.js';
 import { toHKDateString, toHKString } from '../lib/time.js';
 import {
   DESIGNATED_SKU_MAX_REPLY_FIELDS,
+  DESIGNATED_SKU_REPLY_TEXT_MAX,
+  SAFETY_DECISION_AGREE,
+  SAFETY_DECISION_DISAGREE,
   normalizeReplyFields,
   normalizeReplyValues,
   normalizeYearCode,
@@ -129,6 +132,12 @@ export class DesignatedSkuNotFoundError extends DesignatedSkuError {}
 export class DesignatedSkuForbiddenError extends DesignatedSkuError {}
 export class DesignatedSkuClosedError extends DesignatedSkuError {}
 
+/** DB 回來的回覆模式一律經此收斂，避免舊資料或未知值流入前端 */
+function normalizeReplyMode(value: unknown): DesignatedSkuReplyMode {
+  if (value === 'custom' || value === 'mixed' || value === 'safety') return value;
+  return 'stock_year';
+}
+
 /** 香港時間「YYYY-MM-DD HH:mm」，供前台顯示及 datetime-local 回填 */
 function hkDateTime(value: string | Date | null | undefined): string | null {
   if (!value) return null;
@@ -206,7 +215,7 @@ function mapMatterBase(row: Record<string, unknown>): MatterBase {
     is_open: Boolean((row as Record<string, unknown>).is_open_now),
     is_expired: !m.batch_closed_at && Boolean((row as Record<string, unknown>).due_at) && !(row as Record<string, unknown>).is_open_now,
     shop: m.shop ?? '',
-    reply_mode: m.reply_mode === 'custom' || m.reply_mode === 'mixed' ? m.reply_mode : 'stock_year',
+    reply_mode: normalizeReplyMode(m.reply_mode),
     reply_scope: m.reply_scope === 'matter' ? 'matter' : 'item',
     reply_fields: normalizeReplyFields(m.reply_fields),
   };
@@ -429,7 +438,7 @@ function mapBatch(row: Record<string, unknown>): DesignatedSkuBatchRow {
     ...b,
     due_at: hkDateTime(b.due_at as unknown as string | Date | null),
     settings: asRecord(b.settings),
-    reply_mode: b.reply_mode === 'custom' || b.reply_mode === 'mixed' ? b.reply_mode : 'stock_year',
+    reply_mode: normalizeReplyMode(b.reply_mode),
     reply_scope: b.reply_scope === 'matter' ? 'matter' : 'item',
     reply_fields: normalizeReplyFields(b.reply_fields),
     created_at: toHKString(b.created_at as unknown as string),
@@ -762,7 +771,7 @@ function validateItemReplies(
     seen.add(input.item_id);
 
     const subject = rules.shopLevel ? '本店回覆' : `SKU ${item.sku}`;
-    const noTransfer = rules.mode === 'custom' ? false : input.no_transfer === true;
+    const noTransfer = rules.mode === 'custom' || rules.mode === 'safety' ? false : input.no_transfer === true;
 
     // 自定欄位：必填、數字格式、選項一律在 lib 驗證（錯誤轉為業務錯誤，回 400 而非 500）
     let values: Record<string, string>;
@@ -771,6 +780,37 @@ function validateItemReplies(
     } catch (err) {
       throw new DesignatedSkuError(err instanceof Error ? err.message : String(err));
     }
+
+    // Safety 調整：同意／不同意 ＋（不同意時）原因或新 Safety 數字，不需要年期
+    if (rules.mode === 'safety') {
+      const decision = values.f1 ?? '';
+      if (decision !== SAFETY_DECISION_AGREE && decision !== SAFETY_DECISION_DISAGREE) {
+        throw new DesignatedSkuError(`${subject}：請選擇「${SAFETY_DECISION_AGREE}」或「${SAFETY_DECISION_DISAGREE}」`);
+      }
+      const reason = String(values.f2 ?? '').trim().slice(0, DESIGNATED_SKU_REPLY_TEXT_MAX);
+      const newSafetyRaw = String(values.f3 ?? '').trim();
+      if (newSafetyRaw && !/^\d+$/.test(newSafetyRaw)) {
+        throw new DesignatedSkuError(`${subject}：「新 Safety」必須為 0 或以上的整數`);
+      }
+      if (newSafetyRaw && Number(newSafetyRaw) > 99999) {
+        throw new DesignatedSkuError(`${subject}：「新 Safety」不可超過 99999`);
+      }
+      const outValues: Record<string, string> = { f1: decision };
+      if (decision === SAFETY_DECISION_DISAGREE) {
+        if (reason) outValues.f2 = reason;
+        if (newSafetyRaw) outValues.f3 = String(Number(newSafetyRaw));
+      }
+      out.push({
+        itemId: input.item_id,
+        lines: [],
+        total: null,
+        note: String(input.note ?? '').slice(0, DESIGNATED_SKU_NOTE_MAX),
+        noTransfer: false,
+        values: outValues,
+      });
+      continue;
+    }
+
     if (rules.mode === 'custom' && Object.keys(values).length === 0) {
       throw new DesignatedSkuError(`${subject}：請至少填寫一個回覆欄位`);
     }
@@ -844,7 +884,7 @@ export async function submitMatterReply(input: SubmitMatterReplyInput): Promise<
       [matter.id],
     );
     const replies = validateItemReplies(itemRows.rows, input.items, {
-      mode: matter.reply_mode === 'custom' || matter.reply_mode === 'mixed' ? matter.reply_mode : 'stock_year',
+      mode: normalizeReplyMode(matter.reply_mode),
       fields: normalizeReplyFields(matter.reply_fields),
       shopLevel: matter.reply_scope === 'matter',
     });
@@ -925,7 +965,7 @@ export async function adminSubmitMatterReply(
       [input.matterId],
     );
     const replies = validateItemReplies(itemRows.rows, input.items, {
-      mode: matterRow.reply_mode === 'custom' || matterRow.reply_mode === 'mixed' ? matterRow.reply_mode : 'stock_year',
+      mode: normalizeReplyMode(matterRow.reply_mode),
       fields: normalizeReplyFields(matterRow.reply_fields),
       shopLevel: matterRow.reply_scope === 'matter',
     });
@@ -1390,6 +1430,12 @@ export async function updateReplyFields(input: UpdateReplyFieldsInput): Promise<
 
   const batch = await getBatch(input.batchId);
   if (!batch) return null;
+
+  if (batch.reply_mode === 'safety' || input.mode === 'safety') {
+    throw new DesignatedSkuError(
+      'Safety 調整批次的三個回覆欄位（回覆／不同意原因／店舖建議 Safety）由系統固定，不可修改或轉換模式',
+    );
+  }
 
   const nextMode = input.mode ?? batch.reply_mode;
 

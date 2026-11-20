@@ -83,6 +83,7 @@ import {
 import { getShopStockForStore } from '../services/shopStock.js';
 import { buildShopStockStoreBuffer } from '../services/shopStockExport.js';
 import { buildZeroSalesStoreExportBuffer } from '../lib/zeroSales.js';
+import { readSafetyPayload } from '../lib/designatedSku.js';
 import {
   countPendingMatters as countDesignatedSkuPending,
   DesignatedSkuClosedError,
@@ -1262,7 +1263,11 @@ function serializeStoreMatter(matter: DesignatedSkuMatter) {
   const { settings: _settings, batch_note: _batchNote, items, ...rest } = matter;
   return {
     ...rest,
-    items: items.map(({ payload: _payload, ...item }) => item),
+    items: items.map(({ payload, ...item }) => ({
+      ...item,
+      // Safety 調整：店舖要見到嘅 11 欄由 payload 抽出（其餘批次不會帶 payload）
+      ...(matter.reply_mode === 'safety' ? { safety: readSafetyPayload(payload) } : {}),
+    })),
   };
 }
 
@@ -1398,6 +1403,13 @@ portalRouter.put(
             total: item.reply_total,
             lines: item.lines,
             reply_count: item.reply_count,
+            ...(matter.reply_mode === 'safety'
+              ? {
+                  decision: item.reply_values.f1 ?? '',
+                  reason: item.reply_values.f2 ?? '',
+                  new_safety: item.reply_values.f3 ?? '',
+                }
+              : {}),
           })),
         },
       });

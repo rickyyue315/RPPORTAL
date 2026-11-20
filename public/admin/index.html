@@ -1011,6 +1011,32 @@
 
         <div class="card mt-3">
           <div class="card-header">
+            <h3 class="card-title">待回覆店舖（按 OM）</h3>
+            <span class="ms-auto text-secondary small" id="dsku_om_note">—</span>
+          </div>
+          <div class="card-body">
+            <div class="hint mb-2">只計仍可回覆的事項（批次已封存或已過截止時間不計）；OM 以最後上載的存貨報表為準。</div>
+            <div id="dsku_om_error"></div>
+            <div class="table-responsive">
+              <table class="table table-vcenter">
+                <thead><tr><th>OM</th><th class="text-end">待回覆店數</th><th class="text-end">未回覆 SKU 行</th><th>操作</th></tr></thead>
+                <tbody id="dsku_om_body"><tr><td colspan="4" class="text-center text-secondary">載入中…</td></tr></tbody>
+              </table>
+            </div>
+            <div id="dsku_om_stores_wrap" class="mt-3" hidden>
+              <h5 class="text-secondary" id="dsku_om_stores_title"></h5>
+              <div class="table-responsive">
+                <table class="table table-vcenter">
+                  <thead><tr><th>Site Code</th><th>店舖</th><th>事項編號</th><th class="text-end">未回覆 / 全部 SKU</th><th>操作</th></tr></thead>
+                  <tbody id="dsku_om_stores_body"></tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="card mt-3">
+          <div class="card-header">
             <h3 class="card-title">批次列表</h3>
             <div class="card-actions">
               <button class="btn btn-sm" id="btn_dsku_refresh" type="button">重新整理</button>

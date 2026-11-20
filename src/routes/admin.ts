@@ -214,11 +214,13 @@ import {
   DesignatedSkuNotFoundError,
   findBatchByContentHash as findDesignatedSkuBatchByHash,
   getBatch as getDesignatedSkuBatch,
+  getPendingByOm as getDesignatedSkuPendingByOm,
   getSummary as getDesignatedSkuSummary,
   listBatchesForSelect as listDesignatedSkuBatchOptions,
   listBatchesPage as listDesignatedSkuBatchesPage,
   listBatchMatters as listDesignatedSkuBatchMatters,
   listMattersForExport as listDesignatedSkuForExport,
+  listPendingStores as listDesignatedSkuPendingStores,
   reopenBatch as reopenDesignatedSkuBatch,
   updateBatch as updateDesignatedSkuBatch,
   updateItem as updateDesignatedSkuItem,
@@ -5128,6 +5130,27 @@ adminRouter.get(
   adminActionLimiter,
   asyncHandler(async (_req: Request, res: Response) => {
     res.json(await getDesignatedSkuSummary());
+  }),
+);
+
+/** GET /api/admin/designated-sku/pending-stores — 待回覆店舖（按 OM）；帶 om 就回該 OM 的店舖名單 */
+adminRouter.get(
+  '/designated-sku/pending-stores',
+  requireAdmin,
+  adminActionLimiter,
+  asyncHandler(async (req: Request, res: Response) => {
+    const { batch_id, om } = req.query as Record<string, string | undefined>;
+    const batchId = batch_id?.trim() || undefined;
+    if (batchId && !/^[0-9a-fA-F-]{36}$/.test(batchId)) {
+      res.status(400).json({ error: '批次編號無效' });
+      return;
+    }
+    const omFilter = om?.trim().slice(0, 100) || '';
+    const [byOm, stores] = await Promise.all([
+      getDesignatedSkuPendingByOm(batchId),
+      omFilter ? listDesignatedSkuPendingStores({ batchId, om: omFilter }) : Promise.resolve([]),
+    ]);
+    res.json({ by_om: byOm, stores });
   }),
 );
 

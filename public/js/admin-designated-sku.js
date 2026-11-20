@@ -264,6 +264,95 @@
     } catch (err) {
       targets.forEach(({ error }) => setBox(error, alertHtml('danger', esc(err.message))));
     }
+    // 待回覆店舖面板只在指定 SKU 分頁出現，首頁刷新時不浪費一支 API
+    if (globalThis.__adminActiveTab === 'designated-sku') loadPendingOm();
+  }
+
+  /* ---------------- 待回覆店舖（按 OM） ---------------- */
+  /* 對照零銷售統計面板：只計仍可回覆的事項，OM 跟隨最後上載的存貨報表；
+     點「查看店舖」下鑽，列出該 OM 每間未回覆店舖及其直 link。 */
+  let pendingOm = '';
+
+  function hideOmStores() {
+    pendingOm = '';
+    const wrap = $('dsku_om_stores_wrap');
+    if (wrap) wrap.hidden = true;
+  }
+
+  async function loadPendingOm() {
+    const body = $('dsku_om_body');
+    if (!body) return;
+    const note = $('dsku_om_note');
+    try {
+      const data = await gFetch('/api/admin/designated-sku/pending-stores');
+      setBox('dsku_om_error', '');
+      const rows = data.by_om || [];
+      const stores = rows.reduce((n, r) => n + (Number(r.stores_pending) || 0), 0);
+      const items = rows.reduce((n, r) => n + (Number(r.pending_items) || 0), 0);
+      if (note) note.textContent = rows.length ? `${stores} 間店待回覆 · ${items} 個 SKU 行` : '暫無待回覆';
+      if (!rows.length) {
+        body.innerHTML = '<tr><td colspan="4" class="text-center text-secondary">目前沒有待回覆店舖（已封存／已截止的不計）</td></tr>';
+        hideOmStores();
+        return;
+      }
+      body.innerHTML = rows.map((r) => `<tr>
+        <td><b>${esc(r.om)}</b><div class="text-secondary small">共 ${r.stores_total ?? 0} 間店</div></td>
+        <td class="text-end text-danger"><b>${r.stores_pending ?? 0}</b></td>
+        <td class="text-end text-danger"><b>${r.pending_items ?? 0}</b></td>
+        <td><button class="btn btn-sm${pendingOm === r.om ? ' btn-primary' : ''}" data-dsku-om="${esc(r.om)}">查看店舖</button></td>
+      </tr>`).join('');
+      body.querySelectorAll('[data-dsku-om]').forEach((btn) => {
+        btn.addEventListener('click', () => { pendingOm = btn.dataset.dskuOm || ''; loadOmStores(); });
+      });
+      if (pendingOm) {
+        if (rows.some((r) => r.om === pendingOm)) loadOmStores(true);
+        else hideOmStores();
+      }
+    } catch (err) {
+      if (note) note.textContent = '載入失敗';
+      body.innerHTML = `<tr><td colspan="4" class="text-center text-danger">${esc(err.message)}</td></tr>`;
+    }
+  }
+
+  async function loadOmStores(keep) {
+    const wrap = $('dsku_om_stores_wrap');
+    const title = $('dsku_om_stores_title');
+    const body = $('dsku_om_stores_body');
+    if (!wrap || !body) return;
+    if (!pendingOm) { wrap.hidden = true; return; }
+    wrap.hidden = false;
+    if (title) title.innerHTML = `OM「<b>${esc(pendingOm)}</b>」待回覆店舖 <span class="text-secondary">（載入中…）</span>`;
+    body.innerHTML = '<tr><td colspan="5" class="text-center text-secondary">載入中…</td></tr>';
+    try {
+      const qs = new URLSearchParams({ om: pendingOm });
+      const data = await gFetch(`/api/admin/designated-sku/pending-stores?${qs.toString()}`);
+      const rows = data.stores || [];
+      if (title) {
+        title.innerHTML = `OM「<b>${esc(pendingOm)}</b>」待回覆店舖（<b>${rows.length}</b> 間） <button class="btn btn-sm ms-2" id="dsku_om_close" type="button">收起</button>`;
+        $('dsku_om_close')?.addEventListener('click', () => { hideOmStores(); loadPendingOm(); });
+      }
+      if (!rows.length) {
+        body.innerHTML = '<tr><td colspan="5" class="text-center text-secondary">此 OM 已全部回覆完成</td></tr>';
+        return;
+      }
+      body.innerHTML = rows.map((r) => `<tr>
+        <td><b>${esc(r.site_code)}</b></td>
+        <td>${esc(r.shop || '—')}</td>
+        <td><b class="dsku-code">${esc(r.matter_code)}</b><div class="text-secondary small">${esc(r.batch_code)}${r.due_at ? ` · 截止 ${esc(r.due_at)}` : ''}</div></td>
+        <td class="text-end"><b class="text-danger">${r.pending_items}</b><span class="text-secondary"> / ${r.total_items}</span></td>
+        <td><button class="btn btn-sm btn-outline-primary" data-dsku-copy="${esc(r.matter_code)}" type="button">複製直 link</button></td>
+      </tr>`).join('');
+      body.querySelectorAll('[data-dsku-copy]').forEach((btn) => {
+        btn.addEventListener('click', async () => {
+          const ok = await copyText(matterLink(btn.dataset.dskuCopy));
+          toast(ok ? '已複製直 link' : '複製失敗，請手動複製', ok);
+        });
+      });
+      if (!keep) wrap.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    } catch (err) {
+      if (title) title.textContent = `OM「${pendingOm}」待回覆店舖`;
+      body.innerHTML = `<tr><td colspan="5" class="text-center text-danger">${esc(err.message)}</td></tr>`;
+    }
   }
 
   /* ---------------- 批次列表 ---------------- */

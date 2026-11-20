@@ -309,6 +309,25 @@ describe('指定 SKU 回覆 API（一個事項多個 SKU）', () => {
     hc63MatterId = matters.find((m) => m.site_code === 'HC63')!.id;
   });
 
+  it('待回覆店舖（按 OM）：只計仍可回覆的事項，OM 跟隨門店主檔', async () => {
+    const admin = await adminAgent();
+    const res = await admin.get('/api/admin/designated-sku/pending-stores');
+    expect(res.status).toBe(200);
+    const ivy = (res.body.by_om as Array<Record<string, number | string>>).find((r) => r.om === 'Ivy')!;
+    const ken = (res.body.by_om as Array<Record<string, number | string>>).find((r) => r.om === 'Ken')!;
+    expect(ivy.stores_pending).toBe(1);
+    expect(ivy.pending_items).toBe(2);
+    expect(ken.stores_pending).toBe(2);
+    expect(ken.pending_items).toBe(2);
+    // 下鑽：該 OM 仍未回覆的店舖及事項
+    const drill = await admin.get('/api/admin/designated-sku/pending-stores?om=Ken');
+    expect(drill.status).toBe(200);
+    const stores = drill.body.stores as Array<Record<string, string | number>>;
+    expect(stores.map((s) => s.site_code).sort()).toEqual(['HB20', 'HC63']);
+    expect(String(stores[0]!.matter_code)).toContain(batchCode);
+    expect(stores.map((s) => s.shop).sort()).toEqual(['旺角', '沙田']);
+  });
+
   it('同一檔案再上載會被擋（DUPLICATE_FILE）', async () => {
     const agent = await adminAgent();
     const res = await uploadBatch(agent, mainBuffer);

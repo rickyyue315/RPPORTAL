@@ -1,5 +1,6 @@
 import type { PoolClient } from 'pg';
 import { query, withTransaction } from '../db/pool.js';
+import { getEffectiveOmBySite } from './effectiveOm.js';
 import { toHKDateString, toHKString } from '../lib/time.js';
 import {
   DESIGNATED_SKU_MAX_REPLY_FIELDS,
@@ -727,6 +728,128 @@ async function getLatestBatchSummary(): Promise<DesignatedSkuSummaryBatch | null
     store_count: Number(b.store_count ?? 0),
     pending_store_count: Number(b.pending_store_count ?? 0),
   };
+}
+
+/* ---------------------------------------------------------------------------
+   待回覆店舖（按 OM）— 對照零銷售統計面板
+   只計仍可回覆的事項（批次未封存、未過 due_at）；已封存／已截止的未回覆屬逾期，
+   不應再叫人跟。OM 跟隨「最後上載的存貨報表」，與零銷售後台同一口徑。
+   --------------------------------------------------------------------------- */
+
+/** 事項仍可回覆（與 is_open 同一定義） */
+const MATTER_OPEN_SQL = '(b.closed_at IS NULL AND (b.due_at IS NULL OR b.due_at > now()))';
+
+export interface DesignatedSkuPendingOmRow {
+  om: string;
+  /** 該 OM 在範圍內有事的店舖總數（含已完成的） */
+  stores_total: number;
+  /** 仍有未回覆事項的店舖數 */
+  stores_pending: number;
+  /** 未回覆事項數 */
+  matters_pending: number;
+  /** 未回覆 SKU 行數 */
+  pending_items: number;
+}
+
+export interface DesignatedSkuPendingStoreRow {
+  site_code: string;
+  shop: string;
+  om: string;
+  matter_code: string;
+  batch_code: string;
+  due_at: string | null;
+  total_items: number;
+  pending_items: number;
+}
+
+function omOf(map: Map<string, { om: string }>, siteCode: string): string {
+  return map.get(String(siteCode || '').toUpperCase())?.om || '（未設定）';
+}
+
+/** 按 OM 匯總待回覆店舖；只回傳仍有未回覆事項的 OM */
+export async function getPendingByOm(batchId?: string): Promise<DesignatedSkuPendingOmRow[]> {
+  const params: unknown[] = [];
+  let batchFilter = '';
+  if (batchId) {
+    params.push(batchId);
+    batchFilter = `AND m.batch_id = $${params.length}`;
+  }
+  const r = await query<Record<string, string>>(
+    `SELECT m.site_code,
+            count(DISTINCT m.id)::int AS matters_total,
+            count(DISTINCT m.id) FILTER (
+              WHERE EXISTS (
+                SELECT 1 FROM designated_sku_items p
+                 WHERE p.matter_id = m.id AND p.status = 'pending'
+              )
+            )::int AS matters_pending,
+            count(i.id) FILTER (WHERE i.status = 'pending')::int AS pending_items
+       FROM designated_sku_matters m
+       JOIN designated_sku_batches b ON b.id = m.batch_id
+       LEFT JOIN designated_sku_items i ON i.matter_id = m.id
+      WHERE ${MATTER_OPEN_SQL} ${batchFilter}
+      GROUP BY m.site_code`,
+    params,
+  );
+  const omMap = await getEffectiveOmBySite();
+  const buckets = new Map<string, DesignatedSkuPendingOmRow>();
+  for (const row of r.rows) {
+    const om = omOf(omMap, String(row.site_code ?? ''));
+    const bucket = buckets.get(om) ?? { om, stores_total: 0, stores_pending: 0, matters_pending: 0, pending_items: 0 };
+    bucket.stores_total += 1;
+    const mattersPending = Number(row.matters_pending ?? 0);
+    if (mattersPending > 0) {
+      bucket.stores_pending += 1;
+      bucket.matters_pending += mattersPending;
+      bucket.pending_items += Number(row.pending_items ?? 0);
+    }
+    buckets.set(om, bucket);
+  }
+  return [...buckets.values()]
+    .filter((b) => b.stores_pending > 0)
+    .sort((a, b) => b.stores_pending - a.stores_pending || b.pending_items - a.pending_items || a.om.localeCompare(b.om));
+}
+
+/** 某 OM 仍可回覆但未回覆的店舖／事項清單（下鑽用）；不帶 om 回全部 */
+export async function listPendingStores(opts: { batchId?: string; om?: string } = {}): Promise<DesignatedSkuPendingStoreRow[]> {
+  const params: unknown[] = [];
+  let batchFilter = '';
+  if (opts.batchId) {
+    params.push(opts.batchId);
+    batchFilter = `AND m.batch_id = $${params.length}`;
+  }
+  const r = await query<Record<string, string>>(
+    `SELECT m.site_code, m.matter_code,
+            COALESCE(s.shop, '') AS shop,
+            b.batch_code, b.due_at,
+            count(i.id)::int AS total_items,
+            count(i.id) FILTER (WHERE i.status = 'pending')::int AS pending_items
+       FROM designated_sku_matters m
+       JOIN designated_sku_batches b ON b.id = m.batch_id
+       LEFT JOIN stores s ON UPPER(s.site_code) = UPPER(m.site_code)
+       LEFT JOIN designated_sku_items i ON i.matter_id = m.id
+      WHERE ${MATTER_OPEN_SQL}
+        AND EXISTS (
+          SELECT 1 FROM designated_sku_items p
+           WHERE p.matter_id = m.id AND p.status = 'pending'
+        ) ${batchFilter}
+      GROUP BY m.id, m.site_code, m.matter_code, s.shop, b.batch_code, b.due_at
+      ORDER BY pending_items DESC, m.site_code`,
+    params,
+  );
+  const omMap = await getEffectiveOmBySite();
+  const wantOm = (opts.om || '').trim();
+  const rows: DesignatedSkuPendingStoreRow[] = r.rows.map((row) => ({
+    site_code: String(row.site_code ?? ''),
+    shop: String(row.shop ?? ''),
+    om: omOf(omMap, String(row.site_code ?? '')),
+    matter_code: String(row.matter_code ?? ''),
+    batch_code: String(row.batch_code ?? ''),
+    due_at: row.due_at ? hkDateTime(row.due_at as unknown as string) : null,
+    total_items: Number(row.total_items ?? 0),
+    pending_items: Number(row.pending_items ?? 0),
+  }));
+  return wantOm ? rows.filter((row) => row.om === wantOm) : rows;
 }
 
 /** 店舖端：只回傳屬於該 Site Code 的事項（含批次資料、SKU 明細及年期） */

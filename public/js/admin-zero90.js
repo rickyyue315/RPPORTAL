@@ -196,7 +196,9 @@
     if (abs >= 1e6) return `${(n / 1e6).toFixed(abs >= 1e7 ? 0 : 1)}M`;
     if (abs >= 1e4) return `${Math.round(n / 1e3)}k`;
     if (abs >= 1e3) return `${(n / 1e3).toFixed(1)}k`;
-    if (abs >= 10) return String(Math.round(n));
+    // 10–999：整數照舊；有小數保留一位，否則「平均每店」75.5–76.1 這種窄範圍
+    // 五個刻度會全部四捨五入成「76」，Y 軸等於冇用
+    if (abs >= 10) return Number.isInteger(n) ? String(n) : n.toFixed(1);
     return n.toFixed(1);
   }
 
@@ -361,6 +363,25 @@
     return { yMin: range.min, yMax: range.max };
   }
 
+  /**
+   * 圖頂「店舖數」標籤：期數少（≤14）每期都標；
+   * 期數多（12 個月約 52 期）時只在店數有變動的期標示，否則圖頂會排出一整行重複的「87」。
+   * 未標的點仍然帶值（show:false），tooltip 照樣查得到該期店數。
+   */
+  function shopTopPoints(rows) {
+    const pts = rows.map((row) => ({ date: row.report_date, value: num(row.shop_count), show: true }));
+    if (pts.length <= 14) return pts;
+    let prev = null;
+    let seen = false;
+    pts.forEach((p, i) => {
+      if (p.value === null) { p.show = false; return; }
+      p.show = i === pts.length - 1 || !seen || p.value !== prev;
+      seen = true;
+      prev = p.value;
+    });
+    return pts;
+  }
+
   function renderChart(series) {
     const el = $('z90_chart');
     const legend = $('z90_legend');
@@ -408,7 +429,9 @@
     if (legend) {
       legend.innerHTML = chartSeries
         .map((spec) => `<span class="stk-legend-item"><i style="background:${spec.color}"></i>${esc(spec.label)}</span>`)
-        .join('');
+        .join('')
+        // 圖頂那行黑字不是線，但同樣要講清楚係乜
+        + '<span class="stk-legend-item stk-legend-note">圖頂數字＝店舖數</span>';
     }
 
     const chartApi = globalThis.ChartLite;
@@ -447,6 +470,15 @@
       // 每個數據點都標示實際數值；期數太密時 ChartLite 會自動隔開（最新一期一定標）
       valueLabels: true,
       labelSpacing: config.labelSpacing,
+      // 圖頂一行黑色數字＝該期店數：睇得出升跌係「真係多咗死貨」還是「多咗店報數」
+      topLabels: {
+        label: '店舖數',
+        color: '#1f2937',
+        fontSize: 10,
+        spacing: 30,
+        format: (v) => fmtInt(v),
+        points: shopTopPoints(rows),
+      },
       ariaLabel: `${config.label}走勢，顯示最近 ${months} 個月共 ${rows.length} 期，最新 ${rows[rows.length - 1].report_date}`,
       ...range,
       ...(isDual && Number.isFinite(range2.yMin) ? { y2Min: range2.yMin, y2Max: range2.yMax } : {}),
@@ -468,7 +500,7 @@
       } else if (num(range.yMin) !== null && range.yMin > 0) {
         parts.push(`Y 軸由 ${yText(range.yMin)} 起（放大波動，不是 0 起點）。`);
       }
-      parts.push('點上數字為該期實際值；期數太密時標籤會自動隔開（最新一期必顯示），懸停可看該期全部線的數值。');
+      parts.push('點上數字為該期實際值，圖頂黑色數字為該期店數；期數太密時標籤會自動隔開（最新一期必顯示），懸停可看該期全部數值。');
       note.textContent = parts.join(' ');
     }
   }

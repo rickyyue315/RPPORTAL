@@ -307,6 +307,11 @@ describe('static asset freshness', () => {
     const chartLiteScript = readFileSync(path.join(root, 'public', 'js', 'chart-lite.js'), 'utf8');
     expect(chartLiteScript).toContain("axis: spec.axis === 'right' ? 'right' : 'left'");
     expect(chartLiteScript).toContain('y2Min / y2Max');
+    // 圖頂一行黑色店數：期數多時只在變動期標示，tooltip 仍然逐期有值
+    expect(chartLiteScript).toContain('topLabels');
+    expect(script).toContain("label: '店舖數'");
+    expect(script).toContain('function shopTopPoints');
+    expect(script).toContain('圖頂數字＝店舖數');
     // Excel 貼上：6 欄（可連表頭）→ 自動填四格，並核對兩個總數
     const pasteScript = readFileSync(path.join(root, 'public', 'js', 'z90-paste.js'), 'utf8');
     expect(html).toContain('id="z90_paste"');

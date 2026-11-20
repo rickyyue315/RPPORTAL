@@ -22,6 +22,9 @@
  *   y2Min / y2Max: Number     右軸自訂範圍（條件同 yMin / yMax）
  *   y2Format: (v) => String   右軸刻度文字
  *   yColor / y2Color: String  左右刻度文字顏色（雙軸時染成對應線色，一眼分得出）
+ *   topLabels: { label, color, fontSize, spacing, format, points: [{ date, value }] }
+ *                             圖頂附加一行文字（例如「該期店舖數」），不畫線、不參與 Y 軸；
+ *                             太密時自動抽樣（永遠保留首尾），並會加入 tooltip。
  *   height: Number           容器的 clientHeight 為 0 時使用的像素高（預設 220）
  *   yFormat: (v) => String    y 軸刻度文字
  *   tipFormat: (v) => String  tooltip 數值文字（預設同 yFormat）
@@ -347,14 +350,29 @@
     const measureH = box.clientHeight && box.clientHeight > 60 ? box.clientHeight : 0;
     const H = Math.max(120, Math.round(measureH || o.height || 220));
 
+    /* --- 圖頂附加數字（例如「該期店舖數」）：唔屬於任何一條線，純參考 --- */
+    const topSpec = o.topLabels && typeof o.topLabels === 'object' ? o.topLabels : null;
+    const topPoints = topSpec && Array.isArray(topSpec.points)
+      ? topSpec.points.map((p) => {
+        if (!p) return null;
+        const t = toTime(p.date != null ? p.date : p.x);
+        const raw = p.value != null ? p.value : p.y;
+        const v = raw == null || raw === '' ? NaN : Number(raw);
+        return Number.isFinite(t) && Number.isFinite(v) ? { t, v, show: p.show !== false } : null;
+      }).filter(Boolean).sort((a, b) => a.t - b.t)
+      : [];
+    const hasTop = topPoints.length > 0;
+    const topFmt = topSpec && typeof topSpec.format === 'function' ? topSpec.format : (v) => String(v);
+
     // 雙軸：有 series 指定 axis:'right' 才啟用，右邊要預留位置放刻度文字
     const rightSpecs = specs.filter((s) => s.axis === 'right' && s.points.some((p) => p.v !== null));
     const hasRight = rightSpecs.length > 0;
 
     const padL = 46;
     const padR = hasRight ? 54 : 12;
-    // 顯示數值標籤時頂部要留位（最高點的標籤在點上方），否則會被裁掉
-    const padT = o.valueLabels ? 28 : 12;
+    // 顯示數值標籤時頂部要留位（最高點的標籤在點上方），否則會被裁掉；
+    // 圖頂再加一行附加數字時，還要多留 16px
+    const padT = (o.valueLabels ? 28 : 12) + (hasTop ? 16 : 0);
     const padB = 24;
     const innerW = Math.max(40, W - padL - padR);
     const innerH = Math.max(40, H - padT - padB);
@@ -478,6 +496,36 @@
       label.textContent = tick.label;
       svg.appendChild(label);
     });
+
+    /* --- 圖頂附加數字：每期一個，例如「店舖數」。太密時用 barLabelIndices 抽樣 --- */
+    if (hasTop) {
+      const perTop = Number(topSpec.spacing) || 30;
+      const maxTop = Math.max(2, Math.floor(innerW / perTop));
+      // 只喺「准許標示」嘅點之間抽樣（呼叫端可用 show:false 留白，tooltip 照樣有值）
+      const showIdx = [];
+      topPoints.forEach((p, i) => { if (p.show !== false) showIdx.push(i); });
+      const keepTop = new Set(barLabelIndices(showIdx.length, maxTop).map((pos) => showIdx[pos]));
+      const drawn = [...keepTop].sort((a, b) => a - b);
+      const firstDrawn = drawn[0];
+      const lastDrawn = drawn[drawn.length - 1];
+      topPoints.forEach((p, i) => {
+        if (!keepTop.has(i)) return;
+        // 首尾貼邊的改用 start／end 對齊，免得文字半截跑出繪圖區
+        const anchor = i === firstDrawn ? 'start' : (i === lastDrawn ? 'end' : 'middle');
+        const offsetX = i === firstDrawn ? -2 : (i === lastDrawn ? 2 : 0);
+        const label = svgEl('text', {
+          x: round(xScale(p.t) + offsetX, 2),
+          y: 13,
+          'text-anchor': anchor,
+          fill: topSpec.color || '#1f2937',
+          'font-size': Number(topSpec.fontSize) || 10,
+          'font-weight': 600,
+          'font-family': 'inherit',
+        });
+        label.textContent = topFmt(p.v);
+        svg.appendChild(label);
+      });
+    }
 
     /* --- 折線 + 圓點 --- */
     const dots = [];
@@ -638,6 +686,11 @@
           rows.push({ label: entry.series.label, color: entry.series.color, text: '無數據' });
         }
       });
+      // 圖頂那行附加數字也放進 tooltip，標籤被抽樣隔開時仍查得到
+      if (hasTop) {
+        const tp = topPoints.find((q) => q.t === best);
+        if (tp) rows.push({ label: topSpec.label || '參考', color: topSpec.color || '#1f2937', text: topFmt(tp.v) });
+      }
       if (!anyValue) { guide.setAttribute('opacity', 0); focus.setAttribute('opacity', 0); tip.hidden = true; return; }
       tip.innerHTML = `<div class="ct-tip-date">${fmtDay(best, true)}</div>`
         + rows.map((r) => `<div class="ct-tip-row"><span class="ct-tip-dot" style="background:${r.color}"></span>`

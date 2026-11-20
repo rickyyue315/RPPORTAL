@@ -1539,3 +1539,9 @@ body.stk-modal-open { overflow: hidden; }
   background: #fff;
 }
 .z90-paste .hint { font-size: 12px; }
+
+/* 圖例中的純文字說明（例如「圖頂數字＝店舖數」）：冇色線，用細一級灰字 */
+.stk-legend-item.stk-legend-note {
+  color: var(--muted);
+  font-size: 12px;
+}

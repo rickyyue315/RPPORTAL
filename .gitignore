@@ -8,3 +8,5 @@ vitest.config.ts.timestamp-*.mjs
 .tmp-vitest/
 .vt/
 .vitest-tmp/
+# Chrome headless 截圖用的臨時 profile（不可進版控）
+.tmp-shot/

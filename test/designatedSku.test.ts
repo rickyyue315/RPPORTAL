@@ -542,6 +542,14 @@ describe('指定 SKU 回覆 API（一個事項多個 SKU）', () => {
     expect(summary.body.replied_count).toBe(2);
     expect(summary.body.pending_count).toBe(0);
     expect(summary.body.store_count).toBe(2);
+    // 總覽表：總計一行 + 最新批次一行；待辦要拆成「可回覆」與「逾期未回覆」
+    expect(summary.body.replied_item_count).toBe(3);
+    expect(summary.body.open_pending_count).toBe(0);
+    expect(summary.body.overdue_count).toBe(0);
+    expect(summary.body.latest_batch?.batch_code).toBe(batchCode);
+    expect(summary.body.latest_batch?.is_open).toBe(true);
+    expect(summary.body.latest_batch?.matter_count).toBe(2);
+    expect(summary.body.latest_batch?.item_count).toBe(3);
   });
 
   it('封存後店舖不可再提交，管理員仍可更正；重開後店舖可補答', async () => {

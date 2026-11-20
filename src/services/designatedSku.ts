@@ -575,9 +575,13 @@ export async function listMattersForExport(
   return matters;
 }
 
-export interface DesignatedSkuSummary {
-  batch_count: number;
-  open_batch_count: number;
+/** 最新一個批次（總覽第二行用） */
+export interface DesignatedSkuSummaryBatch {
+  batch_code: string;
+  subject: string;
+  created_at: string;
+  is_open: boolean;
+  is_expired: boolean;
   matter_count: number;
   item_count: number;
   replied_count: number;
@@ -586,37 +590,121 @@ export interface DesignatedSkuSummary {
   pending_store_count: number;
 }
 
+export interface DesignatedSkuSummary {
+  batch_count: number;
+  open_batch_count: number;
+  matter_count: number;
+  item_count: number;
+  /** 已回覆的 SKU 行數（事項層面已回覆 = 該事項全部 SKU 都已回覆） */
+  replied_item_count: number;
+  replied_count: number;
+  pending_count: number;
+  /** 未回覆但批次仍開放（未封存、未過截止）→ 可回覆待辦 */
+  open_pending_count: number;
+  /** 未回覆而批次已封存或已過截止 → 逾期未回覆 */
+  overdue_count: number;
+  store_count: number;
+  pending_store_count: number;
+  latest_batch: DesignatedSkuSummaryBatch | null;
+}
+
 export async function getSummary(): Promise<DesignatedSkuSummary> {
+  // 事項層面的「未回覆」：該事項仍有 pending 的 SKU 行；
+  // 再用批次的 closed_at / due_at 判斷這條待辦是否仍然可回覆（逾期另計，參考零銷售口徑）。
   const r = await query<Record<string, string>>(
     `WITH m AS (
        SELECT m.id, m.site_code,
+              b.closed_at, b.due_at,
               count(i.id)::int AS item_count,
-              count(*) FILTER (WHERE i.status = 'pending')::int AS pending_items
+              count(i.id) FILTER (WHERE i.status = 'replied')::int AS replied_items,
+              count(i.id) FILTER (WHERE i.status = 'pending')::int AS pending_items
          FROM designated_sku_matters m
-         JOIN designated_sku_items i ON i.matter_id = m.id
-        GROUP BY m.id
+         JOIN designated_sku_batches b ON b.id = m.batch_id
+         LEFT JOIN designated_sku_items i ON i.matter_id = m.id
+        GROUP BY m.id, m.site_code, b.closed_at, b.due_at
+     ), k AS (
+       SELECT *, (closed_at IS NULL AND (due_at IS NULL OR due_at > now())) AS is_open
+         FROM m
      )
      SELECT
        (SELECT count(*)::text FROM designated_sku_batches) AS batch_count,
        (SELECT count(*)::text FROM designated_sku_batches WHERE closed_at IS NULL) AS open_batch_count,
        count(*)::text AS matter_count,
        COALESCE(sum(item_count), 0)::text AS item_count,
+       COALESCE(sum(replied_items), 0)::text AS replied_item_count,
        count(*) FILTER (WHERE pending_items = 0)::text AS replied_count,
        count(*) FILTER (WHERE pending_items > 0)::text AS pending_count,
+       count(*) FILTER (WHERE pending_items > 0 AND is_open)::text AS open_pending_count,
+       count(*) FILTER (WHERE pending_items > 0 AND NOT is_open)::text AS overdue_count,
        count(DISTINCT site_code)::text AS store_count,
        count(DISTINCT site_code) FILTER (WHERE pending_items > 0)::text AS pending_store_count
-     FROM m`,
+     FROM k`,
   );
   const row = r.rows[0] ?? {};
+  const latest = await getLatestBatchSummary();
   return {
     batch_count: Number(row.batch_count ?? 0),
     open_batch_count: Number(row.open_batch_count ?? 0),
     matter_count: Number(row.matter_count ?? 0),
     item_count: Number(row.item_count ?? 0),
+    replied_item_count: Number(row.replied_item_count ?? 0),
     replied_count: Number(row.replied_count ?? 0),
     pending_count: Number(row.pending_count ?? 0),
+    open_pending_count: Number(row.open_pending_count ?? 0),
+    overdue_count: Number(row.overdue_count ?? 0),
     store_count: Number(row.store_count ?? 0),
     pending_store_count: Number(row.pending_store_count ?? 0),
+    latest_batch: latest,
+  };
+}
+
+async function getLatestBatchSummary(): Promise<DesignatedSkuSummaryBatch | null> {
+  const r = await query<Record<string, unknown>>(
+    `SELECT b.batch_code, b.subject, b.created_at, b.closed_at, b.due_at,
+            (b.closed_at IS NULL AND (b.due_at IS NULL OR b.due_at > now())) AS is_open_now,
+            (SELECT count(*)::int FROM designated_sku_matters m WHERE m.batch_id = b.id) AS matter_count,
+            (SELECT count(*)::int FROM designated_sku_items i
+               JOIN designated_sku_matters m ON m.id = i.matter_id
+              WHERE m.batch_id = b.id) AS item_count,
+            (SELECT count(*)::int FROM designated_sku_matters m
+              WHERE m.batch_id = b.id
+                AND NOT EXISTS (
+                  SELECT 1 FROM designated_sku_items i
+                   WHERE i.matter_id = m.id AND i.status = 'pending'
+                )) AS replied_count,
+            (SELECT count(*)::int FROM designated_sku_matters m
+              WHERE m.batch_id = b.id
+                AND EXISTS (
+                  SELECT 1 FROM designated_sku_items i
+                   WHERE i.matter_id = m.id AND i.status = 'pending'
+                )) AS pending_count,
+            (SELECT count(DISTINCT m.site_code)::int FROM designated_sku_matters m
+              WHERE m.batch_id = b.id) AS store_count,
+            (SELECT count(DISTINCT m.site_code)::int FROM designated_sku_matters m
+              WHERE m.batch_id = b.id
+                AND EXISTS (
+                  SELECT 1 FROM designated_sku_items i
+                   WHERE i.matter_id = m.id AND i.status = 'pending'
+                )) AS pending_store_count
+       FROM designated_sku_batches b
+      ORDER BY b.created_at DESC, b.batch_code DESC
+      LIMIT 1`,
+  );
+  const b = r.rows[0];
+  if (!b) return null;
+  const isOpen = Boolean(b.is_open_now);
+  return {
+    batch_code: String(b.batch_code ?? ''),
+    subject: String(b.subject ?? ''),
+    created_at: toHKString(b.created_at as unknown as string),
+    is_open: isOpen,
+    is_expired: !b.closed_at && Boolean(b.due_at) && !isOpen,
+    matter_count: Number(b.matter_count ?? 0),
+    item_count: Number(b.item_count ?? 0),
+    replied_count: Number(b.replied_count ?? 0),
+    pending_count: Number(b.pending_count ?? 0),
+    store_count: Number(b.store_count ?? 0),
+    pending_store_count: Number(b.pending_store_count ?? 0),
   };
 }
 

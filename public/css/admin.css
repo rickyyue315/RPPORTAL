@@ -280,7 +280,7 @@ body.drawer-open { overflow: hidden; }
 .file-drop.dragover, #store_drop.dragover { border-color: var(--brand) !important; background: var(--surface-soft) !important; }
 #store_drop { border-style: dashed; }
 
-/* ---------- 零銷售總覽（總計 / 最新週次 雙行 KPI） ---------- */
+/* ---------- 雙行 KPI 表（零銷售「總計 / 最新週次」、指定 SKU「總計 / 最新批次」共用） ---------- */
 .zs-kpi-table-wrap { overflow-x: auto; }
 .zs-kpi-table { width: 100%; min-width: 720px; border-collapse: collapse; }
 .zs-kpi-table thead th {

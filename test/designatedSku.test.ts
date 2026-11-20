@@ -1230,6 +1230,32 @@ describe('Safety 調整（reply_mode = safety）', () => {
     expect(disagreeRow[16]).toBe(4);
   });
 
+  it('匯出「SAP 輸入」：同意用建議值，不同意用店舖數字，未回覆留空待跟進', async () => {
+    const admin = await adminAgent();
+    const res = await getXlsx(admin, `/api/admin/designated-sku/export?batch_id=${batchId}`);
+    expect(res.status).toBe(200);
+    const wb = new ExcelJS.Workbook();
+    await wb.xlsx.load(res.body as Buffer);
+    const ws = wb.getWorksheet('SAP 輸入');
+    expect(ws).toBeTruthy();
+    const headers = (ws!.getRow(1).values as unknown[]).slice(1).map(String);
+    expect(headers.slice(0, 3)).toEqual(['Site Code', 'SKU', '最終 Safety（SAP 輸入）']);
+    const rows = ws!.getRows(2, ws!.rowCount - 1)!.map((row) => (row.values as unknown[]).slice(1));
+    // 按 Site Code 排序，HA02 兩行在前
+    expect(rows.map((row) => row[0])).toEqual(['HA02', 'HA02', 'HB20']);
+    const agreeRow = rows.find((row) => row[1] === '107482202001')!;
+    expect(agreeRow[2]).toBe(199);
+    expect(agreeRow[7]).toBe(79);
+    expect(agreeRow[8]).toBe('同意建議');
+    const disagreeRow = rows.find((row) => row[1] === '1099572')!;
+    expect(disagreeRow[2]).toBe(4);
+    expect(disagreeRow[7]).toBe(-2);
+    expect(disagreeRow[8]).toBe('店舖另提數字');
+    const pendingRow = rows.find((row) => row[1] === '100165902001')!;
+    expect(pendingRow[2]).toBe('');
+    expect(String(pendingRow[8])).toContain('未回覆');
+  });
+
   it('Safety 批次不可修改回覆欄位', async () => {
     const admin = await adminAgent();
     const res = await admin

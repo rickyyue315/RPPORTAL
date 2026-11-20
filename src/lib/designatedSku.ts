@@ -868,6 +868,7 @@ export type DesignatedSkuMatterType = 'stock_year_breakdown';
 
 function matterTypeLabel(type: string): string {
   if (type === 'stock_year_breakdown') return '年期／可調撥件數';
+  if (type === 'safety_review') return 'Safety 調整';
   return type || '—';
 }
 
@@ -985,6 +986,13 @@ export async function buildDesignatedSkuExportBuffer(items: DesignatedSkuExportI
 
   // Safety 調整：買手要的 11 欄原值 ＋ 店舖回覆，獨立一張表（其餘批次不會有）
   const safetyItems = items.filter((it) => it.safety);
+  const toNum = (raw: string, digits = 0): number | string => {
+    const text = String(raw ?? '').trim().replace(/,/g, '');
+    if (!text) return '';
+    const n = Number(text);
+    if (!Number.isFinite(n)) return raw;
+    return digits ? Number(n.toFixed(digits)) : Math.round(n);
+  };
   if (safetyItems.length) {
     const safetyCols = [
       '事項編號', '批次編號', 'Site', '店舖', '品牌', 'SKU', '描述', '問題類型',
@@ -994,13 +1002,6 @@ export async function buildDesignatedSkuExportBuffer(items: DesignatedSkuExportI
     ] as const;
     const sheet = workbook.addWorksheet('Safety 調整');
     styleHeader(sheet, safetyCols);
-    const toNum = (raw: string, digits = 0): number | string => {
-      const text = String(raw ?? '').trim().replace(/,/g, '');
-      if (!text) return '';
-      const n = Number(text);
-      if (!Number.isFinite(n)) return raw;
-      return digits ? Number(n.toFixed(digits)) : Math.round(n);
-    };
     for (const it of safetyItems) {
       const s = it.safety!;
       sheet.addRow([
@@ -1035,6 +1036,66 @@ export async function buildDesignatedSkuExportBuffer(items: DesignatedSkuExportI
     if (safetyItems.length) {
       sheet.autoFilter = { from: { row: 1, column: 1 }, to: { row: 1, column: safetyCols.length } };
     }
+  }
+
+  // SAP 輸入：只列已回覆的行，直接計好「最終 Safety」供操作 SAP（其餘批次不會有）
+  if (safetyItems.length) {
+    const sapCols = [
+      'Site Code', 'SKU', '最終 Safety（SAP 輸入）', '現時 Safety', '系統建議 Safety',
+      '店舖回覆', '店舖建議 Safety', '差異（最終−現時）', '處理狀態',
+      '品牌', '貨品描述', '不同意原因', '事項編號',
+    ] as const;
+    const sap = workbook.addWorksheet('SAP 輸入');
+    styleHeader(sap, sapCols);
+    const sapRows = safetyItems.map((it) => {
+      const s = it.safety!;
+      const decision = fieldValue(it, '回覆');
+      const shopSafety = fieldValue(it, '店舖建議 Safety');
+      const current = toNum(s.safety_current);
+      const recommend = toNum(s.safety_recommend);
+      let final: number | string = '';
+      let statusText = '';
+      if (decision === SAFETY_DECISION_AGREE) {
+        final = recommend;
+        statusText = recommend === '' ? '同意建議（缺建議值，待補）' : '同意建議';
+      } else if (decision === SAFETY_DECISION_DISAGREE) {
+        if (shopSafety) {
+          final = toNum(shopSafety);
+          statusText = '店舖另提數字';
+        } else {
+          statusText = '不同意（未提數字），待跟進';
+        }
+      } else {
+        statusText = '未回覆，待跟進';
+      }
+      const diff = typeof final === 'number' && typeof current === 'number' ? final - current : '';
+      return {
+        site: it.site_code,
+        sku: it.sku,
+        row: [
+          it.site_code,
+          it.sku,
+          final,
+          current,
+          recommend,
+          decision,
+          toNum(shopSafety),
+          diff,
+          statusText,
+          s.brand,
+          s.description || it.description,
+          fieldValue(it, '不同意原因'),
+          it.matter_code,
+        ],
+      };
+    }).sort((a, b) => (a.site === b.site ? a.sku.localeCompare(b.sku) : a.site.localeCompare(b.site)));
+    for (const entry of sapRows) sap.addRow(entry.row);
+    sap.columns = [
+      { width: 10 }, { width: 15 }, { width: 20 }, { width: 12 }, { width: 15 },
+      { width: 10 }, { width: 15 }, { width: 16 }, { width: 26 },
+      { width: 20 }, { width: 34 }, { width: 30 }, { width: 26 },
+    ];
+    sap.autoFilter = { from: { row: 1, column: 1 }, to: { row: 1, column: sapCols.length } };
   }
 
   const lineCols = ['事項編號', '批次編號', 'Site', '店舖', 'SKU', '貨品年期 (MMYY)', '可調撥件數'] as const;

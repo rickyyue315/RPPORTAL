@@ -1442,3 +1442,82 @@ body.stk-modal-open { overflow: hidden; }
 }
 .seg-switch-btn .icon { width: 15px; height: 15px; opacity: .9; }
 .seg-switch-btn.is-active .icon { opacity: 1; }
+
+/* ==========================================================================
+   存貨 Dashboard → 90日0銷售（統計）分頁
+   pill 切換沿用 .seg-switch；本節只加新 view 需要嘅表單／表格樣式
+   ========================================================================== */
+.stk-view-switch { margin: 0 0 14px; }
+/* 卡頭內的指標切換：抵銷 .seg-switch 的預設下外距 */
+.z90-metric-switch { margin: 0; }
+
+.z90-form-grid {
+  display: grid;
+  /* 4 欄：日期／店數／備註（佔 2 欄）一行，MAKE UP／Non-MAKE UP 各兩格一行 */
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px 14px;
+}
+.z90-form-note { grid-column: span 2; }
+@media (max-width: 980px) {
+  .z90-form-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+.z90-total-preview {
+  margin-top: 10px;
+  padding: 8px 12px;
+  background: var(--surface-soft);
+  border: 1px solid var(--border-accent);
+  border-radius: 8px;
+  font-size: 12.5px;
+  color: var(--body);
+  font-variant-numeric: tabular-nums;
+}
+.z90-table th,
+.z90-table td { white-space: nowrap; }
+.z90-table .z90-num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.z90-table .z90-sub {
+  display: block;
+  font-size: 11.5px;
+  color: var(--muted);
+}
+.z90-table tr.is-editing { background: var(--surface-brand); }
+
+/* 走勢卡：圖例與「顯示拆分」同一定位行；圖例留白時開關靠右 */
+.z90-chart-tools {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 4px;
+}
+.z90-chart-tools .stk-legend { margin-bottom: 0; }
+.z90-split-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12.5px;
+  color: var(--body);
+  margin: 0;
+  cursor: pointer;
+  user-select: none;
+}
+.z90-split-toggle[hidden] { display: none; }
+
+
+/* 走勢卡：右邊一組（期間 pill + 拆分開關），窄螢幕會自動換行 */
+.z90-chart-controls {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.z90-range { margin: 0; }
+
+/* 90日0銷售走勢：點上要標數字，比一般趨勢圖預留多一點高度 */
+#z90_chart { height: 280px; }
+@media (max-width: 720px) {
+  #z90_chart { height: 210px; }
+}

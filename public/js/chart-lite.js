@@ -24,6 +24,7 @@
  *                             非 0 起點會在圖內加註「Y 軸由 x 起」，不要靠讀者自己發現。
  *   valueLabels: Boolean      是否在資料點直接標示數值（預設 false）
  *   labelSeries: [Number]     只標示指定 series 的數值（預設全部；三線圖可設 [0,1] 只標首兩條）
+ *   labelSpacing: Number      每個數值標籤預留的橫向像素（預設 44；字短可調細，令每點都標到）
  *   emptyText: String        完全沒有有效點時顯示的文字
  *   ariaLabel: String        SVG 的無障礙描述（預設自動生成）
  *   maxPoints: Number        超過此點數不畫圓點（預設 24）
@@ -471,7 +472,7 @@
        期數太密時用 barLabelIndices 抽樣（永遠保留最新一期），避免疊字。 --- */
     if (o.valueLabels) {
       const labelOf = typeof o.labelFormat === 'function' ? o.labelFormat : yFmt;
-      const perLabel = 44;
+      const perLabel = Number(o.labelSpacing) || 44;
       const maxLabels = Math.max(2, Math.floor(innerW / perLabel));
       dots.forEach((entry, seriesIndex) => {
         // 三線圖可只標首兩條，第三條（所選店舖）留 tooltip

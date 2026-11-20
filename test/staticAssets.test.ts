@@ -272,6 +272,50 @@ describe('static asset freshness', () => {
     expect(adminScript).toContain('不是 0 起點');
   });
 
+  it('存貨 Dashboard 加「90日0銷售」分頁（手動入數，不可用 I14 推算）', () => {
+    const html = readFileSync(path.join(root, 'public', 'admin', 'index.html'), 'utf8');
+    const script = readFileSync(path.join(root, 'public', 'js', 'admin-zero90.js'), 'utf8');
+
+    // pill 分頁：兩個 view 都要存在，原有存貨卡要包在 stk_view_stock 內
+    expect(html).toContain('id="stk_view_switch"');
+    expect(html).toContain('data-stk-view="stock"');
+    expect(html).toContain('data-stk-view="zero90"');
+    expect(html).toContain('id="stk_view_stock"');
+    expect(html).toContain('id="stk_view_zero90"');
+    expect(html).toContain('</div><!-- /stk_view_stock -->');
+    expect(html).toContain('</div><!-- /stk_view_zero90 -->');
+    expect(html.indexOf('id="stk_view_stock"')).toBeLessThan(html.indexOf('id="stk_root"'));
+
+    // 新 view 的 KPI、走勢、入數表單、明細
+    expect(html).toContain('id="z90_kpi"');
+    expect(html).toContain('id="z90_metric"');
+    expect(html).toContain('data-z90-metric="share"');
+    expect(html).toContain('id="z90_split"');
+    expect(html).toContain('id="z90_range"');
+    expect(html).toContain('data-z90-months="1"');
+    expect(html).toContain('data-z90-months="12"');
+    expect(html).toContain('id="z90_chart"');
+    // 每個數據點要直接標數字；期間切換 1／3／6／12 個月，偏好要記住
+    expect(script).toContain('valueLabels: true');
+    expect(script).toContain('labelSpacing');
+    expect(script).toContain('ndrf_admin_z90_months');
+    expect(html).toContain('id="z90_makeup_sku"');
+    expect(html).toContain('id="z90_non_qty"');
+    expect(html).toContain('id="z90_table_body"');
+    expect(html).toContain('/js/admin-zero90.js');
+
+    // 接口與衍生數字（總數由伺服器相加，前端不可自己寫死口徑）
+    expect(script).toContain('/api/admin/stock/zero90/summary');
+    expect(script).toContain('/api/admin/stock/zero90/export');
+    expect(script).toContain('makeup_qty_cm');
+    expect(script).toContain('non_makeup_sku');
+    expect(script).toContain('ndrf_admin_stock_view');
+    // 非 0 起點的 Y 軸必須在圖上／註解標明（與存貨趨勢同一規矩）
+    expect(script).toContain('不是 0 起點');
+    // 口徑要寫明同 I14 唔可以互相推算
+    expect(html).toContain('不是</b> I14');
+  });
+
   it('wires the designated SKU reply page, admin tab and direct link', () => {
     const page = readFileSync(path.join(root, 'public', 'portal', 'designated-sku.html'), 'utf8');
     const storeScript = readFileSync(path.join(root, 'public', 'portal', 'js', 'designated-sku.js'), 'utf8');

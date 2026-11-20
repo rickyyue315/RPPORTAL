@@ -196,6 +196,12 @@ import {
   parseDesignatedSkuWorkbook,
 } from '../lib/designatedSku.js';
 import {
+  deleteZero90Stat,
+  getZero90Summary,
+  upsertZero90Stat,
+} from '../services/zeroSales90d.js';
+import { buildZero90Buffer } from '../services/zeroSales90dExport.js';
+import {
   addItem as addDesignatedSkuItem,
   adminSubmitMatterReply as adminSubmitDesignatedSkuReply,
   closeBatch as closeDesignatedSkuBatch,
@@ -4251,6 +4257,147 @@ adminRouter.get(
         rank_report_date: week?.report_date ?? null,
         ranked_rf_shops: week ? week.rows.filter((row) => row.rf_sku_count !== null).length : 0,
       },
+    });
+    res.setHeader('Content-Type', EXPORT_CONTENT_TYPE);
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    res.send(buffer);
+  }),
+);
+
+
+// ---------------------------------------------------------------------------
+// 90日0銷售（統計）—— 手動每週入數＋走勢
+//
+// 與 I14「By Shop」完全獨立：簡報數字（SKU 總數／存貨量、MAKE UP 拆分）
+// 唔可以由 shop_stock_snapshots 推算，所以另設一張表手動維護。
+// 總數一律由 MAKE UP + Non-MAKE UP 相加，不接受直接輸入，避免出現矛盾數字。
+// ---------------------------------------------------------------------------
+
+/** 數值欄：接受千分位；空字串 → 必填錯誤（不會靜靜變成 0） */
+const zero90Number = (label: string, integer = false) =>
+  z.preprocess(
+    (value) => {
+      if (typeof value === 'string') {
+        const trimmed = value.replace(/,/g, '').trim();
+        return trimmed === '' ? undefined : trimmed;
+      }
+      return value;
+    },
+    z.coerce
+      .number({ invalid_type_error: `${label}應為數字`, required_error: `${label}為必填` })
+      .min(0, `${label}不可為負數`)
+      .refine((n) => Number.isFinite(n), `${label}應為數字`)
+      .refine((n) => !integer || Number.isInteger(n), `${label}應為整數`)
+      .refine((n) => n <= 1_000_000_000, `${label}數值過大`),
+  );
+
+const zero90InputSchema = z.object({
+  report_date: z.string().trim().refine(isValidIsoDate, '報表日期格式應為 YYYY-MM-DD'),
+  shop_count: zero90Number('店數', true),
+  makeup_sku: zero90Number('MAKE UP SKU 數', true),
+  makeup_qty_cm: zero90Number('MAKE UP 存貨量'),
+  non_makeup_sku: zero90Number('Non-MAKE UP SKU 數', true),
+  non_makeup_qty_cm: zero90Number('Non-MAKE UP 存貨量'),
+  note: z.string().trim().max(200, '備註最多 200 字').default(''),
+});
+
+/** GET /api/admin/stock/zero90/summary — 每期數字＋衍生比率＋最新一期 KPI */
+adminRouter.get(
+  '/stock/zero90/summary',
+  requireAdmin,
+  adminActionLimiter,
+  asyncHandler(async (_req: Request, res: Response) => {
+    const summary = await getZero90Summary();
+    res.json({ ok: true, ...summary });
+  }),
+);
+
+/** POST /api/admin/stock/zero90 — 新增／覆蓋同一期（report_date 唯一） */
+adminRouter.post(
+  '/stock/zero90',
+  requireAdmin,
+  adminActionLimiter,
+  asyncHandler(async (req: Request, res: Response) => {
+    const parsed = zero90InputSchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ error: parsed.error.issues[0]?.message ?? '輸入資料無效' });
+      return;
+    }
+    const input = parsed.data;
+    const saved = await upsertZero90Stat({
+      reportDate: input.report_date,
+      shopCount: input.shop_count,
+      makeupSku: input.makeup_sku,
+      // NUMERIC(18,3)：先收斂到 3 位小數，避免 PG 靜靜四捨五入後與畫面顯示不一致
+      makeupQtyCm: Math.round(input.makeup_qty_cm * 1000) / 1000,
+      nonMakeupSku: input.non_makeup_sku,
+      nonMakeupQtyCm: Math.round(input.non_makeup_qty_cm * 1000) / 1000,
+      note: input.note ?? '',
+      actor: req.adminUsername ?? '',
+    });
+    await writeAuditEvent({
+      eventType: 'zero_sales_90d_saved',
+      actorRole: 'admin',
+      actor: req.adminUsername,
+      ip: getClientIp(req),
+      metadata: {
+        report_date: saved.report_date,
+        shop_count: saved.shop_count,
+        sku_total: saved.sku_total,
+        qty_total: saved.qty_total,
+      },
+    });
+    res.json({ ok: true, row: saved });
+  }),
+);
+
+/** DELETE /api/admin/stock/zero90/:reportDate — 刪除某一期 */
+adminRouter.delete(
+  '/stock/zero90/:reportDate',
+  requireAdmin,
+  adminActionLimiter,
+  asyncHandler(async (req: Request, res: Response) => {
+    const reportDate = String(req.params.reportDate ?? '');
+    if (!isValidIsoDate(reportDate)) {
+      res.status(400).json({ error: '報表日期格式應為 YYYY-MM-DD' });
+      return;
+    }
+    const deleted = await deleteZero90Stat(reportDate);
+    if (!deleted) {
+      res.status(404).json({ error: '找不到該期的統計資料' });
+      return;
+    }
+    await writeAuditEvent({
+      eventType: 'zero_sales_90d_deleted',
+      actorRole: 'admin',
+      actor: req.adminUsername,
+      ip: getClientIp(req),
+      metadata: { report_date: reportDate },
+    });
+    res.json({ ok: true, report_date: reportDate });
+  }),
+);
+
+/** GET /api/admin/stock/zero90/export — 匯出全部期數（Excel，PPT 用） */
+adminRouter.get(
+  '/stock/zero90/export',
+  requireAdmin,
+  adminActionLimiter,
+  asyncHandler(async (req: Request, res: Response) => {
+    const summary = await getZero90Summary();
+    const buffer = await buildZero90Buffer({
+      rows: summary.series,
+      kpi: summary.kpi,
+      generatedAt: toHKString(new Date()),
+    });
+    const stamp = hkTodayForDateColumn().replace(/-/g, '');
+    const filename = `Zero_Sales_90D_${stamp}.xlsx`;
+    await writeAuditEvent({
+      eventType: 'zero_sales_90d_export',
+      actorRole: 'admin',
+      actor: req.adminUsername,
+      ip: getClientIp(req),
+      metadata: { filename, periods: summary.series.length, latest: summary.kpi?.report_date ?? null },
     });
     res.setHeader('Content-Type', EXPORT_CONTENT_TYPE);
     res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);

@@ -449,13 +449,29 @@ pg_restore --no-owner --no-privileges --clean --if-exists \
 - **數據隔離**：`site_code` 一律取自登入 session，**不接受** query／body 傳入；回應只含本店數字與全公司加權比率，不含任何其他店數據。
 - 未有數據時回 `200 { has_data: false }`（不是 404），前端顯示空狀態。
 
-### 相關檔案
+### 90日0銷售（統計）分頁
 
+存貨 Dashboard 頂部有 pill 切換 **「I14 存貨」／「90日0銷售」**（`#stk_view_switch`，偏好記在 `localStorage.ndrf_admin_stock_view`），兩個 view 各自獨立，互不影響既有存貨卡。
+
+- **數據來源是手動入數**：每期照 RP Team 的「90日0銷售（統計）」簡報輸入 5 個數字（店數、MAKE UP SKU／存貨量、Non-MAKE UP SKU／存貨量），總數由伺服器相加。**不可以由 I14「By Shop」推算** —— 實測同一週 I14 的 `No. of Overstock SKU (P90D 0 Sales)` 合計 61,488，簡報只有 6,6xx，兩者口徑不同；頁面與匯出說明都有寫明。
+- **表**：`zero_sales_90d_stats`（migration `042`），`report_date` 唯一，同一日再儲存 = 覆蓋該期；只存兩個分項，總數／佔比／每店平均／較上期全部在服務層計算，**缺值回 `null`，不會當 0**（店數 0 時「平均每店」留空）。
+- **KPI**：最新一期日期、SKU 總數、存貨量（CM）總數（兩者附較上期增減及百分比）、MAKE UP SKU／存貨量、涉及店數。上升＝紅、下降＝綠（死貨多咗係差）。
+- **走勢圖**（ChartLite 線圖，最多 3 條線）：指標可切 **SKU 數／存貨量（CM）／平均每店 SKU／MAKE UP 佔比**；期間可切 **1／3／6／12 個月**（`localStorage.ndrf_admin_z90_months`，預設 3，只影響圖表窗口，KPI 與明細照用最新／全部）；SKU 與存貨量預設只畫合計線（睇得到趨勢），勾「顯示 MAKE UP 拆分」才加開兩個分項（偏好 `ndrf_admin_z90_split`）。**每個數據點直接在點上標示實際數值**（`valueLabels` + 按指標調 `labelSpacing`：SKU 34px、存貨量 48px、平均每店 38px、佔比 40px，令 6 個月仍可逐點標）；12 個月（每週約 52 點）太密時 ChartLite 會自動隔開標籤並保留最新一期，卡片註解有寫明。Y 軸用 `niceRange` 貼住數據，並在圖內及卡片註解標明「Y 軸由 x 起（放大波動，不是 0 起點）」。
+- **每期明細**：新→舊列出店數、SKU／存貨量及其分項、MAKE UP 佔比（SKU／量）、較上期（SKU／量），可「編輯」（帶回上方表單）或「刪除」（寫 audit event `zero_sales_90d_deleted`）。
+- **API**：`GET /api/admin/stock/zero90/summary`、`POST /api/admin/stock/zero90`（upsert；zod 驗證：空字串不會變 0、SKU 與店數必須整數）、`DELETE /api/admin/stock/zero90/:reportDate`、`GET /api/admin/stock/zero90/export`。寫入 audit `zero_sales_90d_saved`／`_deleted`／`_export`。
+- **匯出 Excel**：`90日0銷售`（每期完整數字、佔比、較上期）、`PPT 圖表用`（日期 + SKU 總數／MAKE UP／Non-MAKE UP／存貨量，插入折線圖即用）、`匯出說明`。
+- **回填**：migration 042 已把 2026-10-06 至 2026-11-17 共 7 期簡報數字寫入（`ON CONFLICT DO NOTHING`，不會覆蓋畫面上的修改）。
+- 前端在 `public/js/admin-zero90.js`（DOM id 一律 `z90_`／`stk_view_` 前綴，自有 CSRF 與 fetch，不依賴 `admin-stock.js` 的內部狀態）。
+
+### 相關檔案
 - `src/lib/shopStockXlsx.ts`：解析器。上游檔的 XML 帶 `x:` 命名空間前綴、`row`/`cell` 無 `r` 座標，ExcelJS 直接讀會失敗；會先試直接讀，失敗才用 `jszip` 正規化（去前綴、補座標、重新打包）再交 ExcelJS。解壓總量上限 20MB。
 - `src/services/shopStock.ts`：上載／取代／刪除批次、加權比率、WoW、每店明細、店舖端視圖。
 - `src/services/shopStockExport.ts`：Excel 匯出產生器（佔比趨勢、每店明細、MTD 排行榜、RF SKU Dashboard、店舖端本店走勢）＋每店明細的篩選／排序規則 `filterAndSortWeekRows()`／MTD 篩選 `filterMtdRankingRows()`。
+- `src/services/zeroSales90d.ts`／`zeroSales90dExport.ts`：「90日0銷售（統計）」的 CRUD、衍生數字與 Excel 匯出。
 - `src/db/migrations/026_shop_stock_snapshots.sql`：`shop_stock_batches`、`shop_stock_snapshots`、view `v_shop_weekly_deadstock`（純 CREATE，不影響既有表）。
+- `src/db/migrations/042_zero_sales_90d_stats.sql`：`zero_sales_90d_stats`（每期一列）+ 7 期簡報數字回填。
 - `test/shopStock.test.ts`：解析（Total／空白／頁腳／重複）、同日取代、`content_hash` 冪等、加權比率數學、除零 → null、admin／portal 未登入 401、跨店隔離。
+- `test/zeroSales90d.test.ts`：回填數字一致性、覆蓋同日、缺值 → null、API 驗證（空字串／負數／小數）、CSRF、匯出、刪除。
 
 ## 指定 SKU 回覆（一個事項可包含多個 SKU）
 

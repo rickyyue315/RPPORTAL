@@ -503,6 +503,13 @@
         <section class="admin-tab-panel" id="panel-stock" data-tab-panel="stock" role="tabpanel" aria-labelledby="tab-stock" hidden>
         <div class="admin-section-title admin-section" id="sec-stock">存貨 Dashboard <span class="count-badge" id="stk_summary_note">捲動到此處自動載入…</span></div>
 
+        <div class="seg-switch stk-view-switch" id="stk_view_switch" role="tablist" aria-label="存貨儀表板檢視">
+          <button class="seg-switch-btn is-active" type="button" role="tab" aria-selected="true" data-stk-view="stock">I14 存貨</button>
+          <button class="seg-switch-btn" type="button" role="tab" aria-selected="false" data-stk-view="zero90">90日0銷售</button>
+        </div>
+
+        <div id="stk_view_stock">
+
         <div class="card" id="stk_root">
           <div class="card-header">
             <h3 class="card-title">上載 I14「By Shop」報表</h3>
@@ -735,6 +742,139 @@
             </div>
           </div>
         </div>
+        </div><!-- /stk_view_stock -->
+
+        <!-- ===== 90日0銷售（統計）：手動每週入數＋走勢 ===== -->
+        <div id="stk_view_zero90" hidden>
+          <div class="card">
+            <div class="card-header">
+              <h3 class="card-title">最新一期 KPI（90日0銷售）</h3>
+              <span class="ms-auto text-secondary small" id="z90_kpi_note">載入中…</span>
+            </div>
+            <div class="card-body">
+              <div class="stk-kpi-grid" id="z90_kpi">
+                <div class="stk-kpi"><div class="stk-kpi-value">—</div><div class="stk-kpi-label">載入中…</div></div>
+              </div>
+              <div id="z90_kpi_error"></div>
+              <p class="text-secondary small mt-3 mb-0">口徑：SKU 總數 = MAKE UP + Non-MAKE UP；存貨量（CM）總數同理，總數由系統相加。<b>不是</b> I14「By Shop」的 No. of Overstock SKU（兩者口徑不同，不可互相推算）。</p>
+            </div>
+          </div>
+
+          <div class="card mt-3">
+            <div class="card-header">
+              <h3 class="card-title">走勢</h3>
+              <div class="card-actions d-flex align-items-center gap-2 flex-wrap">
+                <div class="seg-switch z90-metric-switch" id="z90_metric" role="group" aria-label="走勢指標">
+                  <button class="seg-switch-btn is-active" type="button" data-z90-metric="sku" aria-pressed="true">SKU 數</button>
+                  <button class="seg-switch-btn" type="button" data-z90-metric="qty" aria-pressed="false">存貨量（CM）</button>
+                  <button class="seg-switch-btn" type="button" data-z90-metric="perShop" aria-pressed="false">平均每店</button>
+                  <button class="seg-switch-btn" type="button" data-z90-metric="share" aria-pressed="false">MAKE UP 佔比</button>
+                </div>
+                <button class="btn btn-sm btn-primary" id="btn_z90_export" type="button" title="匯出全部期數（Excel，含 PPT 圖表用資料）">匯出 Excel</button>
+              </div>
+            </div>
+            <div class="card-body">
+              <div class="z90-chart-tools">
+                <div class="stk-legend" id="z90_legend"></div>
+                <div class="z90-chart-controls">
+                  <div class="seg-switch z90-range" id="z90_range" role="group" aria-label="走勢顯示期間">
+                    <button class="seg-switch-btn" type="button" data-z90-months="1" aria-pressed="false">1 個月</button>
+                    <button class="seg-switch-btn is-active" type="button" data-z90-months="3" aria-pressed="true">3 個月</button>
+                    <button class="seg-switch-btn" type="button" data-z90-months="6" aria-pressed="false">6 個月</button>
+                    <button class="seg-switch-btn" type="button" data-z90-months="12" aria-pressed="false">12 個月</button>
+                  </div>
+                  <label class="z90-split-toggle" id="z90_split_wrap" for="z90_split">
+                    <input type="checkbox" id="z90_split"> 顯示 MAKE UP 拆分
+                  </label>
+                </div>
+              </div>
+              <div class="stk-chart" id="z90_chart"></div>
+              <p class="text-secondary small mt-2 mb-0" id="z90_chart_note"></p>
+              <div id="z90_chart_error"></div>
+              <div id="z90_export_result"></div>
+            </div>
+          </div>
+
+          <div class="card mt-3" id="z90_form_card">
+            <div class="card-header">
+              <h3 class="card-title">輸入／更新每期數字</h3>
+              <span class="ms-auto text-secondary small">同一日期再儲存 = 覆蓋該期（會寫入審計日誌）</span>
+            </div>
+            <div class="card-body">
+              <div class="z90-form-grid">
+                <div>
+                  <label class="form-label" for="z90_date">報表日期 <span class="text-danger">*</span></label>
+                  <input type="date" id="z90_date" class="form-control">
+                </div>
+                <div>
+                  <label class="form-label" for="z90_shops">店數 <span class="text-danger">*</span></label>
+                  <input type="number" id="z90_shops" class="form-control" min="0" step="1" inputmode="numeric" placeholder="例如 88">
+                </div>
+                <div class="z90-form-note">
+                  <label class="form-label" for="z90_note">備註（選填）</label>
+                  <input type="text" id="z90_note" class="form-control" maxlength="200" placeholder="例如 簡報數字／補錄">
+                </div>
+                <div>
+                  <label class="form-label" for="z90_makeup_sku">MAKE UP SKU 數 <span class="text-danger">*</span></label>
+                  <input type="number" id="z90_makeup_sku" class="form-control" min="0" step="1" inputmode="numeric" placeholder="例如 2575">
+                </div>
+                <div>
+                  <label class="form-label" for="z90_makeup_qty">MAKE UP 存貨量（CM） <span class="text-danger">*</span></label>
+                  <input type="number" id="z90_makeup_qty" class="form-control" min="0" step="0.001" inputmode="decimal" placeholder="例如 102676">
+                </div>
+                <div>
+                  <label class="form-label" for="z90_non_sku">Non-MAKE UP SKU 數 <span class="text-danger">*</span></label>
+                  <input type="number" id="z90_non_sku" class="form-control" min="0" step="1" inputmode="numeric" placeholder="例如 4084">
+                </div>
+                <div>
+                  <label class="form-label" for="z90_non_qty">Non-MAKE UP 存貨量（CM） <span class="text-danger">*</span></label>
+                  <input type="number" id="z90_non_qty" class="form-control" min="0" step="0.001" inputmode="decimal" placeholder="例如 128212">
+                </div>
+              </div>
+              <div class="z90-total-preview" id="z90_form_totals">合計：SKU — ・存貨量 —</div>
+              <div class="d-flex gap-2 align-items-center flex-wrap mt-2">
+                <button class="btn btn-primary" id="btn_z90_save" type="button">儲存（新增／覆蓋同日）</button>
+                <button class="btn" id="btn_z90_clear" type="button">清空表單</button>
+                <span class="text-secondary small">照「90日0銷售（統計）」簡報入數；總數不需自己計，系統會相加。</span>
+              </div>
+              <div id="z90_save_result" class="mt-2"></div>
+            </div>
+          </div>
+
+          <div class="card mt-3">
+            <div class="card-header">
+              <h3 class="card-title">每期明細</h3>
+              <div class="card-actions">
+                <button class="btn btn-sm" id="btn_z90_refresh" type="button">重新整理</button>
+              </div>
+            </div>
+            <div class="card-body">
+              <span class="text-secondary small" id="z90_table_note">—</span>
+              <div id="z90_table_error"></div>
+              <div class="table-responsive">
+                <table class="table table-vcenter z90-table">
+                  <thead>
+                    <tr>
+                      <th scope="col">報表日期</th>
+                      <th scope="col" class="text-end">店數</th>
+                      <th scope="col" class="text-end">SKU 總數</th>
+                      <th scope="col" class="text-end">MAKE UP SKU</th>
+                      <th scope="col" class="text-end">Non-MAKE UP SKU</th>
+                      <th scope="col" class="text-end">存貨量（CM）</th>
+                      <th scope="col" class="text-end">MAKE UP 量</th>
+                      <th scope="col" class="text-end">Non 量</th>
+                      <th scope="col" class="text-end">MAKE UP 佔比<br><span class="text-secondary small">SKU／量</span></th>
+                      <th scope="col" class="text-end">較上期<br><span class="text-secondary small">SKU／量</span></th>
+                      <th scope="col">備註</th>
+                      <th scope="col">操作</th>
+                    </tr>
+                  </thead>
+                  <tbody id="z90_table_body"><tr><td colspan="12" class="text-center text-secondary">載入中…</td></tr></tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </div><!-- /stk_view_zero90 -->
         </section>
 
         <!-- ============ 指定 SKU 回覆 ============ -->
@@ -1569,6 +1709,7 @@
 <script src="/js/chart-export.js"></script>
 <script src="/js/chart-zoom.js"></script>
 <script src="/js/admin-stock.js"></script>
+<script src="/js/admin-zero90.js"></script>
 <script src="/js/admin-ui.js"></script>
 <script src="/js/version.js"></script>
 </body>

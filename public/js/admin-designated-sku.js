@@ -1201,7 +1201,8 @@
     const el = $(id);
     if (!el) return;
     el.hidden = true;
-    setBox(id === 'dsku_item_overlay' ? 'dsku_item_error' : 'dsku_batch_error', '');
+    const errorBox = { dsku_item_overlay: 'dsku_item_error', dsku_batch_overlay: 'dsku_batch_modal_error', dsku_fields_overlay: 'dsku_fields_error' }[id];
+    if (errorBox) setBox(errorBox, '');
     unlockBodyScroll();
   }
 
@@ -1274,14 +1275,14 @@
     $('dsku_batch_reference').value = currentBatch.reference || '';
     $('dsku_batch_instructions').value = currentBatch.instructions || '';
     $('dsku_batch_note').value = currentBatch.note || '';
-    setBox('dsku_batch_error', '');
+    setBox('dsku_batch_modal_error', '');
     openOverlay('dsku_batch_overlay');
     $('dsku_batch_subject').focus();
   }
 
   async function saveBatchModal() {
     const subject = ($('dsku_batch_subject').value || '').trim();
-    if (!subject) { setBox('dsku_batch_error', '事項主題不可留空'); return; }
+    if (!subject) { setBox('dsku_batch_modal_error', '事項主題不可留空'); return; }
     const btn = $('btn_dsku_batch_save');
     btn.disabled = true;
     try {
@@ -1302,7 +1303,7 @@
       await loadSummary();
       if (currentBatch) await openBatch(currentBatch.id, { silent: true });
     } catch (err) {
-      setBox('dsku_batch_error', esc(err.message));
+      setBox('dsku_batch_modal_error', esc(err.message));
     } finally {
       btn.disabled = false;
     }

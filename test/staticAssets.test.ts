@@ -816,3 +816,18 @@ describe('RP Connect 品牌鎖定', () => {
     expect(lib.indexOf("'Warehouse/Vendor'")).toBeLessThan(lib.indexOf("'SKU上載日期'"));
   });
 });
+
+describe('DOM id 唯一性', () => {
+  it('每個 id 在頁面內只出現一次（getElementById 只命中首個，重複會令錯誤訊息顯示錯位置）', () => {
+    const pages = [
+      'admin/index.html', 'admin/login.html', 'index.html', 'help.html', 'sales.html', 'urgent.html', 'return.html', 'lookup.html',
+      'portal/index.html', 'portal/om.html', 'portal/zero-sales.html', 'portal/store.html', 'portal/designated-sku.html', 'portal/reviewer.html',
+    ];
+    for (const page of pages) {
+      const html = readFileSync(path.join(root, 'public', page), 'utf8');
+      const ids = [...html.matchAll(/\sid="([^"]+)"/g)].map((m) => m[1]);
+      const dup = ids.filter((id, i) => ids.indexOf(id) !== i);
+      expect(dup, `${page} 有重複 id`).toEqual([]);
+    }
+  });
+});

@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import request from 'supertest';
@@ -829,5 +829,28 @@ describe('DOM id 唯一性', () => {
       const dup = ids.filter((id, i) => ids.indexOf(id) !== i);
       expect(dup, `${page} 有重複 id`).toEqual([]);
     }
+  });
+});
+
+function collectCopyFiles(dir: string, exts: string[], out: string[] = []): string[] {
+  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    if (['node_modules', '.git', 'dist'].includes(entry.name)) continue;
+    const full = path.join(dir, entry.name);
+    if (entry.isDirectory()) collectCopyFiles(full, exts, out);
+    else if (exts.some((ext) => entry.name.endsWith(ext))) out.push(full);
+  }
+  return out;
+}
+
+describe('文案錯別字', () => {
+  it('回覆一律寫「回覆」，不混入「回復」', () => {
+    const files = [
+      ...collectCopyFiles(path.join(root, 'public'), ['.html', '.js', '.css']),
+      ...collectCopyFiles(path.join(root, 'src'), ['.ts']),
+    ];
+    const offenders = files
+      .filter((file) => readFileSync(file, 'utf8').includes('回復'))
+      .map((file) => path.relative(root, file).replace(/\\/g, '/'));
+    expect(offenders).toEqual([]);
   });
 });

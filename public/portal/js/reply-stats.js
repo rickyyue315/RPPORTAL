@@ -107,7 +107,7 @@
     let streakSub;
     if (!finalized) streakSub = '尚未有已封存週次';
     else if (streak > 0) streakSub = `最近：${s.last_missed_week || '—'}${s.last_missed_date ? `（${dashDate(s.last_missed_date)}）` : ''}`;
-    else if (s.last_missed_week) streakSub = `最近一次：${s.last_missed_week}，之後已回復`;
+    else if (s.last_missed_week) streakSub = `最近一次：${s.last_missed_week}，之後已回覆`;
     else streakSub = '一直保持全部回覆';
 
     const rateSub = finalized

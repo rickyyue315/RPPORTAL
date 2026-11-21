@@ -2394,7 +2394,7 @@
   $('btn_review_pending_export').addEventListener('click', downloadReviewPending);
   $('btn_review_pending_refresh').addEventListener('click', loadReviewPending);
   async function runAutoApprove() {
-    const ok = window.confirm('確認立即執行「Buyer 逾期自動批准」？\n\n規則：ND 申請超過 ' + (globalThis.NDRF_OPTIONS?.autoApproveDays ?? 7) + ' 日 Buyer 未有回覆，系統會視作同意（Accept），並在審批時間線註明「Buyer 未有回復，視作同意」。\n已匯出、已鎖定或已有決定的申請不會被影響。');
+    const ok = window.confirm('確認立即執行「Buyer 逾期自動批准」？\n\n規則：ND 申請超過 ' + (globalThis.NDRF_OPTIONS?.autoApproveDays ?? 7) + ' 日 Buyer 未有回覆，系統會視作同意（Accept），並在審批時間線註明「Buyer 未有回覆，視作同意」。\n已匯出、已鎖定或已有決定的申請不會被影響。');
     if (!ok) return;
     const btn = $('btn_auto_approve');
     btn.disabled = true;

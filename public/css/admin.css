@@ -425,14 +425,22 @@ body.drawer-open { overflow: hidden; }
   color: var(--on-brand);
 }
 .stk-legend-item { display: inline-flex; align-items: center; gap: 6px; }
+/* 色條用 background 畫：顏色由 markup 的 inline background 指定。
+   千萬不可用 border-top + var(--brand)——inline background 在 height:0 的盒子上
+   完全睇唔到，結果所有圖例都變品牌藍，同線色對唔上。 */
 .stk-legend-item i {
   display: inline-block;
   width: 14px;
-  height: 0;
-  border-top: 3px solid var(--brand);
+  height: 3px;
+  border: 0;
   border-radius: 2px;
+  background: var(--brand);
 }
-.stk-legend-item i.stk-legend-dash { border-top-style: dashed; }
+/* 虛線做唔到純 background，所以仍然用 border-top；顏色由 inline border-color 指定 */
+.stk-legend-item i.stk-legend-dash {
+  height: 0;
+  border-top: 3px dashed var(--brand);
+}
 .stk-legend-item i.stk-legend-swatch {
   width: 12px;
   height: 12px;

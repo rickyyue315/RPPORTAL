@@ -312,6 +312,12 @@ describe('static asset freshness', () => {
     expect(script).toContain("label: '店舖數'");
     expect(script).toContain('function shopTopPoints');
     expect(script).toContain('圖頂數字＝店舖數');
+    // 圖例色條要用 background 上色（顏色來自 markup 的 inline background）。
+    // 曾用 border-top + var(--brand)：inline background 在 height:0 完全睇唔到，
+    // 結果所有圖例都是品牌藍，跟線色（粉紅／綠）對不上——用戶回報過一次。
+    const adminCss = readFileSync(path.join(root, 'public', 'css', 'admin.css'), 'utf8');
+    expect(adminCss).not.toContain('border-top: 3px solid var(--brand)');
+    expect(adminCss).toMatch(/\.stk-legend-item i \{[^}]*height: 3px;[^}]*background: var\(--brand\)/);
     // Excel 貼上：6 欄（可連表頭）→ 自動填四格，並核對兩個總數
     const pasteScript = readFileSync(path.join(root, 'public', 'js', 'z90-paste.js'), 'utf8');
     expect(html).toContain('id="z90_paste"');
